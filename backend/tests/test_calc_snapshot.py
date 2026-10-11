@@ -839,8 +839,15 @@ class TestIdentificationC12bId:
         assert manifest["searchAudit"]["preprocessing"] is not None
         assert manifest["searchAudit"]["budgetTermination"] is None
         assert manifest["estimation"]["split"] is not None
-        assert manifest["estimation"]["estimatorProfile"] is None
-        assert manifest["resultEvidence"]["predictiveMetrics"] is None
+        # P3-06a（R17 承接）：估计身份/终验/预测指标节已从 evidence 填充
+        # （旧断言 is None 为 P2 占位状态；缺键的旧结果仍显式 null 不伪补）
+        assert manifest["estimation"]["estimatorProfile"]["profileVersion"] == (
+            "TUNE_IDENT_PROFILE_v1"
+        )
+        assert manifest["estimation"]["estimatorProfile"]["structure"] in {"FOPDT", "SOPDT", "IPDT"}
+        assert manifest["resultEvidence"]["predictiveMetrics"]["r2Train"] is not None
+        ft = manifest["resultEvidence"]["finalTestAvailable"]
+        assert ft is None or ft["status"] in {"PASSED", "FAILED", "NO_DYNAMICS", "NOT_RUN"}
         assert manifest["source"]["dcsTemplateRevision"] == "UNKNOWN_DCS_TEMPLATE"
         assert manifest["source"]["executableBuildDigest"] == _TEST_BUILD
         assert manifest["source"]["resultRecordId"] == "tr-1"

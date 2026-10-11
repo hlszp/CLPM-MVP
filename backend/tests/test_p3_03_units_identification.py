@@ -767,10 +767,24 @@ class TestDelaySearchPhysicalSecondsCarrier:
         assert abs(result.best_model.params.theta - 3.0) <= max(2.0, 0.1 * 3.0)
 
     def test_default_behavior_unchanged(self):
-        """不传参数 → 无 delaySearchBound 记录（现行样本域 60 上限零变更）."""
+        """不传参数 → R1 冻结公式默认生效（P3-06a 语义启用，B1 载体→R1 接通）.
+
+        B1 落地时（语义未启用）不传参数无 delaySearchBound 记录；P3-06a
+        起 R1 冻结公式 max(300s, 5×粗估τ+θ)≤时长/4 成为全域搜索分支的
+        默认边界，恒记录（mode=R1_FORMULA）——B1 交接"语义启用归 P3-06a"
+        的设计兑现。
+        """
         u, y = self._prbs_fopdt_pair()
         result = identify_from_history(
             op=u.tolist(), pv=y.tolist(), ts=1.0, candidate_models=[ModelType.FOPDT]
         )
         assert result.success is True, result.reason
-        assert (result.preprocessing or {}).get("delaySearchBound") is None
+        bound = (result.preprocessing or {}).get("delaySearchBound")
+        # R1 公式默认生效并记录（无显式 cap → mode=R1_FORMULA）
+        assert bound is not None and bound["applied"] is True
+        assert bound["mode"] == "R1_FORMULA"
+        assert bound["physicalCapSamples"] is None
+        # 公式事实：max(300, 5×粗估τ+θ) ≤ 数据时长/4（n=1000, ts=1 → 250s 封顶）
+        assert bound["maxSecondsFormula"] == 250.0
+        assert bound["roughTauPlusThetaSeconds"] is not None
+        assert bound["candidateCount"] > 0

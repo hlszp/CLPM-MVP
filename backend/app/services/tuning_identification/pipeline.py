@@ -51,8 +51,10 @@ from app.services.tuning_identification.types import (
 
 logger = logging.getLogger(__name__)
 
-# 算法版本单一真相源在 types.IdentificationResult（v1.2=2026-10-10 IPDT 默认候选+val 稳态防护）
-ALGORITHM_VERSION = "TUNE_IDENT_v1.4"
+# 算法版本单一真相源在 types.IdentificationResult
+# （v1.5=2026-10-12 P3-06a 正确性子卡：R1 时滞物理边界/R6 粗增益校验降级/
+# R7 IPDT 漂移项/R4+R5 final-test 三段分数与终验四态/R17 估计身份证据）
+ALGORITHM_VERSION = "TUNE_IDENT_v1.5"
 
 # 可信度阈值
 _R2_A = 0.90
@@ -104,6 +106,28 @@ _LOWPASS_PEAK_PROMINENCE = 5.0  # 主峰显著性：PSD 峰值 > 此倍数 × �
 # v1.2 验证段近稳态判定：val 段 PV 极差 < 1.5%（归一化 0~100 域）视为死水段，
 # 自由仿真 R² 分母趋零假性归零 → 回退 R²_train 评估并封顶 C（41LIC12422 案例）
 _VAL_STATIONARY_MIN_PTP = 1.5
+
+# ── P3-06a（2026-10-12，oracle 冻结草案 §2 裁决值，一字不差）──
+# R1（P-02）时滞物理搜索上界：θ_max = max(300s, 5×非参粗估 τ+θ)，且 ≤ 数据时长 1/4
+_DELAY_PHYS_MIN_SECONDS = 300.0  # P-02 下限 300s
+_DELAY_PHYS_TAU_FACTOR = 5.0  # P-02：5 × 粗估(τ+θ)
+_DELAY_PHYS_DURATION_QUARTER = 4.0  # P-02：上界 ≤ 数据时长 / 4
+# B-01 时滞候选数上限：物理秒范围换算后候选数 ≤ 241（含 d=0）；
+# 超过则按对数网格稀疏化并在 trace/审计记录稀疏化事实
+_DELAY_CANDIDATE_CAP = 241
+# R5（P-11）终验状态枚举（四态，冻结值）
+FINAL_TEST_PASSED = "PASSED"
+FINAL_TEST_FAILED = "FAILED"
+FINAL_TEST_NO_DYNAMICS = "NO_DYNAMICS"
+FINAL_TEST_NOT_RUN = "NOT_RUN"
+# 终验 PASSED 判据：final-test 自由仿真 R² ≥ _R2_D（与可信度 D 级同阈；
+# 有动态但解释力不及 D 级 = 终验失败，可信度封顶 C 不晋升）
+_FINAL_TEST_MIN_R2 = 0.50
+# R6（P-06）OP 近白判定：去均值自相关 |ρ_k| ≤ 此值（k=1..max_lag）视为近白
+# ——相关分析"互相关 ∝ 脉冲响应"仅对白输入成立（nonparametric.py 自注），
+# 近白时 K 粗估有效，粗增益校验作为封顶信号；有色（闭环）时降级记录不封顶
+_OP_NEAR_WHITE_MAX_ABS_RHO = 0.3
+_OP_NEAR_WHITE_MAX_LAG = 10
 
 
 def _find_contiguous_segments(valid: np.ndarray) -> list[tuple[int, int]]:
@@ -636,12 +660,12 @@ def identify_from_history(
             过程仍选 FOPDT/SOPDT）
         mode: MODE 时序（可选；自动选段的切分依据，None 时假设全 AUTO 不切分）
         op_limits: OP 上下限（可选；自动选段的饱和切分依据）
-        delay_search_max_seconds: 时滞搜索上界（**物理秒**，P3-03 B1 R1 载体）。
-            给定时按当前采样周期换算为候选样本数，与既有样本域上限
-            （min(n/4, 60)）取 min——搜索边界以物理时间为准，不受隐含
-            60 样本边界限制（C14-ID2）。None=维持现行样本域 60 上限
-            （默认行为零变更；P3-06a 按 R1 冻结值接入）。仅当
-            ``theta_estimate`` 未显式给出（全域搜索分支）时生效。
+        delay_search_max_seconds: 时滞搜索显式物理秒上界（P3-03 B1 R1 载体，
+            P3-06a 起与 R1 冻结公式 max(300s, 5×非参粗估 τ+θ)≤数据时长/4
+            的结果取 min——调用方仅能进一步收窄搜索窗。非法值显式拒绝。
+            仅当 ``theta_estimate`` 未显式给出（全域搜索分支）时生效；
+            生效事实记入 ``preprocessing.delaySearchBound``（含公式事实、
+            稀疏化与候选数，B-01 搜索审计）。
 
     Returns:
         IdentificationResult
@@ -841,29 +865,96 @@ def identify_from_history(
     theta_seconds = theta_estimate if theta_estimate is not None else 2 * ts
     d_explicit = max(0, round(theta_seconds / ts))
 
+    # ── 层 2：非参数粗估（用于初值和交叉校验）──
+    # P3-06a（R1）：提前至延迟边界计算之前——θ_max 公式消费非参粗估 τ+θ；
+    # P3-06a（R6）：OP 近白判定在此产出（粗增益校验的封顶资格条件）。
+    # P2-005：Welch 相干仅作辅助门禁，不宣称闭环对象频响无偏——
+    # 闭环下输入与扰动相关，谱估计 Ĝ=S_uy/S_uu 有偏；相干低只作可信度辅助信号。
+    K_rough: float | None = None
+    tau_theta_rough: float | None = None
+    try:
+        nonparam = correlation_analysis(u, y, ts)
+        K_rough = nonparam.gain_estimate
+        tau_theta_rough = nonparam.time_constant_estimate
+        logger.debug("非参数粗估 K=%s, tau+theta=%s", K_rough, nonparam.time_constant_estimate)
+    except Exception:
+        logger.debug("非参数粗估失败，跳过", exc_info=True)
+    # P2-005：Welch 相干辅助门禁（低相干 = 弱线性 / 低信噪比，封顶可信度）
+    mean_coherence: float | None = None
+    try:
+        spectrum = welch_spectral_analysis(u, y, ts)
+        coh = spectrum.get("coherence")
+        if coh is not None and len(coh) > 0:
+            mean_coherence = float(np.mean(coh))
+    except Exception:
+        logger.debug("Welch 谱分析失败，跳过相干辅助门禁", exc_info=True)
+
     # P2-001：延迟候选搜索范围
     # 用户给 theta 时在 d_explicit ± 3 邻域精搜；未给时全域搜索 0..d_max。
-    # d_max 上限 60 覆盖 P2-003 的 θ=60 Ts 场景，同时不超过数据长度 1/4。
-    # P3-03 B1（R1 载体）：delay_search_max_seconds（物理秒）给定时，
-    # 搜索上界换算为样本数并与样本域上限取 min——同一物理过程的 θ 搜索
-    # 窗不随采样周期漂移（C14-ID2）；换算结果记入结构化预处理参数。
+    #
+    # P3-06a（R1 冻结值接入，oracle 草案 §2.1 P-01/P-02/P-03 + B-01）：
+    # 全域搜索分支的搜索上界按**物理秒**公式计算——
+    #     θ_max = max(300s, 5 × 非参粗估 τ+θ)，且 θ_max ≤ 数据时长 / 4
+    # 再按当前 ts 换算候选样本数（P-03：保持逐 ts 一格，候选数超 241 时
+    # 对数网格稀疏化并在审计记录）。三个生效方向：
+    #   - max 放开：θ_max 物理秒换算可超过原隐含 60 样本边界（C14-ID2
+    #     θ=120s @ ts=1s 场景；旧 min(n/4, 60) 在 ts=1s 时只能搜到 60s）；
+    #   - min 收紧：θ_max / ts < 60 样本时（如 ts=10s → 300s/10=30 样本）
+    #     搜索窗收紧，同一物理过程的 θ 搜索范围不随采样周期漂移；
+    #   - 显式覆盖：delay_search_max_seconds（P3-03 B1 R1 载体）给定时
+    #     作为额外上限与公式结果取 min（调用方显式收紧，仅能收窄）。
     n_u = len(u)
     delay_bound_record: dict[str, Any] | None = None
     if theta_estimate is not None:
         d_search_max = min(d_explicit + 3, max(0, n_u // 4))
         theta_source = ThetaSource.EXPLICIT
+        delay_candidates = list(range(d_search_max + 1))
+        delay_grid_sparse = False
     else:
-        d_search_max = min(max(0, n_u // 4), 60)
+        # R1（P-02）：θ_max = max(300s, 5×粗估 τ+θ)，≤ 数据时长 1/4
+        data_duration_seconds = n_u * ts
+        rough_seconds = tau_theta_rough if tau_theta_rough is not None else 0.0
+        theta_max_formula = max(
+            _DELAY_PHYS_MIN_SECONDS, _DELAY_PHYS_TAU_FACTOR * max(0.0, rough_seconds)
+        )
+        theta_max_formula = min(
+            theta_max_formula, data_duration_seconds / _DELAY_PHYS_DURATION_QUARTER
+        )
+        theta_max_effective = theta_max_formula
+        explicit_cap_samples: int | None = None
         if delay_search_max_seconds is not None:
-            _phys_cap = max(0, int(round(delay_search_max_seconds / ts)))
-            d_search_max = min(d_search_max, _phys_cap)
-            delay_bound_record = {
-                "maxSeconds": float(delay_search_max_seconds),
-                "maxSamples": int(d_search_max),
-                "physicalCapSamples": int(_phys_cap),
-                "applied": True,
-                "note": "R1 时滞物理秒边界载体（P3-03 B1）：物理秒换算候选上限",
-            }
+            # B1 载体：显式物理秒上限（仅收窄；语义沿用 B1：与公式结果取 min）
+            explicit_cap_samples = max(0, int(round(delay_search_max_seconds / ts)))
+            theta_max_effective = min(theta_max_effective, delay_search_max_seconds)
+        d_search_max = min(max(0, n_u // 4), max(0, int(theta_max_effective / ts)))
+        # B-01 双域候选网格：小延迟域全密度（≤ min(d_max,60)，v1.4 原窗）+
+        # 大延迟域对数稀疏（R1 放开覆盖；总候选 ≤ 241 = 61 + ≤180）
+        _small_cap = min(d_search_max, 60)
+        _large_grid, _ = (
+            _delay_candidate_grid(d_search_max, cap=_DELAY_CANDIDATE_CAP - 61)
+            if d_search_max > 60
+            else ([], False)
+        )
+        delay_candidates = list(range(_small_cap + 1)) + [d for d in _large_grid if d > _small_cap]
+        delay_grid_sparse = d_search_max > 60
+        delay_bound_record = {
+            # B1 兼容键（P3-03 B1 测试契约）：生效物理秒上界与换算样本数
+            "maxSeconds": round(float(theta_max_effective), 4),
+            "maxSamples": int(d_search_max),
+            "physicalCapSamples": explicit_cap_samples,
+            "applied": True,
+            # R1 扩展键（P3-06a）：公式事实与审计
+            "mode": "R1_FORMULA" if explicit_cap_samples is None else "R1_FORMULA_EXPLICIT_CAP",
+            "maxSecondsFormula": round(float(theta_max_formula), 4),
+            "roughTauPlusThetaSeconds": (
+                round(float(tau_theta_rough), 4) if tau_theta_rough is not None else None
+            ),
+            "dataDurationSeconds": round(float(data_duration_seconds), 4),
+            "formula": "max(300s, 5*roughTauPlusTheta) <= duration/4 (R1 冻结值)",
+        }
+        if preprocess_structured is not None:
+            delay_bound_record["sparse"] = delay_grid_sparse
+            delay_bound_record["candidateCount"] = len(delay_candidates)
         theta_source = ThetaSource.SEARCHED
     if delay_bound_record is not None and preprocess_structured is not None:
         preprocess_structured["delaySearchBound"] = delay_bound_record
@@ -873,6 +964,8 @@ def identify_from_history(
 
     # P2-002：时间顺序留出集分割（不随机打乱，保留时序自相关）
     # 60% train / 20% val / 20% test；数据不足时退化为 70/30 train/val（无 test）
+    # P3-06a（R4/R5，P-10/P-11）：final-test 段（尾部 20%）开始被消费——
+    # 独立自由仿真 R² + 四态终验状态；独立动态事件终验归 06c（P-24）。
     n_total = len(y)
     n_train = int(n_total * 0.6)
     n_val = int(n_total * 0.2)
@@ -884,6 +977,7 @@ def identify_from_history(
         n_test = 0
     u_train, y_train = u[:n_train], y[:n_train]
     u_val, y_val = u[n_train : n_train + n_val], y[n_train : n_train + n_val]
+    u_test, y_test = u[n_train + n_val :], y[n_train + n_val :]
     # P2-009：SP 训练集分割（CLIVC 工具变量；验证集自由仿真只需 u_val/y_val）
     sp_train = sp_demeaned[:n_train] if sp_demeaned is not None else None
 
@@ -908,25 +1002,15 @@ def identify_from_history(
         )
     exc_score = excitation_score(exc.condition_number, exc.significant_changes)
 
-    # ── 层 2：非参数粗估（用于初值和交叉校验）──
-    # P2-005：Welch 相干仅作辅助门禁，不宣称闭环对象频响无偏——
-    # 闭环下输入与扰动相关，谱估计 Ĝ=S_uy/S_uu 有偏；相干低只作可信度辅助信号。
-    try:
-        nonparam = correlation_analysis(u, y, ts)
-        K_rough = nonparam.gain_estimate
-        logger.debug("非参数粗估 K=%s, tau+theta=%s", K_rough, nonparam.time_constant_estimate)
-    except Exception:
-        logger.debug("非参数粗估失败，跳过", exc_info=True)
-        K_rough = None
-    # P2-005：Welch 相干辅助门禁（低相干 = 弱线性 / 低信噪比，封顶可信度）
-    mean_coherence: float | None = None
-    try:
-        spectrum = welch_spectral_analysis(u, y, ts)
-        coh = spectrum.get("coherence")
-        if coh is not None and len(coh) > 0:
-            mean_coherence = float(np.mean(coh))
-    except Exception:
-        logger.debug("Welch 谱分析失败，跳过相干辅助门禁", exc_info=True)
+    # P3-06a（R6，P-06 方向 A）：粗增益校验的封顶资格判定.
+    # 相关分析"互相关 ∝ 脉冲响应"仅对白输入成立；封顶仅在 OP 近白/外生
+    # （校验本身有效）时生效。降级判据（二者同时成立）：
+    #   1. OP 有色（非近白，_u_near_white 判定）；
+    #   2. 闭环跟踪证据——SP 有显著变化（OP 为 PID 输出、对负载/噪声内生）。
+    # 恒 SP 闭环 / 串级 / 跟踪型 SP 的细粒度外生性检测归 06c（M2/P-21 裁决），
+    # 当前对未检出 SP 激励的有色 OP 保守维持封顶（现行行为不回退）。
+    u_near_white = _u_near_white(u)
+    np_record_only = has_sp_excitation and not u_near_white
 
     # ── 层 3：参数化辨识（生产候选）──
     # P2-009：CLIVC（可证明闭环一致 IV）在有 SP 激励时进入生产候选集，
@@ -949,12 +1033,17 @@ def identify_from_history(
                 y_train=y_train,
                 u_val=u_val,
                 y_val=y_val,
+                u_test=u_test,
+                y_test=y_test,
                 d_search_max=d_search_max,
+                delay_candidates=delay_candidates,
                 ts=ts,
                 theta_source=theta_source,
                 exc=exc,
                 exc_score=exc_score,
                 K_rough=K_rough,
+                np_record_only=np_record_only,
+                u_near_white=u_near_white,
                 mean_coherence=mean_coherence,
                 n_train=n_train,
                 n_val=n_val,
@@ -969,17 +1058,36 @@ def identify_from_history(
         na = 1 if model_type == ModelType.FOPDT else 2
         nb = 1
 
-        # P2-001：延迟候选搜索 — 对 d=0..d_max 跑 ARX，用 BIC 选最优 d
+        # P2-001：延迟候选搜索 — 对候选 d 网格跑 ARX，用 BIC 选最优 d
         # P2-002：搜索用训练集（不泄漏留出集信息）
+        # P3-06a（B-01）：候选网格由物理秒边界换算（≤241，超限对数稀疏化）
         #
         # 已知局限（P2-017 标注集验证暴露）：SOPDT（na=2）的延迟/极点存在退化——
         # ARX na=2 可用极快极点补偿过大 d，且慢过阻尼过程 y[k-1]≈y[k-2] 使回归
         # 矩阵病态，T2 崩塌、a2 失去物理意义。彻底修复需 SRIVC（连续时间工具变量），
         # 属后续工作；当前 SOPDT 候选仍输出供审计，但 T1/T2 精度不作门禁。
         best_d, delay_search_trace = _search_delay(
-            u_train, y_train, na=na, nb=nb, d_max=d_search_max
+            u_train, y_train, na=na, nb=nb, d_max=d_search_max, candidates=delay_candidates
         )
         d_model = best_d
+        # P3-06a（B-01）边界命中标记：best_d 落在网格端点 = 搜索边界命中
+        # （θ 可能被边界截断，审计可见；07§3.2"物理时滞范围与边界命中"）
+        delay_boundary_hit = None
+        if delay_candidates:
+            if best_d == delay_candidates[-1]:
+                delay_boundary_hit = "UPPER"
+            elif best_d == delay_candidates[0]:
+                delay_boundary_hit = "LOWER"
+        delay_search_info = {
+            "boundaryHit": delay_boundary_hit,
+            "maxD": int(d_search_max),
+            "candidateCount": len(delay_candidates),
+            "sparse": delay_grid_sparse,
+            # P3-06a（B-01）两段式选择：段 2 在段 1 胜者邻域 ±max(3,10%·d₁)
+            # 全密度精搜（局部公共窗）；trace 仅含段 1 全域记录
+            "twoStage": True,
+            "stage2HalfWidth": max(3, math.ceil(0.1 * best_d)),
+        }
         logger.debug(
             "P2-001 %s 延迟搜索: d_max=%d → best_d=%d, trace=%s",
             model_type,
@@ -990,53 +1098,114 @@ def identify_from_history(
 
         # P2-009：保留所有成功候选（透明化算法对比，CLIVC/ARX/ARMAX 并列可审计）
         model_candidates: list[CandidateModel] = []
+
+        def _fit_one(algo_key: str, d_try: int, *, na: int = na, nb: int = nb):
+            """按算法拟合指定 d；返回估计结果或 None（方法不适用）."""
+            if algo_key == "arx":
+                return identify_arx(u_train, y_train, d_try, na=na, nb=nb)
+            if algo_key == "armax":
+                return identify_armax(u_train, y_train, d_try, na=na, nb=nb, nc=1)
+            if algo_key == "clivc":
+                if sp_train is None:
+                    return None
+                return identify_clivc4(u_train, y_train, sp_train, d_try, na=na, nb=nb)
+            return None
+
+        def _convert_one(res_arg, *, model_type_arg=model_type):
+            """离散→连续转换；失败抛原异常（由调用方处置）."""
+            if model_type_arg == ModelType.FOPDT:
+                return arx_to_fopdt(res_arg.a_coeffs[0], res_arg.b_coeffs[0], res_arg.d, ts)
+            if len(res_arg.a_coeffs) < 2:
+                raise ValueError("A 多项式阶次不足（SOPDT 需 na≥2）")
+            return arx_to_sopdt(
+                res_arg.a_coeffs[0], res_arg.a_coeffs[1], res_arg.b_coeffs[0], res_arg.d, ts
+            )
+
+        # P3-06a：两遍拟合——第一遍在 BIC 胜者 d_model 上跑全部方法；仅当
+        # 该结构**全灭**（所有方法拟合/转换失败）时，第二遍在邻域 d±1..3
+        # 做结构拯救（最后手段，取首个可转换的方法-邻域组合）。
+        # 背景（loop-16 教训）：BIC 的 d 由 ARX 方程误差决定，噪声下 ARX
+        # na=2 极点常退化（复/负）致转换失败，而 ARMAX/CLIVC 在邻近 d 可
+        # 转换——结构不应因单一 d 的转换运气全灭。拯救限定为全灭兜底而非
+        # 逐方法机会重试：中质量拯救候选会污染 Occam 选择（trend+noise
+        # 场景教训）。实际使用的 d 记入 estimatorProfile.delaySamples
+        # 与 delayAdjustedFrom（不静默偏离搜索胜者）。
+        method_fits: list[tuple[object, str, object, object, int | None]] = []
         for method, algo_key in identification_runs:
             try:
-                if algo_key == "arx":
-                    res = identify_arx(u_train, y_train, d_model, na=na, nb=nb)
-                    method_used = method
-                elif algo_key == "armax":
-                    res = identify_armax(u_train, y_train, d_model, na=na, nb=nb, nc=1)
-                    method_used = method
-                elif algo_key == "clivc":
-                    # P2-009：CLIVC 需要外生 SP 作工具变量
-                    if sp_train is None:
-                        continue
-                    res = identify_clivc4(u_train, y_train, sp_train, d_model, na=na, nb=nb)
-                    method_used = method
-                else:
+                res_try = _fit_one(algo_key, d_model)
+                if res_try is None:
                     continue
-            except Exception as exc_err:
-                logger.debug("%s 辨识失败：%s", method, exc_err)
+                params_try = _convert_one(res_try)
+            except Exception as fit_err:
+                logger.debug("%s @d=%d 拟合/转换失败：%s", method, d_model, fit_err)
                 continue
-
-            # 离散→连续转换
-            try:
-                if model_type == ModelType.FOPDT:
-                    params = arx_to_fopdt(res.a_coeffs[0], res.b_coeffs[0], res.d, ts)
-                else:
-                    if len(res.a_coeffs) < 2:
+            method_fits.append((method, algo_key, res_try, params_try, None))
+        if not method_fits:
+            for d_try in (
+                d_model + 1,
+                d_model - 1,
+                d_model + 2,
+                d_model - 2,
+                d_model + 3,
+                d_model - 3,
+            ):
+                if d_try < 0 or d_try > d_search_max:
+                    continue
+                for method, algo_key in identification_runs:
+                    try:
+                        res_try = _fit_one(algo_key, d_try)
+                        if res_try is None:
+                            continue
+                        params_try = _convert_one(res_try)
+                    except Exception as fit_err:
+                        logger.debug("拯救 %s @d=%d 拟合/转换失败：%s", method, d_try, fit_err)
                         continue
-                    params = arx_to_sopdt(
-                        res.a_coeffs[0], res.a_coeffs[1], res.b_coeffs[0], res.d, ts
-                    )
-            except Exception as conv_err:
-                logger.debug("%s 离散→连续转换失败：%s", method, conv_err)
-                continue
+                    method_fits.append((method, algo_key, res_try, params_try, d_model))
+                    break
+                if method_fits:
+                    break
+
+        for method, _algo_key, res, params, d_adjusted_from in method_fits:
+            method_used = method
 
             # P2-012：物理可行性门禁 —— 负增益/NMP 零点不拒绝但封顶可信度并标记
             feasibility = check_physical_feasibility(params, res.b_coeffs, ts)
             physical_flag = "" if feasibility.passed else f", {feasibility.reason_code}"
 
             # P2-004：非参数一致性检查（符号 + 量级）—— 与独立的相关分析粗估交叉校验
+            # P3-06a（R6，P-06 方向 A）：封顶资格判定——粗增益校验仅在
+            # OP 近白/外生（校验有效）时作为封顶信号；OP 有色（闭环跟踪）
+            # 时降级为记录性证据不封顶（相关分析对有色输入有偏，校验本身
+            # 无效，准确保持输入模型不得因无效粗估误降——O-A2）。
             np_passed, np_reason = _check_nonparam_consistency(params.K, K_rough)
+            np_check_mode = "RECORD_ONLY" if np_record_only else "CAP"
+            np_check_basis = (
+                "COLORED_OP_CLOSED_LOOP"
+                if np_record_only
+                else ("NEAR_WHITE" if u_near_white else "EXOGENOUS_ASSUMED")
+            )
             if not np_passed:
-                physical_flag += f", {np_reason}"
+                physical_flag += (
+                    f", {np_reason}"
+                    if not np_record_only
+                    else (f", {np_reason}[RECORD_ONLY:COLORED_OP]")
+                )
+            nonparam_check_record = {
+                "roughGain": round(float(K_rough), 6) if K_rough is not None else None,
+                "paramGain": round(float(params.K), 6),
+                "verdict": np_reason
+                if np_reason
+                else ("UNAVAILABLE" if K_rough is None else "PASS"),
+                "mode": np_check_mode,
+                "basis": np_check_basis,
+            }
 
             # P2-002：验证集自由仿真 R²（留出集泛化能力，替代训练集方程误差 R²）
             r2_train = max(0.0, min(1.0, res.r_squared))
+            d_used = res.d  # 实际拟合 d（邻域重试后可能与 d_model 不同）
             y_val_pred, r2_val = _free_run_simulation(
-                u_val, y_val, res.a_coeffs, res.b_coeffs, d_model
+                u_val, y_val, res.a_coeffs, res.b_coeffs, d_used
             )
             # v1.2 验证段近稳态防护（41LIC12422 案例）：动态集中在前部的
             # 窗口（SP 阶跃后长稳态），时序分割的 val 段可能整段死水
@@ -1056,6 +1225,35 @@ def identify_from_history(
                 rmse_val = 0.0
             nrmse_val = rmse_val / y_val_range if y_val_range > 1e-12 else 0.0
 
+            # P3-06a（R4/R5，P-10/P-11）：final-test 终验段独立评估（首次消费
+            # 尾部 20% 段——此前 n_test 已算但从不参与任何指标，M3）。
+            # 四态：PASSED（有动态且自由仿真 R² ≥ 0.5）/ FAILED（有动态但
+            # 解释力不足——终验失败不晋升，可信度封顶 C）/ NO_DYNAMICS
+            # （段近稳态，ptp 门限沿用 _VAL_STATIONARY_MIN_PTP——不伪称
+            # 通过，仅记录）/ NOT_RUN（短数据 70/30 分割无终验段）。
+            # 终验分数不参与选模（选模仍按可信度+拟合度；终验只降不升）。
+            if n_test > 0:
+                _, r2_final_test = _free_run_simulation(
+                    u_test, y_test, res.a_coeffs, res.b_coeffs, d_used
+                )
+                test_ptp = float(np.ptp(y_test))
+                if test_ptp < _VAL_STATIONARY_MIN_PTP:
+                    final_status = FINAL_TEST_NO_DYNAMICS
+                elif r2_final_test >= _FINAL_TEST_MIN_R2:
+                    final_status = FINAL_TEST_PASSED
+                else:
+                    final_status = FINAL_TEST_FAILED
+                final_test_record = {
+                    "status": final_status,
+                    "r2": round(float(r2_final_test), 4),
+                    "n": int(n_test),
+                    "ptpRange": round(test_ptp, 4),
+                }
+            else:
+                r2_final_test = None
+                final_status = FINAL_TEST_NOT_RUN
+                final_test_record = None
+
             # 残差检验（P1-4：三轨制，在训练集方程误差上做）
             # 旧实现对一切算法用方程误差 e = A·y − B·u 做 Ljung-Box 白性检验；
             # 闭环下 e = A·ν（ARMAX 中 e = C·ε）天然有色，好模型也过不了，
@@ -1067,7 +1265,7 @@ def identify_from_history(
             #     ε = (A/C)·y − (B/C)·u = e/C（C 反滤波方程误差）。
             #   轨 3（ARX/IV，无噪声模型，C=1）：白性检验不适用（e 恒有色），
             #     改残差-输入独立性检验——模型充分 ⇔ 残差不再含输入动态。
-            max_lag_na = max(na, nb + d_model)
+            max_lag_na = max(na, nb + d_used)
             rows = len(y_train) - max_lag_na
             residuals = np.zeros(max(rows, 0))
             if rows > 0:
@@ -1077,7 +1275,7 @@ def identify_from_history(
                     for j in range(na):
                         val += res.a_coeffs[j] * y_train[idx - 1 - j]
                     for j in range(nb):
-                        val -= res.b_coeffs[j] * u_train[idx - d_model - j]
+                        val -= res.b_coeffs[j] * u_train[idx - d_used - j]
                     residuals[i] = val
             c_coeffs = getattr(res, "c_coeffs", None)
             if r2_train >= _R2_RESIDUAL_NEGLIGIBLE:
@@ -1105,12 +1303,19 @@ def identify_from_history(
                 confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
                 physical_flag = f", {feasibility.reason_code}({feasibility.details.split(',')[0]})"
             # P2-004：非参数一致性未通过封顶 C（符号/量级矛盾，参数化模型可疑）
-            if not np_passed:
+            # P3-06a（R6）：仅 OP 近白/外生（mode=CAP）时封顶；有色 OP 闭环
+            # 下 K 粗估有偏、校验无效，降级记录不封顶（不误降准确模型）
+            if not np_passed and not np_record_only:
                 confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
             # P2-005：Welch 相干辅助门禁（低相干 = 弱线性/低信噪比，仅辅助信号不拒绝）
             low_coherence = mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
             if low_coherence:
                 confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+            # P3-06a（R4/R5）：终验失败不晋升——终验段有动态而模型解释力不足，
+            # 可信度封顶 C（C19-ID2"训练好、终验差的模型不得晋升"）
+            if final_status == FINAL_TEST_FAILED:
+                confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+                physical_flag += ", FINAL_TEST_FAILED"
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -1123,13 +1328,19 @@ def identify_from_history(
             if not feasibility.passed:
                 reason_codes.append(feasibility.reason_code)
             if not np_passed:
-                reason_codes.append(np_reason)
+                # P3-06a（R6）：降级模式下不输出封顶语义码（误判不再作为可信度
+                # 信号），改记录降级事实；原始 verdict 由 nonparamCheck 结构化承载
+                reason_codes.append(np_reason if not np_record_only else "NP_CHECK_RECORD_ONLY")
             if low_coherence:
                 reason_codes.append("LOW_COHERENCE")
             if theta_source == ThetaSource.HEURISTIC_2TS:
                 reason_codes.append("HEURISTIC_2TS")
             if val_stationary:
                 reason_codes.append("VAL_STATIONARY")
+            if final_status == FINAL_TEST_FAILED:
+                reason_codes.append("FINAL_TEST_FAILED")
+            elif final_status == FINAL_TEST_NO_DYNAMICS:
+                reason_codes.append("FINAL_TEST_NO_DYNAMICS")
             evidence = ModelEvidence(
                 n_train=n_train,
                 n_val=n_val,
@@ -1161,8 +1372,28 @@ def identify_from_history(
                 ),
                 cleaning_stats=_evidence_cleaning_stats(cleaning_stats),
                 physical_feasibility=_feasibility_dict(feasibility),
+                # P3-06a 加性证据（R4~R7/R17/B-01）
+                final_test=final_test_record,
+                nonparam_check=nonparam_check_record,
+                ipdt_drift=None,
+                estimator_profile={
+                    "profileVersion": "TUNE_IDENT_PROFILE_v1",
+                    "structure": model_type.value,
+                    "estimator": method_used.value,
+                    "orders": {"na": na, "nb": nb, "nc": len(c_coeffs) if c_coeffs else 0},
+                    "delaySamples": int(res.d),
+                    # 转换失败邻域重试的实际来源（None=搜索胜者未调整）
+                    "delayAdjustedFrom": d_adjusted_from,
+                },
+                delay_search_info=delay_search_info,
             )
 
+            # P3-06a（R4/R5）：终验分数入 reason 字符串（三段分数透明化）
+            _final_note = (
+                f", R²_final={r2_final_test:.3f}({final_status})"
+                if r2_final_test is not None
+                else ""
+            )
             candidate = CandidateModel(
                 params=params,
                 fitting_score=round(r2_eval * 100, 2),  # v1.2：val 稳态回退口径
@@ -1171,7 +1402,7 @@ def identify_from_history(
                 residual_test_passed=residual_white,
                 excitation_score=exc_score,
                 reason=(
-                    f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f},"
+                    f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f}{_final_note},"
                     f" {test_note}, AIC={aic_val:.1f}, BIC={bic_val:.1f},"
                     f" iters={getattr(res, 'iterations', 1)}{physical_flag}"
                 ),
@@ -1394,60 +1625,227 @@ def _check_nonparam_consistency(
     return True, ""
 
 
+def _u_near_white(
+    u: np.ndarray,
+    max_lag: int = _OP_NEAR_WHITE_MAX_LAG,
+    threshold: float = _OP_NEAR_WHITE_MAX_ABS_RHO,
+) -> bool:
+    """R6（P-06 方向 A）：OP 近白判定.
+
+    相关分析"互相关 ∝ 脉冲响应"仅对白输入成立（nonparametric.py 自注）；
+    OP 近白时 K 粗估有效，粗增益交叉校验才可作为封顶信号。判定：去均值
+    自相关 |ρ_k| ≤ threshold（k=1..max_lag）。白噪声 ρ_k ≈ ±1.96/√N，
+    阈值 0.3 对白输入恒成立；闭环 PI 的 OP 平滑（ρ1 > 0.9）与 PRBS 保持
+    型输入（ρ1 ≈ 0.9）均判非白——非白本身不触发降级，须再叠加闭环证据
+    （SP 激励）才降级（见 identify_from_history 的 R6 组合判定）。
+    """
+    n = len(u)
+    if n < 4 * max_lag:
+        return False  # 样本不足无法可靠估计自相关，保守判非白
+    x = u - float(np.mean(u))
+    var = float(np.dot(x, x)) / n
+    if var < 1e-12:
+        return False
+    for k in range(1, min(max_lag, n // 4) + 1):
+        rho = float(np.dot(x[k:], x[:-k])) / (n * var)
+        if abs(rho) > threshold:
+            return False
+    return True
+
+
+def _delay_candidate_grid(d_max: int, cap: int | None = None) -> tuple[list[int], bool]:
+    """B-01：时滞候选网格（候选数 ≤ 241，超出按对数网格稀疏化）.
+
+    - d_max + 1 ≤ cap：全密度 0..d_max（现行行为）；
+    - 超限：{0} ∪ {round(d_max^(i/m)) | i=1..m}（m = cap−1）——对数
+      均匀网格，保证任意 d 处相邻候选间距 ≈ d·ln(d_max)/m（d=120、
+      d_max=800 时间距 ≈ 0.86 样本），θ 恢复精度不受稀疏化破坏；稀疏化
+      事实记入 delaySearchBound 供搜索审计（07§3.2 未搜索范围可见）。
+    - cap 缺省 241（B-01 冻结值）；双域搜索的大延迟域传更小 cap 以保证
+      总预算（小延迟域 61 + 大延迟域 ≤180 = ≤241）。
+    """
+    budget = cap if cap is not None else _DELAY_CANDIDATE_CAP
+    if d_max < 0:
+        return [0], False
+    if d_max + 1 <= budget:
+        return list(range(d_max + 1)), False
+    m = budget - 1
+    exponents = (np.arange(1, m + 1, dtype=float) / m) * math.log(d_max)
+    grid = {0} | {int(round(math.exp(v))) for v in exponents}
+    grid.add(d_max)
+    candidates = sorted(g for g in grid if 0 <= g <= d_max)
+    return candidates, True
+
+
+def _arx_delay_candidate_convertible(a_coeffs: list[float]) -> bool:
+    """P3-06a（B-01 配套）：延迟候选的 ARX 拟合是否可转换为该结构的连续模型.
+
+    FOPDT（na=1）：a1 ∈ (−1, 0)（极点 −a1 ∈ (0,1)，稳定且可取对数）；
+    SOPDT（na=2）：两个离散极点均为正实且 < 1（arx_to_sopdt 的接受域）。
+
+    不可转换的候选（如闭环数据上大延迟+退化积分极点 a1≈−1 的拟合）永远
+    产不出该结构的物理模型，其 BIC 对结构选择无意义——从最优 d 选择中
+    排除（trace 仍记录全量 BIC 供审计）。
+    """
+    if not a_coeffs:
+        return True
+    if len(a_coeffs) == 1:
+        a1 = float(a_coeffs[0])
+        return -1.0 < a1 < 0.0
+    try:
+        roots = np.roots([1.0, *a_coeffs])
+    except (np.linalg.LinAlgError, ValueError):
+        return False
+    return bool(
+        np.all(np.abs(roots.imag) < 1e-12) and np.all(roots.real > 0.0) and np.all(roots.real < 1.0)
+    )
+
+
 def _search_delay(
     u: np.ndarray,
     y: np.ndarray,
     na: int,
     nb: int,
     d_max: int,
+    candidates: list[int] | None = None,
 ) -> tuple[int, list[tuple[int, float]]]:
-    """延迟候选搜索（P2-001）— 对 d=0..d_max 跑 ARX，用 BIC 选最优 d.
+    """延迟候选搜索（P2-001 + P3-06a B-01/R1）— 双域 BIC + 自由仿真仲裁.
 
-    BIC = n·ln(σ²) + k·ln(n)，其中 σ² 为残差方差，n 为样本数，k=na+nb。
-    BIC 越小越好：惩罚模型复杂度，避免过大的 d 过拟合。
+    BIC = n·ln(σ²) + k·ln(n)；BIC 越小越好（惩罚复杂度）。
+
+    S3 修复（G27#1）：BIC 必须在**同一样本窗**上比较——各候选在公共窗
+    [t0, N) 上重算残差方差，以同一 n 计罚。
+
+    P3-06a 双域结构（R1 宽搜索域暴露的选择病理修复）：
+    R1 把搜索上界放宽到物理秒公式（≥300s，ts=1s 时 ≥300 样本），公共窗
+    被迫取 t0 = d_max+nb——闭环 SP 阶梯数据上该窗把携带判别动态的早期段
+    排除在评估外，"边际稳定积分极点 + 大延迟"的 2 参数垃圾拟合可在平台
+    段上以微弱 BIC 优势劫持选择（实测 loop-06：正确 d=8 在窄窗上胜出 374
+    BIC 单位，在宽窗上反被 d≈160 垃圾区反超）。处置（不违背 G27#1 同窗
+    比较原则、不收窄 R1 覆盖）：
+
+    - **小延迟域 S**：d ∈ [0, min(d_max, 60)] 全密度，公共窗 t0S=61 级
+      （=v1.4 原搜索窗，判别力完整）；过滤不可转换候选（_arx_delay_
+      candidate_convertible）+ BIC 平局容差（0.5·ln(n)）内取最小 d 的
+      Occam 裁决；
+    - **大延迟域 L**：d ∈ (60, d_max] 对数稀疏网格（B-01 ≤241），公共窗
+      t0L=d_max+nb；同过滤；胜者邻域 ±max(3, 10%·d) 全密度精搜（局部窗）；
+    - **跨域仲裁**：S/L 胜者在宽公共窗 [t0L, N) 上比较**自由仿真 SSE**
+      （方程误差可被平台段利用，自由仿真误差累积不可欺骗）——SSE 小者
+      胜，相对差 <1% 取较小 d（Occam）。
 
     Args:
-        u: 输入信号（已去均值）
-        y: 输出信号（已去均值）
-        na: A 多项式阶次
-        nb: B 多项式阶次
+        u, y: 输入/输出信号（已去均值，训练段）
+        na, nb: A/B 多项式阶次
         d_max: 最大延迟候选（采样数）
+        candidates: 显式候选网格（缺省 = 双域自动构造）
 
     Returns:
-        (best_d, search_trace) — search_trace = [(d, bic), ...] 供证据输出
+        (best_d, search_trace) — trace 为逐候选 (d, bic) 审计记录
+        （S/L 两域公共窗不同，数值不可跨域直接比较——见 delaySearchInfo）
     """
-    # S3 修复（G27#1）：BIC 必须在**同一样本窗**上比较。
-    #
-    # BIC = n·ln(σ²) + k·ln(n) 的似然项随 n 线性缩放，只有 n 相同才可比。
-    # 原实现对每个候选 d 各用 res.n_samples（d 越大回归行越少），跨样本量比较无效：
-    # 实测（真值 d=8、1200 点、σ² 基本不变）"错误候选"的 BIC 随 d 单调变差
-    # （d=0 时 −6059 → d=12 时 −5991），artifact 约每单位 d 5.7，
-    # 与合法复杂度罚项 ln(n)≈7.1 量级相当——对大延迟的保守度约翻倍。
-    #
-    # 修法：取对所有候选都成立的公共窗 t0 = max(na, d_max+nb)，用各自拟合系数
-    # 在该窗上重算残差方差，并以同一 n_common 计罚。
     n_total = len(y)
-    t0 = max(na, d_max + nb)
-    n_common = max(1, n_total - t0)
     k = na + nb
 
-    best_d = 0
-    best_bic = float("inf")
-    search_trace: list[tuple[int, float]] = []
-    for d in range(d_max + 1):
+    def _fit(d: int) -> tuple[list[float], list[float]] | None:
         try:
             res = identify_arx(u, y, d, na=na, nb=nb)
-            sigma2 = _residual_var_on_common_window(u, y, res.a_coeffs, res.b_coeffs, d, t0)
-            bic = n_common * math.log(max(sigma2, 1e-12)) + k * math.log(n_common)
-            bic_rounded = round(bic, 2)
-            search_trace.append((d, bic_rounded))
-            if bic < best_bic:
-                best_bic = bic
-                best_d = d
         except Exception:
+            return None
+        return res.a_coeffs, res.b_coeffs
+
+    def _bic_on_window(a: list[float], b: list[float], d: int, t0: int) -> float:
+        sigma2 = _residual_var_on_common_window(u, y, a, b, d, t0)
+        n_common = max(1, n_total - t0)
+        return n_common * math.log(max(sigma2, 1e-12)) + k * math.log(n_common)
+
+    def _pick_occam(pool: list[tuple[float, int]], t0: int) -> int:
+        """BIC 平局容差（0.5·ln(n)）内取最小 d（Occam：死时间小=模型简单）."""
+        min_bic = min(b for b, _ in pool)
+        margin = 0.5 * math.log(max(n_total - t0, 2))
+        return min(d for b, d in pool if b <= min_bic + margin)
+
+    # 候选网格（显式给出时按其构造 S/L；缺省双域自动）
+    d_small_cap = min(d_max, 60)
+    if candidates is None:
+        s_candidates = list(range(d_small_cap + 1))
+        l_candidates, _ = _delay_candidate_grid(d_max) if d_max > 60 else ([], False)
+        l_candidates = [d for d in l_candidates if d > d_small_cap]
+    else:
+        s_candidates = [d for d in candidates if d <= d_small_cap]
+        l_candidates = [d for d in candidates if d > d_small_cap]
+
+    search_trace: list[tuple[int, float]] = []
+
+    # ── 域 S：小延迟全密度（v1.4 原窗与原选择语义 + Occam 平局裁决）──
+    # 注：S 域不做可转换性过滤——开环噪声数据上真 d 的 ARX na=2 拟合极点
+    # 可因噪声偏差变复/负（ARMAX 在同 d 仍可转换），按 ARX 极点过滤会把
+    # 真 d 整体排除（loop-16 教训）。垃圾积分型拟合（a1≈−1）聚居大延迟
+    # 区，由 L 域过滤 + 跨域自由仿真仲裁拦截。
+    t0_s = max(na, (max(s_candidates) if s_candidates else 0) + nb)
+    s_finite: list[tuple[float, int]] = []
+    s_fits: dict[int, tuple[list[float], list[float]]] = {}
+    for d in s_candidates:
+        fit = _fit(d)
+        if fit is None:
             search_trace.append((d, float("inf")))
             continue
-    return best_d, search_trace
+        bic = _bic_on_window(fit[0], fit[1], d, t0_s)
+        search_trace.append((d, round(bic, 2)))
+        s_finite.append((bic, d))
+        s_fits[d] = fit
+    d_s = _pick_occam(s_finite, t0_s) if s_finite else None
+
+    # ── 域 L：大延迟稀疏网格 + 局部精搜 ──
+    t0_l = max(na, d_max + nb)
+    l_finite: list[tuple[float, int]] = []
+    l_convertible: list[tuple[float, int]] = []
+    l_fits: dict[int, tuple[list[float], list[float]]] = {}
+    for d in l_candidates:
+        fit = _fit(d)
+        if fit is None:
+            search_trace.append((d, float("inf")))
+            continue
+        bic = _bic_on_window(fit[0], fit[1], d, t0_l)
+        search_trace.append((d, round(bic, 2)))
+        l_finite.append((bic, d))
+        l_fits[d] = fit
+        if _arx_delay_candidate_convertible(fit[0]):
+            l_convertible.append((bic, d))
+    d_l: int | None = None
+    if l_convertible or l_finite:
+        d_l = _pick_occam(l_convertible or l_finite, t0_l)
+        # 局部精搜（局部窗恢复判别力）
+        w = max(3, math.ceil(0.1 * d_l))
+        lo, hi = max(d_small_cap + 1, d_l - w), min(d_max, d_l + w)
+        pool2: list[tuple[float, int]] = []
+        t0_local = max(na, hi + nb)
+        for d in range(lo, hi + 1):
+            fit = _fit(d)
+            if fit is None:
+                continue
+            bic = _bic_on_window(fit[0], fit[1], d, t0_local)
+            if _arx_delay_candidate_convertible(fit[0]):
+                pool2.append((bic, d))
+                l_fits[d] = fit
+        if pool2:
+            d_l = _pick_occam(pool2, t0_local)
+
+    # ── 跨域仲裁 ──
+    if d_s is None and d_l is None:
+        return (candidates[0] if candidates else 0), search_trace
+    if d_s is None:
+        return d_l, search_trace
+    if d_l is None:
+        return d_s, search_trace
+    t0_arb = t0_l
+    y_pred_s, _ = _free_run_simulation(u, y, s_fits[d_s][0], s_fits[d_s][1], d_s)
+    y_pred_l, _ = _free_run_simulation(u, y, l_fits[d_l][0], l_fits[d_l][1], d_l)
+    sse_s = float(np.sum((y[t0_arb:] - y_pred_s[t0_arb:]) ** 2))
+    sse_l = float(np.sum((y[t0_arb:] - y_pred_l[t0_arb:]) ** 2))
+    if sse_l < sse_s * 0.99:
+        return d_l, search_trace
+    return d_s, search_trace
 
 
 def _residual_var_on_common_window(
@@ -1542,20 +1940,27 @@ def _ipdt_regress(
     u: np.ndarray,
     y: np.ndarray,
     d: int,
-) -> tuple[float, float, float, int] | None:
-    """P2-008：IPDT 差分线性回归 dy(k) = b1·u(k-d).
+    ts: float = 1.0,
+) -> tuple[float, float, float, float, int] | None:
+    """P2-008 + P3-06a（R7，P-07 方向 A）：IPDT 差分回归含显式漂移项.
 
     积分过程 G(s)=K·e^(-θs)/s 离散化（ZOH 近似）：
-        y(k) - y(k-1) = K·ts·u(k-d)
-    差分去积分器后做无截距最小二乘（数据已去均值），b1 = K·ts。
+        y(k) - y(k-1) = K·ts·u(k-d) + c0 + c1·(k·ts)
+    差分去积分器后做最小二乘（数据已去均值）。P3-06a 起回归显式含漂移项
+    ——恒值漂移（OP 持续偏置/负载阶跃后的恒速率爬升）吸收进截距 c0，
+    加速度型漂移（负载斜坡的局部线性化）吸收进斜坡项 c1；漂移项吸收并
+    记录（不静默），K=b1/ts 不再被平衡/负载漂移污染（C19-ID1/O-A4）。
 
     Args:
         u: 输入（已去均值）
         y: 输出（已去均值）
         d: 延迟（采样数）
+        ts: 采样周期（秒）
 
     Returns:
-        (b1, residual_var, r2, n_samples) 或 None（数据不足）
+        (b1, c0, c1, residual_var, r2, n_samples) 或 None（数据不足）
+        b1 = K·ts；c0 = 每样本恒值漂移（PV 单位/样本）；c1 = 每样本线性
+        漂移斜率（PV 单位/样本²，时间基 t=k·ts 秒）
     """
     dy = np.diff(y)  # dy[i] = y[i+1]-y[i], i=0..n-2
     n_dy = len(dy)
@@ -1572,16 +1977,17 @@ def _ipdt_regress(
     m = len(y_dep)
     if m < 5 or len(u_indep) < m:
         return None
-    denom = float(np.dot(u_indep, u_indep))
-    if denom < 1e-12:
-        return None
-    b1 = float(np.dot(u_indep, y_dep) / denom)
-    residuals = y_dep - b1 * u_indep
+    # R7：显式漂移项（截距 + 局部线性斜坡；时间基 t = i·ts 秒）
+    t_local = np.arange(m, dtype=float) * ts
+    Phi = np.column_stack([u_indep, np.ones(m), t_local])
+    theta, _, _, _ = np.linalg.lstsq(Phi, y_dep, rcond=None)
+    b1, c0, c1 = (float(theta[0]), float(theta[1]), float(theta[2]))
+    residuals = y_dep - Phi @ theta
     res_var = float(np.var(residuals)) if m > 1 else 0.0
     ss_res = float(np.sum(residuals**2))
     ss_tot = float(np.sum((y_dep - np.mean(y_dep)) ** 2))
     r2 = 1.0 - ss_res / ss_tot if ss_tot > 1e-12 else 0.0
-    return b1, res_var, max(0.0, min(1.0, r2)), m
+    return b1, c0, c1, res_var, max(0.0, min(1.0, r2)), m
 
 
 def _ipdt_free_run(
@@ -1589,11 +1995,14 @@ def _ipdt_free_run(
     y: np.ndarray,
     b1: float,
     d: int,
+    ts: float = 1.0,
+    c0: float = 0.0,
+    c1: float = 0.0,
 ) -> tuple[np.ndarray, float]:
-    """P2-008：IPDT 验证集自由仿真 y_pred(k) = y_pred(k-1) + b1·u(k-d).
+    """P2-008 + P3-06a（R7）：IPDT 验证集自由仿真含漂移项.
 
-    积分过程自由仿真：预测输出累积积分，误差会随时间累积，
-    是 IPDT 泛化能力的严格检验（K 偏差线性放大）。
+    y_pred(k) = y_pred(k-1) + b1·u(k-d) + c0 + c1·(k·ts)——自由仿真消费
+    与回归一致的完整增量模型（含漂移项），否则漂移被二次注入预测误差。
 
     Returns:
         (y_pred, r2_free) — r2_free 为自由仿真 R²（可能为负，预测漂移时）
@@ -1605,10 +2014,11 @@ def _ipdt_free_run(
     y_pred[0] = y[0]  # 初始条件用真实值
     for k in range(1, n):
         idx_u = k - d
+        drift = c0 + c1 * (k * ts)
         if idx_u >= 0:
-            y_pred[k] = y_pred[k - 1] + b1 * u[idx_u]
+            y_pred[k] = y_pred[k - 1] + b1 * u[idx_u] + drift
         else:
-            y_pred[k] = y_pred[k - 1]
+            y_pred[k] = y_pred[k - 1] + drift
     # R² 在全段（除首点）上计算；积分过程 ss_tot 较大，R² 对斜率敏感
     residuals = y[1:] - y_pred[1:]
     ss_res = float(np.sum(residuals**2))
@@ -1623,12 +2033,17 @@ def _identify_ipdt_candidate(
     y_train: np.ndarray,
     u_val: np.ndarray,
     y_val: np.ndarray,
+    u_test: np.ndarray,
+    y_test: np.ndarray,
     d_search_max: int,
+    delay_candidates: list[int],
     ts: float,
     theta_source: ThetaSource,
     exc,
     exc_score: float,
     K_rough: float | None,
+    np_record_only: bool,
+    u_near_white: bool,
     mean_coherence: float | None,
     n_train: int,
     n_val: int,
@@ -1636,49 +2051,96 @@ def _identify_ipdt_candidate(
     data_hash: str,
     cleaning_stats: dict,
 ) -> CandidateModel | None:
-    """P2-008：IPDT 历史辨识 G(s) = K·exp(-theta·s)/s.
+    """P2-008 + P3-06a：IPDT 历史辨识 G(s) = K·exp(-theta·s)/s.
 
     积分过程（如液位、累积量）PV 不回归稳态而是持续斜坡变化。
     差分去积分器后线性回归辨识 K 与 theta，复用 BIC 延迟搜索与留出集自由仿真。
 
+    P3-06a 升级（oracle 冻结草案 §2）：
+    - R7（P-07 方向 A）：差分回归显式漂移项（截距 c0 + 斜坡 c1）吸收
+      OP 偏置/负载斜坡并记录入证据（ipdtDrift）；
+    - R4/R5（P-10/P-11）：final-test 尾段独立自由仿真 + 四态终验；
+    - R6（P-06）：粗增益校验按封顶资格判定（同主路径语义）；
+    - B-01：延迟搜索消费物理秒边界换算的候选网格（k=3 参数计 BIC）。
+
     流程：
-    1. 差分 y_train → dy，对 d=0..d_max 回归 dy=b1·u(k-d)，BIC 选最优 d
-    2. K = b1/ts，theta = d·ts
-    3. 验证集自由仿真 R²（积分累积误差）
+    1. 差分 y_train → dy，对候选网格各 d 回归 dy=b1·u(k-d)+c0+c1·t，BIC 选最优 d
+    2. K = b1/ts，theta = d·ts；漂移项换算物理速率并记录
+    3. 验证集/终验段自由仿真 R²（积分累积误差；自由仿真含漂移项）
     4. 物理可行性（负增益）/相干辅助门禁
     """
-    # 1. 延迟搜索（BIC 准则，k=1 参数）
-    best_d = 0
-    best_bic = float("inf")
+    # 1. 延迟搜索（BIC 准则；k=3 参数 = b1 + 漂移截距 c0 + 斜坡 c1）
+    # P3-06a（B-01 同款两段式）：段 1 候选网格全域比较，b1≈0/非有限的候选
+    # （无积分关系，不可转换）不参与选择；段 2 胜者邻域全密度精搜
+    best_d = delay_candidates[0] if delay_candidates else 0
     delay_search_trace: list[tuple[int, float]] = []
-    for d in range(d_search_max + 1):
-        reg = _ipdt_regress(u_train, y_train, d)
+    finite: list[tuple[float, int]] = []
+    convertible: list[tuple[float, int]] = []
+    for d in delay_candidates:
+        if d < 0 or d > d_search_max:
+            continue
+        reg = _ipdt_regress(u_train, y_train, d, ts=ts)
         if reg is None:
             delay_search_trace.append((d, float("inf")))
             continue
-        b1_d, res_var_d, _, n_d = reg
-        bic = n_d * math.log(max(res_var_d, 1e-12)) + 1 * math.log(max(n_d, 2))
+        b1_d, _c0_d, _c1_d, res_var_d, _, n_d = reg
+        bic = n_d * math.log(max(res_var_d, 1e-12)) + 3 * math.log(max(n_d, 2))
         bic_rounded = round(bic, 2)
         delay_search_trace.append((d, bic_rounded))
-        if bic < best_bic:
-            best_bic = bic
-            best_d = d
+        finite.append((bic, d))
+        if math.isfinite(b1_d) and abs(b1_d) > 1e-12:
+            convertible.append((bic, d))
+    if finite:
+        pool1 = convertible or finite
 
-    # 2. 最优延迟下辨识
-    reg = _ipdt_regress(u_train, y_train, best_d)
+        def _pick_occam_ipdt(pool: list[tuple[float, int]]) -> int:
+            # BIC 平局容差内取最小 d（同 _search_delay 的 Occam 平局裁决）
+            min_bic = min(b for b, _ in pool)
+            n_ref = max(len(y_train) - max(1, d_search_max), 2)
+            margin = 0.5 * math.log(n_ref)
+            return min(d for b, d in pool if b <= min_bic + margin)
+
+        d1 = _pick_occam_ipdt(pool1)
+        w = max(3, math.ceil(0.1 * d1))
+        stage2 = list(range(max(0, d1 - w), min(d_search_max, d1 + w) + 1))
+        pool2: list[tuple[float, int]] = []
+        for d in stage2:
+            reg = _ipdt_regress(u_train, y_train, d, ts=ts)
+            if reg is None:
+                continue
+            b1_d, _c0_d, _c1_d, res_var_d, _, n_d = reg
+            if math.isfinite(b1_d) and abs(b1_d) > 1e-12:
+                pool2.append((n_d * math.log(max(res_var_d, 1e-12)) + 3 * math.log(max(n_d, 2)), d))
+        if pool2:
+            best_d = _pick_occam_ipdt(pool2)
+        else:
+            best_d = d1
+
+    # 2. 最优延迟下辨识（R7：漂移项吸收并记录）
+    reg = _ipdt_regress(u_train, y_train, best_d, ts=ts)
     if reg is None:
         logger.debug("P2-008 IPDT 辨识失败：差分回归数据不足")
         return None
-    b1, res_var, r2_train, n_samples = reg
+    b1, c0, c1, res_var, r2_train, n_samples = reg
     if abs(b1) < 1e-12:
         logger.debug("P2-008 IPDT 辨识失败：b1≈0，无积分关系")
         return None
     K = b1 / ts
     theta = best_d * ts
     params = ModelParams(model_type=ModelType.IPDT, K=K, theta=theta)
+    ipdt_drift_record = {
+        "absorbed": True,
+        "sampleOffset": round(float(c0), 8),
+        "rampPerSample": round(float(c1), 10),
+        "pvRatePerSecond": round(float(c0) / ts, 8),
+        "note": (
+            "R7 显式漂移项（差分回归截距+斜坡）吸收并记录；"
+            "pvRatePerSecond 为恒值漂移速率（PV 单位/秒）"
+        ),
+    }
 
-    # 3. 验证集自由仿真 R²（v1.2：val 段近稳态防护同主路径）
-    y_val_pred, r2_val = _ipdt_free_run(u_val, y_val, b1, best_d)
+    # 3. 验证集自由仿真 R²（v1.2：val 段近稳态防护同主路径；R7：自由仿真含漂移项）
+    y_val_pred, r2_val = _ipdt_free_run(u_val, y_val, b1, best_d, ts=ts, c0=c0, c1=c1)
     val_stationary = float(np.ptp(y_val)) < _VAL_STATIONARY_MIN_PTP
     r2_eval = r2_train if val_stationary else r2_val
     residuals_val_arr = y_val - y_val_pred
@@ -1689,12 +2151,45 @@ def _identify_ipdt_candidate(
         rmse_val = 0.0
     nrmse_val = rmse_val / y_val_range if y_val_range > 1e-12 else 0.0
 
-    # 4. 残差检验：IPDT 方程误差 = dy - b1·u(k-d)，检验与输入独立性
+    # P3-06a（R4/R5）：final-test 尾段独立终验（四态，同主路径语义）
+    if n_test > 0:
+        _, r2_final_test = _ipdt_free_run(u_test, y_test, b1, best_d, ts=ts, c0=c0, c1=c1)
+        test_ptp = float(np.ptp(y_test))
+        if test_ptp < _VAL_STATIONARY_MIN_PTP:
+            final_status = FINAL_TEST_NO_DYNAMICS
+        elif r2_final_test >= _FINAL_TEST_MIN_R2:
+            final_status = FINAL_TEST_PASSED
+        else:
+            final_status = FINAL_TEST_FAILED
+        final_test_record = {
+            "status": final_status,
+            "r2": round(float(r2_final_test), 4),
+            "n": int(n_test),
+            "ptpRange": round(test_ptp, 4),
+        }
+    else:
+        r2_final_test = None
+        final_status = FINAL_TEST_NOT_RUN
+        final_test_record = None
+
+    # 4. 残差检验：IPDT 方程误差 = dy - (b1·u(k-d) + c0 + c1·t)，检验与输入独立性
+    # R7：残差已扣除漂移项（旧实现漂移残留残差使互相关检验系统性失败）
     dy_train = np.diff(y_train)
     if best_d <= 0:
-        eq_err = dy_train - b1 * u_train[1 : 1 + len(dy_train)]
+        eq_err = (
+            dy_train
+            - b1 * u_train[1 : 1 + len(dy_train)]
+            - c0
+            - c1 * (np.arange(len(dy_train), dtype=float) * ts)
+        )
     else:
-        eq_err = dy_train[best_d - 1 :] - b1 * u_train[: len(dy_train) - best_d + 1]
+        n_rows = len(dy_train) - best_d + 1
+        eq_err = (
+            dy_train[best_d - 1 :]
+            - b1 * u_train[:n_rows]
+            - c0
+            - c1 * (np.arange(n_rows, dtype=float) * ts)
+        )
     exceed_ratio = _residual_input_exceed_ratio(eq_err, u_train)
     residual_white = exceed_ratio <= _XCORR_EXCEED_TOLERANCE
     test_note = f"xcorr_exceed={exceed_ratio:.3f}"
@@ -1702,6 +2197,24 @@ def _identify_ipdt_candidate(
     # 5. 物理可行性（IPDT 无 NMP 零点概念，仅检负增益）
     feasibility = check_physical_feasibility(params, [b1], ts)
     physical_flag = "" if feasibility.passed else f", {feasibility.reason_code}"
+
+    # 5b. P3-06a（R6）：粗增益校验按封顶资格判定（同主路径语义）
+    np_passed, np_reason = _check_nonparam_consistency(K, K_rough)
+    nonparam_check_record = {
+        "roughGain": round(float(K_rough), 6) if K_rough is not None else None,
+        "paramGain": round(float(K), 6),
+        "verdict": np_reason if np_reason else ("UNAVAILABLE" if K_rough is None else "PASS"),
+        "mode": "RECORD_ONLY" if np_record_only else "CAP",
+        "basis": (
+            "COLORED_OP_CLOSED_LOOP"
+            if np_record_only
+            else ("NEAR_WHITE" if u_near_white else "EXOGENOUS_ASSUMED")
+        ),
+    }
+    if not np_passed:
+        physical_flag += (
+            f", {np_reason}" if not np_record_only else f", {np_reason}[RECORD_ONLY:COLORED_OP]"
+        )
 
     # 6. 可信度评估（v1.2：val 段近稳态回退 R²_train 并封顶 C）
     confidence = _assess_confidence(exc, r2_eval, residual_white, exc_score)
@@ -1713,14 +2226,21 @@ def _identify_ipdt_candidate(
     if not feasibility.passed:
         confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
         physical_flag = f", {feasibility.reason_code}(K={K:.4g})"
+    # R6：粗增益校验仅在 OP 近白/外生（mode=CAP）时封顶
+    if not np_passed and not np_record_only:
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
     # P2-005：相干辅助门禁
     low_coherence = mean_coherence is not None and mean_coherence < _LOW_COHERENCE_THRESHOLD
     if low_coherence:
         confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+    # R4/R5：终验失败不晋升
+    if final_status == FINAL_TEST_FAILED:
+        confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
+        physical_flag += ", FINAL_TEST_FAILED"
 
-    # 7. AIC/BIC（k=1 参数）
-    aic_val = compute_aic(n_samples, res_var, 1)
-    bic_val = compute_bic(n_samples, res_var, 1)
+    # 7. AIC/BIC（k=3 参数：b1 + 漂移截距 + 斜坡）
+    aic_val = compute_aic(n_samples, res_var, 3)
+    bic_val = compute_bic(n_samples, res_var, 3)
 
     # 8. 证据输出
     reason_codes: list[str] = []
@@ -1728,10 +2248,22 @@ def _identify_ipdt_candidate(
         reason_codes.append("VAL_STATIONARY")
     if not feasibility.passed:
         reason_codes.append(feasibility.reason_code)
+    if not np_passed:
+        reason_codes.append(np_reason if not np_record_only else "NP_CHECK_RECORD_ONLY")
     if low_coherence:
         reason_codes.append("LOW_COHERENCE")
     if theta_source == ThetaSource.HEURISTIC_2TS:
         reason_codes.append("HEURISTIC_2TS")
+    if final_status == FINAL_TEST_FAILED:
+        reason_codes.append("FINAL_TEST_FAILED")
+    elif final_status == FINAL_TEST_NO_DYNAMICS:
+        reason_codes.append("FINAL_TEST_NO_DYNAMICS")
+    delay_boundary_hit = None
+    if delay_candidates:
+        if best_d == delay_candidates[-1]:
+            delay_boundary_hit = "UPPER"
+        elif best_d == delay_candidates[0]:
+            delay_boundary_hit = "LOWER"
     evidence = ModelEvidence(
         n_train=n_train,
         n_val=n_val,
@@ -1751,8 +2283,27 @@ def _identify_ipdt_candidate(
         residuals_val=[round(float(v), 6) for v in residuals_val_arr],
         cleaning_stats=_evidence_cleaning_stats(cleaning_stats),
         physical_feasibility=_feasibility_dict(feasibility),
+        # P3-06a 加性证据
+        final_test=final_test_record,
+        nonparam_check=nonparam_check_record,
+        ipdt_drift=ipdt_drift_record,
+        estimator_profile={
+            "profileVersion": "TUNE_IDENT_PROFILE_v1",
+            "structure": ModelType.IPDT.value,
+            "estimator": "IPDT_DIFF_LSQ_DRIFT",
+            "orders": {"na": 0, "nb": 1, "nc": 0, "drift": 2},
+            "delaySamples": int(best_d),
+        },
+        delay_search_info={
+            "boundaryHit": delay_boundary_hit,
+            "maxD": int(d_search_max),
+            "candidateCount": len(delay_candidates),
+        },
     )
 
+    _final_note = (
+        f", R²_final={r2_final_test:.3f}({final_status})" if r2_final_test is not None else ""
+    )
     return CandidateModel(
         params=params,
         fitting_score=round(r2_eval * 100, 2),  # v1.2：val 稳态回退口径
@@ -1761,9 +2312,10 @@ def _identify_ipdt_candidate(
         residual_test_passed=residual_white,
         excitation_score=exc_score,
         reason=(
-            f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f},"
+            f"R²_val={r2_val:.3f}, R²_train={r2_train:.3f}{_final_note},"
             f" {test_note}, AIC={aic_val:.1f}, BIC={bic_val:.1f},"
-            f" K={K:.4g}, θ={theta:.2g}s{physical_flag}"
+            f" K={K:.4g}, θ={theta:.2g}s, 漂移={ipdt_drift_record['pvRatePerSecond']:.3g}/s"
+            f"{physical_flag}"
         ),
         aic=round(aic_val, 2),
         bic=round(bic_val, 2),

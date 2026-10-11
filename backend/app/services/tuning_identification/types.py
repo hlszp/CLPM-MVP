@@ -190,6 +190,23 @@ class ModelEvidence:
     # T2（2026-10-01）：物理可行性结构化输出（原仅拼进 reason 字符串，
     # 任务层读顶层 physicalFeasibility 恒 None → 版本表字段失效）
     physical_feasibility: dict[str, Any] | None = None
+    # P3-06a（R4/R5，P-11）：终验段独立评估——四态 {PASSED, FAILED,
+    # NO_DYNAMICS, NOT_RUN} + r2FinalTest + 段点数/极差；None=未运行该段
+    # 评估（短数据退化 70/30 时显式 None，不与 NOT_RUN 状态混淆）
+    final_test: dict[str, Any] | None = None
+    # P3-06a（R6，P-06）：粗增益交叉校验结构化——verdict=PASS/SIGN_MISMATCH/
+    # MAGNITUDE_MISMATCH/UNAVAILABLE；mode=CAP（封顶生效）/RECORD_ONLY
+    # （有色 OP 闭环下降级为记录性证据不封顶）；basis=判定依据
+    nonparam_check: dict[str, Any] | None = None
+    # P3-06a（R7，P-07 方向 A）：IPDT 显式漂移项吸收记录（恒偏置/斜坡负载
+    # 吸收进差分回归截距与斜坡项；None=非 IPDT 结构或回归未产出）
+    ipdt_drift: dict[str, Any] | None = None
+    # P3-06a（R17，估计身份层）：估计器 profile——结构/估计方法/阶次/时滞
+    # 样本数/profileVersion（快照 manifest estimation.estimatorProfile 承接）
+    estimator_profile: dict[str, Any] | None = None
+    # P3-06a（B-01）：时滞搜索审计——边界命中（UPPER/LOWER/None）、稀疏化
+    # 事实与候选数（07§3.2"物理时滞范围与边界命中"）
+    delay_search_info: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -214,6 +231,12 @@ class ModelEvidence:
             ),
             "cleaningStats": self.cleaning_stats,
             "physicalFeasibility": self.physical_feasibility,
+            # P3-06a 加性字段（R4~R7/R17/B-01；缺省 None=当时未记录）
+            "finalTest": self.final_test,
+            "nonparamCheck": self.nonparam_check,
+            "ipdtDrift": self.ipdt_drift,
+            "estimatorProfile": self.estimator_profile,
+            "delaySearchInfo": self.delay_search_info,
         }
 
 
@@ -245,8 +268,12 @@ class IdentificationResult:
     segments: list[SegmentInfo] = field(default_factory=list)
     reason: str | None = None
     theta_source: ThetaSource | None = None
-    # 算法版本单一真相源（pipeline.py re-export 使用；v1.2=IPDT 默认候选+val 稳态防护）
-    algorithm_version: str = "TUNE_IDENT_v1.4"
+    # 算法版本单一真相源（pipeline.py re-export 使用；
+    # v1.2=IPDT 默认候选+val 稳态防护；
+    # v1.5=P3-06a 正确性子卡（R1 时滞物理边界公式+B-01 网格稀疏化与边界
+    # 命中标记 / R6 有色 OP 粗增益校验降级记录 / R7 IPDT 显式漂移项 /
+    # R4+R5 final-test 三段分数与终验四态 / R17 估计身份证据节））
+    algorithm_version: str = "TUNE_IDENT_v1.5"
     # P2-03（R2 §三 DEC-10 补表述）：结构化预处理参数——从 reason 字符串
     # 提升为结构化字段（三件套开关与参数/multi-window 入选窗位/分割比/
     # 清洗统计/后置 data_hash）；evidence.data_hash 等既有字段不受影响。

@@ -1108,9 +1108,17 @@ async def save_identification_snapshot(
 
     schemaVersion 1.2（P2-04，只加不改）：``engineeringFacts`` 节从回路工程
     事实填充（``engineering_facts`` 参数，None=当时未记录，显式 null 不伪补）——
-    控制作用方向 / 实际 OP 限幅（含来源）/ PV 量程与单位 / PID 表示与时间
-    单位（未知态 status=UNKNOWN，绝不默认标准 kp/ti/td）/ DCS 与工程模板
+    控制作用方向 / 实际 OP 限幅（含来源）/ PV 量程与单位 / PID 表示与
+    时间单位（未知态 status=UNKNOWN，绝不默认标准 kp/ti/td）/ DCS 与工程模板
     revisionRef。转换与算法消费归 P3-03。
+
+    schemaVersion 1.3 承接（P3-06a R17，只加不改）：估计身份与终验节从
+    ``result_dict.evidence`` 填充——``estimation.estimatorProfile``
+    （估计器 profile：结构/估计方法/阶次/时滞样本数）与
+    ``resultEvidence.finalTestAvailable``（R4/R5 终验四态记录
+    {status, r2, n, ptpRange}，None=短数据 70/30 分割无终验段——显式
+    null 不伪补）；``resultEvidence.predictiveMetrics`` 填训练集一步
+    预测指标（r2Train）。旧 1.1/1.2 包无这些键=当时未记录，读取不变。
     """
     arrays: dict[str, np.ndarray] = {
         "consumed__ts_rel": np.asarray(timestamps_rel, dtype=np.float64),
@@ -1160,7 +1168,7 @@ async def save_identification_snapshot(
             "preprocessing": preprocessing,
             "budgetTermination": None,
         },
-        # 层 4：估计与分割身份（evidence 摘要级；细粒度 P3 填入）
+        # 层 4：估计与分割身份（evidence 摘要级；P3-06a R17：estimatorProfile 已填）
         "estimation": {
             "candidateStructures": list(candidate_model_types or []),
             "thetaEstimateSeconds": theta_estimate,
@@ -1168,16 +1176,20 @@ async def save_identification_snapshot(
             "identifyMethod": result_dict.get("identifyMethod"),
             "delaySearchTrace": evidence.get("delaySearchTrace"),
             "split": evidence.get("split"),
-            "estimatorProfile": None,
+            # P3-06a（R17）：估计器 profile（结构/估计方法/阶次/时滞样本数；
+            # evidence 无该键=旧结果未记录，显式 null 不伪补）
+            "estimatorProfile": evidence.get("estimatorProfile"),
         },
-        # 层 5：结果证据（当前摘要；预测/自由仿真指标细分 P3 填入）
+        # 层 5：结果证据（P3-06a R17：终验/预测指标已填）
         "resultEvidence": {
             "success": bool(result_dict.get("success")),
             "fittingScore": result_dict.get("fittingScore"),
             "confidenceLevel": result_dict.get("confidenceLevel"),
-            "predictiveMetrics": None,
+            # P3-06a（R4/R5）：训练集一步预测指标（预测/自由仿真指标分别存储）
+            "predictiveMetrics": {"r2Train": evidence.get("r2Train")} if evidence else None,
             "freeSimulationMetrics": evidence.get("nrmseVal"),
-            "finalTestAvailable": None,
+            # P3-06a（R4/R5）：终验四态记录（None=无终验段，不伪补）
+            "finalTestAvailable": evidence.get("finalTest"),
             "uncertainty": evidence.get("parameterUncertainty"),
         },
         "replayContext": {
