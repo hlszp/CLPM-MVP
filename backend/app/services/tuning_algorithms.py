@@ -999,7 +999,7 @@ def _metrics_to_dict(m: SimulationMetrics) -> dict[str, float | None]:
 
 
 # ---------------------------------------------------------------------------
-# 整定方法信息
+# 整定方法信息（P2-01 TUN-05：算法参数注册表，schema/服务端校验单源）
 # ---------------------------------------------------------------------------
 
 
@@ -1010,7 +1010,19 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
         "description": "基于内模控制原理的 PID 整定，平衡性能与鲁棒性",
         "applicableModel": "FOPDT",
         "params": [
-            {"name": "lambdaRatio", "label": "λ 比例系数", "default": 1.0, "min": 0.1, "max": 5.0},
+            {
+                "name": "lambdaRatio",
+                "label": "λ 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "λ = lambdaRatio × θ（闭环时间常数相对纯滞后的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "λ 越大越保守、越小越激进",
+            },
         ],
     },
     {
@@ -1019,7 +1031,19 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
         "description": "基于期望闭环时间常数的整定方法，适合一阶自调节过程",
         "applicableModel": "FOPDT",
         "params": [
-            {"name": "lambdaRatio", "label": "λ 比例系数", "default": 1.0, "min": 0.1, "max": 5.0},
+            {
+                "name": "lambdaRatio",
+                "label": "λ 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "λ = lambdaRatio × τ（闭环时间常数相对过程时间常数的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "λ 越大越保守、越小越激进",
+            },
         ],
     },
     {
@@ -1031,8 +1055,14 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
             {
                 "name": "controllerType",
                 "label": "控制器类型",
+                "type": "enum",
+                "unit": "",
+                "description": "P/PI/PID 结构选择（公式系数按结构分派）",
                 "default": "PID",
                 "options": ["P", "PI", "PID"],
+                "kind": "business",
+                "risk": "HIGH",
+                "riskNote": "控制器结构决定 P/I/D 三项的有无与系数",
             },
         ],
     },
@@ -1045,8 +1075,14 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
             {
                 "name": "controllerType",
                 "label": "控制器类型",
+                "type": "enum",
+                "unit": "",
+                "description": "P/PI/PID 结构选择（公式系数按结构分派）",
                 "default": "PID",
                 "options": ["P", "PI", "PID"],
+                "kind": "business",
+                "risk": "HIGH",
+                "riskNote": "控制器结构决定 P/I/D 三项的有无与系数",
             },
         ],
     },
@@ -1056,10 +1092,92 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
         "description": "Skogestad 简化整定规则，工程实用性强",
         "applicableModel": "FOPDT",
         "params": [
-            {"name": "tauCRatio", "label": "τc 比例系数", "default": 1.0, "min": 0.1, "max": 5.0},
+            {
+                "name": "tauCRatio",
+                "label": "τc 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "τc = tauCRatio × θ（期望闭环时间常数相对纯滞后的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "τc 越大越保守、越小越激进",
+            },
         ],
     },
 ]
+
+
+def get_method_info(algorithm: str | None) -> list[dict[str, Any]]:
+    """按算法代码取注册信息（algorithm=None 返回全部，用于矩阵联合校验）."""
+    if algorithm is None:
+        return TUNING_METHODS_INFO
+    return [m for m in TUNING_METHODS_INFO if m["code"] == algorithm]
+
+
+def validate_tuning_params(
+    algorithm: str | None,
+    params: dict[str, Any],
+) -> list[str]:
+    """按 TUNING_METHODS_INFO 注册表校验整定算法参数（P2-01 TUN-05）.
+
+    返回错误文案列表（空列表 = 通过）：
+    - 未知键：键不在指定算法（algorithm=None 时为任一算法）的注册参数内
+    - 类型：float 参数必须为有限数值（布尔/字符串拒绝）；enum 参数必须为字符串
+    - 范围：min/max 闭区间
+    - 非法枚举：enum 值不在 options 内（如非法 controllerType）
+
+    Args:
+        algorithm: 算法代码（IMC/LAMBDA/ZN/COHEN_COON/SIMC）；None = 联合模式
+            （/tune/matrix 共用一份参数跨 5 算法，键在任一算法注册即合法，
+            值须满足其所属算法的约束）
+        params: 待校验参数字典
+    """
+    methods = get_method_info(algorithm)
+    if not methods:
+        return [f"不支持的整定算法: {algorithm}"]
+    # 键 → 定义合并（联合模式下同名键取并集内最先定义；当前注册同名键约束一致）
+    registry: dict[str, dict[str, Any]] = {}
+    for m in methods:
+        for p in m.get("params", []):
+            registry.setdefault(p["name"], p)
+
+    errors: list[str] = []
+    for key, value in params.items():
+        p = registry.get(key)
+        if p is None:
+            errors.append(
+                f"未知算法参数键: {key}（算法 {algorithm or '全算法矩阵'} 注册键: "
+                f"{sorted(registry)}）"
+            )
+            continue
+        ptype = p.get("type", "float")
+        if ptype == "enum":
+            options = p.get("options", [])
+            if not isinstance(value, str):
+                errors.append(
+                    f"参数 {key} 应为字符串枚举（{options}），收到 {type(value).__name__}"
+                )
+            elif value not in options:
+                errors.append(f"参数 {key}={value} 非法，合法值: {options}")
+            continue
+        # 数值型
+        if isinstance(value, bool):
+            errors.append(f"参数 {key} 应为数值，收到布尔值")
+            continue
+        if not isinstance(value, (int, float)):
+            errors.append(f"参数 {key} 应为数值，收到 {type(value).__name__}")
+            continue
+        if not math.isfinite(value):
+            errors.append(f"参数 {key}={value} 不是有限数（NaN/Inf 拒绝）")
+            continue
+        if "min" in p and value < p["min"]:
+            errors.append(f"参数 {key}={value} 低于下限 {p['min']}")
+        if "max" in p and value > p["max"]:
+            errors.append(f"参数 {key}={value} 超过上限 {p['max']}")
+    return errors
 
 
 __all__ = [
@@ -1079,4 +1197,6 @@ __all__ = [
     "tune_simc",
     "simulate_closed_loop",
     "TUNING_METHODS_INFO",
+    "get_method_info",
+    "validate_tuning_params",
 ]

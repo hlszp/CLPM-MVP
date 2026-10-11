@@ -31,6 +31,7 @@ from app.services.tuning_algorithms import (
     TUNING_ALGORITHM_VERSION,
     TUNING_METHODS_INFO,
     PIDParams,
+    get_method_info,
     identify_fopdt,
     identify_ipdt,
     identify_sopdt,
@@ -40,6 +41,7 @@ from app.services.tuning_algorithms import (
     tune_lambda,
     tune_simc,
     tune_zn,
+    validate_tuning_params,
 )
 from app.services.tuning_identification import identify_from_history
 from app.services.tuning_identification.types import ModelType
@@ -1410,6 +1412,25 @@ async def tune_pid(
         )
 
     params = algorithm_params or {}
+
+    # P2-01 TUN-05：算法参数按注册表校验（服务端统一入口，/tune 与 /tune/matrix
+    # 共用；schema 层已拒绝未知键，此处对**本算法消费的键**做值级校验，
+    # 防止内部调用方/未来通道绕过 schema 直写非法值——矩阵行仅校验自己
+    # 消费的键，跨算法共用键不视为未知。未注册算法（IDENTIFICATION_ONLY/
+    # MANUAL_TUNING 等）不在本入口报参数错，留给下方 ERR_INVALID_ALGORITHM
+    # 分支维持既有错误语义）
+    method = get_method_info(algorithm)
+    if method:
+        consumed = {
+            k: v for k, v in params.items() if k in {p["name"] for p in method[0].get("params", [])}
+        }
+        param_errors = validate_tuning_params(algorithm, consumed)
+        if param_errors:
+            raise BizError(
+                code="ERR_TUNING_PARAM_INVALID",
+                message="；".join(param_errors),
+                status_code=400,
+            )
 
     if algorithm == "IMC":
         pid = tune_imc(K, tau, theta, lambda_ratio=float(params.get("lambdaRatio", 1.0)))

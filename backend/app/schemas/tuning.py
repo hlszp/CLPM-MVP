@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
+from app.services.tuning_algorithms import validate_tuning_params
 
 # ---------------------------------------------------------------------------
 # 枚举类型定义（S4-C3）
@@ -239,6 +240,19 @@ class TuneRequest(CamelModel):
     )
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
+    @model_validator(mode="after")
+    def _validate_algorithm_params(self) -> TuneRequest:
+        """P2-01 TUN-05：algorithmParams 按方法注册表（TUNING_METHODS_INFO）校验.
+
+        未知键、非数值/非有限、越界、非法枚举（如非法 controllerType）
+        在 schema 层原子拒绝（422）；合法输入形状不变。
+        """
+        if self.algorithmParams:
+            errors = validate_tuning_params(self.algorithm, self.algorithmParams)
+            if errors:
+                raise ValueError("；".join(errors))
+        return self
+
 
 class TuningRisk(CamelModel):
     """V62-P3-007 整定风险评估。"""
@@ -287,6 +301,20 @@ class TuneMatrixRequest(CamelModel):
         description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
     )
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
+
+    @model_validator(mode="after")
+    def _validate_algorithm_params_union(self) -> TuneMatrixRequest:
+        """P2-01 TUN-05：矩阵共用参数按全算法联合注册表校验.
+
+        同一份 algorithmParams 跨 5 算法共用：键在任一算法注册即合法
+        （如 controllerType 属于 ZN/COHEN_COON、lambdaRatio 属于 IMC/LAMBDA），
+        值须满足其所属算法的类型/范围/枚举约束；全算法都不认识的键拒绝。
+        """
+        if self.algorithmParams:
+            errors = validate_tuning_params(None, self.algorithmParams)
+            if errors:
+                raise ValueError("；".join(errors))
+        return self
 
 
 # ---------------------------------------------------------------------------

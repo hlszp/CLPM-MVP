@@ -54,6 +54,49 @@ _KEY_DIAG_VERSION_DESC = "诊断配置当前版本快照（JSON，含 version + 
 _KEY_DIAG_HISTORY = "diagnosis_config.history"
 _KEY_DIAG_HISTORY_DESC = "诊断配置历史版本快照列表（JSON 数组，含生效/失效时间）"
 
+#: P2-01 CFG-02：诊断配置字段级元数据（区分注册表只读说明与真实可调字段）。
+#: algorithmType/calcMethod/params 可存但活执行引擎（diagnosis_v2）不消费——
+#: 标注 readOnly，不再暗示可存生效；threshold/isEnabled 为真实可调字段。
+#: 前端（W3 批准后）据此渲染只读态；后端 PUT/POST 仍兼容接收存量字段。
+DIAGNOSIS_FIELD_META: dict[str, dict[str, Any]] = {
+    "algorithmType": {
+        "label": "算法类型",
+        "readOnly": True,
+        "consumedByLiveEngine": False,
+        "note": "v2 诊断执行引擎不消费该字段；仅作注册表只读说明保留（CFG-02）",
+    },
+    "calcMethod": {
+        "label": "计算方法",
+        "readOnly": True,
+        "consumedByLiveEngine": False,
+        "note": "v2 诊断执行引擎不消费该字段；仅作注册表只读说明保留（CFG-02）",
+    },
+    "params": {
+        "label": "算法参数",
+        "readOnly": True,
+        "consumedByLiveEngine": False,
+        "note": "v2 诊断执行引擎不消费该字段；仅作注册表只读说明保留（CFG-02）",
+    },
+    "threshold": {
+        "label": "阈值",
+        "readOnly": False,
+        "consumedByLiveEngine": True,
+        "note": "全局默认层，真实可调（层级覆盖：全局默认 < 模板 < 装置 < 回路）",
+    },
+    "isEnabled": {
+        "label": "启用",
+        "readOnly": False,
+        "consumedByLiveEngine": True,
+        "note": None,
+    },
+    "diagName": {
+        "label": "名称",
+        "readOnly": False,
+        "consumedByLiveEngine": True,
+        "note": None,
+    },
+}
+
 
 def _now_iso() -> str:
     """当前 UTC 时间的 ISO 8601 字符串."""
@@ -393,7 +436,8 @@ async def batch_get_diagnosis_configs(
 
     items = [DiagnosisConfigItem.model_validate(_diagnosis_to_response_dict(c)) for c in configs]
 
-    resp = DiagnosisConfigBatchResponse(items=items)
+    # P2-01 CFG-02：随读路径下发字段级元数据（只读说明 vs 真实可调）
+    resp = DiagnosisConfigBatchResponse(items=items, methodMeta=DIAGNOSIS_FIELD_META)
     return success(data=resp.model_dump())
 
 

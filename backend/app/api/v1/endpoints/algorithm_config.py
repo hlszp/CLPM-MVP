@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/configs/algorithm-params", tags=["algorithm-config"])
 
 #: 指标代码 → 中文名映射（页面标题「中文（english_code）」格式）
+#: P2-01：与 _DEFAULTS/PARAM_META 注册表 8 指标全集对齐（补 stability_rate/saturation_rate）
 _METRIC_NAMES = {
     "oscillation_rate": "振荡率",
     "fast_rate": "快速率",
@@ -47,6 +48,8 @@ _METRIC_NAMES = {
     "settling_time": "稳态时间",
     "effective_auto_rate": "有效自控率",
     "output_trip_index": "输出行程指数",
+    "stability_rate": "稳定率",
+    "saturation_rate": "饱和率",
 }
 
 
@@ -206,16 +209,7 @@ async def save_metric_algorithm_params(
         if not params:
             continue
 
-        # 整改 F1：服务端键白名单 + 值域校验（防越界值写入 JSONB 直供计算管线）
-        errors = algo_config_service.validate_metric_params(metric_code, params)
-        if errors:
-            raise BizError(
-                code="ERR_PARAM_INVALID",
-                message="；".join(errors),
-                status_code=status.HTTP_400_BAD_REQUEST,
-            )
-
-        # 查询现有记录
+        # 查询现有记录（先查再校验：组合约束需在合并后视图上求值）
         existing_result = await db.execute(
             select(AlgorithmParameter).where(
                 AlgorithmParameter.metric_code == metric_code,
@@ -223,6 +217,21 @@ async def save_metric_algorithm_params(
             )
         )
         existing = existing_result.scalar_one_or_none()
+
+        # 整改 F1 + P2-01 CFG-05：服务端键白名单/类型/有限数/值域/组合约束校验
+        # （防越界值写入 JSONB 直供计算管线）。base=该控制类型保存前的
+        # Layer1+2 有效参数，拦截"单次合法、合并后档位颠倒"的写入。
+        base = {
+            **algo_config_service.get_default_params(metric_code, ct),
+            **(dict(existing.params) if existing and existing.params else {}),
+        }
+        errors = algo_config_service.validate_metric_params(metric_code, params, base=base)
+        if errors:
+            raise BizError(
+                code="ERR_PARAM_INVALID",
+                message="；".join(errors),
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
 
         if existing:
             # 合并参数（部分覆盖）

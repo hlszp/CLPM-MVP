@@ -36,6 +36,7 @@ from app.models.plant_node import PlantNode
 from app.models.sys_config import SysConfig
 from app.models.tracker import ActionTracker
 from app.schemas.performance import WeightSumValidator
+from app.services.algorithm_config import validate_metric_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +165,11 @@ async def update_metric_config(
     校验：
     - 指标必须存在（ERR_METRIC_NOT_FOUND）
     - weight 变更后，6 大 KPI 启用指标权重总和必须为 100（ERR_METRIC_WEIGHT_SUM）
+    - P2-01 CFG-04：threshold 结构校验（注册表指标走算法参数严格校验，
+      展示类指标走宽松结构校验），坏结构在写库前原子拒绝（ERR_PARAM_INVALID）
 
     Raises:
-        BizError: ERR_METRIC_NOT_FOUND / ERR_METRIC_WEIGHT_SUM
+        BizError: ERR_METRIC_NOT_FOUND / ERR_METRIC_WEIGHT_SUM / ERR_PARAM_INVALID
     """
     result = await db.execute(select(MetricConfig).where(MetricConfig.id == metric_id))
     config = result.scalar_one_or_none()
@@ -176,6 +179,17 @@ async def update_metric_config(
             message="指标配置不存在",
             status_code=404,
         )
+
+    # P2-01 CFG-04：threshold 原子校验（在任意字段变更/审计写入之前，
+    # 坏结构直接拒绝，不产生半更新状态）
+    if threshold is not None:
+        threshold_errors = validate_metric_threshold(config.metric_code, threshold)
+        if threshold_errors:
+            raise BizError(
+                code="ERR_PARAM_INVALID",
+                message="；".join(threshold_errors),
+                status_code=400,
+            )
 
     before = _metric_config_to_dict(config)
     before_json = json.dumps(before, ensure_ascii=False, default=str)
