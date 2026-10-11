@@ -58,6 +58,10 @@ DEFAULT_SP_STEP_SIGMA = 3.0
 #: SP 阶跃后跟踪窗默认点数（与 algorithm_config._DEFAULTS 一致）
 DEFAULT_SP_TRACKING_WINDOW = 60
 
+#: P3-09c：SP 暂态剔除窗物理秒默认值（10§3.3"暂态剔除改为可追溯的真实
+#: 秒数"；旧 60 点 × 声明周期 1s 的兼容迁移初值=60s，来源可查）
+_DEFAULT_SP_TRACKING_WINDOW_SECONDS = 60.0
+
 #: 最少数据点数
 MIN_POINTS = 2
 
@@ -120,37 +124,80 @@ class StabilityRateCalculator(MetricCalculatorBase):
             durations = self._point_durations(ts) if len(ts) == n else []
 
         # SP 阶跃剔除：剔除阶跃后跟踪窗内的点（默认关闭，开启后σ/带内率仅基于稳态段）
+        # P3-09c 新 profile：跟踪窗按物理秒（sp_tracking_window_seconds，默认
+        # 60s）；剔除秒数可追溯（时间契约消费：带内率分母=窗口−已知剔除暂态）
         sp_steps = 0
         sp_excluded = 0
+        sp_excluded_seconds: float | None = None
+        sp_window_source = "legacy_points"
         if sp_exclusion:
             sp_vals = [float(sp) for _, sp in pairs]
-            tracking = detect_sp_tracking_windows(
-                sp_vals,
-                n,
-                ideal_t=0.0,
-                sample_interval=1.0,
-                sp_step_sigma=sp_step_sigma,
-                window_points=sp_window,
-            )
+            if self.new_semantics:
+                # 平均采样间隔（物理秒换算基准）：时间视图网格周期 > 时间戳均值
+                interval = 1.0
+                if view is not None and view.grid_period_s > 0:
+                    interval = float(view.grid_period_s)
+                elif len(ts) == n and n > 1:
+                    total = self._total_duration_seconds(ts)
+                    interval = total / (n - 1) if total > 0 else 1.0
+                window_seconds = float(
+                    params.get("sp_tracking_window_seconds", _DEFAULT_SP_TRACKING_WINDOW_SECONDS)
+                )
+                sp_window_source = "physical_seconds"
+                tracking = detect_sp_tracking_windows(
+                    sp_vals,
+                    n,
+                    ideal_t=0.0,
+                    sample_interval=interval,
+                    sp_step_sigma=sp_step_sigma,
+                    window_seconds=window_seconds,
+                )
+            else:
+                tracking = detect_sp_tracking_windows(
+                    sp_vals,
+                    n,
+                    ideal_t=0.0,
+                    sample_interval=1.0,
+                    sp_step_sigma=sp_step_sigma,
+                    window_points=sp_window,
+                )
             sp_steps = sum(1 for i in range(1, n) if tracking[i] and not tracking[i - 1])
             sp_excluded = sum(tracking)
             if sp_excluded:
                 keep = np.array([not t for t in tracking], dtype=bool)
+                if durations:
+                    sp_excluded_seconds = round(float(np.sum(np.asarray(durations)[~keep])), 3)
                 errors = errors[keep]
                 if durations:
                     durations = [d for d, k in zip(durations, keep, strict=True) if k]
                 logger.debug(
-                    "[稳定率] SP 阶跃剔除: steps=%d, excluded=%d/%d, window=%d",
+                    "[稳定率] SP 阶跃剔除: steps=%d, excluded=%d/%d, window=%s(%s), "
+                    "excluded_seconds=%s",
                     sp_steps,
                     sp_excluded,
                     n,
-                    sp_window,
+                    (
+                        f"{
+                            params.get(
+                                'sp_tracking_window_seconds',
+                                _DEFAULT_SP_TRACKING_WINDOW_SECONDS,
+                            )
+                        }s"
+                        if self.new_semantics
+                        else f"{sp_window}pts"
+                    ),
+                    sp_window_source,
+                    sp_excluded_seconds,
                 )
                 if len(errors) < MIN_POINTS:
                     return self._make_inconclusive(
                         bundle,
                         "insufficient_data_after_sp_exclusion",
-                        {"sp_steps_detected": sp_steps, "sp_excluded_points": sp_excluded},
+                        {
+                            "sp_steps_detected": sp_steps,
+                            "sp_excluded_points": sp_excluded,
+                            **({"assessmentState": "UNASSESSABLE"} if self.new_semantics else {}),
+                        },
                     )
 
         mean_error = float(np.mean(errors))
@@ -189,11 +236,28 @@ class StabilityRateCalculator(MetricCalculatorBase):
 
         # 石化惯例辅助口径：带内时间占比（始终输出 details，供考核对标）
         band = band_ratio * u
+        # P3-09c 新 profile：带内率分母=窗口减**已知被剔除暂态**的秒数
+        # （契约 §2.1 带内率行——08c 只落对账字段，本卡完成算法语义）；
+        # 未知段单列不缩分母；评价域为零则不可判定。legacy：合法点时长口径。
         band_in_rate = self._band_in_rate(errors, band, durations)
+        evaluation_domain_zero = False
+        if self.new_semantics and view is not None and view.window_seconds > 0:
+            denom_s = view.window_seconds - (sp_excluded_seconds or 0.0)
+            in_band = np.abs(errors) <= band
+            num_s = (
+                float(np.sum(np.asarray(durations)[in_band]))
+                if durations and len(durations) == len(errors)
+                else float(np.sum(in_band))
+            )
+            if denom_s > 0:
+                band_in_rate = num_s / denom_s * 100.0
+            else:
+                # 评价域为零（整窗被剔除暂态覆盖）→ 带内率不可判定
+                band_in_rate = 0.0
+                evaluation_domain_zero = True
 
-        # P3-08c 时间契约对账字段：带内率的分子/分母秒数（分母=窗口减去
-        # 已剔除暂态后的**合法点**时长；未知段单列不缩分母——契约 §2.1
-        # 带内率行）。算法本体（分值）不因本字段改变。
+        # P3-08c 时间契约对账字段：带内率的分子/分母秒数
+        # 新 profile：契约口径（分母=窗口−已知剔除暂态）；legacy：合法点口径
         band_in_numerator_s: float | None = None
         band_in_denominator_s: float | None = None
         unknown_seconds: float | None = None
@@ -201,7 +265,11 @@ class StabilityRateCalculator(MetricCalculatorBase):
             in_band = np.abs(errors) <= band
             weights = np.array(durations, dtype=float)
             band_in_numerator_s = round(float(np.sum(weights[in_band])), 3)
-            band_in_denominator_s = round(float(np.sum(weights)), 3)
+            band_in_denominator_s = (
+                round(view.window_seconds - (sp_excluded_seconds or 0.0), 3)
+                if self.new_semantics and view is not None
+                else round(float(np.sum(weights)), 3)
+            )
         if view is not None:
             unknown_seconds = round(
                 min(
@@ -228,15 +296,29 @@ class StabilityRateCalculator(MetricCalculatorBase):
             "sp_excluded_points": sp_excluded,
             "band_in_numerator_seconds": band_in_numerator_s,
             "band_in_denominator_seconds": band_in_denominator_s,
-            # 分母口径说明：当前=合法点（pv/sp 有效交集）时长减去 SP 暂态剔除；
-            # 契约 §2.1 带内率行的"窗口减已知被剔除暂态"全窗口径属 09c 算法
-            # 批裁决范围（本卡只接时间轴不改算法本体），未知先单列对账
-            "band_in_denominator_basis": "LEGAL_POINTS_MINUS_EXCLUDED_TRANSIENTS",
+            # 分母口径说明：legacy=合法点时长减 SP 暂态剔除；新 profile=
+            # 完整窗口秒数减已知被剔除暂态秒数（未知段单列不缩分母，契约 §2.1）
+            "band_in_denominator_basis": (
+                "WINDOW_MINUS_KNOWN_EXCLUDED_TRANSIENTS"
+                if self.new_semantics and view is not None
+                else "LEGAL_POINTS_MINUS_EXCLUDED_TRANSIENTS"
+            ),
             "unknown_seconds": unknown_seconds,
         }
+        if self.new_semantics:
+            base_details["sp_tracking_window_source"] = sp_window_source
+            if sp_excluded_seconds is not None:
+                base_details["sp_excluded_transient_seconds"] = sp_excluded_seconds
 
         # 石化惯例分值模式：带内时间占比直接作为分值（不乘振荡修正）
+        # P3-09c 新 profile：评价域为零 → 不可判定（不硬造 0 分/满分）
         if band_in_score:
+            if evaluation_domain_zero:
+                return self._make_inconclusive(
+                    bundle,
+                    "empty_evaluation_domain",
+                    {**base_details, "assessmentState": "UNASSESSABLE"},
+                )
             stability = self._clamp(band_in_rate)
             logger.debug(
                 "[稳定率] 石化惯例口径: band=%.4f, band_in_rate=%.2f",
@@ -246,19 +328,59 @@ class StabilityRateCalculator(MetricCalculatorBase):
             return self._make_result(
                 bundle,
                 stability,
-                {**base_details, "score_mode": "band_in"},
+                {
+                    **base_details,
+                    "score_mode": "band_in",
+                    **({"assessmentState": "COMPLETE"} if self.new_semantics else {}),
+                },
             )
 
         # 振荡率（0~1）
         # P0 修复：仅在判定振荡（is_oscillating=True）时应用 (1-Osc) 修正；
         # 未判振荡时振荡率仅为相似率连续值（<阈值），不作为扣减因子，
         # 避免非振荡回路被误扣；振荡率数值仍透传 details 供展示。
+        # P3-09c 新 profile（C07-EA5）：Osc 缺失/失败不默认为 0——指数 S 的
+        # 完整值不可判定，保留可复算的基础波动分（exp(−σ/(dU))×100，不乘
+        # 振荡修正），assessmentState=PARTIAL + oscDependency 可查；合法 0
+        # （充分数据评估的非振荡）按 COMPLETE 处理。
         osc_result = self.dependencies.get("oscillation_rate")
         osc_rate_pct = osc_result.value if osc_result and osc_result.value is not None else 0.0
         is_oscillating = (
             bool(osc_result.details.get("is_oscillating", True)) if osc_result else True
         )
         osc_factor = 1.0 - (osc_rate_pct / 100.0) if is_oscillating else 1.0
+        osc_dependency: dict | None = None
+        if self.new_semantics:
+            if osc_result is None:
+                osc_dependency = {"state": "MISSING", "reason": "oscillation_rate_not_computed"}
+            elif osc_result.value is None:
+                osc_dependency = {
+                    "state": "UNAVAILABLE",
+                    "reason": (osc_result.details or {}).get("reason"),
+                }
+            if osc_dependency is not None:
+                # 基础波动分：不乘振荡修正（修正不可知），S 整体 PARTIAL
+                base_fluctuation = self._clamp(math.exp(-(std_error / (decay_ratio * u))) * 100.0)
+                logger.debug(
+                    "[稳定率] Osc %s：基础波动分 %.2f（PARTIAL）",
+                    osc_dependency["state"],
+                    base_fluctuation,
+                )
+                return self._make_result(
+                    bundle,
+                    base_fluctuation,
+                    {
+                        **base_details,
+                        "score_mode": "exponential",
+                        "decay_ratio": decay_ratio,
+                        "normalized_std": round(std_error / (decay_ratio * u), 4),
+                        "oscillation_rate": None,
+                        "osc_factor": 1.0,
+                        "oscDependency": osc_dependency,
+                        "assessmentState": "PARTIAL",
+                        "note": "指数 S 完整值不可判定（Osc 缺失/失败），保留基础波动分",
+                    },
+                )
 
         if osc_factor <= 0:
             logger.debug("[稳定率] 振荡率 %.2f%% ≥ 100%%，稳定率返回 0", osc_rate_pct)
@@ -270,6 +392,7 @@ class StabilityRateCalculator(MetricCalculatorBase):
                     "score_mode": "exponential",
                     "oscillation_rate": round(osc_rate_pct, 2),
                     "reason": "osc_too_high",
+                    **({"assessmentState": "COMPLETE"} if self.new_semantics else {}),
                 },
             )
 
@@ -300,6 +423,7 @@ class StabilityRateCalculator(MetricCalculatorBase):
                 "normalized_std": round(normalized_std, 4),
                 "oscillation_rate": round(osc_rate_pct, 2),
                 "osc_factor": round(osc_factor, 4),
+                **({"assessmentState": "COMPLETE"} if self.new_semantics else {}),
             },
         )
 

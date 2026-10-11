@@ -80,6 +80,7 @@ def test_get_default_params_returns_known_defaults(reset_cache):
         "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
+        "sp_tracking_window_seconds": 60.0,
     }
 
 
@@ -111,6 +112,7 @@ def test_get_algorithm_params_unknown_control_type_falls_back_stable(reset_cache
         "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
+        "sp_tracking_window_seconds": 60.0,
     }
 
 
@@ -140,6 +142,7 @@ def test_rebuild_merged_defaults_only(reset_cache):
         "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
+        "sp_tracking_window_seconds": 60.0,
     }
     # 8 指标 × 4 控制类型 = 32 组合（2026-10-10 新增 saturation_rate.saturation_epsilon）
     assert len(merged) == 32
@@ -189,6 +192,13 @@ def test_apply_runtime_refreshes_cache(reset_cache):
         "recovery_persistence": 5,
         "min_disturbance_duration": 3.0,
         "sp_step_sigma": 3.0,
+        "reference_min_valid_rate": 0.95,
+        "reference_min_samples": 100,
+        "reference_min_coverage": 0.95,
+        "reference_noise_floor_ratio": 0.001,
+        "reference_sp_range_ratio": 0.001,
+        "reference_trend_ratio": 0.001,
+        "reference_op_range_ratio": 0.001,
     }
     ac.apply_runtime({"fast_rate": {"STABLE": {"settling_tolerance": 0.1}}})
     assert ac.get_algorithm_params("fast_rate", "STABLE")["settling_tolerance"] == 0.1
@@ -280,4 +290,5 @@ async def test_preload_algorithm_params_empty_db_uses_defaults(reset_cache):
         "sp_step_exclusion_enabled": True,
         "sp_step_sigma": 3.0,
         "sp_tracking_window": 60,
+        "sp_tracking_window_seconds": 60.0,
     }

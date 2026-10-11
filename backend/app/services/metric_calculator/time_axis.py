@@ -44,7 +44,10 @@ logger = logging.getLogger(__name__)
 #: 时间/质量契约策略版本（缓存身份分量）：本层语义（半开/未知/分段切割）
 #: 变更时递增；DataPlanner 将其纳入 L1/L2 缓存键，策略演进旧缓存自然失效
 #: （10§3.2"缓存身份纳入数据策略、网格、窗口、源修订、绑定与解释版本"）。
-TIME_QUALITY_POLICY_VERSION = "tqpv1"
+#: tqpv1→tqpv2（P3-09c，08bc 交接授权）：stability 带内率分母改契约全窗
+#: 口径（窗口减已知被剔除暂态；此前=合法点时长）——L1/L2 缓存全量自然失效
+#: 一次，旧缓存不与新口径混算。
+TIME_QUALITY_POLICY_VERSION = "tqpv2"
 
 #: 契约覆盖的网格周期（秒）
 SUPPORTED_GRID_PERIODS: frozenset[float] = frozenset({1.0, 2.0, 5.0, 10.0})
