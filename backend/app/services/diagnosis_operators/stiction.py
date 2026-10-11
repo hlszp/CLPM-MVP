@@ -22,6 +22,10 @@ from typing import Any
 import numpy as np
 
 from app.services.diagnosis_operators.base import (
+    ASSESSMENT_INSUFFICIENT_DATA,
+    ASSESSMENT_NOT_APPLICABLE,
+    REASON_NO_LIMIT_CYCLE,
+    REASON_TOO_FEW_POINTS,
     EvidenceItem,
     OperatorInput,
     OperatorMeta,
@@ -81,18 +85,34 @@ def _ellipse_kernel(
     pv_values: np.ndarray,
     op_values: np.ndarray,
     sample_interval: float = 1.0,
+    *,
+    pv_range: tuple[float, float] | None = None,
+    op_range: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
     """PV-OP 散点椭圆拟合检测阀门粘滞（等价复制自引擎 L1970-2022）。
 
     复用 KPI 侧 assess_stiction_features（GB/T 44693.2-2024 F.2 口径，
     含互相关 θ 补偿 + 极限环门控 + R² 拟合度）。
+
+    D1（DIA-05，08§3.3）：PV/OP 各自**真实量程**显式传入——椭圆短长轴比
+    b/a 并非尺度不变量，双轴归一化必须用各自满量程；量程缺失时
+    assess_stiction_features 内部回退 DEFAULT 0~100 并随 range_source
+    记录（"双轴默认 100"仅为缺省兜底，不再冒充已核实量程）。
     """
     min_len = min(len(pv_values), len(op_values))
     if min_len < 8:
         return _empty_stiction_result()
 
     try:
-        feat = assess_stiction_features(pv_values, op_values, sample_interval=sample_interval)
+        pv_span = (pv_range[1] - pv_range[0]) if pv_range else None
+        op_span = (op_range[1] - op_range[0]) if op_range else None
+        feat = assess_stiction_features(
+            pv_values,
+            op_values,
+            sample_interval=sample_interval,
+            pv_range=pv_span if pv_span and pv_span > 0 else None,
+            op_range=op_span if op_span and op_span > 0 else None,
+        )
         fitting_score = float(feat.get("fitting_score", 0.0))
         stiction_index = float(feat.get("stiction_index", 0.0))
         is_limit_cycle = bool(feat.get("is_limit_cycle", False))
@@ -112,6 +132,14 @@ def _ellipse_kernel(
             # reason="insufficient_data"。原实现丢弃该字段，算子一律上报
             # detected=False，把"数据不足"渲染成"未检出"。
             "reason": feat.get("reason"),
+            # D1（C16-D01）：量程来源随特征落库（explicit=回路真实量程 /
+            # normalized_default=缺省 0~100 兜底），换单位/量程结论等价可核
+            "range_source": feat.get("range_source"),
+            # 极限环门控细节（no_limit_cycle 时构造 NOT_APPLICABLE 证据用）
+            "zero_crossings": feat.get("zero_crossings"),
+            "mean_half_period": feat.get("mean_half_period"),
+            "s_a": feat.get("s_a"),
+            "s_b": feat.get("s_b"),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("阀门粘滞检测失败: %s", exc)
@@ -366,21 +394,57 @@ def detect_ellipse(input: OperatorInput, threshold: dict[str, Any]) -> OperatorR
     pv = input.signals.get("pv")
     op = input.signals.get("op")
     if pv is None or op is None or min(len(pv), len(op)) < 16:
-        return OperatorResult("stiction_ellipse", executed=False, skip_reason="pv/op 数据不足")
-    res = _ellipse_kernel(pv, op, float(input.meta.get("sample_interval", 1.0)))
+        return OperatorResult(
+            "stiction_ellipse",
+            executed=False,
+            skip_reason="pv/op 数据不足",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
+    res = _ellipse_kernel(
+        pv,
+        op,
+        float(input.meta.get("sample_interval", 1.0)),
+        pv_range=input.meta.get("pv_range"),
+        op_range=input.meta.get("op_range"),
+    )
     if res.get("reason") == "insufficient_data":
         # 与 no_limit_cycle 同处置：前提不成立时不得渲染成"指标未超阈"
         return OperatorResult(
             "stiction_ellipse",
             executed=False,
             skip_reason="pv/op 数据不足（椭圆拟合要求 >=100 点）",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
+    if res.get("reason") == "no_limit_cycle":
+        # D2（08§4.1）：无极限环 → 方法前提不成立（NOT_APPLICABLE），
+        # 不是"未检出"（NEGATIVE）
+        return OperatorResult(
+            "stiction_ellipse",
+            executed=True,
+            detected=False,
+            confidence=0.0,
+            features={
+                "stiction_index": res["stiction_index"],
+                "fitting_score": res["fitting_score"],
+                "reason": res["reason"],
+                "range_source": res.get("range_source"),
+            },
+            evidence=[_limit_cycle_gate_evidence(res)],
+            assessment_state=ASSESSMENT_NOT_APPLICABLE,
+            reason_code=REASON_NO_LIMIT_CYCLE,
         )
     return OperatorResult(
         "stiction_ellipse",
         executed=True,
         detected=bool(res["detected"]),
         confidence=float(res["confidence"]),
-        features={"stiction_index": res["stiction_index"], "fitting_score": res["fitting_score"]},
+        features={
+            "stiction_index": res["stiction_index"],
+            "fitting_score": res["fitting_score"],
+            "range_source": res.get("range_source"),
+        },
         evidence=[
             EvidenceItem(
                 "stiction_index",
@@ -434,13 +498,21 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
     pv = input.signals.get("pv")
     op = input.signals.get("op")
     if pv is None or op is None or min(len(pv), len(op)) < 32:
-        return OperatorResult("stiction_choudhury", executed=False, skip_reason="pv/op 数据不足")
+        return OperatorResult(
+            "stiction_choudhury",
+            executed=False,
+            skip_reason="pv/op 数据不足",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
     res = _choudhury_kernel(pv, op, threshold)
     if res.get("reason") == "insufficient_data":
         return OperatorResult(
             "stiction_choudhury",
             executed=False,
             skip_reason="pv/op 数据不足（椭圆拟合要求 >=100 点）",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
         )
     if res.get("reason") == "no_limit_cycle":
         # P3 门控命中：证据表报"前提不成立"，避免误导性的"指标未超阈"
@@ -459,6 +531,8 @@ def detect_choudhury(input: OperatorInput, threshold: dict[str, Any]) -> Operato
                 "s_b": res.get("s_b"),
             },
             evidence=[_limit_cycle_gate_evidence(res)],
+            assessment_state=ASSESSMENT_NOT_APPLICABLE,
+            reason_code=REASON_NO_LIMIT_CYCLE,
         )
     return OperatorResult(
         "stiction_choudhury",
@@ -509,7 +583,13 @@ def detect_kano(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
     pv = input.signals.get("pv")
     op = input.signals.get("op")
     if pv is None or op is None or min(len(pv), len(op)) < 16:
-        return OperatorResult("stiction_kano", executed=False, skip_reason="pv/op 数据不足")
+        return OperatorResult(
+            "stiction_kano",
+            executed=False,
+            skip_reason="pv/op 数据不足",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
     res = _kano_kernel(pv, op)
     if res.get("reason") == "no_limit_cycle":
         # P3 门控命中：证据表报"前提不成立"，避免误导性的"指标未超阈"
@@ -528,6 +608,8 @@ def detect_kano(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
                 "s_b": res.get("s_b"),
             },
             evidence=[_limit_cycle_gate_evidence(res)],
+            assessment_state=ASSESSMENT_NOT_APPLICABLE,
+            reason_code=REASON_NO_LIMIT_CYCLE,
         )
     return OperatorResult(
         "stiction_kano",

@@ -14,6 +14,13 @@ from typing import Any
 import numpy as np
 
 from app.services.diagnosis_operators.base import (
+    ASSESSMENT_INSUFFICIENT_DATA,
+    ASSESSMENT_NEGATIVE,
+    ASSESSMENT_NOT_APPLICABLE,
+    ASSESSMENT_POSITIVE,
+    REASON_NO_EVENTS,
+    REASON_NO_EXPECTED_TAU,
+    REASON_TOO_FEW_POINTS,
     EvidenceItem,
     OperatorInput,
     OperatorMeta,
@@ -174,14 +181,38 @@ def _step_kernel(
         return _empty_step_response_result()
 
 
-def _expected_time_constant(loop_type: str | None, tau_map: dict | None = None) -> float:
-    """按回路类型返回期望响应时间常数（等价复制自引擎 L3258-3282）。"""
+def _expected_time_constant(
+    loop_type: str | None,
+    tau_map: dict | None = None,
+    expected_tau_info: dict | None = None,
+) -> tuple[float | None, str]:
+    """期望响应时间常数（D1/DIA-08 改造：工程来源优先）.
+
+    来源优先级（08§3.3"批准模板/设备工艺设计/已确认正常历史"；B1 供数
+    ``resolve_assessment_supply_facts`` 的 T′=idealSettlingTime——回路字段
+    > 工程模板 > 回路类型默认）：
+    1. expected_tau_info（B1 工程供数，valueSeconds>0）——T′ 为 2% 稳态带
+       稳态时间，一阶系统 T′≈4τ（换算基准随来源返回）；
+    2. 阈值表 slow_expected_tau_seconds（配置覆盖链，兜底）；
+    3. 回路类型默认表（旧行为兜底）。
+
+    无任何来源返回 (None, 来源说明)——调用方**只报告测得动态特征，不判断
+    "比应有速度慢"**（NOT_APPLICABLE，不伪称阴性）。
+    """
+    if isinstance(expected_tau_info, dict):
+        value = expected_tau_info.get("valueSeconds")
+        source = str(expected_tau_info.get("source") or "UNKNOWN")
+        if isinstance(value, int | float) and not isinstance(value, bool) and float(value) > 0:
+            # T′（2% 稳态带）→ τ：一阶系统 4τ 衰减到 2%（换算基准显式随结果落库）
+            return float(value) / 4.0, f"t_prime:{source}/4"
+        if source == "UNKNOWN":
+            return None, "no_engineering_source"
     mapping = tau_map if isinstance(tau_map, dict) and tau_map else _DEFAULT_EXPECTED_TAU_SECONDS
     key = (loop_type or "OTHER").upper()
     try:
-        return float(mapping.get(key, mapping.get("OTHER", 60.0)))
+        return float(mapping.get(key, mapping.get("OTHER", 60.0))), "type_default"
     except (TypeError, ValueError):
-        return 60.0
+        return 60.0, "type_default"
 
 
 def _slow_kernel(
@@ -192,8 +223,17 @@ def _slow_kernel(
     *,
     sample_interval: float = 1.0,
     threshold: dict | None = None,
+    expected_tau_info: dict | None = None,
 ) -> dict[str, Any]:
-    """响应迟缓检测（等价复制自引擎 L3086-3255，真实秒时间轴拟合）。"""
+    """响应迟缓检测（等价复制自引擎 L3086-3255，真实秒时间轴拟合）。
+
+    D1（DIA-08，C16-D03）两处改造：
+    1. **多阶跃响应截到下一 SP 变化**——原实现取"窗长一半"作响应窗，
+       相邻 SP 阶跃会混入同一次拟合（两次响应拼成不存在的过渡过程）；
+       现与 _step_kernel 同口径截到下一阶跃，不足事件显式记原因。
+    2. **expected τ 消费工程来源**（B1 供数，见 _expected_time_constant）；
+       无来源时只报告测得动态特征，不判断"比应有速度慢"。
+    """
     if not isinstance(threshold, dict):
         threshold = {}
     ratio_threshold = float(threshold.get("slow_response_ratio_threshold", 2.0))
@@ -227,19 +267,23 @@ def _slow_kernel(
         step_threshold = sp_range * 0.05
         step_indices = np.where(np.abs(sp_diff) > step_threshold)[0]
 
+        expected_tau, expected_tau_source = _expected_time_constant(
+            loop_type, tau_map, expected_tau_info
+        )
+
         if len(step_indices) == 0:
-            # 无阶跃：基于稳态偏差判断
+            # 无阶跃：基于稳态偏差判断（不依赖 expected τ）
             bias = pv_arr - sp_arr
             bias_std = float(np.std(bias))
             ratio = bias_std / sp_range
             detected = bool(ratio > no_step_bias_ratio)
-            expected_tau = _expected_time_constant(loop_type, tau_map)
             confidence = min(0.8, ratio * 3) if detected else 0.0
             return {
                 "detected": detected,
                 "confidence": confidence,
                 "time_constant": 0.0,
                 "expected_time_constant": expected_tau,
+                "expected_tau_source": expected_tau_source,
                 "ratio": ratio,
             }
 
@@ -251,11 +295,22 @@ def _slow_kernel(
 
         old_sp = float(sp_arr[step_idx])
 
-        response_end = min(step_idx + 1 + min_len // 2, min_len)
+        # D1（DIA-08/C16-D03）：响应窗截到**下一 SP 阶跃**（不混拟合）；
+        # 窗内不足 8 点记"响应事件不足"原因，不硬凑
+        next_step = int(step_indices[1]) + 1 if len(step_indices) > 1 else min_len
+        response_end = min(next_step, min_len)
         pv_response = pv_arr[step_idx + 1 : response_end]
         t_response = t_seconds[step_idx + 1 : response_end]
         if len(pv_response) < 8:
-            return _empty_slow_response_result()
+            return {
+                "detected": False,
+                "confidence": 0.0,
+                "time_constant": 0.0,
+                "expected_time_constant": expected_tau,
+                "expected_tau_source": expected_tau_source,
+                "ratio": 0.0,
+                "reason": "no_complete_response_event",
+            }
 
         # 一阶滞后拟合：PV(t) = old_sp + step_size * (1 - exp(-t/τ))
         t_fit = t_response - t_response[0]
@@ -290,8 +345,6 @@ def _slow_kernel(
             else:
                 time_constant = window_seconds
 
-        expected_tau = _expected_time_constant(loop_type, tau_map)
-
         # 拟合防护（优化增强）：一阶系统时间常数定义为到达 63.2% 目标的时刻，
         # 若响应窗结束时 PV 到达率不足 63.2%，τ 是窗外的外推值不可靠
         # （典型场景：SP 阶跃后 PV 几乎不动，拟合出 τ=数小时的病态值）。
@@ -299,9 +352,12 @@ def _slow_kernel(
         reached_fraction = float(np.clip((pv_response[-1] - old_sp) / step_size, -1.0, 1.0))
         fit_degenerate = bool(reached_fraction < 0.632)
 
-        ratio = time_constant / expected_tau if expected_tau > 0 else 0.0
+        ratio = time_constant / expected_tau if expected_tau else 0.0
 
-        if fit_degenerate:
+        # D1（DIA-08）：expected τ 无工程来源 → 只报告测得特征，不判慢
+        no_expected_tau = expected_tau is None
+
+        if fit_degenerate or no_expected_tau:
             detected = False
             confidence = 0.0
         else:
@@ -313,9 +369,11 @@ def _slow_kernel(
             "confidence": confidence,
             "time_constant": time_constant,
             "expected_time_constant": expected_tau,
+            "expected_tau_source": expected_tau_source,
             "ratio": ratio,
             "reached_fraction": round(reached_fraction, 4),
             "fit_degenerate": fit_degenerate,
+            **({"no_expected_tau": True} if no_expected_tau else {}),
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("响应迟缓检测失败: %s", exc)
@@ -411,7 +469,13 @@ def detect_slow(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
     pv = input.signals.get("pv")
     sp = input.signals.get("sp")
     if pv is None or sp is None or min(len(pv), len(sp)) < 16:
-        return OperatorResult("slow_response", executed=False, skip_reason="pv/sp 数据不足")
+        return OperatorResult(
+            "slow_response",
+            executed=False,
+            skip_reason="pv/sp 数据不足",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
     res = _slow_kernel(
         pv,
         sp,
@@ -419,7 +483,20 @@ def detect_slow(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
         input.timestamps,
         sample_interval=float(input.meta.get("sample_interval", 1.0)),
         threshold=threshold,
+        expected_tau_info=input.meta.get("expected_tau_info"),
     )
+    # D1（DIA-08，08§3.3）：expected τ 无工程来源——测得动态特征保留，
+    # 但"比应有速度慢"的判定前提不成立（NOT_APPLICABLE，不伪称阴性）
+    no_expected_tau = bool(res.get("no_expected_tau"))
+    no_event = res.get("reason") == "no_complete_response_event"
+    if no_expected_tau:
+        state, reason_code = ASSESSMENT_NOT_APPLICABLE, REASON_NO_EXPECTED_TAU
+    elif no_event:
+        state, reason_code = ASSESSMENT_INSUFFICIENT_DATA, REASON_NO_EVENTS
+    else:
+        # 正常分支自赋 POSITIVE/NEGATIVE（直调算子不经编排层派生时状态仍完整）
+        state = ASSESSMENT_POSITIVE if res["detected"] else ASSESSMENT_NEGATIVE
+        reason_code = None
     return OperatorResult(
         "slow_response",
         executed=True,
@@ -427,10 +504,12 @@ def detect_slow(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
         confidence=float(res["confidence"]),
         features={
             "time_constant": res["time_constant"],
-            "expected_time_constant": res["expected_time_constant"],
+            "expected_time_constant": res.get("expected_time_constant"),
+            "expected_tau_source": res.get("expected_tau_source"),
             "ratio": res["ratio"],
             "reached_fraction": res.get("reached_fraction", 1.0),
             "fit_degenerate": res.get("fit_degenerate", False),
+            **({"no_expected_tau": True} if no_expected_tau else {}),
         },
         evidence=[
             EvidenceItem(
@@ -438,10 +517,20 @@ def detect_slow(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResu
                 round(float(res["ratio"]), 3),
                 threshold.get("slow_response_ratio_threshold"),
                 (
-                    "响应窗内 PV 到达率不足 63.2%，τ 为外推值不可靠（不判迟缓）"
-                    if res.get("fit_degenerate")
-                    else "实际/期望时间常数比" + ("超阈" if res["detected"] else "未超阈")
+                    "expected τ 无工程来源：只报告测得动态特征，不判断响应快慢"
+                    if no_expected_tau
+                    else (
+                        "响应事件不足（截到下一 SP 阶跃后 <8 点），无法拟合"
+                        if no_event
+                        else (
+                            "响应窗内 PV 到达率不足 63.2%，τ 为外推值不可靠（不判迟缓）"
+                            if res.get("fit_degenerate")
+                            else "实际/期望时间常数比" + ("超阈" if res["detected"] else "未超阈")
+                        )
+                    )
                 ),
             ),
         ],
+        assessment_state=state,
+        reason_code=reason_code,
     )

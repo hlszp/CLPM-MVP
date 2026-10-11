@@ -25,6 +25,46 @@ FAMILY_TUNING = "tuning"
 FAMILY_DISTURBANCE = "disturbance"
 FAMILY_SATURATION = "saturation"
 
+# ---------------------------------------------------------------------------
+# 算子评估八态（08§4.1 / D0 契约 §1.6，版本化增量字段——旧
+# executed/skip_reason/detected/confidence/error 字段保留兼容，不改动语义）
+# ---------------------------------------------------------------------------
+
+ASSESSMENT_POSITIVE = "POSITIVE"
+ASSESSMENT_NEGATIVE = "NEGATIVE"
+ASSESSMENT_NOT_APPLICABLE = "NOT_APPLICABLE"
+ASSESSMENT_INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
+ASSESSMENT_ERROR = "ERROR"
+ASSESSMENT_NOT_RUN = "NOT_RUN"
+ASSESSMENT_CANCELLED = "CANCELLED"
+ASSESSMENT_LEGACY_UNVERIFIABLE = "LEGACY_UNVERIFIABLE"
+
+#: 八态合法值域（LEGACY_UNVERIFIABLE 仅用于历史记录读端标注，writer 不产出）
+ASSESSMENT_STATES: tuple[str, ...] = (
+    ASSESSMENT_POSITIVE,
+    ASSESSMENT_NEGATIVE,
+    ASSESSMENT_NOT_APPLICABLE,
+    ASSESSMENT_INSUFFICIENT_DATA,
+    ASSESSMENT_ERROR,
+    ASSESSMENT_NOT_RUN,
+    ASSESSMENT_CANCELLED,
+    ASSESSMENT_LEGACY_UNVERIFIABLE,
+)
+
+#: NOT_RUN / INSUFFICIENT_DATA 细分 reasonCode 码表（D0 契约 §6 O-4，
+#: P3-01 D1/D2 Owner 定稿——值域未在任何文档冻结，此处登记为准）
+REASON_UPSTREAM_BLOCKED = "UPSTREAM_BLOCKED"  # NOT_RUN：上游阻断（保留码，当前链路未触发）
+REASON_BUDGET_TERMINATED = "BUDGET_TERMINATED"  # NOT_RUN：预算终止（保留码，当前链路未触发）
+REASON_GATE_BLOCKED = "GATE_BLOCKED"  # INSUFFICIENT_DATA：L0 数据门禁阻断（所选检查保存阻断原因）
+REASON_MISSING_SIGNALS = "MISSING_SIGNALS"  # INSUFFICIENT_DATA：输入信号缺失
+REASON_TOO_FEW_POINTS = "TOO_FEW_POINTS"  # INSUFFICIENT_DATA：点数/连续段不足
+REASON_NO_LIMIT_CYCLE = "NO_LIMIT_CYCLE"  # NOT_APPLICABLE：极限环前提不成立
+REASON_NO_EVENTS = "NO_EVENTS"  # INSUFFICIENT_DATA：无合格响应事件
+REASON_NO_EXPECTED_TAU = "NO_EXPECTED_TAU"  # NOT_APPLICABLE：expected τ 无工程来源，不判慢
+REASON_DISABLED_BY_CONFIG = "DISABLED_BY_CONFIG"  # 显式排除：诊断配置停用（不进 selected）
+REASON_NOT_SELECTED = "NOT_SELECTED"  # 显式排除：不在细选白名单（不进 selected）
+REASON_OUT_OF_PROFILE = "OUT_OF_PROFILE"  # profile 外：fast 组未包含（不进 profileExpected）
+
 
 @dataclass(frozen=True)
 class OperatorMeta:
@@ -68,7 +108,13 @@ class OperatorInput:
 
 @dataclass
 class OperatorResult:
-    """算子输出契约。"""
+    """算子输出契约。
+
+    D2（08§4.1）：保留既有 executed/skip_reason/detected/confidence/error
+    字段语义不变（兼容读端）；新增版本化 assessment_state（八态）与
+    reason_code（细分码，见 REASON_* 码表）——旧字段 executed=False +
+    skip_reason 的混合语义（跳过/缺数据/异常）由八态精确分离。
+    """
 
     operator: str
     executed: bool  # False = 输入缺失/数据不足/fast 组未包含 跳过
@@ -78,6 +124,12 @@ class OperatorResult:
     features: dict[str, Any] = field(default_factory=dict)
     evidence: list[EvidenceItem] = field(default_factory=list)
     error: str | None = None  # 执行异常信息（executed=False 且非跳过）
+    #: 算子评估八态（POSITIVE/NEGATIVE/NOT_APPLICABLE/INSUFFICIENT_DATA/
+    #: ERROR/NOT_RUN/CANCELLED）；None=算子在 selected 集合外（profile 外/
+    #: 显式排除，不计入覆盖分母八类计数）
+    assessment_state: str | None = None
+    #: 细分原因码（REASON_* 码表；ERROR 态为异常摘要）
+    reason_code: str | None = None
 
 
 OperatorFunc = Callable[[OperatorInput, dict[str, Any]], OperatorResult]

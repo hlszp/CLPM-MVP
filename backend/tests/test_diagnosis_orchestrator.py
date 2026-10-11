@@ -127,7 +127,17 @@ async def test_gate_fail_outputs_data_insufficient() -> None:
     assert run.data_gate["passed"] is False
     assert run.primary_category == "DATA_INSUFFICIENT"
     assert run.status == "SUCCESS"  # 门禁不过属正常完成
-    assert run.operator_results == {}  # 不执行算子
+    # D2（08§4.2 行 5，行为变化）：门禁阻断时 selected 算子保存阻断原因
+    # （INSUFFICIENT_DATA/GATE_BLOCKED），不再落空 dict——L0 手动放行产出
+    # 正式 DATA_INSUFFICIENT 的裁决保留，科学结论 INCONCLUSIVE 不冒充阴性
+    assert run.operator_results, "门禁阻断时 selected 算子应有 GATE_BLOCKED 记录"
+    assert all(
+        r["assessmentState"] == "INSUFFICIENT_DATA" and r["reasonCode"] == "GATE_BLOCKED"
+        for r in run.operator_results.values()
+    )
+    meta = run.assessment_meta
+    assert meta["judgementStatus"] == "INCONCLUSIVE"
+    assert meta["coverage"]["insufficient"] == meta["coverage"]["selected"] > 0
     assert run.recommendations[0]["content"].startswith("先通过数据管理")
 
 

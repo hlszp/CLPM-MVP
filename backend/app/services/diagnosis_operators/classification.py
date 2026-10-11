@@ -206,7 +206,15 @@ def classify(
     """
 
     result = ClassificationResult(primary=None)
-    auto_rate = float(kpi_context.get("auto_rate_avg") or 0.0)
+    # D1（DIA-06，C15-D03）：auto_rate **None 透传**——窗口无 KPI 快照时
+    # auto_rate_avg=None（缺失不当 0，不触发 UTILIZATION）；0.0 是真实值
+    # （长期手动）应触发 UTILIZATION。原实现 `float(x or 0.0)` 把 None 与
+    # 0.0 混同且 `0.0 < auto_rate` 排除 0%，导致"0% 自动投用=长期手动"
+    # 反而漏判、缺失被当 0% 误判。
+    raw_auto_rate = kpi_context.get("auto_rate_avg")
+    auto_rate: float | None = (
+        float(raw_auto_rate) if isinstance(raw_auto_rate, int | float) else None
+    )
     score_avg = kpi_context.get("score_avg")
 
     osc = fusions.get("OSCILLATION")
@@ -344,7 +352,9 @@ def classify(
         )
 
     # 级 6：自动投用率 <50% → UTILIZATION（独立维度）
-    utilization_hit = 0.0 < auto_rate < UTILIZATION_DETECT_RATE
+    # D1（DIA-06）：0% 是真实长期手动（触发）；None=无 KPI 快照（不触发，
+    # 缺失不当 0——C15-D03）；≥50% 不触发
+    utilization_hit = auto_rate is not None and auto_rate < UTILIZATION_DETECT_RATE
     if utilization_hit:
         candidates.append(
             {
