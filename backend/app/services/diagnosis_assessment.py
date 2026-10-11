@@ -26,6 +26,7 @@ from app.services.diagnosis_operators.base import (
     ASSESSMENT_POSITIVE,
 )
 from app.services.diagnosis_operators.classification import DATA_INSUFFICIENT, NO_SYMPTOM
+from app.services.diagnosis_operators.fusion import SUPPORT_RULE_VERSION
 
 #: assessment_meta schema 版本（只加不改；语义变化升次版本）
 DIAGNOSIS_ASSESSMENT_SCHEMA_VERSION = "diagnosis-assessment/1"
@@ -192,6 +193,9 @@ def build_assessment_meta(
         },
         "supportKind": SUPPORT_KIND_RULE_SUPPORT,
         "calibrationStatus": CALIBRATION_STATUS_NOT_CALIBRATED,
+        # D5（08§4.2 示例字段）：融合规则版本——conservative-max/1（A 裁决
+        # 保守规则）与历史 D-S 值（无此版本标识）不无标识混用（08§4.4.6）
+        "supportRuleVersion": SUPPORT_RULE_VERSION,
         # per 算子状态明细（读端 LEGACY 判定与覆盖对账的最小充分信息）
         "operatorStates": {
             r["operator"]: {"state": r.get("assessmentState"), "reasonCode": r.get("reasonCode")}

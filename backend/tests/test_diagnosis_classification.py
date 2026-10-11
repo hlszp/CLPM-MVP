@@ -55,9 +55,10 @@ def test_fuse_family_requires_two_hits_for_fusion() -> None:
     assert single.detected and not single.fused
     assert single.confidence == pytest.approx(0.7)
 
+    # D5（08-A 保守融合）：两条 0.8 命中 → 取最大 0.8，不再 D-S 增强（旧值 0.9412）
     both = fuse_family("stiction", "VALVE_STICTION", [_op("a", True, 0.8), _op("b", True, 0.8)])
     assert both.detected and both.fused
-    assert both.confidence == pytest.approx(0.9412, abs=1e-3)
+    assert both.confidence == pytest.approx(0.8, abs=1e-6)
 
 
 def test_fuse_family_no_hits() -> None:
@@ -183,11 +184,17 @@ def test_level4_process_primary() -> None:
     assert r.primary.category == PROCESS
 
 
-def test_level4_process_via_oscillation_exclusion() -> None:
-    # 振荡且无粘滞且无过激 → PROCESS
+def test_level4_oscillation_only_no_longer_process_via_exclusion() -> None:
+    """D5（08§4.4.2/C15-D06）：排除式归因已删除——仅振荡阳性不再自动判
+    PROCESS；症状保留、原因未决（primary=None），NEVER 落"未发现异常"。"""
     fusions = {"OSCILLATION": _fusion(True, 0.8)}
     r = classify(fusions, {}, {"auto_rate_avg": 1.0, "score_avg": 70}, _gate())
-    assert r.primary.category == PROCESS
+    assert r.primary is None  # 症状已检出但无正面原因证据 → 原因未决
+    assert r.primary != PROCESS
+    assert any("症状已检出" in x for x in r.rationale)
+    assert any("原因未决" in x for x in r.rationale)
+    # 未决建议不引导 PID 整定
+    assert not any("整定" in rec.content or "Kp" in rec.content for rec in r.recommendations)
 
 
 def test_level5_tuning_primary() -> None:
@@ -332,7 +339,10 @@ def test_get_confidence_definitions_structure() -> None:
 
     assert set(defs["operators"]) == set(OPERATOR_REGISTRY)
     assert all(defs["operators"].values())  # 每个算子都有口径文案
-    assert "Dempster-Shafer" in defs["fusion"]
+    # D5（08-A）：融合口径为保守规则，不再自述 D-S 交叉验证增强
+    assert "保守融合" in defs["fusion"]
+    assert "不冒充概率" in defs["fusion"]
+    assert "Dempster-Shafer" not in defs["fusion"]
 
 
 def test_contamination_valve_downgrades_tuning() -> None:
