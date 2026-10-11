@@ -95,7 +95,10 @@ def run_build_cli(
     recipe = retained_build_recipes().get(pkg_digest)
     if recipe is None:
         raise _reject(pkg_digest, "retained-builds.json 无该 digest 的 builds 执行配方")
-    root = Path(str(recipe.get("path") or ""))
+    # G2 验收移交 O1（P3-08a 修复）：配方 path 允许相对路径（相对当前进程
+    # cwd）；先 resolve() 绝对化再作为子进程 cwd——否则相对路径配方在
+    # chdir 前的判定/传参间漂移导致"路径失效"误拒
+    root = Path(str(recipe.get("path") or "")).resolve()
     if recipe.get("kind", "source") != "source" or not root.is_dir():
         raise _reject(pkg_digest, f"构建源码树不可用: {root}")
     env = {**os.environ, **(recipe.get("env") or {})}
@@ -116,9 +119,12 @@ def run_build_cli(
     except OSError as exc:
         raise _reject(pkg_digest, f"受控构建进程启动失败: {exc}") from exc
     if proc.returncode != 0:
+        # G2 验收移交 O2（P3-08a 修复）：失败原因同时带 stderr 与 stdout
+        # 尾部——CLI 失败详情可能走 stdout（JSON 错误行），只带 stderr 会丢
         raise _reject(
             pkg_digest,
-            f"受控构建进程退出码 {proc.returncode}: {_tail(proc.stderr)}",
+            f"受控构建进程退出码 {proc.returncode}: "
+            f"stderr={_tail(proc.stderr)} stdout={_tail(proc.stdout)}",
         )
     # 契约：stdout 恰一行 JSON
     lines = [line for line in proc.stdout.splitlines() if line.strip()]
@@ -147,19 +153,38 @@ def run_build_cli(
 
 
 def run_kpi_replay(pkg_digest: str, npz_path: Path, manifest_path: Path) -> dict[str, Any]:
-    """KPI 链：在受控构建内读原包重算（返回含 metrics/paramsSource/buildDigest）."""
+    """KPI 链：在受控构建内读原包重算（返回含 metrics/paramsSource/buildDigest）.
+
+    REWORK-D1（G2 O1 完整修复）：npz/manifest 路径先 ``.resolve()`` 绝对化
+    再传子进程——相对 snapshot 目录（``CLPM_CALC_SNAPSHOT_DIR`` 相对值）时
+    ``_locate_files`` 产物为相对路径，子进程按其 cwd（构建根）解析必然
+    找不到原包而误报"输入包文件缺失"；绝对化后与构建根解耦。
+    """
     return run_build_cli(
-        pkg_digest, ["kpi", "--npz", str(npz_path), "--manifest", str(manifest_path)]
+        pkg_digest,
+        [
+            "kpi",
+            "--npz",
+            str(Path(npz_path).resolve()),
+            "--manifest",
+            str(Path(manifest_path).resolve()),
+        ],
     )
 
 
 def run_identification_replay(
     pkg_digest: str, npz_path: Path, manifest_path: Path
 ) -> dict[str, Any]:
-    """辨识链：在受控构建内读原包重跑管线."""
+    """辨识链：在受控构建内读原包重跑管线（路径同 D1 绝对化口径）."""
     return run_build_cli(
         pkg_digest,
-        ["identification", "--npz", str(npz_path), "--manifest", str(manifest_path)],
+        [
+            "identification",
+            "--npz",
+            str(Path(npz_path).resolve()),
+            "--manifest",
+            str(Path(manifest_path).resolve()),
+        ],
     )
 
 
@@ -167,9 +192,10 @@ def query_build_digest(recipe: dict[str, Any]) -> str:
     """向受控构建查询其自身 digest（`digest` 子命令；诊断/验收用）.
 
     Raises:
-        BizError: 构建不可执行（与重放同口径）。
+        BizError: ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE——构建不可执行（与重放
+            同口径）；相对路径配方同样先 resolve()（O1 修复）。
     """
-    root = Path(str(recipe.get("path") or ""))
+    root = Path(str(recipe.get("path") or "")).resolve()
     if recipe.get("kind", "source") != "source" or not root.is_dir():
         raise _reject("<query>", f"构建源码树不可用: {root}")
     env = {**os.environ, **(recipe.get("env") or {})}

@@ -842,6 +842,7 @@ async def _run_batch_loop_calculations(
     concurrency: int = CONCURRENCY,
     save_input_snapshot: bool = False,
     pinned_config: dict | None = None,
+    release_context: dict | None = None,
 ) -> list[dict | None | Exception]:
     """Run loop KPI calculations with shared bounded-concurrency orchestration.
 
@@ -858,6 +859,8 @@ async def _run_batch_loop_calculations(
         pinned_config: P2-03 任务边界固定的完整配置快照（P2-02
             ``pin_config_snapshot``；G2-INC-a：快照含五层参数，批内逐回路
             解析注入算子。None=未固定，沿用内容摘要口径+当前缓存）。
+        release_context: P3-08a 任务边界固定的评估发布上下文（上线清单
+            六要素；None=未解析，不写 manifest 发布节/assessmentContext）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -911,6 +914,7 @@ async def _run_batch_loop_calculations(
                         logical_run_id=logical_run_id,
                         save_input_snapshot=save_input_snapshot,
                         pinned_config=pinned_config,
+                        release_context=release_context,
                     )
                     await worker_db.commit()
                     return result
@@ -1102,6 +1106,8 @@ async def _do_calculate(
         # P2-03/G2-INC-a：任务边界固定完整配置快照（标准小时链；批内所有 record 共用，
         # 五层参数任务中不换参——G2-INC-a 起不只固定 revision 号）
         pinned_config = await _pin_task_config(db)
+        # P3-08a：任务边界固定评估发布上下文（六要素；批内所有 record/包共用）
+        release_ctx = await _resolve_task_release_context(db)
 
     loops_count = len(loops)
 
@@ -1134,6 +1140,7 @@ async def _do_calculate(
         logical_run_id=logical_run_id,
         on_completed=_on_completed if task_id else None,
         pinned_config=pinned_config,
+        release_context=release_ctx,
     )
     t_calc_elapsed = time.perf_counter() - t_calc_start
     logger.info(
@@ -1277,6 +1284,7 @@ async def _do_calculate_custom_loop(
 
         # P2-03/G2-INC-a：任务边界固定完整配置快照 + 显式人工评估落包（DEC-10 类别③）
         pinned_config = await _pin_task_config(db)
+        release_ctx = await _resolve_task_release_context(db)
         data_planner = _build_data_planner(db)
         snap = await _calculate_loop_kpi(
             db=db,
@@ -1293,6 +1301,7 @@ async def _do_calculate_custom_loop(
             ),
             save_input_snapshot=True,
             pinned_config=pinned_config,
+            release_context=release_ctx,
         )
         await db.commit()
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
@@ -1372,6 +1381,7 @@ async def _do_calculate_custom_batch(
             # P2-03/G2-INC-a：显式人工批量评估落包 + 任务边界固定完整配置快照（DEC-10 类别③）
             save_input_snapshot=True,
             pinned_config=await _pin_task_config(db),
+            release_context=await _resolve_task_release_context(db),
         )
         t_calc_elapsed = time.perf_counter() - t_calc_start
         logger.info(
@@ -1656,6 +1666,48 @@ async def _pin_task_config(db) -> dict | None:
         return None
 
 
+async def _resolve_task_release_context(db) -> dict | None:
+    """P3-08a：任务边界固定评估发布上下文（上线清单六要素）.
+
+    经 ``assessment_profile.resolve_task_release_context`` 读取 ACTIVE 发布
+    代际（无 ACTIVE 行 → releaseGeneration=None 显式标记，不伪代际）。
+    解析失败（登记表查询异常）回落 None：不写新 manifest 节/assessmentContext
+    （=当时未记录口径），不阻断评估任务主链。
+    """
+    try:
+        from app.services.assessment_profile import resolve_task_release_context
+
+        return await resolve_task_release_context(db)
+    except Exception:  # noqa: BLE001
+        logger.warning("任务边界解析评估发布上下文失败（回落未记录口径）", exc_info=True)
+        return None
+
+
+def _release_context_with_actuals(
+    release_context: dict[str, Any] | None,
+    config_revision: str | None,
+    *,
+    params_pinned: bool,
+) -> dict[str, Any] | None:
+    """发布上下文 → record payload assessmentContext（REWORK-D2 回填）.
+
+    writer 在任务边界回填两项**实际值**，与输入包 manifest.source 同源：
+    - ``configRevision``：恒取任务实际固定的配置身份（``rev:{n}:{digest16}``
+      或内容摘要）——登记行冻结值可能与后续发布漂移，语义比较（重放侧读
+      包 manifest source.configRevision）必须与任务实际同源同构才不产伪差异；
+    - ``paramsSource``：``"package"``（五层参数已固定随包）| ``"legacy-
+      unpinned"``（未固定）——与包 effectiveParams.params 的有无同一次落库
+      决定，同源恒等。
+    其余键原样保留（上线清单全量可查）；release_context=None 透传 None。
+    """
+    if release_context is None:
+        return None
+    ctx = dict(release_context)
+    ctx["configRevision"] = config_revision
+    ctx["paramsSource"] = "package" if params_pinned else "legacy-unpinned"
+    return ctx
+
+
 async def _resolve_loop_pinned_params(
     db, pinned_config: dict, loop: LoopLedger
 ) -> tuple[dict[tuple[str, str], dict], dict[str, dict]]:
@@ -1723,6 +1775,7 @@ async def _calculate_loop_kpi(
     logical_run_id: str | None = None,
     save_input_snapshot: bool = False,
     pinned_config: dict | None = None,
+    release_context: dict[str, Any] | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1752,6 +1805,16 @@ async def _calculate_loop_kpi(
       不影响本任务；None=未固定（回填/单回路既有口径，读当前缓存不变）。
     - 落包时 manifest.source.effectiveParams 携带五层展开值与逐参来源，
       重放据此按旧参数复现（不再读当前配置）。
+
+    P3-08a 发布代际接线：
+    - ``release_context`` 为任务边界经 ``assessment_profile.
+      resolve_task_release_context`` 固定的上线清单六要素；落包 manifest
+      ``source.{assessmentProfile, releaseGeneration, dataPolicyVersion}``
+      （1.3 只加不改；algorithmVersion/configRevision/executableBuildDigest
+      既有）+ record payload ``assessmentContext``；None=未解析（回填/单回
+      路既有口径，不写新节——旧读端按节缺失=当时未记录处理）。
+    - record payload 增存 ``metricsSemantic``/``composite``（完整语义明细，
+      供重放完整语义比较；latest 投影形状不动）。
 
     Args:
         db: 异步数据库会话
@@ -1812,6 +1875,8 @@ async def _calculate_loop_kpi(
     # P2-03：输入包状态（save_input_snapshot 时在三层计算前填充；保存失败
     # 显式降级标记随 payload 入账本，datasetSnapshotId=None）
     dataset_snapshot_state: dict[str, Any] | None = None
+    # P3-08a：完整语义明细（三层计算后填充；早退分支 None=该窗口无指标语义）
+    metrics_semantic: dict[str, Any] | None = None
     _t0 = time.perf_counter()
     _t_read = 0.0
     _t_persist = 0.0
@@ -1835,6 +1900,17 @@ async def _calculate_loop_kpi(
         if dataset_snapshot_state is not None:
             kwargs.setdefault("dataset_snapshot_id", dataset_snapshot_state.get("snapshotId"))
             kwargs.setdefault("input_snapshot_state", dataset_snapshot_state)
+        # P3-08a：语义明细与发布上下文随 record payload 入账本（幂等 setdefault，
+        # 早退分支 metrics_semantic=None → _persist_snapshot 跳过写键）
+        kwargs.setdefault("metrics_semantic", metrics_semantic)
+        # REWORK-D2：assessmentContext 回填任务实际 configRevision/paramsSource
+        # （与包 manifest.source 同源，重放语义比较 identity 域两侧恒等）
+        kwargs.setdefault(
+            "assessment_context",
+            _release_context_with_actuals(
+                release_context, config_revision, params_pinned=pinned_params is not None
+            ),
+        )
         _r = await _persist_snapshot(**kwargs)
         _t_persist += time.perf_counter() - _tp
         return _r
@@ -1934,6 +2010,7 @@ async def _calculate_loop_kpi(
     if save_input_snapshot:
         try:
             from app.services import calc_snapshot as cs
+            from app.services.assessment_profile import release_manifest_source_section
 
             arrays, blocks_meta = cs.serialize_data_blocks(bundles)
             dataset_ref = (
@@ -1964,8 +2041,20 @@ async def _calculate_loop_kpi(
                     "pvRange": list(pv_range) if pv_range else None,
                 },
                 "source": {
-                    "algorithmVersion": ALGORITHM_VERSION,
+                    "algorithmVersion": (
+                        (release_context or {}).get("algorithmVersion") or ALGORITHM_VERSION
+                    ),
                     "configRevision": config_revision,
+                    # P3-08a（schema 1.3 只加不改）：发布代际三要素——上线
+                    # 清单六要素之 assessmentProfile/releaseGeneration/
+                    # dataPolicyVersion（algorithmVersion/configRevision/
+                    # executableBuildDigest 既有；schemaVersion=manifest 自身）。
+                    # release_context=None（回填/单回路）不写新节=当时未记录。
+                    **(
+                        release_manifest_source_section(release_context)
+                        if release_context is not None
+                        else {}
+                    ),
                     "effectiveParams": {
                         "typeWeights": type_weights or {},
                         "fitness": fitness_sys_configs or {},
@@ -2036,6 +2125,8 @@ async def _calculate_loop_kpi(
 
     # 12 子指标值+可信度（随 loop_confidence_latest 存储）
     metrics_detail = _extract_metrics_detail(metric_results)
+    # P3-08a：完整语义明细（record payload 专用；latest 投影形状不动）
+    metrics_semantic = _extract_metrics_semantic(metric_results, composite_result)
 
     # P2: 基于门禁（gate.py evaluate_gate）构造 GateResult 供 compute_fitness L0 判定复用
     conf_level_for_gate = (
@@ -2570,6 +2661,71 @@ def _extract_metrics_detail(
         }
 
     return detail
+
+
+def _json_safe(value: Any) -> Any:
+    """递归转 JSON 可序列化（numpy scalar→Python 标量；其余原样）."""
+    import numpy as np
+
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+        return None  # NaN/Inf 不入 JSONB（显式 null）
+    return value
+
+
+def _extract_metrics_semantic(
+    metric_results: dict[str, MetricResult],
+    composite_result: MetricResult | None = None,
+) -> dict[str, Any]:
+    """完整语义明细（P3-08a，随 record payload ``metricsSemantic`` 入账本）.
+
+    每 metric（DB 列名键）：``{"value", "confidenceLevel",
+    "assessmentState", "details"}``——details 全量（分母/覆盖/原因/参考分
+    等语义字段；供重放完整语义比较与 08d/09a 读端消费）。
+    ``assessmentState`` 取 ``details.assessmentState``（评估三值命名空间，
+    O-3 契约：COMPLETE/PARTIAL/UNASSESSABLE；legacy 计算器未填 → null）。
+
+    composite（P/等级）：``{"value", "confidenceLevel", "details"}``——
+    等级/构成/低可信标注均在 details，随语义比较覆盖"P 与等级"域。
+
+    与 ``_extract_metrics_detail`` 分离：latest 投影（loop_confidence_
+    latest.metrics）保持既有形状不动（只加不改），语义明细只进 record。
+    """
+    semantic: dict[str, Any] = {}
+    for calc_code, result in metric_results.items():
+        if calc_code == "composite_score":
+            continue
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        details = _json_safe(dict(result.details or {}))
+        semantic[db_code] = {
+            "value": float(result.value) if result.value is not None else None,
+            "confidenceLevel": result.confidence_level,
+            "assessmentState": details.get("assessmentState"),
+            "details": details,
+        }
+    if composite_result is not None:
+        semantic["__composite__"] = {
+            "value": float(composite_result.value) if composite_result.value is not None else None,
+            "confidenceLevel": composite_result.confidence_level,
+            "assessmentState": (composite_result.details or {}).get("assessmentState"),
+            "details": _json_safe(dict(composite_result.details or {})),
+        }
+    return semantic
+
+
+def _composite_semantic_entry(semantic: dict[str, Any]) -> dict[str, Any] | None:
+    """从 metricsSemantic 提取 composite 独立条目（record payload.composite）."""
+    entry = semantic.get("__composite__")
+    return dict(entry) if isinstance(entry, dict) else None
 
 
 def _extract_kpi_values(
@@ -3530,6 +3686,10 @@ async def _persist_snapshot(
     不覆盖。
     """
     metrics_detail = kwargs.pop("metrics_detail", None)
+    # P3-08a：完整语义明细/发布上下文——只进 record payload（不出现在投影）；
+    # metrics_semantic=None（早退分支）不写键（诚实口径：无指标语义可存）
+    metrics_semantic = kwargs.pop("metrics_semantic", None)
+    assessment_context = kwargs.pop("assessment_context", None)
     if status == "INCONCLUSIVE" and kwargs.get("confidence_level") is None:
         kwargs["confidence_level"] = "E"
 
@@ -3555,6 +3715,18 @@ async def _persist_snapshot(
                 "snapshotStatus": status,
                 "customTaskId": custom_task_id,
                 "metricsDetail": metrics_detail,
+                **({"metricsSemantic": metrics_semantic} if metrics_semantic is not None else {}),
+                **(
+                    {"composite": _composite_semantic_entry(metrics_semantic)}
+                    if isinstance(metrics_semantic, dict)
+                    and _composite_semantic_entry(metrics_semantic) is not None
+                    else {}
+                ),
+                **(
+                    {"assessmentContext": assessment_context}
+                    if assessment_context is not None
+                    else {}
+                ),
                 **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
                 **kwargs,
             },

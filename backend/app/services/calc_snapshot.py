@@ -50,6 +50,7 @@ from app.models.calc_dataset_snapshot import (
     KIND_DIAGNOSIS_RAW,
     KIND_IDENTIFICATION,
     KIND_KPI_GRID,
+    KIND_KPI_ORIGINAL_EVENTS,
     RETENTION_FROZEN,
     RETENTION_NORMAL,
     CalculationDatasetSnapshot,
@@ -63,7 +64,13 @@ logger = logging.getLogger(__name__)
 # 实际 OP 限幅/PV 量程与单位/PID 表示与时间单位（未知态显式 UNKNOWN）/
 # DCS 与工程模板 revisionRef。只加不改：1.1 包缺本节仍按主版本门禁可读，
 # 读取端按节缺失=当时未记录处理，不伪补）
-SNAPSHOT_SCHEMA_VERSION = "1.2"
+# 次版本 3 = P3-08a（R17 冻结：只加不改）——发布上下文节
+# （``source.assessmentProfile/releaseGeneration/dataPolicyVersion``，上线
+# 清单六要素之三，另三要素 algorithmVersion/configRevision/executableBuildDigest
+# 1.2 已有）＋派生网格身份节（``derivation``：原事件包 id/hash+派生方法）＋
+# 新包种类 ``KPI_ORIGINAL_EVENTS``（原事件包，10§3.5 两类对照输入区分）。
+# 旧 1.1/1.2 包读取行为完全不变（缺节=当时未记录）。
+SNAPSHOT_SCHEMA_VERSION = "1.3"
 _SUPPORTED_SCHEMA_MAJOR = 1
 
 # DEC-10：NORMAL 包默认保留 90 天
@@ -1204,6 +1211,177 @@ async def save_identification_snapshot(
 
 
 # ---------------------------------------------------------------------------
+# 原事件包（KPI_ORIGINAL_EVENTS：10§3.5 两类对照输入；P3-08a schema 1.3）
+# ---------------------------------------------------------------------------
+
+
+async def save_original_events_snapshot(
+    db: AsyncSession,
+    *,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    dataset_ref: str,
+    arrays: dict[str, np.ndarray],
+    binding: dict[str, Any],
+    events: dict[str, Any] | None = None,
+    coverage: dict[str, Any] | None = None,
+    initial_state: dict[str, Any] | None = None,
+    derivation_plan: dict[str, Any] | None = None,
+    quality_codes: dict[str, Any] | None = None,
+    created_by_record_id: str | None = None,
+    retention_days: int = RETENTION_DAYS_DEFAULT,
+) -> CalculationDatasetSnapshot | None:
+    """保存原事件包（同一时点冻结的原始事件/质量/缺口覆盖/窗口前初始
+    状态/绑定与单位解释；HF 与数据策略对照的原点，10§3.5）.
+
+    manifest 节（schema 1.3，08b 填真实数据；本函数定义结构契约）：
+    - ``events``：结构化事件目录（SP/MODE/PID/已知工况切换；无法确认
+      工况时显式 unknown，不伪造稳定工况——契约 §2.7）；
+    - ``coverage``：逐角色缺口覆盖（半开区间游程编码，对齐
+      ``contracts.series_context.RoleCoverage``）；
+    - ``initialState``：窗口前初始状态（COV 初值等）；
+    - ``binding``：绑定与单位解释（datasetRef/bindingVersion/
+      interpretationVersion/单位量程）；
+    - ``derivationPlan``：计划派生的网格策略清单（旧/新网格 policy 描述）；
+    - ``qualityCodes``：质量码说明（逐信号）。
+
+    派生网格包（KPI_GRID）经 manifest ``derivation`` 节引用本包（见
+    ``derivation_section``）——原事件包 hash 与两个派生网格包 hash 三者
+    可复核；缺原事件的旧粗网格包只能做公式重放，不可伪称已验证取数修复。
+    """
+    manifest_extra: dict[str, Any] = {
+        "loopId": str(loop_id),
+        "window": {"tsStart": ts_start.isoformat(), "tsEnd": ts_end.isoformat()},
+        "binding": binding,
+        "events": events,
+        "coverage": coverage,
+        "initialState": initial_state,
+        "derivationPlan": derivation_plan,
+        "qualityCodes": quality_codes,
+    }
+    return await save_calculation_snapshot(
+        db,
+        kind=KIND_KPI_ORIGINAL_EVENTS,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        dataset_ref=dataset_ref,
+        arrays=arrays,
+        manifest_extra=manifest_extra,
+        created_by_record_id=created_by_record_id,
+        loop_id=str(loop_id),
+        retention_days=retention_days,
+    )
+
+
+def derivation_section(
+    source: CalculationDatasetSnapshot,
+    *,
+    derivation_method: str,
+    grid_policy: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """派生网格包（KPI_GRID）manifest.derivation 节——原事件身份引用.
+
+    记录原事件包 id/inputHash + 派生方法 + 网格策略；同一原事件按不同
+    策略派生的旧/新网格包各自 inputHash 可与原事件包 hash 三方对账
+    （"原事件→旧网格→新网格"差异与"同网格→新公式"差异分开报告的前提）。
+    """
+    return {
+        "sourceSnapshotId": str(source.id),
+        "sourceInputHash": source.input_hash,
+        "derivationMethod": derivation_method,
+        "gridPolicy": grid_policy,
+    }
+
+
+# ---------------------------------------------------------------------------
+# 完整语义比较（P3-08a：replay 从"只比 value"扩展到完整语义视图）
+# ---------------------------------------------------------------------------
+
+#: 语义视图中排除的非语义字段（生成时间/耗时等，不参与差异判定，10§3.5.3）
+_SEMANTIC_EXCLUDED_KEYS = frozenset(
+    {"replayedAt", "computedAt", "generatedAt", "elapsedMs", "snapshotId"}
+)
+
+
+def _prune_semantic(value: Any) -> Any:
+    """递归剔除非语义键（数值取 round 12 位消浮点尾差；其余原样）."""
+    if isinstance(value, dict):
+        return {
+            str(k): _prune_semantic(v) for k, v in value.items() if k not in _SEMANTIC_EXCLUDED_KEYS
+        }
+    if isinstance(value, (list, tuple)):
+        return [_prune_semantic(v) for v in value]
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float)):
+        return round(float(value), 12)
+    return value
+
+
+def extract_semantic_view(
+    *,
+    metrics_semantic: dict[str, Any] | None,
+    identity: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """构造比较用语义视图：指标明细（含 ``__composite__`` 综合评分条目）＋
+    方法/参数身份.
+
+    比较域（10§3.5.3）：指标集合、null/数值、状态、原因、分母、覆盖、
+    方法/参数身份、参考分/参考政策/统计构成、P 与等级；只排除生成时间
+    等非语义字段。composite（P/等级）以 ``metrics_semantic["__composite__"]``
+    条目参与（``_extract_metrics_semantic`` 产物）。
+    """
+    return _prune_semantic(
+        {
+            "metrics": metrics_semantic or {},
+            "identity": identity or {},
+        }
+    )
+
+
+def diff_semantic_views(v1: dict[str, Any], replay: dict[str, Any]) -> dict[str, list[Any]]:
+    """递归 diff 两棵语义视图；差异完整列出（路径 → [v1, replay]）.
+
+    缺键与显式 null **分开**（null=已计算不可判定；缺键=未记录）；
+    数值按 round(12) 容差。返回空 dict 即语义全等。
+    """
+    diffs: dict[str, list[Any]] = {}
+
+    def _walk(a: Any, b: Any, path: str) -> None:
+        if isinstance(a, dict) and isinstance(b, dict):
+            for key in sorted(set(a) | set(b)):
+                child = key if not path else f"{path}.{key}"
+                if key not in a:
+                    diffs[child] = ["<absent>", b[key]]
+                elif key not in b:
+                    diffs[child] = [a[key], "<absent>"]
+                else:
+                    _walk(a[key], b[key], child)
+            return
+        if isinstance(a, list) and isinstance(b, list):
+            if len(a) != len(b):
+                diffs[path] = [a, b]
+                return
+            for i, (x, y) in enumerate(zip(a, b, strict=True)):
+                _walk(x, y, f"{path}[{i}]")
+            return
+        if isinstance(a, bool) or isinstance(b, bool) or a is None or b is None:
+            if a is not b:
+                diffs[path] = [a, b]
+            return
+        if isinstance(a, (int, float)) and isinstance(b, (int, float)):
+            if round(float(a), 12) != round(float(b), 12):
+                diffs[path] = [a, b]
+            return
+        if a != b:
+            diffs[path] = [a, b]
+
+    _walk(v1, replay, "")
+    return diffs
+
+
+# ---------------------------------------------------------------------------
 # 结果账本 record 重放（C12b：读原包按旧构建复现；G2-INC-a/b 增量）
 # ---------------------------------------------------------------------------
 
@@ -1248,7 +1426,59 @@ def _resolve_replay_execution(loaded: LoadedSnapshot) -> tuple[str, str]:
     return "in-process", str(cur_digest)
 
 
-async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, Any]:
+#: 语义比较 identity 域（REWORK-D2 定稿：两侧投影到同一键域——写侧
+#: assessmentContext 为 resolve_task_release_context 全量 12+2 键，重放侧
+#: 从包 manifest source 只能取到方法/参数身份 6 键；比较域取交集 6 键，
+#: v1 侧多出的登记元信息（buildDigest/scope/rollbackProfile 等）不属
+#: "方法/参数身份"漂移判定域，投影丢弃；键缺=当时未记录（不伪补））
+_SEMANTIC_IDENTITY_KEYS = (
+    "assessmentProfile",
+    "releaseGeneration",
+    "dataPolicyVersion",
+    "algorithmVersion",
+    "configRevision",
+    "paramsSource",
+)
+
+
+def _identity_projection(ctx: dict[str, Any] | None) -> dict[str, Any]:
+    """任意 identity 上下文 → 语义比较 6 键域投影（缺键=None）."""
+    src = ctx if isinstance(ctx, dict) else {}
+    return {k: src.get(k) for k in _SEMANTIC_IDENTITY_KEYS}
+
+
+def _semantic_view_from_manifest_source(manifest: dict[str, Any]) -> dict[str, Any]:
+    """包内方法/参数身份（语义视图 identity 域；schema 1.2 起可得）.
+
+    configRevision 统一取 ``source.configRevision``（"rev:{n}:{digest16}" /
+    "digest:..." 字符串口径——与 writer assessmentContext 回填值同源同构；
+    effectiveParams.configRevision 的 int 表达不进比较域，防同 revision 双
+    表达伪差异）。paramsSource 由包内参数节推导（10§3.5.3 方法/参数身份）。
+    """
+    src = manifest.get("source") or {}
+    eff = src.get("effectiveParams") or {}
+    return _identity_projection(
+        {
+            "assessmentProfile": src.get("assessmentProfile"),
+            "releaseGeneration": src.get("releaseGeneration"),
+            "dataPolicyVersion": src.get("dataPolicyVersion"),
+            "algorithmVersion": src.get("algorithmVersion"),
+            "configRevision": src.get("configRevision"),
+            "paramsSource": (
+                "package"
+                if isinstance(eff.get("params"), dict) and eff.get("params")
+                else "legacy-unpinned"
+            ),
+        }
+    )
+
+
+async def replay_result_record(
+    db: AsyncSession,
+    record_id: str,
+    *,
+    profile_id: str | None = None,
+) -> dict[str, Any]:
     """按结果账本 record 重放 KPI 计算：读原包（不重查源）按包构建重算并比对 v1.
 
     G2-INC-a：算子参数从包 ``source.effectiveParams.params`` 固定（不读当前
@@ -1259,16 +1489,34 @@ async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, An
     对应的受控构建内子进程执行（缺执行配方/构建失效 → 显式拒绝
     ``ERR_SNAPSHOT_BUILD_NOT_EXECUTABLE``，绝不静默用当前构建冒充）。
 
+    P3-08a 完整语义比较（10§3.5.3）：v1 record 含 ``metricsSemantic`` 时，
+    比较扩展到指标集合/null/数值/状态/原因/分母/覆盖/参考分/综合评分(P/
+    等级)/方法参数身份（``semanticDifferences`` 完整列出差异路径）；旧
+    record（P3-08a 前仅 metricsDetail.value）→ ``v1SemanticAvailable=false``
+    退回值级比较（显式标记，非静默）。
+
+    P3-08a profile 对照（``profile_id``）：None=复现模式（按包身份重算，
+    受控构建路由照旧）；指定 profile → **新 profile 对照**（离线验收）：
+    新算法只在当前构建 → 强制 in-process（executionMode=
+    ``in-process-profile-contrast``），包内参数照固定，差异归因 profile。
+    profile 必须在服务端策略表登记（未注册/未接入显式拒绝）。
+
     Returns:
         ``{"recordId", "snapshotId", "inputHash", "replayedAt",
-           "identical": bool, "differences": {metric: {v1, replay}},
-           "replayedMetrics": {...}, "paramsSource", "executionMode",
+           "identical", "differences", "semanticDifferences",
+           "v1SemanticAvailable", "comparisonKind", "targetAssessmentProfile",
+           "replayedMetrics", "paramsSource", "executionMode",
            "executedBuildDigest"}``
 
     Raises:
         BizError: ERR_SNAPSHOT_* —— 未保存包/过期/损坏/缺构建/缺执行配方均
-            显式拒绝"不可完整复现"，绝不重查当前源数据冒充原输入。
+            显式拒绝"不可完整复现"，绝不重查当前源数据冒充原输入；
+            ERR_ASSESSMENT_PROFILE_*（profile 对照模式）。
     """
+    from app.services.assessment_profile import (
+        AssessmentProfileId,
+        resolve_assessment_profile,
+    )
     from app.services.result_ledger import get_record_by_id
 
     record = await get_record_by_id(db, record_id)
@@ -1292,16 +1540,27 @@ async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, An
             status_code=409,
         )
 
-    execution_mode, route_digest = _resolve_replay_execution(loaded)
-    if execution_mode == "controlled-build":
-        from app.services import controlled_build as cb
+    pkg_profile = (loaded.manifest.get("source") or {}).get("assessmentProfile") or (
+        AssessmentProfileId.LEGACY_V2  # 1.2 旧包=未记录 profile（legacy 隐式）
+    )
+    # profile 对照模式：显式解析（未注册/未接入拒绝）；目标≠包 profile →
+    # 新算法只在当前构建，强制 in-process 对照
+    profile_contrast = False
+    target_profile = pkg_profile
+    if profile_id is not None:
+        resolve_assessment_profile(profile_id)  # 显式拒绝未注册/planned
+        target_profile = profile_id
+        profile_contrast = profile_id != pkg_profile
 
-        out = cb.run_kpi_replay(route_digest, loaded.npz_path, loaded.manifest_path)
-        replayed = out.get("metrics")
-        params_source = str(out.get("paramsSource") or "legacy-unpinned")
-        executed_digest = str(out.get("buildDigest") or route_digest)
-    else:
-        from app.tasks.kpi_calc import _compute_kpis_three_layer, _extract_metrics_detail
+    execution_mode, route_digest = _resolve_replay_execution(loaded)
+    if profile_contrast and execution_mode == "controlled-build":
+        execution_mode = "in-process-profile-contrast"
+    if execution_mode in ("in-process", "in-process-profile-contrast"):
+        from app.tasks.kpi_calc import (
+            _compute_kpis_three_layer,
+            _extract_metrics_detail,
+            _extract_metrics_semantic,
+        )
 
         replay_ctx = loaded.manifest.get("replayContext") or {}
         bundles, _ = deserialize_data_blocks(loaded.arrays, loaded.manifest.get("blocks") or [])
@@ -1311,8 +1570,19 @@ async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, An
             bundles, config_bundle, replay_ctx.get("weights"), pinned_params=pinned_params
         )
         replayed = _extract_metrics_detail(metric_results)
+        replay_semantic = _extract_metrics_semantic(metric_results, composite)
         executed_digest = route_digest
+    else:
+        from app.services import controlled_build as cb
 
+        out = cb.run_kpi_replay(route_digest, loaded.npz_path, loaded.manifest_path)
+        replayed = out.get("metrics")
+        params_source = str(out.get("paramsSource") or "legacy-unpinned")
+        executed_digest = str(out.get("buildDigest") or route_digest)
+        # 受控构建为复现模式（同包同 profile）；CLI 输出值级明细
+        replay_semantic = dict(replayed or {})
+
+    # 值级比较（兼容保留）
     v1_detail = (record.payload or {}).get("metricsDetail") or {}
     differences: dict[str, Any] = {}
     for metric, value in (replayed or {}).items():
@@ -1326,17 +1596,65 @@ async def replay_result_record(db: AsyncSession, record_id: str) -> dict[str, An
                 continue
             if new_v is None or old_v is None or abs(float(new_v) - float(old_v)) > 1e-9:
                 differences[metric] = {"v1": old_v, "replay": new_v}
+
+    # 完整语义比较（P3-08a）：v1 record 含 metricsSemantic 才可比
+    v1_semantic = (record.payload or {}).get("metricsSemantic")
+    v1_semantic_available = isinstance(v1_semantic, dict) and bool(v1_semantic)
+    semantic_differences: dict[str, Any] = {}
+    if v1_semantic_available:
+        v1_view = extract_semantic_view(
+            metrics_semantic=v1_semantic,
+            # REWORK-D2：v1 侧全量 assessmentContext（12+2 键）投影到与重放
+            # 侧相同的 6 键方法/参数身份域（登记元信息不属漂移判定域）
+            identity=_identity_projection((record.payload or {}).get("assessmentContext")),
+        )
+        replay_view = extract_semantic_view(
+            metrics_semantic=replay_semantic,
+            identity=_semantic_view_from_manifest_source(loaded.manifest),
+        )
+        # profile 对照模式下身份差异（profile/releaseGeneration/版本）是
+        # 预期归因项，完整列出（语义差异报告不静默吞差异）
+        semantic_differences = diff_semantic_views(v1_view, replay_view)
+
     return {
         "recordId": str(record.id),
         "snapshotId": loaded.snapshot_id,
         "inputHash": loaded.input_hash,
         "replayedAt": datetime.now(UTC).replace(tzinfo=None).isoformat(),
-        "identical": not differences,
+        "identical": not differences and not semantic_differences,
         "differences": differences,
+        "semanticDifferences": semantic_differences,
+        "v1SemanticAvailable": v1_semantic_available,
+        "comparisonKind": ("profile-contrast" if profile_contrast else "reproduction"),
+        "targetAssessmentProfile": target_profile,
         "replayedMetrics": replayed,
         "paramsSource": params_source,
         "executionMode": execution_mode,
         "executedBuildDigest": executed_digest,
+    }
+
+
+async def offline_acceptance_replay(
+    db: AsyncSession,
+    record_id: str,
+    *,
+    profile_id: str | None = None,
+) -> dict[str, Any]:
+    """离线验收重算（C12-EA3）：读原包按指定 profile 重算并完整语义对照.
+
+    **不改生产投影**（hourly/latest/node/record 均不写——本函数只读原包与
+    账本行，输出对照报告；隔离验收结果不进入生产排行/报告，10§7.2）。
+    ``profile_id=None`` 按复现模式（同包同 profile 重算）。
+
+    返回 replay 报告 + ``offlineAcceptance=true`` / ``wroteProjection=false``
+    （显式声明，读端可核对）；差异经 ``semanticDifferences`` 逐例列出，
+    逐例解释归因（profile-contrast 模式差异归因 targetAssessmentProfile）。
+    """
+    report = await replay_result_record(db, record_id, profile_id=profile_id)
+    return {
+        **report,
+        "offlineAcceptance": True,
+        "wroteProjection": False,
     }
 
 
@@ -1478,6 +1796,7 @@ __all__ = [
     "KIND_DIAGNOSIS_RAW",
     "KIND_IDENTIFICATION",
     "KIND_KPI_GRID",
+    "KIND_KPI_ORIGINAL_EVENTS",
     "LoadedSnapshot",
     "ORPHAN_FILE_GRACE_HOURS",
     "RETENTION_DAYS_DEFAULT",
@@ -1487,17 +1806,22 @@ __all__ = [
     "UNVERSIONED_BUILD",
     "cleanup_expired_snapshots",
     "compute_input_hash",
+    "derivation_section",
     "deserialize_data_blocks",
     "deserialize_grid_signals",
+    "diff_semantic_views",
     "executable_build_digest",
+    "extract_semantic_view",
     "find_referencing_records",
     "freeze_snapshot",
     "load_snapshot_for_replay",
+    "offline_acceptance_replay",
     "replay_identification_snapshot",
     "replay_result_record",
     "retained_build_digests",
     "save_calculation_snapshot",
     "save_identification_snapshot",
+    "save_original_events_snapshot",
     "serialize_data_blocks",
     "serialize_grid_signals",
     "snapshot_file_paths",

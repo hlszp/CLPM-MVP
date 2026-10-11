@@ -738,6 +738,11 @@ class TestEngineeringFactsUnknownStates:
             "upper": 95.0,
             "source": "LOOP_FIELD",
             "note": "回路工程属性 op_output_lower/upper_limit",
+            # P3-08a（O-5 定稿）只加不改：条目补 provenance/unit/
+            # interpretationVersion 四件套（ACTUAL=已核实有来源）
+            "provenance": "ACTUAL",
+            "unit": "℃",
+            "interpretationVersion": "1",
         }
         assert facts["pvRange"]["unit"] == "℃"
 
@@ -910,7 +915,9 @@ class TestIdentificationManifest12:
         }
         self._save(engineering_facts=facts)
         manifest = self._read_manifest()
-        assert manifest["schemaVersion"] == "1.2"
+        # P3-08a（R17）：schemaVersion 随版本化扩展递增至 1.3（主版本门禁不变，
+        # engineeringFacts 节语义与 1.2 相同——次版本演进属 P2-03 冻结策略）
+        assert manifest["schemaVersion"] == "1.3"
         assert manifest["engineeringFacts"] == facts
 
     def test_manifest_1_2_without_facts_explicit_null(
@@ -919,7 +926,7 @@ class TestIdentificationManifest12:
         """engineering_facts=None → 节显式 null（当时未记录，不伪补）."""
         self._save()
         manifest = self._read_manifest()
-        assert manifest["schemaVersion"] == "1.2"
+        assert manifest["schemaVersion"] == "1.3"  # P3-08a：1.2→1.3（R17 只加不改）
         assert manifest["engineeringFacts"] is None
 
     def test_manifest_1_1_package_still_readable(

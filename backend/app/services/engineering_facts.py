@@ -53,6 +53,23 @@ VALID_CONTROL_ACTION_DIRECTIONS = (
 #: OP 限幅默认值（来源优先级第三级；与既有 v6.1 设计一致）
 _DEFAULT_OP_LOWER, _DEFAULT_OP_UPPER = 0.0, 100.0
 
+#: 工程事实解释版本（O-5 载体：事实内容变化进入规范化快照/hash 的版本位；
+# 语义变更时递增并登记变更说明——只加不改）
+ENGINEERING_FACTS_INTERPRETATION_VERSION = "1"
+
+
+def _op_limits_provenance(source: str) -> str:
+    """既有 opLimits.source → O-5 定稿 provenance 枚举映射（三分语义）.
+
+    LOOP_FIELD/TAG_RANGE=ACTUAL（已核实有来源）；DEFAULT_0_100=DEFAULT
+    （默认假设，不当已核实限位——契约 §2.5）。
+    """
+    from app.contracts.data_types import EngineeringFactProvenance
+
+    if source == "DEFAULT_0_100":
+        return EngineeringFactProvenance.DEFAULT
+    return EngineeringFactProvenance.ACTUAL
+
 
 def _dcs_template_revision(loop: LoopLedger) -> str:
     """DCS 模板 revision（与 tuning._dcs_template_revision 同口径）."""
@@ -98,28 +115,86 @@ async def _load_tag_facts(db: AsyncSession, loop_id: str) -> dict[str, dict[str,
 
 
 def _resolve_op_limits(loop: LoopLedger, op_tag: dict[str, Any] | None) -> dict[str, Any]:
-    """实际 OP 上下限（来源优先级：回路字段 > OP Tag 量程 > 默认 0/100）."""
+    """实际 OP 上下限（来源优先级：回路字段 > OP Tag 量程 > 默认 0/100）.
+
+    P3-08a（O-5 定稿）：条目补 ``provenance``（三分语义：ACTUAL/DEFAULT/
+    UNKNOWN——DEFAULT_0_100 只是默认假设，不当已核实限位）、``unit`` 与
+    ``interpretationVersion``（契约 §2.5：value+source+unit+
+    interpretationVersion 四件套；只加不改，既有读端按缺键忽略）。
+    """
+    unit = (op_tag or {}).get("unit")
     lower = getattr(loop, "op_output_lower_limit", None)
     upper = getattr(loop, "op_output_upper_limit", None)
     if lower is not None and upper is not None:
-        return {
+        base = {
             "lower": float(lower),
             "upper": float(upper),
             "source": "LOOP_FIELD",
             "note": "回路工程属性 op_output_lower/upper_limit",
         }
-    if op_tag and op_tag.get("rangeMin") is not None and op_tag.get("rangeMax") is not None:
-        return {
+    elif op_tag and op_tag.get("rangeMin") is not None and op_tag.get("rangeMax") is not None:
+        base = {
             "lower": float(op_tag["rangeMin"]),
             "upper": float(op_tag["rangeMax"]),
             "source": "TAG_RANGE",
             "note": f"OP 位号量程（{op_tag.get('tagName')}）",
         }
+    else:
+        base = {
+            "lower": _DEFAULT_OP_LOWER,
+            "upper": _DEFAULT_OP_UPPER,
+            "source": "DEFAULT_0_100",
+            "note": "回路字段与 OP 位号量程均缺失，回落默认 0~100（百分比输出假设）",
+        }
+    base.update(
+        {
+            "provenance": _op_limits_provenance(base["source"]),
+            "unit": unit,
+            "interpretationVersion": ENGINEERING_FACTS_INTERPRETATION_VERSION,
+        }
+    )
+    return base
+
+
+def _resolve_reference_values(loop: LoopLedger) -> dict[str, Any]:
+    """A 容限/T′ 参考值载体（P3-08a 预留；具体数值由 P3-03 供，09a 消费）.
+
+    - ``aTolerance``（A 容限）：本批显式 UNKNOWN（value=null——数值由
+      P3-03 从工艺要求/工程事实供；未知不虚构，契约 §2.6"对应真实工艺
+      要求，避免容限随不合适量程变宽"）；
+    - ``tPrime``（理想 settling time）：``loop.ideal_settling_time`` 有值
+      → origin=MANUAL；无值 → origin=DEFAULT（类型默认回退，显式标注，
+      10§3.4"保留手动优先/默认回退且显式标来源"）；VERIFIED_MODEL 待
+      P3-06 独立终验通过后由消费方接入，本载体不预填。
+    """
+    from app.contracts.data_types import EngineeringFactProvenance, ReferenceValueOrigin
+
+    manual_tprime = getattr(loop, "ideal_settling_time", None)
+    if manual_tprime is not None:
+        t_prime = {
+            "value": float(manual_tprime),
+            "origin": ReferenceValueOrigin.MANUAL,
+            "sourceField": "loop_ledger.ideal_settling_time",
+            "note": "手动指定的理想稳态时间（手动优先）",
+        }
+    else:
+        t_prime = {
+            "value": None,
+            "origin": ReferenceValueOrigin.DEFAULT,
+            "sourceField": None,
+            "note": "未手动指定，消费方按控制类型默认回退（显式标注来源=默认）",
+        }
+    t_prime["unit"] = "s"
+    t_prime["interpretationVersion"] = ENGINEERING_FACTS_INTERPRETATION_VERSION
     return {
-        "lower": _DEFAULT_OP_LOWER,
-        "upper": _DEFAULT_OP_UPPER,
-        "source": "DEFAULT_0_100",
-        "note": "回路字段与 OP 位号量程均缺失，回落默认 0~100（百分比输出假设）",
+        "aTolerance": {
+            "value": None,
+            "provenance": EngineeringFactProvenance.UNKNOWN,
+            "unit": None,
+            "interpretationVersion": ENGINEERING_FACTS_INTERPRETATION_VERSION,
+            "note": "P3-08a 预留载体：A 容限数值由 P3-03 联合供数（真实工艺要求），未知不虚构",
+        },
+        "tPrime": t_prime,
     }
 
 
@@ -208,6 +283,9 @@ async def resolve_loop_engineering_facts(db: AsyncSession, loop_id: str) -> dict
         },
         "pidRepresentation": await _resolve_pid_representation(db, loop),
         "engineeringTemplate": template_ref,
+        # P3-08a（O-5 定稿）：A 容限/T′ 参考值载体（provenance/origin 显式
+        # 标来源；数值 P3-03 供、消费 09a；只加不改）
+        "referenceValues": _resolve_reference_values(loop),
     }
 
 
@@ -275,6 +353,7 @@ __all__ = [
     "CONTROL_ACTION_DIRECT",
     "CONTROL_ACTION_REVERSE",
     "CONTROL_ACTION_UNKNOWN",
+    "ENGINEERING_FACTS_INTERPRETATION_VERSION",
     "VALID_CONTROL_ACTION_DIRECTIONS",
     "get_loop_qualifications",
     "resolve_loop_engineering_facts",

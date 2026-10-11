@@ -1781,6 +1781,10 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
     trigger_type        VARCHAR(16)  NOT NULL DEFAULT 'MANUAL',
     -- 指标摘要（迁移 a3b4c5d6e7f8）：6 负向 + 7 正向指标，统一 0-100 标度
     metric_summary      JSONB,
+    -- 诊断科学结论元信息（迁移 p308arele01，P3-08a/D0 契约 O-1）：
+    -- judgementStatus/causeStatus 等 08§4.2 结构；写入方归诊断侧（P3-01/D1），
+    -- NULL=历史 run 无元信息（LEGACY_UNVERIFIABLE 口径）
+    assessment_meta     JSONB,
     -- 人工复核四件套（迁移 b8c9d0e1f2a3）
     review_status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     review_results      JSONB,
@@ -2486,7 +2490,7 @@ CREATE TABLE IF NOT EXISTS calculation_dataset_snapshot (
     loop_id               UUID,
     created_at            TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
     CONSTRAINT ck_calc_dataset_snapshot_retention CHECK (retention_class IN ('NORMAL', 'FROZEN')),
-    CONSTRAINT ck_calc_dataset_snapshot_kind CHECK (kind IN ('KPI_GRID', 'IDENTIFICATION', 'DIAGNOSIS_RAW')),
+    CONSTRAINT ck_calc_dataset_snapshot_kind CHECK (kind IN ('KPI_GRID', 'IDENTIFICATION', 'DIAGNOSIS_RAW', 'KPI_ORIGINAL_EVENTS')),
     CONSTRAINT ck_calc_dataset_snapshot_frozen_reason CHECK (retention_class <> 'FROZEN' OR frozen_reason IS NOT NULL),
     CONSTRAINT ck_calc_dataset_snapshot_window CHECK (ts_end > ts_start),
     CONSTRAINT uq_calc_dataset_snapshot_content_ref UNIQUE (dataset_ref, input_hash, ts_start, ts_end, created_by_record_id)
@@ -2503,11 +2507,55 @@ COMMENT ON TABLE  calculation_dataset_snapshot IS '不可变计算输入包元�
 COMMENT ON COLUMN calculation_dataset_snapshot.dataset_ref IS '绑定身份（≠数值身份；logical_wide_builder 摘要或显式合成）';
 COMMENT ON COLUMN calculation_dataset_snapshot.input_hash IS '内容 SHA256（NPZ 数组+manifest 全部内容，volatile 字段除外）';
 COMMENT ON COLUMN calculation_dataset_snapshot.schema_version IS 'manifest 结构版本（主版本 1 版本化扩展）';
-COMMENT ON COLUMN calculation_dataset_snapshot.kind IS '包种类：KPI_GRID/IDENTIFICATION/DIAGNOSIS_RAW（重放按种类分派）';
+COMMENT ON COLUMN calculation_dataset_snapshot.kind IS '包种类：KPI_GRID/IDENTIFICATION/DIAGNOSIS_RAW/KPI_ORIGINAL_EVENTS（重放按种类分派；原事件包 P3-08a）';
 COMMENT ON COLUMN calculation_dataset_snapshot.created_by_record_id IS '创建引用（跨表：结果账本 record/tuning_record/diagnosis_run，无硬 FK）';
 COMMENT ON COLUMN calculation_dataset_snapshot.frozen_by_record_ids IS 'FROZEN 时引用本包的方案/实施/审核证据 recordId 列表';
 COMMENT ON COLUMN calculation_dataset_snapshot.expires_at IS 'NORMAL 保留期终点（创建+90 天，DEC-10）；FROZEN 行忽略';
 COMMENT ON COLUMN calculation_dataset_snapshot.cleaned_at IS '清理完成标记（先标记再删文件）';
+
+-- =============================================================================
+-- 8.12 assessment_release_registry（评估发布代际登记，P3-08a，迁移 p308arele01）
+--   上线清单六要素：assessmentProfile/algorithmVersion/dataPolicyVersion/
+--   configRevision/buildDigest/releaseGeneration（+snapshotSchemaVersion）+
+--   消费者最低版本/作用范围/回退 profile。EA-D05：验收后直接采用（无线上
+--   SHADOW/节点试点前置）；发布/回退=状态迁移（STAGED→ACTIVE→RETIRED），
+--   同 profile 至多一条 ACTIVE（partial unique index），不删行不删记录。
+--   任务开始经 resolve_task_release_context 读取 ACTIVE 代际固定六要素；
+--   无 ACTIVE 行时消费侧 releaseGeneration=NULL（legacy 口径显式标记）。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS assessment_release_registry (
+    id                    UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    release_generation    VARCHAR(64)     NOT NULL,
+    assessment_profile    VARCHAR(50)     NOT NULL,
+    algorithm_version     VARCHAR(50)     NOT NULL,
+    data_policy_version   VARCHAR(32)     NOT NULL,
+    config_revision       VARCHAR(64),
+    build_digest          VARCHAR(64),
+    snapshot_schema_version VARCHAR(16)   NOT NULL,
+    consumer_min_version  VARCHAR(32),
+    scope                 JSONB,
+    rollback_profile      VARCHAR(50),
+    status                VARCHAR(8)      NOT NULL DEFAULT 'STAGED',
+    activated_at          TIMESTAMP,
+    retired_at            TIMESTAMP,
+    note                  VARCHAR(500),
+    created_at            TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT ck_assessment_release_status CHECK (status IN ('STAGED', 'ACTIVE', 'RETIRED')),
+    CONSTRAINT uq_assessment_release_generation UNIQUE (release_generation)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_release_profile
+    ON assessment_release_registry (assessment_profile, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assessment_release_active_profile
+    ON assessment_release_registry (assessment_profile)
+    WHERE status = 'ACTIVE';
+
+COMMENT ON TABLE  assessment_release_registry IS '评估发布代际登记（上线清单六要素，P3-08a，EA-D05 直接采用）';
+COMMENT ON COLUMN assessment_release_registry.release_generation IS '发布代际标识（唯一；如 rg-0001-legacy-v2）';
+COMMENT ON COLUMN assessment_release_registry.assessment_profile IS '评估 profile（服务端策略表登记标识）';
+COMMENT ON COLUMN assessment_release_registry.build_digest IS '发布时冻结的受控构建摘要（空=登记时未冻结，消费回落当前构建）';
+COMMENT ON COLUMN assessment_release_registry.status IS 'STAGED 已登记未生效 / ACTIVE 正式生效 / RETIRED 已被新代际取代';
+COMMENT ON COLUMN assessment_release_registry.rollback_profile IS '回退 profile（回退=activate 旧代际，保留全部记录）';
 
 -- 延迟外键：tuning_record / process_model_version / diagnosis_run →
 -- calculation_dataset_snapshot（表定义顺序在前）

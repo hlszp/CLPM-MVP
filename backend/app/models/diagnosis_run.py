@@ -61,6 +61,13 @@ class DiagnosisRun(Base, TimestampMixin):
     #: 诊断指标汇总（方案 A，2026-08-19）：诊断时间窗内 KPI 快照均值 + 算子特征，
     #: 统一 0~100 口径（坏值率/饱和率/振荡率/粘滞系数/稳定时间/行程指数 + 6 正向率）
     metric_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: P3-08a（D0 契约 O-1 定稿）：诊断科学结论元信息（08§4.2 结构：
+    #: schemaVersion/judgementStatus/causeStatus/profileId/profileVersion/scope/
+    #: coverage/supportKind/calibrationStatus/supportRuleVersion/evidenceGroups/
+    #: confidenceDefinitionsSnapshot/kpiSourceRecordIds）。写入方=诊断编排
+    #: （P3-01/D1 接线），本列只做载体；NULL=历史 run 无科学结论元信息
+    #: （读端按 LEGACY_UNVERIFIABLE 口径处理，不伪补）。
+    assessment_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     threshold_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

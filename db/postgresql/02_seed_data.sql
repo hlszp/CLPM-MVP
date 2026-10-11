@@ -1005,5 +1005,21 @@ WHERE EXISTS (SELECT 1 FROM loop_ledger WHERE id = v.loop_id::uuid)
 ON CONFLICT DO NOTHING;
 
 -- =============================================================================
+-- 16. 评估发布代际登记种子（P3-08a，迁移 p308arele01 同批）
+--   预登记 LEGACY_V2 首个代际（STAGED——不自动激活；激活走 activate_release
+--   显式动作，未激活前消费侧 releaseGeneration=NULL 显式标记"未登记"）。
+--   幂等：release_generation 唯一键 ON CONFLICT DO NOTHING。
+-- =============================================================================
+INSERT INTO assessment_release_registry
+    (id, release_generation, assessment_profile, algorithm_version,
+     data_policy_version, snapshot_schema_version, status, note, created_at)
+VALUES
+    ('00000000-0000-0000-0000-0c0800000001', 'rg-0001-legacy-v2', 'LEGACY_V2',
+     'KPI_CALC_v2.0', 'pre_v1', '1.3', 'STAGED',
+     'P3-08a 预登记：现行正式评估口径（激活后任务固定 releaseGeneration）',
+     timezone('UTC', now()))
+ON CONFLICT (release_generation) DO NOTHING;
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

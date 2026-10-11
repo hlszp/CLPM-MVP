@@ -1,7 +1,7 @@
 {
- "baseline_head": "14dbca55cb69539bfe53eb99575f6a643d7c81cf",
+ "baseline_head": "f0f0c4d9b4c00a6511aa7b5311edd06a364b396b",
  "files": {
-  "app/contracts/data_types.py": "d474bed0e573ea21d97e70692ea405b6e87b8e7c21cf106927af7306c3d318fb",
+  "app/contracts/data_types.py": "d7f9240aa988d2c50fe7993b37cff3f65ede696c68179e23081f3eadebbabd06",
   "app/services/diagnosis_orchestrator.py": "f1c4084b8ff08e6a089f31889d7b5013608c256ae441c05e03f6b4d1ab2fbfe9",
   "app/services/metric_calculator/__init__.py": "ed13c463166f0213c62fb608e8ab2aba035102ecb311d70142682a5080810319",
   "app/services/metric_calculator/accuracy.py": "aad94a0f9278dbba5350ce9cb9ae3618cc6e7195ca82e9b374ccb595b8b97f5f",
