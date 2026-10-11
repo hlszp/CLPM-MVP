@@ -616,7 +616,7 @@ class TestAssessmentSupplyFacts:
         assert "P3-06" in supply["idealSettlingTime"]["modelBasedNote"]
 
     def test_op_limits_three_way(self):
-        """实际 OP 限位三分：回路字段 > tag 量程 > 默认假设（来源随值）."""
+        """实际 OP 限位三分：回路字段 > tag 量程 > 默认假设（来源随值+provenance 三分语义）."""
         loop = _make_loop_row(op_lower=5.0, op_upper=95.0)
         supply = self._supply(loop)
         assert supply["opLimits"] == {
@@ -624,6 +624,9 @@ class TestAssessmentSupplyFacts:
             "upper": 95.0,
             "source": "LOOP_FIELD",
             "note": "回路工程属性 op_output_lower/upper_limit",
+            "provenance": "ACTUAL",
+            "unit": "%",
+            "interpretationVersion": "1",
         }
         supply2 = self._supply(
             _make_loop_row(),
@@ -631,11 +634,13 @@ class TestAssessmentSupplyFacts:
         )
         assert supply2["opLimits"]["source"] == "TAG_RANGE"
         assert supply2["opLimits"]["lower"] == 4.0
+        assert supply2["opLimits"]["provenance"] == "ACTUAL"
         supply3 = self._supply(
             _make_loop_row(),
             tag_rows=[("PV", _tag_row()), ("OP", _tag_row(range_min=None, range_max=None))],
         )
         assert supply3["opLimits"]["source"] == "DEFAULT_0_100"
+        assert supply3["opLimits"]["provenance"] == "DEFAULT"
 
     def test_supply_interpretation_version_and_ranges(self):
         """供数带解释版本；PV/OP 量程随供数（换算层消费）."""
