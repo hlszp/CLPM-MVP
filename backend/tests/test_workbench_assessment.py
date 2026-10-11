@@ -305,6 +305,28 @@ class TestShapeHeatmap:
         # 全部 None → 前端斜纹
         assert all(v is None for v in heat["units"][0]["values"])
 
+    def test_P102补充_存量伪0行整行不渲染0分色阶(self):
+        """P1-02 验收补充接线（2026-10-10）：loop_count=0 但聚合列被旧代码
+        写成 0.0 的存量伪 0 行 → 指标全列 None（前端斜纹 N/A）、score 走
+        _row_score 守卫返回 None——热力图不再渲染 0 分色阶冒充真实评估。"""
+        hierarchy = _hierarchy()
+        r = _win_row(
+            score=0.0,
+            rates={
+                "effective_auto_rate": 0.0,
+                "steady_rate": 0.0,
+                "accuracy_rate": 0.0,
+                "fast_rate": 0.0,
+                "good_value_rate": 0.0,
+                "instrument_fault_rate": 0.0,
+            },
+            loop_count=0,
+        )
+        r.scope_id = 10000
+        heat = shape_heatmap([r], hierarchy)
+        assert all(v is None for v in heat["units"][0]["values"])
+        assert heat["units"][0]["score"] is None
+
 
 # ===========================================================================
 # shape_trend

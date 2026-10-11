@@ -340,7 +340,7 @@ def shape_heatmap(
     values 顺序与 metrics 对齐；null → 前端斜纹 N/A。
     """
     name_by_source_id: dict[int, str] = hierarchy["name_by_source_id"]
-    by_id = hierarchy["by_id"]
+    by_id: dict[str, Any] = hierarchy["by_id"]
     units: list[dict[str, Any]] = []
     for row in kpi_rows:
         src_id = getattr(row, "scope_id", None)
@@ -356,9 +356,13 @@ def shape_heatmap(
                 if parent is not None:
                     parent_name = parent.name
                 break
+        # P1-02 补充接线（2026-10-10）：_row_score 同款守卫——存量伪 0 行
+        # （loop_count=0 但聚合列被旧代码写成 0.0）整行视为"未计算"，
+        # 指标值全列置 null（前端斜纹 N/A），不渲染 0 分色阶冒充真实评估
+        row_computed = bool(getattr(row, "loop_count", 0) or 0)
         values: list[float | None] = []
         for key, _label, _rev in EVAL_METRICS:
-            v = _to_float(getattr(row, key, None))
+            v = _to_float(getattr(row, key, None)) if row_computed else None
             # 归一为 0~100 口径（与原型 heatColor 阈值 92/84/76 对齐）
             values.append(round(v * 100, 1) if v is not None else None)
         units.append(
@@ -366,7 +370,7 @@ def shape_heatmap(
                 "id": src_id,
                 "name": name_by_source_id.get(src_id) or f"单元#{src_id}",
                 "plant": parent_name,
-                "score": _to_float(getattr(row, "score", None)),
+                "score": _row_score(row),
                 "values": values,
             }
         )

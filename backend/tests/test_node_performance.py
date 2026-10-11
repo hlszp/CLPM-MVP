@@ -796,6 +796,112 @@ class TestQueryServices:
         assert result["nodes"] == []
 
 
+class TestP103DisplayHalfOpenWindow:
+    """P1-03（2026-10-10）：展示查询窗口与 CAL-05 聚合口径对齐——半开 [start, end)。
+
+    覆盖 get_node_trend / get_node_ranking / get_nodes_overview /
+    get_node_monitor_history(hour) 四处展示 SQL，ts_start == end 的快照
+    属下一窗（原 <= 会把下一窗起点计入本窗）。
+    """
+
+    @staticmethod
+    def _compile(stmt) -> str:
+        return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    @pytest.mark.asyncio
+    async def test_节点趋势上边界为半开(self):
+        from app.services.node_performance import get_node_trend
+
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            result = MagicMock()
+            result.scalars.return_value.all.return_value = []
+            result.scalar_one_or_none.return_value = None
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_node_trend(
+            db, "node-001", datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0)
+        )
+        trend_sql = self._compile(captured_stmts[0])
+        assert "ts_start <" in trend_sql
+        assert "ts_start <=" not in trend_sql
+
+    @pytest.mark.asyncio
+    async def test_节点排名上边界为半开(self):
+        from app.services.node_performance import get_node_ranking
+
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            result = MagicMock()
+            result.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_node_ranking(db, datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0))
+        rank_sql = self._compile(captured_stmts[0])
+        assert "ts_start <" in rank_sql
+        assert "ts_start <=" not in rank_sql
+
+    @pytest.mark.asyncio
+    async def test_全厂总览上边界为半开(self):
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        node = MagicMock()
+        node.id = "node-001"
+        node.name = "HDS"
+        node.type = "UNIT"
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            if len(captured_stmts) == 1:
+                return node_result
+            result = MagicMock()
+            result.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_nodes_overview(db, datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0))
+        overview_sql = self._compile(captured_stmts[1])
+        assert "ts_start <" in overview_sql
+        assert "ts_start <=" not in overview_sql
+
+    @pytest.mark.asyncio
+    async def test_监控历史hour维度上边界为半开(self):
+        from app.services.node_performance import get_node_monitor_data
+
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            result.scalars.return_value.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_node_monitor_data(
+            db,
+            "node-001",
+            "hour",
+            datetime(2026, 6, 24, 8, 0, 0),
+            datetime(2026, 6, 24, 9, 0, 0),
+        )
+        monitor_sql = self._compile(captured_stmts[1])
+        assert "ts_start <" in monitor_sql
+        assert "ts_start <=" not in monitor_sql
+
+
 # ---------------------------------------------------------------------------
 # _score_to_status 5 级定级测试（节点级复用）
 # ---------------------------------------------------------------------------
