@@ -1119,8 +1119,9 @@ INSERT INTO sys_permission (code, kind, parent_code, requires_codes, module_key,
     ('tag:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, 'Tag 注册 CRUD/导入', 1601),
     ('plant:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, '工厂节点 CRUD/导入导出', 1602),
     ('dcs:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, 'DCS 品牌/型号/MODE 配置写', 1603),
-    ('data:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, '数据源配置/历史导入/DataPlanner/工厂同步', 1604),
+    ('data:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, '数据源配置/DataPlanner/工厂同步', 1604),
     ('ai:insight', 'ACTION', NULL, '["diagnosis:view"]'::jsonb, NULL, false, 'AI 洞察生成', 1605),
+    ('data:import', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, '历史数据导入/KPI 回算（ADMIN/IC/PE）', 1606),
     ('system:user-manage', 'ACTION', NULL, '["system:view"]'::jsonb, 'system', true, '用户 CRUD/重置密码（protected）', 1700),
     ('system:authorization-manage', 'ACTION', NULL, '["system:view"]'::jsonb, 'system', true, '角色矩阵/用户 scope/回退管理（protected）', 1701),
     ('system:module-manage', 'ACTION', NULL, '["system:view"]'::jsonb, 'system', true, '模块启停（protected）', 1702),
@@ -1142,6 +1143,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('ADMIN', 'config:publish'),
     ('ADMIN', 'config:view'),
     ('ADMIN', 'data:manage'),
+    ('ADMIN', 'data:import'),
     ('ADMIN', 'dcs:manage'),
     ('ADMIN', 'diagnosis-config:manage'),
     ('ADMIN', 'diagnosis:interpret'),
@@ -1252,6 +1254,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('IC_ENGINEER', 'alert:subscription-manage'),
     ('IC_ENGINEER', 'alert:view'),
     ('IC_ENGINEER', 'config:view'),
+    ('IC_ENGINEER', 'data:import'),
     ('IC_ENGINEER', 'diagnosis:interpret'),
     ('IC_ENGINEER', 'diagnosis:review'),
     ('IC_ENGINEER', 'diagnosis:task-manage'),
@@ -1324,6 +1327,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('PE_ENGINEER', 'ai:insight'),
     ('PE_ENGINEER', 'alert:view'),
     ('PE_ENGINEER', 'config:view'),
+    ('PE_ENGINEER', 'data:import'),
     ('PE_ENGINEER', 'diagnosis:interpret'),
     ('PE_ENGINEER', 'diagnosis:review'),
     ('PE_ENGINEER', 'diagnosis:task-manage'),
@@ -1489,6 +1493,13 @@ ON CONFLICT (revision) DO NOTHING;
 -- 目录扩展=系统基线变更（不可回退）；推进 revision 使运行时矩阵缓存下一请求重载。
 INSERT INTO sys_authz_policy (revision, operation, role, user_id, reason, operator, before_value, after_value, rollback_of, created_at) VALUES
     (2, 'CATALOG_EXTENSION', NULL, NULL, 'P4-02 观察项①：alert 订阅 CRUD 补独立动作码 alert:subscription-manage（ADMIN/IC）', 'system:migration', NULL, '{"addedCodes": ["alert:subscription-manage"], "grants": {"ADMIN": ["alert:subscription-manage"], "IC_ENGINEER": ["alert:subscription-manage"]}, "source": "p402authz02"}'::jsonb, NULL, now())
+ON CONFLICT (revision) DO NOTHING;
+
+-- P4-02 尾批（迁移 p402authz03 同批同内容）：历史数据导入补独立动作码——
+-- loop_data 活链白名单 A/I/P 宽于 data:manage 种子（ADMIN），扩种子会放大
+-- datasource/dataplanner/factory_sync 13 端点，故补 data:import 独立码。
+INSERT INTO sys_authz_policy (revision, operation, role, user_id, reason, operator, before_value, after_value, rollback_of, created_at) VALUES
+    (3, 'CATALOG_EXTENSION', NULL, NULL, 'P4-02 尾批：历史数据导入补独立动作码 data:import（ADMIN/IC/PE == loop_data 活链白名单；data:manage 种子不扩防放大 datasource 等 13 端点）', 'system:migration', NULL, '{"addedCodes": ["data:import"], "grants": {"ADMIN": ["data:import"], "IC_ENGINEER": ["data:import"], "PE_ENGINEER": ["data:import"]}, "source": "p402authz03"}'::jsonb, NULL, now())
 ON CONFLICT (revision) DO NOTHING;
 
 INSERT INTO sys_user_scope (user_id, scope_type, node_id, updated_by, updated_at)

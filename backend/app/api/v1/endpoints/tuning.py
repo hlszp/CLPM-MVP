@@ -29,7 +29,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms, require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -166,11 +166,19 @@ async def get_methods_endpoint(
 # ---------------------------------------------------------------------------
 
 
+# P4-02 尾批（动作码接入）：tuning.py 全部写端点原 require_roles("ADMIN",
+# "IC_ENGINEER", "EXPERT", "PE_ENGINEER") == 四角色白名单，与目录码种子逐一
+# 核对为**等价替换**（tuning:identify/tune/simulate/task-create/task-manage
+# 种子均 A/I/P/E == 原白名单；种子核对见 tests/test_p4_02t_authz_tail.py）——
+# require_perms 纯码接管，DB 矩阵可收紧；SPONSOR 零写红线由 require_perms
+# 结构性拒绝（不依赖矩阵纪律）。fitness L0/L1 门禁仍在服务层独立执行（AND）。
+
+
 @router.post("/identify", response_model=ApiResponse[ModelIdentifyResult])
 async def identify_model_endpoint(
     body: ModelIdentifyRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:identify")),
 ) -> dict:
     """模型辨识（阶跃实验路径，同步；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -201,7 +209,7 @@ async def identify_model_endpoint(
 async def identify_history_endpoint(
     body: ModelIdentifyHistoryRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:identify")),
 ) -> dict:
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -217,7 +225,7 @@ async def identify_history_endpoint(
 
     # P1-04/AUTH-06：高级参数字段级守卫——非 ADMIN/EXPERT 携带
     # thetaEstimate/candidateModelTypes 时拒绝（与前端 ADVANCED_PARAM_ROLES
-    # 隐藏策略一致；SPONSOR 无权 POST 本端点，由 require_roles 先行拦截）。
+    # 隐藏策略一致；SPONSOR 无权 POST 本端点，由 require_perms 先行拦截）。
     if user.role not in _TUNING_ADVANCED_PARAM_ROLES and (
         body.candidateModelTypes is not None or body.thetaEstimate is not None
     ):
@@ -280,7 +288,7 @@ async def identify_history_endpoint(
 async def identify_segments_endpoint(
     body: IdentifySegmentsRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:identify")),
 ) -> dict:
     """可辨识片段预览（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -304,7 +312,7 @@ async def identify_segments_endpoint(
 async def tune_pid_endpoint(
     body: TuneRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:tune")),
 ) -> dict:
     """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -354,7 +362,7 @@ async def tune_pid_endpoint(
 async def tune_matrix_endpoint(
     body: TuneMatrixRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:tune")),
 ) -> dict:
     """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -403,7 +411,7 @@ async def tune_matrix_endpoint(
 async def simulate_endpoint(
     body: SimulateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:simulate")),
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -442,7 +450,7 @@ async def simulate_endpoint(
 async def compare_pids_endpoint(
     body: CompareRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:simulate")),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -517,9 +525,9 @@ async def verification_data_endpoint(
     pointTime: str = Query(..., description="对比时点 ISO 8601（naive UTC 或带时区）"),
     windowHours: int = Query(..., description="窗口小时数：1/2/4/8/24/72/168"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
-    """效果验证前后窗曲线数据（全部登录用户只读；实时拉取不落库）。
+    """效果验证前后窗曲线数据（五角色只读——tuning:view 种子即五角色，零行为变化；实时拉取不落库）。
 
     前窗 [pointTime−window, pointTime] 与后窗 [pointTime, pointTime+window]
     各拉一次 SP/PV/OP 波形 + 窗口 KPI 均值摘要（2026-10-04 B2：由"窗口内
@@ -631,7 +639,7 @@ async def get_task_status_endpoint(
 @router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
 async def cancel_task_endpoint(
     task_id: str,
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:task-manage")),
 ) -> dict:
     """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -661,7 +669,7 @@ async def cancel_task_endpoint(
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:task-create")),
 ) -> dict:
     """保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结）.
 

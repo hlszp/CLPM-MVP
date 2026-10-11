@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, literal_column, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
 
@@ -59,7 +59,7 @@ async def get_overview_endpoint(
         description="时间粒度：day/week/month（day=最近24小时，week=最近7天，month=最近30天）",
     ),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """工作台聚合数据（所有角色可访问，不同角色数据范围不同）。
 
@@ -130,7 +130,7 @@ def _build_board_item(summary: UnitKpiSummary, node_name: str) -> dict:
 async def get_auto_rate_rt_endpoint(
     plantId: str | None = Query(None, description="按节点筛选；为空统计全厂；递归包含所有下属节点"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """实时自控率（来自 TDengine 最新 MODE 值，每分钟刷新）.
 
@@ -221,7 +221,7 @@ async def get_board_trend_endpoint(
         "2026-10-03 改版：恒柱状渲染，长窗口切日粒度防柱过密）",
     ),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """节点级聚合趋势数据（来自 ``unit_kpi_summary`` 表，递归聚合当前节点及所有下属节点）.
 
@@ -662,7 +662,7 @@ async def get_board_aggregate_endpoint(
         description="同时返回上一等长窗口的同口径聚合 prevAggregate（环比基线）",
     ),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """节点级聚合 KPI（来自 ``unit_kpi_summary`` 表，递归聚合当前节点及所有下属节点）.
 
@@ -972,7 +972,7 @@ async def get_board_tree_endpoint(
     startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
     endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """节点树形聚合 KPI（装置/单元明细表可折叠视图，2026-10-03 评估总览改版）.
 
@@ -1094,7 +1094,7 @@ async def get_governance_summary_endpoint(
     startTime: str | None = Query(None, description="自定义窗口起始（ISO 8601，custom 时必填）"),
     endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """治理聚合（装置总览管理者版）：处置闭环计数 + 治理漏斗 + 问题回路分布.
 

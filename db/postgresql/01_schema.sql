@@ -1796,7 +1796,9 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
         ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS', 'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
     CONSTRAINT ck_diagnosis_run_severity CHECK (severity IS NULL OR severity IN ('HIGH', 'MEDIUM', 'LOW')),
     CONSTRAINT ck_diagnosis_run_trigger_type CHECK (trigger_type IN ('MANUAL', 'SCHEDULED', 'EVENT')),
-    CONSTRAINT ck_diagnosis_run_review_status CHECK (review_status IN ('PENDING', 'REVIEWED'))
+    CONSTRAINT ck_diagnosis_run_review_status CHECK (review_status IN ('PENDING', 'REVIEWED')),
+    -- 批次幂等唯一约束（P3-02 迁移 p302task01 同款；bootstrap 与迁移链同步）
+    CONSTRAINT uq_diagnosis_run_task_loop UNIQUE (task_id, loop_id)
 );
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_loop_created ON diagnosis_run (loop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (primary_category);

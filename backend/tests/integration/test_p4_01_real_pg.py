@@ -186,7 +186,7 @@ async def upgraded_db(scratch_db):
 
 
 async def _seed_parity_assertions(sa_dsn: str, *, expect_users: int | None = None) -> dict:
-    """两路径共用断言：矩阵==ROLE_SEED、目录==CATALOG、scope 全 ALL、revision=1。"""
+    """两路径共用断言：矩阵==ROLE_SEED、目录==CATALOG、scope 全 ALL、账本=SEED+目录扩展链。"""
     from sqlalchemy.ext.asyncio import create_async_engine
 
     from app.services.authz_catalog import CATALOG, ROLE_SEED
@@ -214,8 +214,15 @@ async def _seed_parity_assertions(sa_dsn: str, *, expect_users: int | None = Non
                     f"seed-only={sorted(set(codes) - matrix.get(role, set()))}"
                 )
 
-            rev = await conn.execute(text("SELECT MAX(revision) FROM sys_authz_policy"))
-            assert rev.scalar_one() == 1
+            # 账本：revision=1 SEED + 后续目录扩展链（P4-02 起 revision=2/3...
+            # CATALOG_EXTENSION 随迁移链延伸，断言按链形态而非硬编码号）
+            ledger = await conn.execute(
+                text("SELECT revision, operation FROM sys_authz_policy ORDER BY revision")
+            )
+            rows_ = ledger.fetchall()
+            assert [r[0] for r in rows_] == list(range(1, len(rows_) + 1)), "revision 连续无洞"
+            assert rows_[0][1] == "SEED"
+            assert all(op == "CATALOG_EXTENSION" for _, op in rows_[1:])
             seed_row = await conn.execute(
                 text("SELECT operation, operator FROM sys_authz_policy WHERE revision = 1")
             )
@@ -267,9 +274,13 @@ class TestFreshInstallPath:
         assert proc.returncode == 0, f"新装零漂移失败:\n{proc.stdout}\n{proc.stderr}"
 
         summary = await _seed_parity_assertions(sa_dsn)
-        assert summary["codes"] == 122
-        assert summary["roles"]["ADMIN"] == 112
-        assert summary["roles"]["SPONSOR"] == 40
+        # 规模与目录常量同源（P4-02 起随目录增量演进，不再硬编码）
+        from app.services.authz_catalog import CATALOG as _C  # noqa: E402
+        from app.services.authz_catalog import ROLE_SEED as _RS  # noqa: E402
+
+        assert summary["codes"] == len(_C)
+        assert summary["roles"]["ADMIN"] == len(_RS["ADMIN"])
+        assert summary["roles"]["SPONSOR"] == len(_RS["SPONSOR"])
 
 
 class TestUpgradePath:
@@ -327,7 +338,9 @@ class TestUpgradePath:
 
         # 存量 7 用户（5 种子 + 2 legacy）全部获得 scope=ALL；矩阵与新装一致
         summary = await _seed_parity_assertions(sa_dsn, expect_users=7)
-        assert summary["roles"]["ADMIN"] == 112
+        from app.services.authz_catalog import ROLE_SEED as _RS  # noqa: E402
+
+        assert summary["roles"]["ADMIN"] == len(_RS["ADMIN"])
 
 
 # ---------------------------------------------------------------------------
@@ -382,13 +395,14 @@ class TestConcurrentRevision409:
         Session = async_sessionmaker(engine)
         s1, s2 = Session(), Session()
         results: list = [None, None]
+        base_rev = await az.get_current_revision(s1)  # 账本基线（SEED+目录扩展链）
 
         async def _put(session, idx: int, action_codes: list[str]) -> None:
             try:
                 results[idx] = await az.update_role_grants(
                     session,
                     role="SPONSOR",
-                    expected_revision=1,
+                    expected_revision=base_rev,
                     page_codes=["page:monitor.loops"],
                     action_codes=action_codes,
                     reason=f"TEST-P401 并发-{idx}",
@@ -414,8 +428,8 @@ class TestConcurrentRevision409:
                 text("SELECT revision, operation FROM sys_authz_policy ORDER BY revision")
             )
             ledger = rows.fetchall()
-            assert [r[0] for r in ledger] == [1, 2]
-            assert ledger[1][1] == "ROLE_GRANT"
+            assert [r[0] for r in ledger] == list(range(1, base_rev + 2))
+            assert ledger[-1][1] == "ROLE_GRANT"
             # 矩阵=成功方全量写入（输方零残留）：收紧后 loop:%/metric:%
             # 恰剩成功方那一个动作码
             grants = await check.execute(
@@ -461,27 +475,28 @@ class TestRollbackAndAdminProtection:
         Session = async_sessionmaker(engine)
         async with Session() as session:
             before = await az.get_role_grants(session, "SPONSOR")
+            base_rev = await az.get_current_revision(session)
             updated = await az.update_role_grants(
                 session,
                 role="SPONSOR",
-                expected_revision=1,
+                expected_revision=base_rev,
                 page_codes=["page:monitor.loops"],
                 action_codes=["loop:view"],
                 reason="TEST-P401 收紧演示",
                 operator="tester",
             )
-            assert updated["revision"] == 2
+            assert updated["revision"] == base_rev + 1
 
             rolled = await az.rollback_revision(
                 session,
-                revision=2,
-                expected_revision=2,
+                revision=base_rev + 1,
+                expected_revision=base_rev + 1,
                 reason="TEST-P401 回退演示",
                 operator="tester",
             )
             assert rolled["operation"] == "ROLLBACK"
-            assert rolled["rollbackOf"] == 2
-            assert rolled["revision"] == 3
+            assert rolled["rollbackOf"] == base_rev + 1
+            assert rolled["revision"] == base_rev + 2
 
             restored = await az.get_role_grants(session, "SPONSOR")
             assert restored == before, "回退=发布逆操作应恢复 before 快照"
@@ -489,8 +504,8 @@ class TestRollbackAndAdminProtection:
             with pytest.raises(BizError) as ei:
                 await az.rollback_revision(
                     session,
-                    revision=2,
-                    expected_revision=3,
+                    revision=base_rev + 1,
+                    expected_revision=base_rev + 2,
                     reason="二次回退",
                     operator="tester",
                 )
@@ -503,8 +518,8 @@ class TestRollbackAndAdminProtection:
                 )
             )
             rows = ledger.fetchall()
-            assert [r[0] for r in rows] == [1, 2, 3]
-            assert rows[2][1] == "ROLLBACK" and rows[2][2] == 2
+            assert [r[0] for r in rows] == list(range(1, base_rev + 3))
+            assert rows[-1][1] == "ROLLBACK" and rows[-1][2] == base_rev + 1
             audit = await session.execute(
                 text(
                     "SELECT operation_type FROM sys_audit_log "
@@ -530,11 +545,12 @@ class TestRollbackAndAdminProtection:
         async with Session() as session:
             before = await az.get_role_grants(session, "ADMIN")
             codes = set(az.ROLE_SEED["ADMIN"]) - {"system:user-manage"}
+            base_rev = await az.get_current_revision(session)
             with pytest.raises(BizError) as ei:
                 await az.update_role_grants(
                     session,
                     role="ADMIN",
-                    expected_revision=1,
+                    expected_revision=base_rev,
                     page_codes=sorted(c for c in codes if az.CATALOG[c].kind != "ACTION"),
                     action_codes=sorted(c for c in codes if az.CATALOG[c].kind == "ACTION"),
                     reason="尝试移除最后管理员关键权限",
@@ -545,5 +561,5 @@ class TestRollbackAndAdminProtection:
             after = await az.get_role_grants(session, "ADMIN")
             assert after == before
             rev = await az.get_current_revision(session)
-            assert rev == 1
+            assert rev == base_rev
         await engine.dispose()

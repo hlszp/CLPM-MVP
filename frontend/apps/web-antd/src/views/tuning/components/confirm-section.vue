@@ -15,6 +15,7 @@ import { computed, ref } from 'vue';
 import { Alert, Button, Card, Radio, RadioGroup } from 'ant-design-vue';
 import { message } from 'ant-design-vue';
 
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import OrderCreateModal from '#/views/loop/workbench360/components/OrderCreateModal.vue';
 
 const props = defineProps<{ ctx: TuningWorkbenchContext }>();
@@ -35,6 +36,11 @@ const chosenPlan = computed(() => {
   );
   return chosen ?? null;
 });
+
+// W8 绑定语义（P4-02 尾批）：保存方案按 tuning:task-create 码显隐
+// （种子四角色 == 后端 POST /tuning/tasks require_perms，零行为变化）
+const { hasPerm } = useClpmRoles();
+const canSavePlan = computed(() => hasPerm('tuning:task-create'));
 
 async function handleSave() {
   try {
@@ -69,6 +75,7 @@ async function handleSave() {
           }}</Radio>
         </RadioGroup>
         <Button
+          v-if="canSavePlan"
           type="primary"
           size="small"
           :loading="ctx.saving.value"

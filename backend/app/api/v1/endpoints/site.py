@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -188,7 +188,7 @@ async def get_site_basic_info_public(
 )
 async def get_site_config(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """完整基础信息（登录可读，供基础信息配置页加载）."""
     data = await _load_site_config(db)

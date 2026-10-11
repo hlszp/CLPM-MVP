@@ -280,10 +280,15 @@ CATALOG: dict[str, PermDef] = {
     "tag:manage": _a(("config:view",), "Tag 注册 CRUD/导入", "config", False, 1601),
     "plant:manage": _a(("config:view",), "工厂节点 CRUD/导入导出", "config", False, 1602),
     "dcs:manage": _a(("config:view",), "DCS 品牌/型号/MODE 配置写", "config", False, 1603),
-    "data:manage": _a(
-        ("config:view",), "数据源配置/历史导入/DataPlanner/工厂同步", "config", False, 1604
-    ),
+    "data:manage": _a(("config:view",), "数据源配置/DataPlanner/工厂同步", "config", False, 1604),
     "ai:insight": _a(("diagnosis:view",), "AI 洞察生成", None, False, 1605),
+    # P4-02 尾批：历史数据导入（loop_data.py /loops/data-import 6 端点）活链
+    # require_roles 白名单为 A/I/P，宽于 data:manage 种子（ADMIN——对应
+    # datasource/dataplanner/factory_sync 的 A-only 基线）。扩 data:manage 种子
+    # 会放大那 13 个端点，故按 P4-01"种子=活链真实白名单"原则补独立码
+    "data:import": _a(
+        ("config:view",), "历史数据导入/KPI 回算（ADMIN/IC/PE）", "config", False, 1606
+    ),
     # 系统管理操作（protected=最后管理员失权保护码）
     "system:user-manage": _a(
         ("system:view",), "用户 CRUD/重置密码（protected）", "system", True, 1700
@@ -407,6 +412,7 @@ _ACTION_CODES = {
             "alert:subscription-manage",
             "tag:manage",
             "ai:insight",
+            "data:import",
         }
     ),
     "PE_ENGINEER": frozenset(
@@ -428,6 +434,7 @@ _ACTION_CODES = {
             "handling:operate",
             "tracker:operate",
             "ai:insight",
+            "data:import",
         }
     ),
     "SPONSOR": frozenset(),  # 零写红线（P1-04 裁决钉死）

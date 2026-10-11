@@ -26,7 +26,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms, require_roles
+from app.api.deps import require_perms, require_roles
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -87,7 +87,7 @@ async def list_tags_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选，支持层级查询"),
     isLinked: bool | None = Query(None, description="按关联状态筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """分页查询测点列表。"""
     data = await list_tags(
@@ -116,7 +116,7 @@ async def export_tags_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选，支持层级查询"),
     isLinked: bool | None = Query(None, description="按关联状态筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> StreamingResponse:
     """导出测点清单为 Excel 文件（.xlsx）。"""
     content = await export_tags(
@@ -202,7 +202,7 @@ async def create_tag_endpoint(
 async def match_tags_for_loop_endpoint(
     loopTagName: str = Query(..., description="回路位号，如 T-HDS-001"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """根据回路位号自动匹配测点。
 
@@ -264,7 +264,7 @@ async def match_tags_for_loop_endpoint(
 async def get_tag_detail_endpoint(
     tag_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取测点详情。"""
     data = await get_tag_detail(db=db, tag_id=tag_id)
@@ -735,7 +735,7 @@ async def get_waveform_v2_endpoint(
         description="最大数据点数（R21：对齐 LTTB 2000 点契约，上限 2000）",
     ),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """波形数据（v4.0 扩展 — 含 valid_mask + tagGroup 筛选）。
 
@@ -767,7 +767,7 @@ async def get_waveform_v2_endpoint(
 async def batch_waveform_endpoint(
     body: BatchWaveformRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """批量波形查询（并行获取多个回路数据）。
 

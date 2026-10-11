@@ -1,7 +1,9 @@
 """回路数据管理 API — 历史数据导入（Phase 3）.
 
 路由前缀: /api/v1/loops/data-import
-权限: ADMIN / IC_ENGINEER / PE_ENGINEER
+权限: data:import 动作码（P4-02 尾批：种子 ADMIN/IC/PE == 原 require_roles
+      白名单，等价替换纯码，DB 矩阵可收紧；data:manage 种子仅 ADMIN 对应
+      datasource/dataplanner/factory_sync 的 A-only 基线，不扩种子防放大）
 
 设计依据：data-architecture-optimization-spec §5.3.1
 """
@@ -14,7 +16,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query, status
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.exceptions import BizError
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -28,14 +30,15 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/loops/data-import", tags=["loop-data"])
 
-# 允许操作的角色
-_IMPORT_ROLES = ("ADMIN", "IC_ENGINEER", "PE_ENGINEER")
+# P4-02 尾批：原 _IMPORT_ROLES 全端点统一 {ADMIN, IC, PE}，与 data:import 码
+# 种子逐端点相等 → 等价替换纯码（常量退役留档，见 tests/test_p4_02t_authz_tail.py）
+_IMPORT_ROLES = ("ADMIN", "IC_ENGINEER", "PE_ENGINEER")  # noqa: F841 — 历史口径留档
 
 
 @router.post("/start", response_model=ApiResponse[dict])
 async def start_import(
     body: ImportRequest,
-    user: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+    user: SysUser = Depends(require_perms("data:import")),
 ) -> dict:
     """开始历史数据导入.
 
@@ -161,7 +164,7 @@ async def start_import(
 async def list_import_tasks(
     page: int = Query(1, ge=1, description="页码（从 1 开始）"),
     pageSize: int = Query(20, ge=1, le=200, description="每页条数"),
-    _: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+    _: SysUser = Depends(require_perms("data:import")),
 ) -> dict:
     """查询导入任务列表（按创建时间倒序）."""
     from app.services.data_import import list_import_tasks as _list
@@ -173,7 +176,7 @@ async def list_import_tasks(
 @router.get("/{task_id}/status", response_model=ApiResponse[ImportTaskResponse])
 async def get_import_status(
     task_id: str,
-    _: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+    _: SysUser = Depends(require_perms("data:import")),
 ) -> dict:
     """查询单个导入任务状态."""
     from app.services.data_import import get_import_task
@@ -191,7 +194,7 @@ async def get_import_status(
 @router.post("/{task_id}/cancel", response_model=ApiResponse[dict])
 async def cancel_import(
     task_id: str,
-    _: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+    _: SysUser = Depends(require_perms("data:import")),
 ) -> dict:
     """取消导入任务."""
     from app.services.data_import import cancel_import_task
@@ -209,7 +212,7 @@ async def cancel_import(
 @router.delete("/{task_id}", response_model=ApiResponse[dict])
 async def delete_import(
     task_id: str,
-    _: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+    _: SysUser = Depends(require_perms("data:import")),
 ) -> dict:
     """删除导入任务记录.
 
@@ -239,7 +242,7 @@ async def delete_import(
 @router.post("/{task_id}/backfill-kpi", response_model=ApiResponse[dict])
 async def trigger_backfill(
     task_id: str,
-    _: SysUser = Depends(require_roles(*_IMPORT_ROLES)),
+    _: SysUser = Depends(require_perms("data:import")),
 ) -> dict:
     """导入完成后触发 KPI 回算.
 
