@@ -92,7 +92,10 @@ def identify_fopdt(
 
     Args:
         pv_values: 阶跃响应 PV 数据
-        timestamps: 时间戳数组（秒）
+        timestamps: 时间戳数组（秒）。**原点契约（P3-03）**：t=0 为 MV 阶跃时刻
+            （生产链 ``tuning.identify_model`` 已按此传参）；阶跃前稳定基线
+            保留为负时间。θ 一律从阶跃时刻起算，前基线时长不改 θ；
+            AREA 法面积只在 t≥0（真实阶跃后响应）上积分。
         mv_step: 阶跃输入幅值 ΔMV
         method: 辨识方法 TWO_POINT/AREA（默认 TWO_POINT）
 
@@ -119,13 +122,20 @@ def identify_fopdt(
     if not math.isfinite(K) or K == 0:
         return _fopdt_failure("过程增益无效（K=0 或非有限值），PV 无有效阶跃响应")
 
+    # P3-03 辨识原点：只处理真实阶跃后响应（t≥0 视图）。
+    # 两点法/面积法的 θ 均以阶跃时刻为原点，窗口前基线（负时间）不进 θ；
+    # 拟合优度只在阶跃后响应段上计算（前基线平坦段不虚增 R²）。
+    pv_post, ts_post = _post_step_view(pv, ts)
+    if pv_post is None or len(pv_post) < 10:
+        return _fopdt_failure("阶跃时刻（t=0）后无有效响应数据（需 ≥10 点）")
+
     # 两点法
-    result_two_point = _fopdt_two_point(pv, ts, pv_initial, pv_final, delta_pv)
+    result_two_point = _fopdt_two_point(pv_post, ts_post, pv_initial, pv_final, delta_pv)
 
     # 面积法
-    result_area = _fopdt_area_method(pv, ts, pv_initial, pv_final, delta_pv, mv_step)
+    result_area = _fopdt_area_method(pv_post, ts_post, pv_initial, pv_final, delta_pv, mv_step)
 
-    # 选择方法（支持 TWO_POINT / AREA，未知方法默认 TWO_POINT）
+    # 选择方法（支持 TWO_POINT / AREA，未知方法默认两点法）
     if method == "AREA":
         params = result_area
     else:  # TWO_POINT 或未知方法默认两点法
@@ -135,7 +145,8 @@ def identify_fopdt(
         return _fopdt_failure(params["reason"] or "辨识失败")
 
     fitted_pv = _fopdt_simulate_curve(K, params["tau"], params["theta"], ts, pv_initial, mv_step)
-    fitting_score = _calc_r2(pv, fitted_pv)
+    # 拟合优度只在阶跃后响应段评价（前基线平坦段两者都平坦，计入会虚增 R²）
+    fitting_score = _calc_r2(pv_post, fitted_pv[ts >= 0.0])
 
     return {
         "K": round(K, 6),
@@ -145,6 +156,25 @@ def identify_fopdt(
         "fitted_pv": fitted_pv.tolist(),
         "reason": None,
     }
+
+
+def _post_step_view(
+    pv: np.ndarray, ts: np.ndarray, step_time: float = 0.0
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """阶跃后视图：t ≥ step_time 的同步切片（辨识原点契约，P3-03）.
+
+    Args:
+        pv: PV 序列
+        ts: 相对时间戳（原点=MV 阶跃时刻；前基线为负时间）
+        step_time: 阶跃时刻（默认 0.0，与生产链传参一致）
+
+    Returns:
+        (pv_post, ts_post)；无 t ≥ step_time 的采样时返回 (None, None)。
+    """
+    mask = ts >= step_time
+    if not bool(mask.any()):
+        return None, None
+    return pv[mask], ts[mask]
 
 
 def _fopdt_failure(reason: str) -> dict[str, Any]:
@@ -213,13 +243,16 @@ def _fopdt_area_method(
     mv_step: float,
     pv_final_points: int = 10,
 ) -> dict[str, float | None]:
-    """面积法：积分响应曲线下面积。
+    """面积法：积分响应曲线下面积（P3-03：入参为**阶跃后视图** t≥0）.
 
     归一化面积 A1* 是一阶加纯滞后过程的平均驻留时间，即 A1* = τ + θ，
     因此 τ = A1* − θ（θ 取响应开始时间），避免滞后双重计入。
+    θ 从阶跃时刻（ts[0]=0，原点契约）起算，不回看窗口前基线。
     失败时返回 {"tau": None, "theta": None, "reason": ...}。
 
     Args:
+        pv: 阶跃后 PV 序列（t≥0；由 ``identify_fopdt`` 的 ``_post_step_view`` 切出）
+        ts: 阶跃后相对时间戳（首点≈0，原点=MV 阶跃时刻）
         pv_final_points: 计算稳态终值使用的末尾采样点数（均值），减少漂移影响。
     """
     # 使用最后 N 个点的均值作为 pv_final，减少漂移影响
@@ -448,6 +481,10 @@ def identify_ipdt(
     """IPDT 模型辨识 G(s) = K * exp(-theta*s) / s.
 
     积分过程：PV 随时间线性增长，斜率 = K * ΔMV。
+
+    **原点契约（P3-03）**：t=0 为 MV 阶跃时刻，阶跃前基线为负时间；
+    θ 从阶跃时刻起算（前基线时长不改 θ），斜率拟合与拟合优度只在
+    真实阶跃后响应（t≥0）上进行。
     """
     n = len(pv_values)
     if n < 10 or mv_step == 0:
@@ -457,13 +494,26 @@ def identify_ipdt(
     ts = np.array(timestamps, dtype=float)
     pv_initial = pv[0]
 
-    # 找响应开始点 → theta
-    response_start_idx = _find_response_start(pv, pv_initial)
-    theta = float(ts[response_start_idx]) - float(ts[0]) if response_start_idx > 0 else 0.0
+    # P3-03 辨识原点：只处理真实阶跃后响应
+    pv_post, ts_post = _post_step_view(pv, ts)
+    if pv_post is None or len(pv_post) < 10:
+        return {
+            "K": None,
+            "theta": None,
+            "fitting_score": 0.0,
+            "fitted_pv": [],
+            "reason": "阶跃时刻（t=0）后无有效响应数据（需 ≥10 点）",
+        }
 
-    # 线性拟合响应段斜率 → K
-    response_ts = ts[response_start_idx:] - ts[response_start_idx]
-    response_pv = pv[response_start_idx:]
+    # 找响应开始点 → theta（从阶跃时刻起算，不回看前基线）
+    response_start_idx = _find_response_start(pv_post, pv_initial)
+    theta = (
+        float(ts_post[response_start_idx]) - float(ts_post[0]) if response_start_idx > 0 else 0.0
+    )
+
+    # 线性拟合响应段斜率 → K（只在阶跃后响应段）
+    response_ts = ts_post[response_start_idx:] - ts_post[response_start_idx]
+    response_pv = pv_post[response_start_idx:]
     if len(response_ts) > 2:
         # 线性回归: pv = slope * t + intercept
         slope = float(np.polyfit(response_ts, response_pv, 1)[0])
@@ -471,7 +521,7 @@ def identify_ipdt(
     else:
         K = 1.0
 
-    # 仿真拟合曲线
+    # 仿真拟合曲线（全窗输出供绘图；前基线段为平坦 pv_initial）
     fitted_pv = np.full_like(ts, pv_initial, dtype=float)
     for i, t in enumerate(ts):
         if t < theta:
@@ -479,7 +529,8 @@ def identify_ipdt(
         else:
             fitted_pv[i] = pv_initial + K * mv_step * (t - theta)
 
-    fitting_score = _calc_r2(pv, fitted_pv)
+    # 拟合优度只在阶跃后响应段评价（前基线平坦段计入会虚增 R²）
+    fitting_score = _calc_r2(pv_post, fitted_pv[ts >= 0.0])
 
     return {
         "K": round(K, 6),
