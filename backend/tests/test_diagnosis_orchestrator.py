@@ -319,16 +319,18 @@ class TestSystemActionsOnPersist:
 
     @pytest.mark.asyncio
     async def test_failed_run_留痕落库点接入即时生成(self) -> None:
-        """落库点 2：_record_failed_run commit 后调用即时生成（FAILED 无分类时为空操作）。"""
+        """落库点 2：_record_failed_run commit 后调用即时生成。
+
+        D5（08§4.2 行 7/8）：FAILED 守卫在幂等查询之前短路——失败留痕行
+        不发布任何 SYSTEM 建议（生成链路被调用即返回 0，无第二条查询）。
+        """
         from app.tasks import diagnosis_v2 as dv2
 
         session = AsyncMock()
         session.add = MagicMock()  # sync 方法
         exists_result = MagicMock()
         exists_result.scalar_one_or_none.return_value = "loop-1"
-        count_result = MagicMock()
-        count_result.scalar.return_value = 0
-        session.execute = AsyncMock(side_effect=[exists_result, count_result])
+        session.execute = AsyncMock(side_effect=[exists_result])
 
         cm = MagicMock()
         cm.__aenter__ = AsyncMock(return_value=session)
@@ -337,9 +339,9 @@ class TestSystemActionsOnPersist:
         with patch.object(dv2, "AsyncSessionLocal", return_value=cm):
             await dv2._record_failed_run("loop-1", START, END, "task-1", "tester", "boom", "MANUAL")
 
-        # 落库 commit 一次；幂等守卫查询执行（真实生成链路被调用，FAILED 无分类→ 0 条）
+        # 落库 commit 一次；D5 FAILED 守卫短路（只执行回路存在性查询，无幂等查询/建议写入）
         assert session.commit.await_count == 1
-        assert session.execute.await_count == 2
+        assert session.execute.await_count == 1
         added_run = session.add.call_args_list[0].args[0]
         assert added_run.status == "FAILED"
 
@@ -353,6 +355,8 @@ class TestSystemActionsOnPersist:
         run.review_status = None
         run.primary_category = "INSTRUMENT"
         run.secondary_categories = []
+        run.status = "SUCCESS"
+        run.assessment_meta = None  # legacy run（无新元信息）——幂等守卫照常
 
         db = AsyncMock()
         count_result = MagicMock()

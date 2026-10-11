@@ -1,19 +1,18 @@
-"""G22 相邻：粘滞族级 2 判定的必要条件（≥2 算子命中 × 融合置信 ≥0.7）。
+"""G22 相邻：粘滞族级 2 判定的必要条件（≥2 算子命中 × 支持度 ≥0.7）。
 
-事实来源：docs/MVP设计/07-诊断模块设计方案.md
-- §7.1：「D-S 适合"同一假设的多证据"聚合（3 个算子交叉验证"是否粘滞"有意义）」；
-  融合公式 C_fused = (Π cᵢ) / (Π cᵢ + Π (1-cᵢ))，完全冲突时趋近 0.5；
+事实来源：docs/MVP设计/07-诊断模块设计方案.md + 08 号文 §4.4（D5 A 裁决）
 - §7.2 级 2：「粘滞族融合置信 ≥0.7（**≥2 算子命中**）」→ VALVE；
-- §7.2 级 7：兜底「全部低置信（各算子置信均 <0.5）」→ DATA_INSUFFICIENT。
+- D5（2026-10-12）：融合数值改保守规则（conservative-max/1，命中取最大，
+  同依赖组不增强）；未达原因门槛时**症状保留+原因未决**（primary=None），
+  不再落 NO_SYMPTOM"未发现异常"（08§4.4.1）。dempster_shafer 数值断言
+  属历史 v1 规则锚定（现行链路已不调用）。
 
 缺陷（修复前实测）：classification.py 级 2 原实现为
     confidence >= 0.7 OR len(contributors) >= 2
-与文档不符——文档把"≥2 算子命中"写成**必要条件**，且本文件
-_confidence_basis 自述"VALVE 粘滞方向：族内 ≥2 算子命中经 D-S 交叉验证融合"。
 OR 的两个后果：
   ① 单算子命中（conf=0.8）即判 VALVE，无交叉验证；
   ② 两个低置信命中（0.3+0.3 → 融合 0.1552）亦判 VALVE，
-     15.5% 置信输出"阀门问题"，并架空级 7 兜底。
+     15.5% 置信输出"阀门问题"，且架空级 7 兜底。
 """
 
 from __future__ import annotations
@@ -22,7 +21,6 @@ import pytest
 
 from app.services.diagnosis_operators.base import OperatorResult
 from app.services.diagnosis_operators.classification import (
-    NO_SYMPTOM,
     VALVE,
     classify,
 )
@@ -60,23 +58,22 @@ class TestLevel2StictionRequiresCrossValidation:
     """级 2 必须同时满足"多算子交叉验证"与"融合置信达阈"。"""
 
     def test_two_low_confidence_hits_must_not_trigger_level2(self) -> None:
-        """两个低置信命中（0.3+0.3 → 融合 0.1552）不得判 VALVE。
+        """两个低置信命中（0.3+0.3）不得判 VALVE。
 
-        修复前：len(contributors)==2 即命中 OR 分支 → VALVE @15.5%，
-        架空级 7"各算子置信均 <0.5 → NO_SYMPTOM（原 DATA_INSUFFICIENT，D3 拆分）"。
+        D5（08-A 保守融合）：两低置信命中支持度取最大 0.3 < 0.7 → 无 VALVE
+        候选；症状已检出但原因证据不足 → **症状保留+原因未决**（primary=None，
+        08§4.4.1——不再是 NO_SYMPTOM"未发现异常"，D5 拆出未决态）。
         """
-        fused = dempster_shafer([0.3, 0.3])
-        assert fused == pytest.approx(0.1552, abs=1e-4)  # 确实远低于 0.7
-
-        r = classify({"VALVE_STICTION": _fusion(True, fused, contributors=2)}, {}, _KPI, _gate())
-        assert r.primary.category != VALVE, "低置信证据不得产出阀门结论"
-        # D3（2026-09-25）：数据门禁通过且无症状命中 → NO_SYMPTOM（不再是 DATA_INSUFFICIENT）
-        assert r.primary.category == NO_SYMPTOM
+        r = classify({"VALVE_STICTION": _fusion(True, 0.3, contributors=2)}, {}, _KPI, _gate())
+        assert r.primary is None, "低置信证据不得产出阀门结论"
+        assert any("症状已检出" in x for x in r.rationale)
+        assert any("原因未决" in x for x in r.rationale)
 
     def test_single_high_confidence_hit_must_not_trigger_level2(self) -> None:
-        """单算子高置信命中不得判 VALVE（无 D-S 交叉验证）。"""
+        """单算子高置信命中不得判 VALVE（无交叉验证）→ 症状保留+原因未决。"""
         r = classify({"VALVE_STICTION": _fusion(True, 0.8, contributors=1)}, {}, _KPI, _gate())
-        assert r.primary.category != VALVE, "单算子命中不构成族内交叉验证"
+        assert r.primary is None, "单算子命中不构成族内交叉验证"
+        assert any("症状已检出" in x for x in r.rationale)
 
     def test_two_high_confidence_hits_still_trigger_level2(self) -> None:
         """回归护栏：多算子交叉验证且融合置信达标仍判 VALVE（文档级 2 正例）。"""
