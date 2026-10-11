@@ -53,6 +53,7 @@ from app.core.exceptions import BizError
 from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.audit import SysAuditLog
 from app.models.config_publish import ConfigOverride, ConfigPublication
+from app.models.engineering_template import EngineeringTemplate
 from app.models.loop import LoopLedger
 from app.models.metric import MetricConfig
 from app.services import algorithm_config as ac
@@ -431,11 +432,21 @@ async def _count_affected_loops(
 ) -> tuple[int | None, str | None]:
     """计算发布影响范围（受影响回路数）；无法精确计数返回 (None, 说明).
 
-    NODE 层 scope_id 须为 plant_node.id（UUID 形态）——非 UUID 时**诚实降级**
-    （影响数 None + 说明），不虚报也不让计数查询以绑定错误 500：
-    scope 真实性校验属 P2-04 模板/装置映射接线，本层不拦截发布本身。
+    - LOOP：经 loop_ledger 存在性精确核验（存在=1，不存在=0+说明——发布
+      本身不被拦截，P2-02 口径保留）；
+    - NODE：scope_id 须为 plant_node.id（UUID 形态）——非 UUID 时**诚实降级**
+      （影响数 None + 说明），不虚报也不让计数查询以绑定错误 500；
+    - TEMPLATE（P2-04 收口）：scope_id = 模板键经 ``engineering_template``
+      实体解析，按 ``loop_ledger.engineering_template_id`` 精确计数；模板键
+      未注册为工程模板实体时保持诚实降级（None + 说明）。
     """
     if layer == LAYER_LOOP:
+        result = await db.execute(
+            select(func.count()).select_from(LoopLedger).where(LoopLedger.id == str(scope_id))
+        )
+        count = int(result.scalar_one())
+        if count == 0:
+            return 0, "LOOP 层 scope_id 未解析到回路（覆盖将不作用于任何回路）"
         return 1, None
     if layer == LAYER_NODE:
         from uuid import UUID
@@ -449,12 +460,86 @@ async def _count_affected_loops(
         )
         return int(result.scalar_one()), None
     if layer == LAYER_TEMPLATE:
-        # 模板→回路的映射按 P2-04 工程模板落地；此前不虚报影响数
-        return None, "模板层影响回路数待回路-模板映射（P2-04）后精确计数"
+        template = (
+            await db.execute(
+                select(EngineeringTemplate).where(EngineeringTemplate.template_key == scope_id)
+            )
+        ).scalar_one_or_none()
+        if template is None:
+            return None, (
+                f"模板键 {scope_id} 未注册为工程模板实体（engineering_template），"
+                "影响回路数未统计；注册模板并关联回路后可精确计数"
+            )
+        result = await db.execute(
+            select(func.count())
+            .select_from(LoopLedger)
+            .where(LoopLedger.engineering_template_id == template.id)
+        )
+        return int(result.scalar_one()), None
     result = await db.execute(
         select(func.count()).select_from(LoopLedger).where(LoopLedger.is_active.is_(True))
     )
-    return int(result.scalar_one()), "全局层：影响全部启用回路（按控制类型细分待 P2-04）"
+    return int(result.scalar_one()), "全局层：影响全部启用回路（按控制类型细分待后续批次）"
+
+
+async def _loop_lower_chain(
+    db: AsyncSession, loop_id: str
+) -> tuple[list[tuple[str, str]], str | None]:
+    """解析 LOOP 发布的"其下有效覆盖链"（loop→node/template 映射）.
+
+    Returns:
+        ([(layer, scope_id), ...] 低→高, 降级说明或 None)。scope 未解析到
+        回路时返回空链 + 说明（退回 DEFAULT 层合并视图，不拦截发布）。
+    """
+    loop = (
+        await db.execute(select(LoopLedger).where(LoopLedger.id == str(loop_id)))
+    ).scalar_one_or_none()
+    if loop is None:
+        return [], (
+            "LOOP scope_id 未解析到回路，覆盖层合并视图退回 DEFAULT 层（scope 真实性不拦截发布）"
+        )
+    chain: list[tuple[str, str]] = []
+    template_id = getattr(loop, "engineering_template_id", None)
+    if template_id:
+        template = (
+            await db.execute(
+                select(EngineeringTemplate).where(EngineeringTemplate.id == str(template_id))
+            )
+        ).scalar_one_or_none()
+        if template is not None:
+            chain.append((LAYER_TEMPLATE, template.template_key))
+    if loop.unit_id:
+        chain.append((LAYER_NODE, str(loop.unit_id)))
+    return chain, None
+
+
+async def _node_lower_chains(db: AsyncSession, unit_id: str) -> list[list[tuple[str, str]]]:
+    """解析 NODE 发布的"其下有效覆盖链"集合（单位内各回路的模板）.
+
+    单位内不同回路可关联不同模板——每个模板一条链分别求值；另含空链
+    （DEFAULT 层，覆盖无模板回路的组合）。
+    """
+    loops = (
+        (await db.execute(select(LoopLedger).where(LoopLedger.unit_id == str(unit_id))))
+        .scalars()
+        .all()
+    )
+    template_ids = sorted(
+        {
+            str(row.engineering_template_id)
+            for row in loops
+            if getattr(row, "engineering_template_id", None)
+        }
+    )
+    chains: list[list[tuple[str, str]]] = []
+    for tid in template_ids:
+        template = (
+            await db.execute(select(EngineeringTemplate).where(EngineeringTemplate.id == tid))
+        ).scalar_one_or_none()
+        if template is not None:
+            chains.append([(LAYER_TEMPLATE, template.template_key)])
+    chains.append([])
+    return chains
 
 
 async def _validate_layer_params(
@@ -467,22 +552,56 @@ async def _validate_layer_params(
 ) -> None:
     """发布前校验：键/值域/组合约束在"该层以下全部层的合并视图"上求值.
 
-    覆盖层不区分控制类型，base 取该层以下（DEFAULT 层）各控制类型的合并值，
-    全部 4 个控制类型都必须通过（拦截"单次合法、合并后档位颠倒"的写入）。
+    P2-04 收口（P2-02 验收报告 I 项）：覆盖层合并视图下界从"仅 DEFAULT 层"
+    扩为——LOOP 发布合并其下 NODE/TEMPLATE 有效覆盖（loop→node/template
+    映射就位后可算）、NODE 发布合并其下 TEMPLATE 覆盖（单位内各回路模板
+    逐链求值）。拦截"单层合法、跨覆盖层组合颠倒"的漏拦窗口。
+
+    查询次序（mock 测试按此编排）：
+    1. 链解析（LOOP=回路行[+模板行]；NODE=单位回路集[+模板行]；TEMPLATE=无）；
+    2. 链上覆盖加载（每链元素一次 ConfigOverride 查询）；
+    3. 逐控制类型 DEFAULT 层三段加载（algorithm_parameter + metric.threshold）。
+
+    覆盖层不区分控制类型，全部 4 个控制类型都必须通过。
     """
-    del layer, scope_id  # 校验仅依赖 DEFAULT 层合并视图（覆盖层之下）
+    degradation: str | None = None
+    if layer == LAYER_LOOP:
+        chains, degradation = await _loop_lower_chain(db, str(scope_id))
+        chain_list = [chains]
+    elif layer == LAYER_NODE:
+        chain_list = await _node_lower_chains(db, str(scope_id))
+    else:
+        # TEMPLATE 层之下仅 DEFAULT；TASK 层不入库（发布校验不涉及）
+        chain_list = [[]]
+    if degradation:
+        logger.info("[config-publish] %s", degradation)
+
+    chain_overrides: list[dict[str, Any]] = []
+    for chain in chain_list:
+        merged: dict[str, Any] = {}
+        for clayer, cscope in chain:
+            loaded = await _load_override_layer_value(db, clayer, cscope, metric_code)
+            if loaded is not None:
+                merged.update(loaded[0])
+        chain_overrides.append(merged)
+
     cts = [control_type] if control_type else list(ac._CONTROL_TYPES)
     errors: list[str] = []
     for ct in cts:
         below_layers = await _load_default_layer_values(db, metric_code, ct)
-        base: dict[str, Any] = {}
+        default_base: dict[str, Any] = {}
         for _source, _sid, below_params, _rev in below_layers:
-            base.update(below_params)
-        errors.extend(ac.validate_metric_params(metric_code, params, base=base))
+            default_base.update(below_params)
+        for override_base in chain_overrides:
+            errors.extend(
+                ac.validate_metric_params(
+                    metric_code, params, base={**default_base, **override_base}
+                )
+            )
     if errors:
         raise BizError(
             code="ERR_PARAM_INVALID",
-            message="；".join(errors),
+            message="；".join(dict.fromkeys(errors)),
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
@@ -509,6 +628,155 @@ def _audit_envelope(
         ensure_ascii=False,
         default=str,
     )
+
+
+# ---------------------------------------------------------------------------
+# 发布预览（dry-run：只读，不推进 revision 不落任何行）
+# ---------------------------------------------------------------------------
+
+
+async def _affected_loop_sample(
+    db: AsyncSession, layer: str, scope_id: str, *, limit: int = 20
+) -> list[dict[str, Any]]:
+    """受影响回路清单样本（发布预览用；不虚报，解析不到返回空列表）."""
+    stmt = select(LoopLedger.id, LoopLedger.tag_name, LoopLedger.is_active)
+    if layer == LAYER_LOOP:
+        stmt = stmt.where(LoopLedger.id == str(scope_id))
+    elif layer == LAYER_NODE:
+        from uuid import UUID
+
+        try:
+            UUID(str(scope_id))
+        except (TypeError, ValueError):
+            return []
+        stmt = stmt.where(LoopLedger.unit_id == str(scope_id))
+    elif layer == LAYER_TEMPLATE:
+        template = (
+            await db.execute(
+                select(EngineeringTemplate).where(EngineeringTemplate.template_key == scope_id)
+            )
+        ).scalar_one_or_none()
+        if template is None:
+            return []
+        stmt = stmt.where(LoopLedger.engineering_template_id == template.id)
+    else:
+        return []
+    rows = (await db.execute(stmt.order_by(LoopLedger.tag_name.asc()).limit(limit))).all()
+    return [
+        {"loopId": str(r.id), "tagName": r.tag_name, "isActive": bool(r.is_active)} for r in rows
+    ]
+
+
+async def preview_publish_override(
+    db: AsyncSession,
+    *,
+    layer: str,
+    scope_id: str,
+    metric_code: str,
+    params: dict[str, Any],
+    control_type: str | None = None,
+    expected_revision: int | None = None,
+) -> dict[str, Any]:
+    """发布预览（dry-run）：校验结果 / before-after 差异 / 受影响回路，零写入.
+
+    P2-04（03 §5 任务卡"批量配置有 dry-run、差异、部分失败状态；读取与发布
+    能力分开"）——预览为只读能力（IC/PE 可调用），发布仍 ADMIN（DEC-03）。
+
+    Returns:
+        ``{"layer", "scopeId", "metricCode", "currentRevision", "wouldConflict",
+           "validation": {"ok", "errors"}, "before", "after",
+           "affectedLoops", "note", "affectedLoopSample",
+           "mergePreview": [{"controlType", "base", "result"}]}``
+
+        - ``wouldConflict``：expected_revision 提供且与当前 revision 不一致时
+          True（预览不抛 409——调用方据此提示）；
+        - ``mergePreview``：该层以下合并视图（base）与叠加本次参数后的结果
+          （result），逐控制类型（control_type 提供时仅该类型）——跨覆盖层
+          组合颠倒在 errors 中可见。
+    """
+    if layer not in _VALID_LAYERS:
+        raise BizError(
+            code="ERR_PARAM_INVALID",
+            message=f"layer 必须为 {_VALID_LAYERS} 之一，收到 {layer}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        )
+    if metric_code not in ac._DEFAULTS:
+        raise BizError(
+            code="ERR_NOT_FOUND",
+            message=f"未知指标代码: {metric_code}",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    revision = await get_current_revision(db)
+    would_conflict = expected_revision is not None and expected_revision != revision
+
+    # 覆盖层合并视图（与 _validate_layer_params 同源，只收集不抛）
+    if layer == LAYER_LOOP:
+        chains, degradation = await _loop_lower_chain(db, str(scope_id))
+        chain_list = [chains]
+    elif layer == LAYER_NODE:
+        chain_list = await _node_lower_chains(db, str(scope_id))
+        degradation = None
+    else:
+        chain_list = [[]]
+        degradation = None
+    chain_overrides: list[dict[str, Any]] = []
+    for chain in chain_list:
+        merged: dict[str, Any] = {}
+        for clayer, cscope in chain:
+            loaded = await _load_override_layer_value(db, clayer, cscope, metric_code)
+            if loaded is not None:
+                merged.update(loaded[0])
+        chain_overrides.append(merged)
+
+    if control_type:
+        cts = [control_type if control_type in ac._CONTROL_TYPES else "STABLE"]
+    else:
+        cts = list(ac._CONTROL_TYPES)
+    errors: list[str] = []
+    merge_preview: list[dict[str, Any]] = []
+    for ct in cts:
+        below_layers = await _load_default_layer_values(db, metric_code, ct)
+        default_base: dict[str, Any] = {}
+        for _source, _sid, below_params, _rev in below_layers:
+            default_base.update(below_params)
+        for override_base in chain_overrides:
+            base = {**default_base, **override_base}
+            errors.extend(ac.validate_metric_params(metric_code, params, base=base))
+            merge_preview.append(
+                {
+                    "controlType": ct,
+                    "base": base,
+                    "result": {**base, **params},
+                }
+            )
+
+    existing_result = await db.execute(
+        select(ConfigOverride).where(
+            ConfigOverride.layer == layer,
+            ConfigOverride.scope_id == str(scope_id),
+            ConfigOverride.metric_code == metric_code,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+    before_params = dict(existing.params) if existing and existing.params else None
+
+    affected_loops, note = await _count_affected_loops(db, layer, str(scope_id))
+    sample = await _affected_loop_sample(db, layer, str(scope_id))
+    return {
+        "layer": layer,
+        "scopeId": str(scope_id),
+        "metricCode": metric_code,
+        "currentRevision": revision,
+        "wouldConflict": would_conflict,
+        "validation": {"ok": not errors, "errors": list(dict.fromkeys(errors))},
+        "before": before_params,
+        "after": dict(params),
+        "affectedLoops": affected_loops,
+        "note": note or degradation,
+        "affectedLoopSample": sample,
+        "mergePreview": merge_preview,
+    }
 
 
 def _layer_rank(layer: str | None) -> int:
@@ -1293,6 +1561,7 @@ __all__ = [
     "note_legacy_sync",
     "pin_config_snapshot",
     "preload_config_revision",
+    "preview_publish_override",
     "publish_override",
     "reset_override",
     "resolve_effective_params",

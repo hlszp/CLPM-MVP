@@ -111,6 +111,21 @@ class LoopCreate(CamelModel):
     complexRole: str | None = Field(
         None, description="复杂回路角色：MAIN(主回路,聚合代表) / SUB(副回路)；NULL=普通单回路"
     )
+    # P2-04（07 号文 §3.3）工程事实：控制作用方向（UNKNOWN=显式未知态）
+    controlActionDirection: str | None = Field(
+        None,
+        pattern="^(DIRECT|REVERSE|UNKNOWN)$",
+        description="控制作用方向：DIRECT(正作用)/REVERSE(反作用)/UNKNOWN(未知，显式态)",
+    )
+    # P2-04 工程模板关联（TEMPLATE 层映射）
+    engineeringTemplateId: str | None = Field(
+        None, description="关联工程模板 ID；NULL=未关联（TEMPLATE 层对该回路不参与）"
+    )
+    engineeringTemplateVersion: int | None = Field(
+        None,
+        ge=1,
+        description="固定引用的模板版本号；NULL=跟随模板当前版本（发布新版不自动改 pin）",
+    )
 
 
 class LoopUpdate(CamelModel):
@@ -173,6 +188,18 @@ class LoopUpdate(CamelModel):
     # P4 S4：复杂回路分组（PUT null 可清空，解除分组）
     complexLoopGroupId: str | None = Field(None, description="复杂回路分组 ID；NULL=普通单回路")
     complexRole: str | None = Field(None, description="复杂回路角色：MAIN / SUB；NULL=普通单回路")
+    # P2-04（07 号文 §3.3）工程事实（PUT null 可清空模板关联/回退方向为 UNKNOWN）
+    controlActionDirection: str | None = Field(
+        None,
+        pattern="^(DIRECT|REVERSE|UNKNOWN)$",
+        description="控制作用方向：DIRECT/REVERSE/UNKNOWN（未知为显式态）",
+    )
+    engineeringTemplateId: str | None = Field(None, description="关联工程模板 ID；NULL=未关联")
+    engineeringTemplateVersion: int | None = Field(
+        None,
+        ge=1,
+        description="固定引用的模板版本号；NULL=跟随当前版本（PUT null 清除 pin）",
+    )
 
 
 class TagMappingSlot(CamelModel):

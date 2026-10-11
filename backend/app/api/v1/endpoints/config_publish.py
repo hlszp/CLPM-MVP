@@ -40,6 +40,7 @@ from app.schemas.config import (
     OverrideItem,
     OverridePublishRequest,
     OverrideResetRequest,
+    PreviewPublishRequest,
     PublicationItem,
     PublishResultResponse,
     RevisionInfoResponse,
@@ -168,6 +169,35 @@ async def list_overrides(
     rows = (await db.execute(query)).scalars().all()
     items = [_override_to_item(row).model_dump(by_alias=True) for row in rows]
     return success(data={"items": items, "total": len(items)})
+
+
+# ---------------------------------------------------------------------------
+# POST /configs/publish/overrides/preview — 发布预览（dry-run，只读三角色）
+# ---------------------------------------------------------------------------
+
+
+@router.post("/overrides/preview", response_model=ApiResponse[dict])
+async def preview_override_endpoint(
+    body: PreviewPublishRequest,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+) -> dict:
+    """发布预览（P2-04 dry-run）：校验/差异/受影响回路/合并视图，零写入.
+
+    "读取与发布能力分开"（03 §5 P2-04）——预览对 ADMIN/IC/PE 只读开放；
+    发布本体仍仅 ADMIN（DEC-03）。``expectedRevision`` 失配不抛 409，以
+    ``wouldConflict=true`` 报告（预览口径）。
+    """
+    result = await cp.preview_publish_override(
+        db,
+        layer=body.layer,
+        scope_id=body.scopeId,
+        metric_code=body.metricCode,
+        params=body.params,
+        control_type=body.controlType,
+        expected_revision=body.expectedRevision,
+    )
+    return success(data=result)
 
 
 # ---------------------------------------------------------------------------

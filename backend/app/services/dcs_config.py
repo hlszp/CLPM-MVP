@@ -920,6 +920,7 @@ def _pid_structure_to_dict(s: DcsPidStructure, model: DcsModel | None = None) ->
         "d_filter_enabled": bool(s.d_filter_enabled),
         "d_filter_unit": s.d_filter_unit,
         "d_filter_multiplier": bool(s.d_filter_multiplier),
+        "representation_status": getattr(s, "representation_status", "KNOWN") or "KNOWN",
         "description": s.description,
         "created_at": s.created_at.isoformat() if s.created_at else None,
         "updated_at": s.updated_at.isoformat() if s.updated_at else None,
@@ -973,12 +974,22 @@ async def upsert_pid_structure(
     d_filter_unit: str | None,
     d_filter_multiplier: bool,
     description: str | None = None,
+    representation_status: str = "KNOWN",
     operator: str = "system",
 ) -> dict:
     """按 model_id 幂等 upsert PID 结构模板（1:1）。
 
     d_filter_enabled=True 时 d_filter_unit 必填（与 DB CHECK 约束一致）。
+    representation_status（P2-04，07 号文 §3.3）：UNKNOWN=该型号 PID 表示
+    显式未知——p_type/i_unit/d_unit 仅占位无转换语义（转换归 P3-03，
+    解析端 engineering_facts 恒报 UNKNOWN，不默认标准 kp/ti/td）。
     """
+    if representation_status not in ("KNOWN", "UNKNOWN"):
+        raise BizError(
+            code="ERR_PARAM_INVALID",
+            message=f"representation_status 必须为 KNOWN/UNKNOWN，收到 {representation_status}",
+            status_code=422,
+        )
     model = await _get_model_or_raise(db, model_id)
 
     result = await db.execute(
@@ -997,9 +1008,16 @@ async def upsert_pid_structure(
             d_filter_unit=d_filter_unit,
             d_filter_multiplier=d_filter_multiplier,
             description=description,
+            representation_status=representation_status,
         )
         db.add(structure)
-        logger.info("[DCS PID 结构] 新增 model=%s(%s) by %s", model.code, p_type, operator)
+        logger.info(
+            "[DCS PID 结构] 新增 model=%s(%s) status=%s by %s",
+            model.code,
+            p_type,
+            representation_status,
+            operator,
+        )
     else:
         structure.p_type = p_type
         structure.i_unit = i_unit
@@ -1008,7 +1026,13 @@ async def upsert_pid_structure(
         structure.d_filter_unit = d_filter_unit
         structure.d_filter_multiplier = d_filter_multiplier
         structure.description = description
-        logger.info("[DCS PID 结构] 更新 model=%s by %s", model.code, operator)
+        structure.representation_status = representation_status
+        logger.info(
+            "[DCS PID 结构] 更新 model=%s status=%s by %s",
+            model.code,
+            representation_status,
+            operator,
+        )
 
     await db.commit()
     await db.refresh(structure)

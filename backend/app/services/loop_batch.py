@@ -1,7 +1,9 @@
 """Loop batch operations services (配置增强).
 
 提供：
-- ``batch_update_loops``: 批量更新回路（监控/统计/重要等级/参评）
+- ``batch_update_loops``: 批量更新回路（监控/统计/重要等级/参评 + P2-04
+  工程属性：控制作用方向/OP 限位/DCS 型号/工程模板引用），支持 ``dry_run``
+  预览（逐回路差异 / 部分失败状态 / 受影响清单，零写入）
 - ``batch_delete_loops``: 批量硬删除回路（解绑 Tag 映射 + 级联清理关联数据）
 
 所有写操作均记录审计日志。
@@ -19,17 +21,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
+from app.models.dcs_model import DcsModel
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 
 logger = logging.getLogger(__name__)
 
-# 允许批量更新的字段白名单（v5.3：level → importance_level）
+# 允许批量更新的字段白名单（v5.3：level → importance_level；
+# P2-04：工程属性批次扩入——控制作用方向/OP 限位/DCS 型号/工程模板引用）
 _BATCH_UPDATABLE_FIELDS = {
     "is_monitored",
     "is_stat_enabled",
     "importance_level",
     "include_in_evaluation",
+    "control_action_direction",
+    "op_output_lower_limit",
+    "op_output_upper_limit",
+    "dcs_model_id",
+    "engineering_template_id",
+    "engineering_template_version",
 }
 
 
@@ -56,6 +66,29 @@ async def _write_audit(
     db.add(log)
 
 
+def _make_field_before_getter(loop):
+    """构造回路的批量字段取值器（差异计算用；显式传 loop 避免闭包晚绑定）."""
+
+    def _field_before(field: str):
+        mapping = {
+            "is_monitored": loop.is_active,
+            "is_stat_enabled": loop.is_active,
+            "importance_level": loop.importance_level,
+            "include_in_evaluation": loop.include_in_evaluation,
+            "control_action_direction": getattr(loop, "control_action_direction", "UNKNOWN"),
+            "op_output_lower_limit": loop.op_output_lower_limit,
+            "op_output_upper_limit": loop.op_output_upper_limit,
+            "dcs_model_id": str(loop.dcs_model_id) if loop.dcs_model_id else None,
+            "engineering_template_id": (
+                str(loop.engineering_template_id) if loop.engineering_template_id else None
+            ),
+            "engineering_template_version": loop.engineering_template_version,
+        }
+        return mapping[field]
+
+    return _field_before
+
+
 # ---------------------------------------------------------------------------
 # SVC-09: 批量更新回路
 # ---------------------------------------------------------------------------
@@ -66,26 +99,37 @@ async def batch_update_loops(
     loop_ids: list[str],
     updates: dict,
     operator: str,
-) -> int:
-    """批量更新回路配置（is_monitored/is_stat_enabled/importance_level/include_in_evaluation）。
+    *,
+    dry_run: bool = False,
+) -> dict:
+    """批量更新回路配置（支持 dry-run 预览：差异/部分失败状态/受影响清单）.
 
     Args:
         db: 异步数据库会话
         loop_ids: 回路 ID 列表
         updates: 更新字段字典，支持：
             - is_monitored: bool — 是否监控（写入 is_active 字段，True=监控/启用）
-            - is_stat_enabled: bool — 是否纳入统计（写入 is_kpi_enabled 不适用，
-              此处映射到 is_active 的语义；当前 LoopLedger 无独立字段，
-              实际写入 is_active 兼容；后续可扩展）
+            - is_stat_enabled: bool — 是否纳入统计（复用 is_active 语义）
             - importance_level: int — 回路重要等级 1/2/3
             - include_in_evaluation: bool — 是否参与评估
+            - P2-04 工程属性：control_action_direction（DIRECT/REVERSE/UNKNOWN）、
+              op_output_lower_limit / op_output_upper_limit、dcs_model_id、
+              engineering_template_id、engineering_template_version
         operator: 操作人
+        dry_run: True=只预览不写入（不审计、不 commit、不触发停用联动与
+            缓存失效——"读取与发布能力分开"，03 §5 P2-04）
 
     Returns:
-        更新的回路数量
+        ``{"affected": int, "dryRun": bool, "results": [
+            {"loopId", "tagName", "status": "OK"|"UNCHANGED"|"FAIL"|"NOT_FOUND",
+             "changes": [{"field", "before", "after"}], "error"}]}``
+
+    部分失败语义：全局非法（空列表/白名单外字段/全局枚举值）仍 422 原子
+    拒绝；回路级失败（OP 限位与该回路量程冲突、模板/型号不存在等）逐回路
+    报告为 FAIL 并跳过，其余回路正常应用——批量结果可追溯。
 
     Raises:
-        BizError: ERR_BATCH_EMPTY (loop_ids 为空) / ERR_BATCH_INVALID_FIELD (非法字段)
+        BizError: ERR_BATCH_EMPTY / ERR_BATCH_INVALID_FIELD（全局校验）
     """
     if not loop_ids:
         raise BizError(
@@ -103,7 +147,7 @@ async def batch_update_loops(
             status_code=422,
         )
 
-    # 校验 importance_level 取值
+    # 校验 importance_level 取值（全局）
     if "importance_level" in updates and updates["importance_level"] is not None:
         level = updates["importance_level"]
         if level not in (1, 2, 3):
@@ -113,16 +157,164 @@ async def batch_update_loops(
                 status_code=422,
             )
 
+    from app.services.engineering_facts import VALID_CONTROL_ACTION_DIRECTIONS
+
+    if (
+        "control_action_direction" in updates
+        and updates["control_action_direction"] is not None
+        and updates["control_action_direction"] not in VALID_CONTROL_ACTION_DIRECTIONS
+    ):
+        raise BizError(
+            code="ERR_BATCH_INVALID_FIELD",
+            message=(
+                f"control_action_direction 必须为 {VALID_CONTROL_ACTION_DIRECTIONS} 之一，"
+                f"当前为 {updates['control_action_direction']}"
+            ),
+            status_code=422,
+        )
+
+    # 全局预检：dcs_model / engineering_template 存在性（不存在 → 422 全批拒绝，
+    # 与 dcs_model 同口径；404 资源语义保留给单资源 CRUD 路径）。存在则模板
+    # 版本逐回路校验生效值。
+    if updates.get("dcs_model_id") is not None:
+        model = (
+            await db.execute(select(DcsModel).where(DcsModel.id == str(updates["dcs_model_id"])))
+        ).scalar_one_or_none()
+        if model is None:
+            raise BizError(
+                code="ERR_DCS_MODEL_NOT_FOUND",
+                message=f"DCS 型号不存在: {updates['dcs_model_id']}",
+                status_code=422,
+            )
+    if updates.get("engineering_template_id") is not None:
+        from app.services.engineering_template import validate_loop_template_ref
+
+        try:
+            await validate_loop_template_ref(
+                db,
+                template_id=str(updates["engineering_template_id"]),
+                version=updates.get("engineering_template_version"),
+            )
+        except BizError as exc:
+            # REWORK：批量全局预检统一 422（全批原子拒绝口径与 dcs_model 一致）
+            raise BizError(
+                code=exc.code,
+                message=f"批量更新全局预检失败：{exc.message}",
+                status_code=422,
+            ) from exc
+    elif updates.get("engineering_template_version") is not None:
+        raise BizError(
+            code="ERR_BATCH_INVALID_FIELD",
+            message="固定引用模板版本时必须同时指定 engineering_template_id",
+            status_code=422,
+        )
+
     # 查询待更新回路
     result = await db.execute(select(LoopLedger).where(LoopLedger.id.in_(loop_ids)))
     loops = result.scalars().all()
+    found_ids = {str(row.id) for row in loops}
 
-    if not loops:
-        return 0
+    results: list[dict] = []
+    for lid in loop_ids:
+        if str(lid) not in found_ids:
+            results.append(
+                {
+                    "loopId": str(lid),
+                    "tagName": None,
+                    "status": "NOT_FOUND",
+                    "changes": [],
+                    "error": "回路不存在",
+                }
+            )
 
-    # 逐回路应用更新并写审计（target_id 为 UUID 单列，每回路一条）
+    # 回路级 OP 量程缓存（限位校验基准；同批多回路共享查询结果）
+    _op_range_cache: dict[str, tuple[float | None, float | None]] = {}
+
+    async def _op_tag_range(loop_id: str) -> tuple[float | None, float | None]:
+        if loop_id not in _op_range_cache:
+            row = (
+                await db.execute(
+                    select(TagRegistry.range_min, TagRegistry.range_max)
+                    .join(LoopTagMapping, LoopTagMapping.tag_id == TagRegistry.id)
+                    .where(LoopTagMapping.loop_id == loop_id, LoopTagMapping.tag_role == "OP")
+                )
+            ).first()
+            _op_range_cache[loop_id] = (
+                (
+                    float(row[0]) if row[0] is not None else None,
+                    float(row[1]) if row[1] is not None else None,
+                )
+                if row is not None
+                else (None, None)
+            )
+        return _op_range_cache[loop_id]
+
+    from app.services.loop import _validate_op_output_limits, derive_loop_status
+
+    applied: list[LoopLedger] = []
     disabled_loop_ids: list[str] = []
     for loop in loops:
+        entry: dict = {
+            "loopId": str(loop.id),
+            "tagName": loop.tag_name,
+            "status": "OK",
+            "changes": [],
+            "error": None,
+        }
+        error: str | None = None
+
+        # 回路级校验（生效值 = 更新值优先，否则保持原值）
+        eff_lower = (
+            updates["op_output_lower_limit"]
+            if updates.get("op_output_lower_limit") is not None
+            else loop.op_output_lower_limit
+        )
+        eff_upper = (
+            updates["op_output_upper_limit"]
+            if updates.get("op_output_upper_limit") is not None
+            else loop.op_output_upper_limit
+        )
+        if "op_output_lower_limit" in updates or "op_output_upper_limit" in updates:
+            range_min, range_max = await _op_tag_range(str(loop.id))
+            try:
+                _validate_op_output_limits(
+                    lower=eff_lower, upper=eff_upper, op_range_min=range_min, op_range_max=range_max
+                )
+            except BizError as exc:
+                error = exc.message
+
+        # 差异计算（dry-run 预览与非 dry-run 审计共用；显式传 loop 避免闭包晚绑定）
+        _field_before = _make_field_before_getter(loop)
+
+        for field, value in updates.items():
+            if value is None:
+                continue
+            if field in ("is_monitored", "is_stat_enabled"):
+                # 二者均写 is_active（P1 #10 互斥由 Schema 层保证）
+                before_v, after_v = bool(loop.is_active), bool(value)
+            elif field == "include_in_evaluation":
+                before_v, after_v = bool(loop.include_in_evaluation), bool(value)
+            else:
+                before_v = _field_before(field)
+                after_v = value
+            if before_v != after_v:
+                entry["changes"].append({"field": field, "before": before_v, "after": after_v})
+
+        if error is not None:
+            entry["status"] = "FAIL"
+            entry["error"] = error
+            results.append(entry)
+            continue
+        if not entry["changes"]:
+            entry["status"] = "UNCHANGED"
+            results.append(entry)
+            continue
+
+        if dry_run:
+            results.append(entry)
+            continue
+
+        # 应用更新（写入路径）
         before = {
             "loopId": str(loop.id),
             "tagName": loop.tag_name,
@@ -133,30 +325,33 @@ async def batch_update_loops(
         was_active = loop.is_active
 
         if "is_monitored" in updates and updates["is_monitored"] is not None:
-            # is_monitored=True 表示启用监控（is_active=True）
             loop.is_active = bool(updates["is_monitored"])
         if "is_stat_enabled" in updates and updates["is_stat_enabled"] is not None:
-            # 当前 LoopLedger 无独立 is_stat_enabled 字段，复用 is_active 语义
-            # 后续若新增字段可在此扩展
             loop.is_active = bool(updates["is_stat_enabled"])
         if "importance_level" in updates and updates["importance_level"] is not None:
             loop.importance_level = updates["importance_level"]
         if "include_in_evaluation" in updates and updates["include_in_evaluation"] is not None:
             loop.include_in_evaluation = bool(updates["include_in_evaluation"])
-        # 停用联动（2026-10-10 裁决，与 update_loop 同口径）：真实发生
-        # True→False 跳变的回路，联动置「不参评」（在显式 include_in_evaluation
-        # 之后应用，避免被覆盖），并收集待关预警清单。
+        # P2-04 工程属性
+        if updates.get("control_action_direction") is not None:
+            loop.control_action_direction = updates["control_action_direction"]
+        if updates.get("op_output_lower_limit") is not None:
+            loop.op_output_lower_limit = updates["op_output_lower_limit"]
+        if updates.get("op_output_upper_limit") is not None:
+            loop.op_output_upper_limit = updates["op_output_upper_limit"]
+        if updates.get("dcs_model_id") is not None:
+            loop.dcs_model_id = updates["dcs_model_id"]
+        if "engineering_template_id" in updates:
+            loop.engineering_template_id = updates["engineering_template_id"]
+        if "engineering_template_version" in updates:
+            loop.engineering_template_version = updates["engineering_template_version"]
+        # 停用联动（2026-10-10 裁决，与 update_loop 同口径）
         if was_active and not loop.is_active:
             if loop.include_in_evaluation:
                 loop.include_in_evaluation = False
             disabled_loop_ids.append(str(loop.id))
-        # 整改 0928：is_active 变化后必须重算派生状态（READY/PARTIAL/INACTIVE），
-        # 否则监控状态列/筛选与 is_active 脱节（生产实锤：数百行
-        # (true, INACTIVE)/(false, READY) 不一致组合，排名/筛选全乱）。
-        # 放在所有字段应用之后：derive 只依赖 is_active 与 Tag 关联。
+        # 整改 0928：is_active 变化后重算派生状态
         if "is_monitored" in updates or "is_stat_enabled" in updates:
-            from app.services.loop import derive_loop_status
-
             loop.status = await derive_loop_status(db, loop)
         loop.updated_by = operator
 
@@ -176,6 +371,21 @@ async def batch_update_loops(
             before_value=json.dumps(before, ensure_ascii=False, default=str),
             after_value=json.dumps(after, ensure_ascii=False, default=str),
         )
+        applied.append(loop)
+        results.append(entry)
+
+    if dry_run:
+        would_update = sum(1 for r in results if r["status"] == "OK")
+        would_fail = sum(1 for r in results if r["status"] in ("FAIL", "NOT_FOUND"))
+        logger.info(
+            "[批量更新 dry-run] 总数=%d 将更新=%d 将失败=%d（操作人: %s, 字段: %s）",
+            len(loop_ids),
+            would_update,
+            would_fail,
+            operator,
+            list(updates.keys()),
+        )
+        return {"affected": would_update, "dryRun": True, "results": results}
 
     # 停用联动：批量关闭本次停用回路的全部 ACTIVE 预警（同事务，随 commit 生效）
     if disabled_loop_ids:
@@ -205,12 +415,12 @@ async def batch_update_loops(
 
     logger.info(
         "[批量更新] 已更新 %d 个回路（操作人: %s, 字段: %s）",
-        len(loops),
+        len(applied),
         operator,
         list(updates.keys()),
     )
 
-    return len(loops)
+    return {"affected": len(applied), "dryRun": False, "results": results}
 
 
 # ---------------------------------------------------------------------------

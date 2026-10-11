@@ -990,6 +990,9 @@ async def create_loop(
     ideal_settling_time: float | None = None,
     complex_loop_group_id: str | None = None,
     complex_role: str | None = None,
+    control_action_direction: str | None = None,
+    engineering_template_id: str | None = None,
+    engineering_template_version: int | None = None,
 ) -> dict:
     """创建回路。
 
@@ -997,6 +1000,7 @@ async def create_loop(
         BizError: ERR_LOOP_DUPLICATE (tag_name 重复) / ERR_NODE_NOT_FOUND (unit_id 不存在)
                   / ERR_OP_LIMIT_OUT_OF_RANGE (OP 输出限位校验失败)
                   / ERR_COMPLEX_GROUP_* (复杂回路分组校验失败)
+                  / ERR_TEMPLATE_NOT_FOUND / ERR_TEMPLATE_VERSION_NOT_FOUND (P2-04 模板引用)
     """
     # tag_name 唯一校验
     existing = await db.execute(select(LoopLedger).where(LoopLedger.tag_name == tag_name))
@@ -1028,6 +1032,27 @@ async def create_loop(
     # P4 S4：校验复杂回路分组字段
     await _validate_complex_group(db, complex_loop_group_id, complex_role)
 
+    # P2-04：工程事实（控制作用方向默认 UNKNOWN 显式未知态；模板引用校验）
+    if control_action_direction is None:
+        control_action_direction = "UNKNOWN"
+    from app.services.engineering_facts import VALID_CONTROL_ACTION_DIRECTIONS
+    from app.services.engineering_template import validate_loop_template_ref
+
+    if control_action_direction not in VALID_CONTROL_ACTION_DIRECTIONS:
+        raise BizError(
+            code="ERR_PARAM_INVALID",
+            message=(
+                f"control_action_direction 必须为 {VALID_CONTROL_ACTION_DIRECTIONS} 之一，"
+                f"收到 {control_action_direction}"
+            ),
+            status_code=400,
+        )
+    await validate_loop_template_ref(
+        db,
+        template_id=engineering_template_id,
+        version=engineering_template_version,
+    )
+
     # 新建回路默认状态：INACTIVE（未激活）或 PARTIAL（已激活但无 Tag）
     status = "PARTIAL" if is_active else "INACTIVE"
     # v5.3 对齐 FDS §5.2.3 / DDS v4.1：include_in_evaluation 默认 True（参与评估）
@@ -1056,6 +1081,9 @@ async def create_loop(
         ideal_settling_time=ideal_settling_time,
         complex_loop_group_id=complex_loop_group_id,
         complex_role=complex_role,
+        control_action_direction=control_action_direction,
+        engineering_template_id=engineering_template_id,
+        engineering_template_version=engineering_template_version,
         score_weights=score_weights,
         remark=remark,
         created_by=operator,
@@ -1473,12 +1501,19 @@ async def update_loop(
     complex_role: str | None = None,
     _complex_group_set: bool = False,
     _complex_role_set: bool = False,
+    control_action_direction: str | None = None,
+    engineering_template_id: str | None = None,
+    engineering_template_version: int | None = None,
+    _control_action_direction_set: bool = False,
+    _engineering_template_id_set: bool = False,
+    _engineering_template_version_set: bool = False,
 ) -> dict:
-    """更新回路（描述/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。
+    """更新回路（描述/权重/启用/备注/类型/等级/参评/APC/保留周期/OP限位/理想稳态时间/复杂分组
+    + P2-04 工程事实：控制作用方向/工程模板引用）。
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_NODE_NOT_FOUND / ERR_OP_LIMIT_OUT_OF_RANGE
-                  / ERR_COMPLEX_GROUP_*
+                  / ERR_COMPLEX_GROUP_* / ERR_TEMPLATE_NOT_FOUND / ERR_TEMPLATE_VERSION_NOT_FOUND
     """
     result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
     loop = result.scalar_one_or_none()
@@ -1525,6 +1560,41 @@ async def update_loop(
     effective_role = complex_role if _complex_role_set else loop.complex_role
     await _validate_complex_group(db, effective_group, effective_role, exclude_loop_id=loop_id)
 
+    # P2-04 工程事实：控制作用方向 + 模板引用（生效值 = 更新值优先，否则保持原值）
+    effective_direction = (
+        control_action_direction
+        if _control_action_direction_set
+        else getattr(loop, "control_action_direction", "UNKNOWN")
+    )
+    effective_template_id = (
+        engineering_template_id if _engineering_template_id_set else loop.engineering_template_id
+    )
+    effective_template_version = (
+        engineering_template_version
+        if _engineering_template_version_set
+        else loop.engineering_template_version
+    )
+    from app.services.engineering_facts import VALID_CONTROL_ACTION_DIRECTIONS
+    from app.services.engineering_template import validate_loop_template_ref
+
+    if effective_direction not in VALID_CONTROL_ACTION_DIRECTIONS:
+        raise BizError(
+            code="ERR_PARAM_INVALID",
+            message=(
+                f"control_action_direction 必须为 {VALID_CONTROL_ACTION_DIRECTIONS} 之一，"
+                f"收到 {effective_direction}"
+            ),
+            status_code=400,
+        )
+    effective_template_id_str = (
+        str(effective_template_id) if effective_template_id is not None else None
+    )
+    await validate_loop_template_ref(
+        db,
+        template_id=effective_template_id_str,
+        version=effective_template_version,
+    )
+
     before = {
         "description": loop.description,
         "unitId": str(loop.unit_id) if loop.unit_id else None,
@@ -1551,6 +1621,11 @@ async def update_loop(
             str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
         ),
         "complexRole": loop.complex_role,
+        "controlActionDirection": getattr(loop, "control_action_direction", "UNKNOWN"),
+        "engineeringTemplateId": (
+            str(loop.engineering_template_id) if loop.engineering_template_id else None
+        ),
+        "engineeringTemplateVersion": loop.engineering_template_version,
     }
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -1594,6 +1669,13 @@ async def update_loop(
         loop.complex_loop_group_id = complex_loop_group_id
     if _complex_role_set:
         loop.complex_role = complex_role
+    # P2-04 工程事实——支持 PUT null 清空（方向回 UNKNOWN 态/解除模板关联/清除版本 pin）
+    if _control_action_direction_set:
+        loop.control_action_direction = control_action_direction or "UNKNOWN"
+    if _engineering_template_id_set:
+        loop.engineering_template_id = engineering_template_id
+    if _engineering_template_version_set:
+        loop.engineering_template_version = engineering_template_version
     loop.updated_by = operator
 
     # 停用联动（2026-10-10 裁决）：显式停用时联动置「不参评」，并自动关闭
@@ -1643,6 +1725,11 @@ async def update_loop(
         ),
         "complexRole": loop.complex_role,
         "status": new_status,
+        "controlActionDirection": getattr(loop, "control_action_direction", "UNKNOWN"),
+        "engineeringTemplateId": (
+            str(loop.engineering_template_id) if loop.engineering_template_id else None
+        ),
+        "engineeringTemplateVersion": loop.engineering_template_version,
     }
     after_json = json.dumps(after, ensure_ascii=False, default=str)
 

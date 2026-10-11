@@ -885,6 +885,19 @@ async def identify_model_from_history(
         try:
             from app.services import calc_snapshot as _cs
 
+            # P2-04（schemaVersion 1.2）：落包时从回路工程事实填充
+            # engineeringFacts（控制方向/OP 限幅/PV 量程单位/PID 表示——
+            # 未知态显式 UNKNOWN；解析失败不阻断落包，该节记 null 不伪补）
+            try:
+                from app.services.engineering_facts import resolve_loop_engineering_facts
+
+                _facts = await resolve_loop_engineering_facts(db, str(loop.id))
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "辨识落包前工程事实解析失败（engineeringFacts 记 null，不伪补）",
+                    exc_info=True,
+                )
+                _facts = None
             snap = await _cs.save_identification_snapshot(
                 db,
                 loop_id=str(loop.id),
@@ -905,6 +918,7 @@ async def identify_model_from_history(
                 dcs_template_revision=_dcs_template_revision(loop),
                 valid_rate=signals.get("valid_rate"),
                 point_ctx=signals.get("point_axis"),
+                engineering_facts=_facts,
             )
             if snap is not None:
                 input_snapshot = {
