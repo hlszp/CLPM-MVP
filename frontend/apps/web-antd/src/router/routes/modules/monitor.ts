@@ -1,6 +1,5 @@
 import type { RouteRecordRaw } from 'vue-router';
 
-
 function monitorHome() {
   // 0930 用户口径：监控模块默认页统一落工作台（回路监视仍为菜单首项）
   return '/workbench';
@@ -42,6 +41,7 @@ const routes: RouteRecordRaw[] = [
         path: '/monitor/loops',
         component: () => import('#/views/monitor/loops.vue'),
         meta: {
+          permCode: 'page:monitor.loops',
           authority: [
             'ADMIN',
             'IC_ENGINEER',
@@ -58,6 +58,7 @@ const routes: RouteRecordRaw[] = [
         path: '/monitor/alerts',
         component: () => import('#/views/alert/events.vue'),
         meta: {
+          permCode: 'page:monitor.alerts',
           authority: [
             'ADMIN',
             'IC_ENGINEER',
@@ -74,6 +75,7 @@ const routes: RouteRecordRaw[] = [
         path: '/monitor/attention',
         component: () => import('#/views/monitor/attention.vue'),
         meta: {
+          permCode: 'page:monitor.attention',
           authority: [
             'ADMIN',
             'IC_ENGINEER',
@@ -98,6 +100,7 @@ const routes: RouteRecordRaw[] = [
           query: { ...to.query },
         }),
         meta: {
+          permCode: 'page:monitor.table',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           icon: 'lucide:gauge',
@@ -110,6 +113,7 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/monitor/legacy',
         component: () => import('#/views/loop/monitor.vue'),
         meta: {
+          permCode: 'page:monitor.table',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '回路实时表格（旧版）',
@@ -124,6 +128,7 @@ const routes: RouteRecordRaw[] = [
     path: '/dashboard',
     redirect: '/monitor/loops',
     meta: {
+      permCode: 'page:monitor.loops',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '旧工作台重定向',
@@ -134,6 +139,7 @@ const routes: RouteRecordRaw[] = [
     path: '/dashboard/workbench',
     redirect: '/monitor/loops',
     meta: {
+      permCode: 'page:monitor.loops',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '装置总览（已下线）',

@@ -19,13 +19,7 @@ const routes: RouteRecordRaw[] = [
       // vben filterTree 在父节点不通过时整棵子树被裁掉（不递归），
       // 父路由若漏角色，子页写了 authority 也永远进不去菜单/路由表
       // （例：权限矩阵声明「所有角色可查看」却对 EXPERT/SPONSOR/PE 不可达）。
-      authority: [
-        'ADMIN',
-        'IC_ENGINEER',
-        'PE_ENGINEER',
-        'SPONSOR',
-        'EXPERT',
-      ],
+      authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'],
       icon: 'lucide:settings',
       order: 9,
       title: '系统管理',
@@ -40,6 +34,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/basic-info',
         component: () => import('#/views/system/basic-info.vue'),
         meta: {
+          permCode: 'page:system.basic-info',
           authority: ['ADMIN'],
           icon: 'lucide:building-2',
           title: '基础信息',
@@ -50,6 +45,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/users',
         component: () => import('#/views/system/users.vue'),
         meta: {
+          permCode: 'page:system.users',
           authority: ['ADMIN'],
           icon: 'lucide:users',
           title: '用户管理',
@@ -60,6 +56,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/audit',
         component: () => import('#/views/system/audit.vue'),
         meta: {
+          permCode: 'page:system.audit',
           authority: ['ADMIN'],
           icon: 'lucide:scroll-text',
           title: '审计日志',
@@ -71,6 +68,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/dict',
         component: () => import('#/views/system/dict.vue'),
         meta: {
+          permCode: 'page:system.dict',
           authority: ['ADMIN'],
           icon: 'lucide:book-marked',
           title: '字典管理',
@@ -81,6 +79,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/permissions',
         component: () => import('#/views/system/permissions.vue'),
         meta: {
+          permCode: 'page:system.permissions',
           icon: 'lucide:shield-check',
           title: '权限矩阵',
         },
@@ -90,6 +89,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/modules',
         component: () => import('#/views/system/modules.vue'),
         meta: {
+          permCode: 'page:system.modules',
           authority: ['ADMIN'],
           icon: 'lucide:blocks',
           title: '模块管理',
@@ -101,6 +101,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/reports',
         redirect: '/reports/subscription',
         meta: {
+          permCode: 'page:reports.subscription',
           // 实现契约 §5：后端 reports.py 全端点仅 ADMIN，前端同步收紧
           authority: ['ADMIN'],
           hideInMenu: true,
@@ -116,6 +117,7 @@ const routes: RouteRecordRaw[] = [
         path: '/system/algorithm-params',
         redirect: '/config/metric',
         meta: {
+          permCode: 'page:config.metric',
           authority: ['ADMIN'],
           hideInMenu: true,
           title: '算法参数配置',

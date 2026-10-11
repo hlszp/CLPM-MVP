@@ -350,7 +350,10 @@ function metricSkipTitle(
   record: DiagnosisApi.RunListItem,
   opName: string,
 ): string {
-  return record.operatorMetrics?.[opName]?.skipReason ?? '输入缺失/数据不足，算子跳过';
+  return (
+    record.operatorMetrics?.[opName]?.skipReason ??
+    '输入缺失/数据不足，算子跳过'
+  );
 }
 
 /** 数据质量列合并显示：等级 · 有效率 · 缺口率（悬浮完整门禁信息） */
@@ -553,14 +556,16 @@ onMounted(() => {
     >
       <template #actions>
         <Button
-          v-permission="['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER']"
+          v-permission="['diagnosis:task-manage']"
           danger
           size="small"
           :disabled="selectedRowKeys.length === 0"
           :loading="batchDeleteLoading && batchDeleteVisible"
           @click="batchDeleteVisible = true"
         >
-          批量删除{{ selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : '' }}
+          批量删除{{
+            selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : ''
+          }}
         </Button>
         <ClpmToolbarButton
           :loading="exporting"
@@ -714,7 +719,8 @@ onMounted(() => {
                 :title="gateTitle(record.dataGate as DiagnosisApi.GateInfo)"
                 :style="{
                   color:
-                    record.dataGate.confidenceLevel === 'E' || !record.dataGate.passed
+                    record.dataGate.confidenceLevel === 'E' ||
+                    !record.dataGate.passed
                       ? '#cf1322'
                       : undefined,
                 }"
@@ -749,7 +755,11 @@ onMounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <Button size="small" type="link" @click.stop="openMetrics(record as DiagnosisApi.RunListItem)">
+              <Button
+                size="small"
+                type="link"
+                @click.stop="openMetrics(record as DiagnosisApi.RunListItem)"
+              >
                 指标
               </Button>
             </template>
@@ -791,11 +801,7 @@ onMounted(() => {
       <div class="detail-drawer-resize" @mousedown="startDrawerResize"></div>
       <!-- 16 号文 F1 入口 2：头部工具区"诊断档案"（当前行回路） -->
       <template #extra>
-        <Button
-          v-if="currentRow?.loopId"
-          size="small"
-          @click="openArchive"
-        >
+        <Button v-if="currentRow?.loopId" size="small" @click="openArchive">
           诊断档案
         </Button>
       </template>

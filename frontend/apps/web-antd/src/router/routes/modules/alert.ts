@@ -29,6 +29,7 @@ const routes: RouteRecordRaw[] = [
         path: '/alert/events',
         redirect: '/monitor/alerts',
         meta: {
+          permCode: 'page:monitor.alerts',
           authority: [
             'ADMIN',
             'IC_ENGINEER',
@@ -45,6 +46,7 @@ const routes: RouteRecordRaw[] = [
         path: '/alert/rules',
         redirect: '/config/alert-rules',
         meta: {
+          permCode: 'page:alert.rules',
           authority: ['ADMIN'],
           hideInMenu: true,
           title: '预警规则',

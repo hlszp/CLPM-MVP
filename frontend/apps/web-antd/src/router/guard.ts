@@ -6,7 +6,12 @@ import { useAccessStore, useUserStore } from '@vben/stores';
 import { startProgress, stopProgress } from '@vben/utils';
 
 import { fetchModules, getEnabledKeys } from '#/composables/use-modules';
-import { accessRoutes, applyModuleFilter, coreRouteNames } from '#/router/routes';
+import {
+  accessRoutes,
+  applyModuleFilter,
+  applyPagePermFilter,
+  coreRouteNames,
+} from '#/router/routes';
 import { useAuthStore } from '#/store';
 
 import { generateAccess } from './access';
@@ -110,9 +115,13 @@ function setupAccessGuard(router: Router) {
     // 当前登录用户拥有的角色标识列表
     const userRoles = userInfo.roles ?? [];
 
-    // 拉取模块启用状态并过滤路由树（先模块过滤 → 再 authority 过滤）
+    // 拉取模块启用状态并过滤路由树
+    // （先模块过滤 → 再页面码过滤 → 最后 authority 过滤，三层 AND 语义）
     await fetchModules();
     applyModuleFilter(new Set(getEnabledKeys()));
+    // P4-02：页面码过滤（fetchUserInfo 已写入 pageCodes——DB 授权矩阵下发，
+    // 菜单按可达页生成；meta.permCode 未授权的路由整棵移除，直链随路由表移除受限）
+    applyPagePermFilter();
 
     // 生成菜单和路由
     const { accessibleMenus, accessibleRoutes } = await generateAccess({

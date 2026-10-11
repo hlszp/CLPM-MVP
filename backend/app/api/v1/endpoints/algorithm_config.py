@@ -32,7 +32,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.algorithm_parameter import AlgorithmParameter
@@ -80,7 +80,7 @@ def _now_naive() -> datetime:
 @router.get("", response_model=ApiResponse[AlgorithmParamsSchema])
 async def get_all_algorithm_params(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取全部指标算法参数配置的合并视图.
 
@@ -133,7 +133,7 @@ async def get_all_algorithm_params(
 @router.get("/{metric_code}", response_model=ApiResponse[AlgorithmParamsMetricGroup])
 async def get_metric_algorithm_params(
     metric_code: str,
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取指定指标的算法参数（4 控制类型）."""
     view = algo_config_service.build_merged_view()
@@ -173,7 +173,7 @@ async def save_metric_algorithm_params(
     metric_code: str,
     body: AlgorithmParamsSaveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新指定指标的算法参数（仅 ADMIN；DEC-03 配置发布为 ADMIN 职责）.
 

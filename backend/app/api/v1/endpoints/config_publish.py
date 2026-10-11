@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.config_publish import ConfigOverride, ConfigPublication
@@ -96,7 +96,7 @@ def _publication_to_item(row: ConfigPublication) -> PublicationItem:
 @router.get("/revision", response_model=ApiResponse[RevisionInfoResponse])
 async def get_revision(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """当前统一配置 revision（持久值，DB 真相源）+ 最近一次发布摘要."""
     revision = await cp.get_current_revision(db)
@@ -120,7 +120,7 @@ async def get_effective_params(
     nodeId: str | None = Query(default=None, max_length=64),
     loopId: str | None = Query(default=None, max_length=64),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """解析统一作用域链的有效参数（逐参数 source/sourceId/sourceRevision + 遮盖关系）.
 
@@ -156,7 +156,7 @@ async def list_overrides(
     layer: str | None = Query(default=None),
     metricCode: str | None = Query(default=None, max_length=50),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """列出 TEMPLATE/NODE/LOOP 分层覆盖（DEFAULT 层经既有 algorithm-params 接口查看）."""
     query = select(ConfigOverride).order_by(
@@ -180,7 +180,7 @@ async def list_overrides(
 async def preview_override_endpoint(
     body: PreviewPublishRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """发布预览（P2-04 dry-run）：校验/差异/受影响回路/合并视图，零写入.
 
@@ -209,7 +209,7 @@ async def preview_override_endpoint(
 async def publish_override_endpoint(
     body: OverridePublishRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("config:publish")),
 ) -> dict:
     """发布一层覆盖（整组替换语义；expectedRevision 乐观锁，冲突 409）.
 
@@ -251,7 +251,7 @@ async def reset_override_endpoint(
     override_id: str,
     body: OverrideResetRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("config:publish")),
 ) -> dict:
     """重置一层覆盖（P2-01 遗留收口：重置低层后高层仍生效且可解释）.
 
@@ -303,7 +303,7 @@ async def reset_override_endpoint(
 async def list_publications(
     limit: int = Query(default=50, ge=1, le=200),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """发布账本（追加式，按 revision 倒序）."""
     rows = (
@@ -331,7 +331,7 @@ async def rollback_publication_endpoint(
     revision: int,
     body: RollbackRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("config:publish")),
 ) -> dict:
     """回退指定发布：将其 before 状态重新应用为新 revision（不删历史）.
 

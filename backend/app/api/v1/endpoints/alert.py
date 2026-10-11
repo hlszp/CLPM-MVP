@@ -101,7 +101,7 @@ async def list_rules_endpoint(
 async def create_rule_endpoint(
     body: AlertRuleCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("alert:rule-manage")),
 ) -> dict:
     """创建预警规则（仅 ADMIN）。"""
     data = await alert_service.create_rule(db, user.username, body.model_dump())
@@ -125,7 +125,7 @@ async def update_rule_endpoint(
     rule_id: str,
     body: AlertRuleUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("alert:rule-manage")),
 ) -> dict:
     """更新预警规则（仅 ADMIN）。"""
     data = await alert_service.update_rule(
@@ -139,7 +139,7 @@ async def update_rule_endpoint(
 async def delete_rule_endpoint(
     rule_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("alert:rule-manage")),
 ) -> dict:
     """删除预警规则（仅 ADMIN）。"""
     await alert_service.delete_rule(db, rule_id, user.username)
@@ -152,7 +152,7 @@ async def toggle_rule_endpoint(
     rule_id: str,
     enabled: bool = Query(..., description="true=启用，false=停用"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("alert:rule-manage")),
 ) -> dict:
     """启停规则（仅 ADMIN）。"""
     data = await alert_service.toggle_rule(db, rule_id, enabled, user.username)
@@ -164,7 +164,7 @@ async def toggle_rule_endpoint(
 async def dry_run_rule_endpoint(
     body: AlertDryRunRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:dry-run")),
 ) -> dict:
     """规则试运行：对指定回路求值，不创建事件、不设冷却期、不触发动作。
 
@@ -209,7 +209,7 @@ async def create_subscription_endpoint(
     rule_id: str,
     body: AlertSubscriptionCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:subscription-manage")),
 ) -> dict:
     """创建订阅关系（ADMIN/IC_ENGINEER）。"""
     data = await alert_service.create_subscription(db, rule_id, user.username, body.model_dump())
@@ -235,7 +235,7 @@ async def list_subscriptions_endpoint(
 async def delete_subscription_endpoint(
     subscription_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:subscription-manage")),
 ) -> dict:
     """删除订阅关系（ADMIN/IC_ENGINEER）。"""
     await alert_service.delete_subscription(db, subscription_id, user.username)
@@ -293,7 +293,7 @@ async def list_events_endpoint(
 async def batch_acknowledge_events_endpoint(
     body: AlertEventBatchAcknowledge,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:event-handle")),
 ) -> dict:
     """批量确认预警事件（ADMIN/IC_ENGINEER）。
 
@@ -327,7 +327,7 @@ async def acknowledge_event_endpoint(
     event_id: UUID,
     body: AlertEventAcknowledge,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:event-handle")),
 ) -> dict:
     """确认预警事件（ADMIN/IC_ENGINEER）。"""
     data = await alert_service.acknowledge_event(db, str(event_id), user.username, body.note)
@@ -340,7 +340,7 @@ async def resolve_event_endpoint(
     event_id: UUID,
     body: AlertEventResolve,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:event-handle")),
 ) -> dict:
     """处置预警事件（ADMIN/IC_ENGINEER）。"""
     data = await alert_service.resolve_event(db, str(event_id), user.username, body.resolution_note)
@@ -353,7 +353,7 @@ async def mark_false_positive_endpoint(
     event_id: UUID,
     body: AlertEventFalsePositive,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:event-handle")),
 ) -> dict:
     """标记事件为误报（ADMIN/IC_ENGINEER）。"""
     data = await alert_service.mark_false_positive(db, str(event_id), body.is_false_positive)
@@ -366,6 +366,7 @@ async def archive_event_endpoint(
     event_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("alert:event-handle")),
 ) -> dict:
     """归档事件（仅 ADMIN）。"""
     data = await alert_service.archive_event(db, str(event_id))
@@ -404,7 +405,7 @@ async def list_suppressions_endpoint(
 async def create_suppression_endpoint(
     body: AlertSuppressionCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:suppression")),
 ) -> dict:
     """创建手动抑制（ADMIN/IC_ENGINEER）。"""
     data = await alert_service.create_suppression(db, user.username, body.model_dump())
@@ -416,7 +417,7 @@ async def create_suppression_endpoint(
 async def delete_suppression_endpoint(
     suppression_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("alert:suppression")),
 ) -> dict:
     """删除手动抑制（ADMIN/IC_ENGINEER）。"""
     await alert_service.delete_suppression(db, suppression_id, user.username)
@@ -470,7 +471,7 @@ async def get_global_switch_endpoint(
 async def set_global_switch_endpoint(
     body: AlertGlobalSwitch,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("alert:rule-manage")),
 ) -> dict:
     """更新预警引擎全局开关（仅 ADMIN）。"""
     await alert_service.set_global_switch(db, body.enabled, user.username)

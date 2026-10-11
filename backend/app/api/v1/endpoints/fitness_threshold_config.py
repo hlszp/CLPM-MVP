@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -350,7 +350,7 @@ def _build_view(
 @router.get("", response_model=ApiResponse[FitnessThresholdSchema])
 async def get_fitness_thresholds(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取适用性判定阈值的合并视图（默认值 + sys_config 覆盖）.
 
@@ -370,7 +370,7 @@ async def get_fitness_thresholds(
 async def save_fitness_thresholds(
     body: FitnessThresholdSaveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新适用性阈值（仅 ADMIN）.
 

@@ -16,7 +16,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.ai_insight import InsightRequest, InsightResult, SceneInfo
@@ -29,7 +29,7 @@ router = APIRouter(prefix="/ai-insight", tags=["AI 洞察"])
 
 @router.get("/scenes", response_model=ApiResponse[list[SceneInfo]])
 async def list_scenes_endpoint(
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT", "SPONSOR")),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """列出可用的 AI 洞察场景（供前端动态渲染按钮/卡片）。"""
     return success(data=SCENE_LIST)
@@ -41,7 +41,7 @@ async def generate_insight_endpoint(
     body: InsightRequest,
     db: AsyncSession = Depends(get_db),
     # WS-D 性能#7 R1：SPONSOR 只读，禁止生成洞察（消耗 LLM 配额）
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
+    _: SysUser = Depends(require_perms("ai:insight")),
 ) -> dict:
     """生成 AI 洞察（4 场景统一入口）。
 

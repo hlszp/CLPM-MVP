@@ -38,7 +38,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -451,7 +451,11 @@ async def _commit_or_rollback(db: AsyncSession, action: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=ApiResponse[MetricDefinitionListSchema])
+@router.get(
+    "",
+    response_model=ApiResponse[MetricDefinitionListSchema],
+    dependencies=[Depends(require_perms("config:view"))],
+)
 async def get_metric_definitions(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -470,7 +474,7 @@ async def get_metric_definitions(
 async def create_metric_definition(
     body: MetricDefinitionCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """新增自定义指标定义（仅 ADMIN，保存后自动生成新版本并生效）.
 
@@ -527,7 +531,7 @@ async def update_metric_definition(
     metric_code: str,
     body: MetricDefinitionUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新指标定义（仅 ADMIN，保存后自动生成新版本并生效）.
 
@@ -593,7 +597,7 @@ async def update_metric_definition(
 async def delete_metric_definition(
     metric_code: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """删除自定义指标定义（仅 ADMIN；内置指标不可删除）."""
     current = await _load_current(db)
@@ -640,6 +644,7 @@ async def delete_metric_definition(
 async def get_metric_definition_history(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """查询指标定义版本历史（仅 ADMIN）.
 
@@ -675,7 +680,7 @@ async def get_metric_definition_history(
 async def rollback_metric_definition(
     version: int,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """回滚到指定历史版本（仅 ADMIN，回滚生成新版本号保留追溯链）."""
     if version < 1:

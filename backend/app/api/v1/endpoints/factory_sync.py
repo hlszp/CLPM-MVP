@@ -19,7 +19,7 @@ from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -45,7 +45,7 @@ class FactorySyncSettingUpdate(BaseModel):
 @router.get("/settings", response_model=ApiResponse[dict])
 async def get_factory_sync_settings(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """读取工厂模型同步配置（仅 ADMIN；密码脱敏）。"""
     setting = await factory_sync.get_sync_setting(db)
@@ -56,7 +56,7 @@ async def get_factory_sync_settings(
 async def save_factory_sync_settings(
     body: FactorySyncSettingUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """保存工厂模型同步配置（仅 ADMIN；运行时生效，无需重启）。"""
     setting = await factory_sync.save_sync_setting(
@@ -77,7 +77,7 @@ async def save_factory_sync_settings(
 @router.post("/test", response_model=ApiResponse[dict])
 async def test_factory_sync_connection(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """连接测试：用已保存配置登录 AAS 验证连通性（仅 ADMIN）。"""
     setting = await factory_sync.get_raw_sync_setting(db)
@@ -88,7 +88,7 @@ async def test_factory_sync_connection(
 @router.post("/sync", response_model=ApiResponse[dict])
 async def sync_factory_model_endpoint(
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """全量同步 AAS 工厂模型（仅 ADMIN）。
 
@@ -103,7 +103,7 @@ async def sync_factory_model_endpoint(
 async def get_factory_sync_logs(
     limit: int = Query(20, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """查询同步日志（倒序，仅 ADMIN）。"""
     logs = await factory_sync.get_sync_logs(db, limit=limit)

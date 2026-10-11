@@ -1114,6 +1114,7 @@ INSERT INTO sys_permission (code, kind, parent_code, requires_codes, module_key,
     ('alert:event-handle', 'ACTION', NULL, '["alert:view"]'::jsonb, 'monitor', false, '预警事件确认/解决/误报', 1501),
     ('alert:suppression', 'ACTION', NULL, '["alert:view"]'::jsonb, 'monitor', false, '预警抑制管理', 1502),
     ('alert:dry-run', 'ACTION', NULL, '["alert:view"]'::jsonb, 'monitor', false, '预警规则试运行', 1503),
+    ('alert:subscription-manage', 'ACTION', NULL, '["alert:view"]'::jsonb, 'monitor', false, '预警订阅创建/删除（ADMIN/IC）', 1504),
     ('config:publish', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, '分层配置发布/重置/回退（ADMIN，DEC-03）', 1600),
     ('tag:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, 'Tag 注册 CRUD/导入', 1601),
     ('plant:manage', 'ACTION', NULL, '["config:view"]'::jsonb, 'config', false, '工厂节点 CRUD/导入导出', 1602),
@@ -1136,6 +1137,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('ADMIN', 'alert:event-handle'),
     ('ADMIN', 'alert:rule-manage'),
     ('ADMIN', 'alert:suppression'),
+    ('ADMIN', 'alert:subscription-manage'),
     ('ADMIN', 'alert:view'),
     ('ADMIN', 'config:publish'),
     ('ADMIN', 'config:view'),
@@ -1247,6 +1249,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('IC_ENGINEER', 'alert:dry-run'),
     ('IC_ENGINEER', 'alert:event-handle'),
     ('IC_ENGINEER', 'alert:suppression'),
+    ('IC_ENGINEER', 'alert:subscription-manage'),
     ('IC_ENGINEER', 'alert:view'),
     ('IC_ENGINEER', 'config:view'),
     ('IC_ENGINEER', 'diagnosis:interpret'),
@@ -1480,6 +1483,12 @@ ON CONFLICT (role, permission_code) DO NOTHING;
 
 INSERT INTO sys_authz_policy (revision, operation, role, user_id, reason, operator, before_value, after_value, rollback_of, created_at) VALUES
     (1, 'SEED', NULL, NULL, 'P4-01 初始种子：五角色默认矩阵（P1-04 实际裁决）+ 存量用户 scope=ALL', 'system:seed', NULL, '{"source": "p401authz01"}'::jsonb, NULL, now())
+ON CONFLICT (revision) DO NOTHING;
+
+-- P4-02 观察项①（迁移 p402authz02 同批同内容）：alert 订阅 CRUD 补独立动作码。
+-- 目录扩展=系统基线变更（不可回退）；推进 revision 使运行时矩阵缓存下一请求重载。
+INSERT INTO sys_authz_policy (revision, operation, role, user_id, reason, operator, before_value, after_value, rollback_of, created_at) VALUES
+    (2, 'CATALOG_EXTENSION', NULL, NULL, 'P4-02 观察项①：alert 订阅 CRUD 补独立动作码 alert:subscription-manage（ADMIN/IC）', 'system:migration', NULL, '{"addedCodes": ["alert:subscription-manage"], "grants": {"ADMIN": ["alert:subscription-manage"], "IC_ENGINEER": ["alert:subscription-manage"]}, "source": "p402authz02"}'::jsonb, NULL, now())
 ON CONFLICT (revision) DO NOTHING;
 
 INSERT INTO sys_user_scope (user_id, scope_type, node_id, updated_by, updated_at)

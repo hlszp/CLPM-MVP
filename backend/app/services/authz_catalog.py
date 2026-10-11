@@ -268,6 +268,11 @@ CATALOG: dict[str, PermDef] = {
     "alert:event-handle": _a(("alert:view",), "预警事件确认/解决/误报", "monitor", False, 1501),
     "alert:suppression": _a(("alert:view",), "预警抑制管理", "monitor", False, 1502),
     "alert:dry-run": _a(("alert:view",), "预警规则试运行", "monitor", False, 1503),
+    # P4-02 观察项①（P4-01 验收报告）：订阅 CRUD 原与规则管理混域无独立码，
+    # create/delete_subscription 端点（require_roles A/I）补独立动作码
+    "alert:subscription-manage": _a(
+        ("alert:view",), "预警订阅创建/删除（ADMIN/IC）", "monitor", False, 1504
+    ),
     # 配置域操作（config:publish=DEC-03 ADMIN）
     "config:publish": _a(
         ("config:view",), "分层配置发布/重置/回退（ADMIN，DEC-03）", "config", False, 1600
@@ -399,6 +404,7 @@ _ACTION_CODES = {
             "alert:event-handle",
             "alert:suppression",
             "alert:dry-run",
+            "alert:subscription-manage",
             "tag:manage",
             "ai:insight",
         }
@@ -1026,6 +1032,14 @@ async def rollback_revision(
         raise BizError(
             code="ERR_AUTHZ_PROTECTED_REVISION",
             message="回退产生的版本不可再回退（如需恢复请直接修改矩阵/scope）",
+            status_code=400,
+        )
+    if target.operation == "CATALOG_EXTENSION":
+        # P4-02 目录增量（如 alert:subscription-manage）随迁移落账本——
+        # 目录扩展是系统基线变更而非角色策略操作，无逆操作可回退
+        raise BizError(
+            code="ERR_AUTHZ_PROTECTED_REVISION",
+            message="目录扩展版本不可回退（系统基线变更，随迁移发布）",
             status_code=400,
         )
     already = (

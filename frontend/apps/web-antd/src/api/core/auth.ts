@@ -19,8 +19,10 @@ export namespace AuthApi {
     id: string;
     /** 显示名称 */
     displayName: string;
-    /** 权限列表（模块:操作格式，* 表示通配） */
+    /** 权限列表（P4-02：DB 授权矩阵下发的显式动作码，无通配；按钮显隐用） */
     permissions: string[];
+    /** 页面码列表（P4-02：catalog kind=PAGE，菜单可达页生成用） */
+    pageCodes?: string[];
     /** 角色枚举：ADMIN / IC_ENGINEER / PE_ENGINEER / SPONSOR / EXPERT */
     role: string;
     /** 用户名 */
@@ -60,8 +62,10 @@ export namespace AuthApi {
     id: string;
     /** 最后登录时间（ISO8601） */
     lastLoginAt?: string;
-    /** 权限列表 */
+    /** 权限列表（P4-02：DB 授权矩阵下发的显式动作码，无通配） */
     permissions: string[];
+    /** 页面码列表（P4-02：菜单可达页生成用） */
+    pageCodes?: string[];
     /** 角色枚举 */
     role: string;
     /** 显示名称 */

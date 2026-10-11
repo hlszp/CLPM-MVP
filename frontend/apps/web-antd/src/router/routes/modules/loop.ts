@@ -23,6 +23,7 @@ const routes: RouteRecordRaw[] = [
     path: '/loop',
     redirect: (to) => ({ path: '/loop/workbench360', query: to.query }),
     meta: {
+      permCode: 'page:workbench.main',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
       hideInMenu: true,
       title: '回路',
@@ -36,6 +37,7 @@ const routes: RouteRecordRaw[] = [
           query: to.query,
         }),
         meta: {
+          permCode: 'page:workbench.main',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           hideInMenu: true,
           title: '回路工作台',
@@ -49,6 +51,7 @@ const routes: RouteRecordRaw[] = [
           query: to.query,
         }),
         meta: {
+          permCode: 'page:workbench.main',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           hideInMenu: true,
           title: '回路工作台（旧）',
@@ -63,6 +66,7 @@ const routes: RouteRecordRaw[] = [
           query: { loopId: String(to.params.id) },
         }),
         meta: {
+          permCode: 'page:workbench.main',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
           hideInMenu: true,
           title: '回路详情',

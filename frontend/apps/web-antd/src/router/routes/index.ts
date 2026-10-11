@@ -95,12 +95,76 @@ let dynamicRoutePathPatterns: string[] = traverseTreeValues(
   (route) => route.path,
 ).filter(Boolean);
 
+/** 当前用户已授权页面码集合（P4-02：来自 /auth/me pageCodes，DB 授权矩阵下发） */
+let grantedPageCodes: null | Set<string> = null;
+
+/**
+ * 记录当前用户已授权页面码（store/auth.ts 在 fetchUserInfo 后调用）。
+ */
+function setGrantedPageCodes(pages: string[]) {
+  grantedPageCodes = new Set(pages);
+}
+
+/**
+ * 按已授权页面码过滤路由树（P4-02：菜单按可达页生成）。
+ *
+ * - 携带 ``meta.permCode`` 的路由：码未授权 → 整棵子树移除（菜单/直链同步受限）
+ * - 未携带 ``permCode`` 的路由（兼容 redirect、legacy 书签页）：仍由 authority 过滤
+ * - 纯菜单父路由（无 component）在全部子路由被移除后一并移除——父菜单
+ *   不残留不可达入口；父 redirect 可达性由子树过滤后 vben 默认取首个
+ *   存留子路由保证
+ * - 模块过滤（applyModuleFilter）与页面码过滤均为 AND 语义：模块禁用或
+ *   页面未授权任一不满足即移除；与后端 get_effective_access 口径一致
+ */
+function filterTreeByPageCodes(
+  tree: RouteRecordRaw[],
+  granted: Set<string>,
+): RouteRecordRaw[] {
+  const result: RouteRecordRaw[] = [];
+  for (const route of tree) {
+    const permCode = route.meta?.permCode as string | undefined;
+    if (permCode && !granted.has(permCode)) {
+      continue;
+    }
+    const filtered: RouteRecordRaw = { ...route };
+    if (route.children && route.children.length > 0) {
+      filtered.children = filterTreeByPageCodes(
+        route.children as RouteRecordRaw[],
+        granted,
+      );
+      // 纯菜单父路由：子路由全部被移除 → 父路由不再可达，一并移除
+      const isLayoutParent = !route.component;
+      if (isLayoutParent && filtered.children.length === 0) {
+        continue;
+      }
+    }
+    result.push(filtered);
+  }
+  return result;
+}
+
 /**
  * 根据已启用模块 key 集合过滤路由树。
  * 由路由守卫在登录后、generateAccess 前调用。
  */
 function applyModuleFilter(enabledKeys: Set<string>) {
   const filtered = filterTreeByModules(allDynamicRoutes, enabledKeys);
+  accessRoutes = [...filtered, ...staticRoutes];
+  dynamicRoutePathPatterns = traverseTreeValues(
+    filtered,
+    (route) => route.path,
+  ).filter(Boolean);
+}
+
+/**
+ * 在模块过滤基础上叠加页面码过滤（P4-02：DB 授权矩阵驱动菜单可达页）。
+ * 由路由守卫在 applyModuleFilter 后调用；未设置 pageCodes（旧后端兼容）时不过滤。
+ */
+function applyPagePermFilter() {
+  if (!grantedPageCodes) {
+    return;
+  }
+  const filtered = filterTreeByPageCodes(accessRoutes, grantedPageCodes);
   accessRoutes = [...filtered, ...staticRoutes];
   dynamicRoutePathPatterns = traverseTreeValues(
     filtered,
@@ -121,7 +185,10 @@ function isKnownRoutePath(path: string): boolean {
 export {
   accessRoutes,
   applyModuleFilter,
+  applyPagePermFilter,
   coreRouteNames,
+  filterTreeByPageCodes,
   isKnownRoutePath,
   routes,
+  setGrantedPageCodes,
 };

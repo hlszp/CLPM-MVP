@@ -37,7 +37,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -391,7 +391,7 @@ async def _commit_or_rollback(db: AsyncSession, action: str) -> None:
 @router.get("", response_model=ApiResponse[GradingThresholdSchema])
 async def get_grading_thresholds(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取当前生效的 5 级性能定级阈值.
 
@@ -412,7 +412,7 @@ async def get_grading_thresholds(
 async def save_grading_thresholds(
     body: GradingThresholdSaveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新 5 级性能定级阈值（仅 ADMIN，保存为新版本并立即生效）.
 
@@ -456,6 +456,7 @@ async def save_grading_thresholds(
 async def get_grading_threshold_history(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """查询定级阈值版本历史（仅 ADMIN）.
 
@@ -491,7 +492,7 @@ async def get_grading_threshold_history(
 async def rollback_grading_thresholds(
     version: int,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """回滚到指定历史版本（仅 ADMIN，回滚生成新版本号保留追溯链）.
 

@@ -26,7 +26,7 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.core.event_bus import mark_read
 from app.models.module_plugin import ModulePlugin
@@ -43,7 +43,11 @@ router = APIRouter(prefix="/workbench", tags=["workbench"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/scope-tree", response_model=ApiResponse[list[dict]])
+@router.get(
+    "/scope-tree",
+    response_model=ApiResponse[list[dict]],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def get_scope_tree(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
@@ -96,7 +100,11 @@ class EventReadRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/overview", response_model=ApiResponse[dict])
+@router.get(
+    "/overview",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def get_overview(
     scopeType: str = Query("GLOBAL", description="范围：GLOBAL/FACTORY/AREA/UNIT/LOOP"),
     scopeId: int | None = Query(None, description="范围 ID"),
@@ -121,7 +129,11 @@ async def get_overview(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/assessment", response_model=ApiResponse[dict])
+@router.get(
+    "/assessment",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_assessment(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -214,7 +226,9 @@ async def get_tuning(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/plugins", response_model=ApiResponse[dict])
+@router.get(
+    "/plugins", response_model=ApiResponse[dict], dependencies=[Depends(require_perms("loop:view"))]
+)
 async def get_plugins(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
@@ -250,7 +264,11 @@ async def get_plugins(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/events/read", response_model=ApiResponse[dict])
+@router.post(
+    "/events/read",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def mark_events_read(
     body: EventReadRequest,
     db: AsyncSession = Depends(get_db),

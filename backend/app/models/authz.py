@@ -163,7 +163,8 @@ class SysAuthzPolicy(Base):
     - ``revision``: 全局单调递增；expectedRevision 乐观锁前置校验 +
       主键唯一约束并发兜底（并发双写恰一方成功）
     - ``operation``: SEED（初始种子）/ ROLE_GRANT（角色矩阵更新）/
-      USER_SCOPE（用户 scope 更新）/ ROLLBACK（回退逆操作）
+      USER_SCOPE（用户 scope 更新）/ ROLLBACK（回退逆操作）/
+      CATALOG_EXTENSION（目录基线扩展，P4-02 起随迁移追加，不可回退）
     - ``before_value``/``after_value``: 审计信封（JSONB 快照 + 原因/作用域）
     - ``rollback_of``: ROLLBACK 行指向被回退的源 revision；同一 revision
       不允许二次回退（防重复逆操作震荡）
@@ -187,7 +188,7 @@ class SysAuthzPolicy(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK')",
+            "operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION')",
             name="ck_sys_authz_policy_operation",
         ),
         UniqueConstraint("rollback_of", name="uq_sys_authz_policy_rollback_of"),
