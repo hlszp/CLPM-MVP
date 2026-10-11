@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.services.tuning import _estimate_mv_step
 from app.services.tuning_algorithms import (
@@ -590,13 +590,55 @@ class TestTuningAPI:
         assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
 
     def test_create_task_success(self, client, mock_db) -> None:
-        """保存整定任务。"""
+        """保存整定任务（P3-B2 W4 新协议：MANUAL 来源 + 服务端权威派生）."""
         loop = _make_loop_mock()
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(loop))
         mock_db.add = MagicMock()
         mock_db.commit = AsyncMock()
         mock_db.refresh = AsyncMock()
 
+        sim_evidence = {"candidateResponses": [{"label": "IMC", "response": {}, "metrics": {}}]}
+        with (
+            mock_current_user(TEST_USERS["admin"]),
+            patch(
+                "app.services.engineering_facts.resolve_loop_engineering_facts",
+                new=AsyncMock(return_value={"pidRepresentation": {"status": "UNKNOWN"}}),
+            ),
+            patch(
+                "app.services.tuning._current_pid_snapshot",
+                new=AsyncMock(return_value={"status": "UNAVAILABLE", "standard": None}),
+            ),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/tasks",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopId": "00000000-0000-0000-0000-0000000000a1",
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "algorithm": "MANUAL_TUNING",
+                    "recommendedPid": {"kp": 6.5, "ti": 32.5, "td": 2.31},
+                    "simulationResult": sim_evidence,
+                    "status": "SIMULATED",
+                    "modelSource": "MANUAL",
+                    "riskConfirmed": True,
+                },
+            )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["code"] == "0"
+        # MANUAL 诚实标记：来源元数据服务端置空（不冒充算法输出）
+        saved = data["data"]
+        assert saved["modelSource"] == "MANUAL"
+        assert saved["dataSource"] is None
+        assert saved["identifyMethod"] is None
+        assert saved["confidenceLevel"] is None
+        # 未知 DCS 表示：currentPid 不默认标准 kp/ti/td
+        assert saved["currentPid"] is None
+        assert saved["currentPidContext"]["status"] == "UNAVAILABLE"
+
+    def test_create_task_legacy_payload_rejected(self, client, mock_db) -> None:
+        """P3-B2 W4：旧协议（缺 modelSource 的裸模型保存）显式拒绝，不静默成功."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/tuning/tasks",
@@ -611,9 +653,29 @@ class TestTuningAPI:
                     "status": "SIMULATED",
                 },
             )
-        assert resp.status_code == 201
-        data = resp.json()
-        assert data["code"] == "0"
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_TUNING_SOURCE_REQUIRED"
+
+    def test_create_task_client_provenance_conflict(self, client, mock_db) -> None:
+        """P3-B2 W4：新协议下客户端申报来源元数据（dataSource 等）显式拒绝."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/tuning/tasks",
+                headers={"Authorization": "Bearer fake-token"},
+                json={
+                    "loopId": "00000000-0000-0000-0000-0000000000a1",
+                    "modelType": "FOPDT",
+                    "modelParams": {"K": 1.0, "tau": 30.0, "theta": 5.0},
+                    "algorithm": "IMC",
+                    "recommendedPid": {"kp": 6.5, "ti": 32.5, "td": 2.31},
+                    "status": "SIMULATED",
+                    "modelSource": "MANUAL",
+                    "riskConfirmed": True,
+                    "dataSource": "HISTORY",
+                },
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_TUNING_PROVENANCE_CONFLICT"
 
 
 # ---------------------------------------------------------------------------

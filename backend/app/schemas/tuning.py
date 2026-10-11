@@ -449,7 +449,21 @@ class TuningTaskDetail(TuningTaskItem):
 
 
 class CreateTuningTaskRequest(CamelModel):
-    """创建整定任务（保存整定结果）。"""
+    """创建整定任务（保存整定结果）。
+
+    P3-B2 W4（G2-INC-c，2026-10-11）——最终选定方案保存链服务端校验冻结：
+
+    - 新协议（携带 ``modelSource``）：来源/模型/参数/窗口/currentPid 快照全部
+      由服务端从来源记录与工程事实权威派生；旧客户端申报字段
+      （dataSource/identifyMethod/confidence*/fittingScore/currentPid/rollbackPid/
+      pidCandidates/candidateResults/excitationScore/residualTestPassed）不得
+      携带，携带即 ``ERR_TUNING_PROVENANCE_CONFLICT`` 拒绝（不静默忽略）。
+    - 旧协议（缺 ``modelSource`` 的裸模型 payload）：显式拒绝
+      ``ERR_TUNING_SOURCE_REQUIRED``——与 /tune /simulate /compare 推荐链
+      "旧版裸模型请求已停止放行"同口径（Owner 级定稿，依据记录于 P3-B2 交接）。
+    - 字段只加不改：旧字段保留解析形状（仅整批调用方为仓内前端，随本批同步
+      升级为新协议）。
+    """
 
     loopId: str
     modelType: ModelType
@@ -472,6 +486,17 @@ class CreateTuningTaskRequest(CamelModel):
     # V62-P3-007 人工实施清单（2026-10-04 P0：回退方案/风险评估随方案保存）
     rollbackPid: PidParams | None = None
     riskAssessment: dict[str, Any] | None = None
+    # P3-B2 W4：来源身份（服务端校验冻结入口）
+    modelSource: ModelSource | None = Field(
+        None,
+        description="模型来源 IDENTIFICATION_RECORD/STEP_EXPERIMENT/MANUAL；缺省=旧协议拒绝",
+    )
+    sourceRecordId: str | None = Field(
+        None, description="来源辨识记录 ID（IDENTIFICATION_RECORD/STEP_EXPERIMENT 必填）"
+    )
+    riskConfirmed: bool = Field(
+        False, description="C 级辨识结果/人工模型风险确认（与推荐链同门禁）"
+    )
 
 
 # ---------------------------------------------------------------------------

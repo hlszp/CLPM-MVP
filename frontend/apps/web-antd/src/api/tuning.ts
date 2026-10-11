@@ -21,6 +21,11 @@ export namespace TuningApi {
     | 'ZN';
   /** 可信度等级 */
   export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E' | 'INCONCLUSIVE';
+  /** 推荐链模型来源（P3-B2 W4：最终方案保存链同协议——来源身份由服务端校验冻结） */
+  export type ModelSource =
+    | 'IDENTIFICATION_RECORD'
+    | 'MANUAL'
+    | 'STEP_EXPERIMENT';
   /** 整定任务状态（MVP 实际使用 SIMULATED→APPLIED→VERIFIED 路径） */
   export type TuningTaskStatus =
     | 'APPLIED'
@@ -174,6 +179,22 @@ export namespace TuningApi {
     /** 辨识时间窗（异步历史辨识落库；同步阶跃/MANUAL 为 null） */
     timeWindowStart?: null | string;
     timeWindowEnd?: null | string;
+    /**
+     * P3-B2 W4/W5 冻结身份（加性；2026-10-11 前的旧记录为 null）
+     * currentPidContext = 三元组（standard 标准 Kp/Ti秒/Td秒 | raw DCS 原始
+     * p/i/d | conversion 转换依据）；未知 DCS 表示 standard=null 不默认
+     */
+    sourceRecordId?: null | string;
+    modelSource?: ModelSource | null;
+    dcsTemplateRevision?: null | string;
+    unitBasis?: null | Record<string, any>;
+    currentPidContext?: null | {
+      conversion?: null | Record<string, any>;
+      raw?: null | Record<string, any>;
+      reason?: null | string;
+      standard?: null | PidParams;
+      status?: string;
+    };
   }
 
   export interface TuningTaskDetail extends TuningTaskItem {
@@ -418,17 +439,26 @@ export function comparePidsApi(data: {
   );
 }
 
-/** 保存整定方案（09 §4.4：显式保存才落记录） */
+/**
+ * 保存整定方案（09 §4.4：显式保存才落记录）
+ *
+ * P3-B2 W4 新协议（G2-INC-c）：只交来源身份引用（modelSource/sourceRecordId），
+ * 来源/模型/参数/窗口/currentPid 快照由服务端从来源记录与工程事实权威派生并
+ * 冻结——旧申报字段（dataSource/fittingScore/currentPid 等）携带会被
+ * ERR_TUNING_PROVENANCE_CONFLICT 拒绝。
+ */
 export function saveTuningTaskApi(data: {
   [key: string]: any;
   algorithm: string;
-  currentPid?: null | TuningApi.PidParams;
-  fittingScore?: null | number;
   loopId: string;
   modelParams: TuningApi.ModelParams;
+  modelSource: TuningApi.ModelSource;
   modelType: TuningApi.ModelType;
   recommendedPid: TuningApi.PidParams;
+  riskAssessment?: null | Record<string, any>;
+  riskConfirmed?: boolean;
   simulationResult?: null | Record<string, any>;
+  sourceRecordId?: null | string;
   status?: TuningApi.TuningTaskStatus;
 }) {
   return requestClient.post<{ id: string }>('/tuning/tasks', data);

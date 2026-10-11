@@ -663,7 +663,37 @@ async def create_task_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
 ) -> dict:
-    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT）。"""
+    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结）.
+
+    新协议：``modelSource`` 必填（缺省=旧协议显式拒绝）；来源/模型/参数/窗口/
+    currentPid 快照全部由服务端权威派生（详见 ``create_tuning_task``）。
+    """
+    # P3-B2 W4：新协议下客户端申报的来源元数据一律拒绝（服务端权威派生，
+    # 不静默忽略——伪造来源身份在此显式拦截）
+    _legacy_fields = (
+        "currentPid",
+        "fittingScore",
+        "identifyMethod",
+        "dataSource",
+        "confidenceLevel",
+        "confidenceReason",
+        "excitationScore",
+        "residualTestPassed",
+        "pidCandidates",
+        "candidateResults",
+        "rollbackPid",
+    )
+    if body.modelSource is not None:
+        provided = [f for f in _legacy_fields if getattr(body, f, None) is not None]
+        if provided:
+            raise BizError(
+                code="ERR_TUNING_PROVENANCE_CONFLICT",
+                message=(
+                    "最终方案保存链的来源元数据由服务端从来源记录权威派生，"
+                    f"不接受客户端申报：{', '.join(provided)}（请移除后重试）"
+                ),
+                status_code=400,
+            )
     data = await create_tuning_task(
         db=db,
         loop_id=body.loopId,
@@ -671,22 +701,12 @@ async def create_task_endpoint(
         model_params=body.modelParams.model_dump(exclude_none=True),
         algorithm=body.algorithm,
         recommended_pid=body.recommendedPid.model_dump(),
-        current_pid=body.currentPid.model_dump() if body.currentPid else None,
-        fitting_score=body.fittingScore,
+        model_source=body.modelSource,
+        source_record_id=body.sourceRecordId,
+        risk_confirmed=body.riskConfirmed,
         simulation_result=body.simulationResult,
         status=body.status,
         created_by=user.username,
-        # Phase 2.2 元数据
-        identify_method=body.identifyMethod,
-        data_source=body.dataSource,
-        confidence_level=body.confidenceLevel,
-        confidence_reason=body.confidenceReason,
-        excitation_score=body.excitationScore,
-        residual_test_passed=body.residualTestPassed,
-        pid_candidates=body.pidCandidates,
-        candidate_results=body.candidateResults,
-        # V62-P3-007：人工实施清单（回退方案缺省=实施前参数，service 层兜底）
-        rollback_pid=body.rollbackPid.model_dump() if body.rollbackPid else None,
         risk_assessment=body.riskAssessment,
     )
     # 审计日志（S1-B7）
