@@ -17,8 +17,11 @@
 - POST /orders/{id}/start          开工（PENDING/REOPENED → EXECUTING）
 - POST /orders/{id}/feedback       执行反馈（EXECUTING 追加 feedback_log，状态不变）
 - POST /orders/{id}/submit         提交验证（EXECUTING → VERIFYING，TUNING 必填 pidAfter）
-- POST /orders/{id}/verify         验证结论（VERIFYING → CLOSED/REOPENED，服务端固化 KPI）
+- POST /orders/{id}/verify         验证结论（VERIFYING → CLOSED/REOPENED，服务端固化 KPI
+                                    + 闭环证据三分类派生，P3-05/DEC-06）
 - POST /orders/{id}/cancel         作废（PENDING/EXECUTING → CANCELLED，cancelReason 必填）
+- POST /orders/{id}/rollback-confirm 实际回退人工确认（actualRollbackConfirmed 独立，P3-05）
+- GET  /orders/{id}/revisit-candidates 同回路实施后完成复诊记录候选（P3-05/ENG-04）
 - POST /orders/{id}/kpi-comparison KPI 前后对比预览（VERIFYING，不落库）
 聚合（§6.3）：
 - GET  /loops                      档案聚合（双实体口径）
@@ -34,6 +37,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -96,6 +100,13 @@ _ORDER_STATUS_LABELS = {
     "CLOSED": "已闭环",
     "REOPENED": "重开",
     "CANCELLED": "已作废",
+}
+
+#: 闭环证据三分类中文名（P3-05，DEC-06 已裁采纳：01§3.4 / P0-02 冻结 v2 §6.3）
+_CLOSURE_EVIDENCE_LABELS = {
+    "MANUAL_CONFIRMATION": "人工确认（无数据）",
+    "DATA_VERIFIED": "数据验证",
+    "COMPARABLE_CONDITION_VERIFIED": "数据验证（工况可比已确认）",
 }
 
 #: KPI 验证窗口时长（§4.3：前后各 24h）
@@ -207,17 +218,36 @@ class FeedbackBody(BaseModel):
 
 
 class SubmitBody(BaseModel):
-    """提交验证请求体（§6.2：actionDetail 必填，按类型校验子字段）。"""
+    """提交验证请求体（§6.2：actionDetail 必填，按类型校验子字段）。
+
+    P3-05：implementedAt=实际实施时刻（可选；缺省=未知，不伪填提交时刻）。
+    延后补录场景（实施在 08:00、20:00 才提交）传 implementedAt=08:00——
+    补录时刻（submitted_at，服务端时间）与实施时刻分离，后续不改写。
+    """
 
     actionDetail: dict[str, Any] | None = None
+    implementedAt: datetime | None = None
 
 
 class VerifyBody(BaseModel):
-    """验证结论请求体（§6.2：verifyResult 必填 EFFECTIVE/INEFFECTIVE）。"""
+    """验证结论请求体（§6.2：verifyResult 必填 EFFECTIVE/INEFFECTIVE）。
+
+    P3-05（DEC-06）：conditionComparable=人工确认前后窗工况可比（可选；
+    仅在前后窗 KPI 数据均在时生效，生效则证据等级升为
+    COMPARABLE_CONDITION_VERIFIED；缺数据时忽略——工况可比性不能替代数据）。
+    """
 
     verifyResult: str | None = None
     verifyNote: str | None = Field(None, max_length=500)
     verifyRunId: str | None = None
+    conditionComparable: bool | None = None
+
+
+class RollbackConfirmBody(BaseModel):
+    """实际回退人工确认请求体（P3-05，DEC-06：actualRollbackConfirmed 独立）。"""
+
+    confirmed: bool | None = None
+    note: str | None = Field(None, max_length=200)
 
 
 class CancelBody(BaseModel):
@@ -274,6 +304,9 @@ def _order_to_dict(row: HandlingOrder) -> dict[str, Any]:
         "startedAt": _iso(row.started_at),
         "feedbackLog": row.feedback_log or [],
         "submittedAt": _iso(row.submitted_at),
+        # P3-05：实施时刻与补录（提交）时刻分离；NULL=未申报/未知（不伪填）
+        "implementedAt": _iso(row.implemented_at),
+        "implementationTimeKnown": row.implemented_at is not None,
         "verifyRunId": row.verify_run_id,
         "verifyResult": row.verify_result,
         "verifyResultLabel": (
@@ -284,9 +317,21 @@ def _order_to_dict(row: HandlingOrder) -> dict[str, Any]:
         "verifyNote": row.verify_note,
         "verifiedBy": row.verified_by,
         "verifiedAt": _iso(row.verified_at),
+        # P3-05（DEC-06）：闭环证据三分类 + 工况可比性（缺工况确认时未验证）
+        "closureEvidence": row.closure_evidence,
+        "closureEvidenceLabel": (
+            _CLOSURE_EVIDENCE_LABELS.get(row.closure_evidence) if row.closure_evidence else None
+        ),
+        "conditionComparable": row.closure_evidence == "COMPARABLE_CONDITION_VERIFIED",
         "kpiBefore": row.kpi_before,
         "kpiAfter": row.kpi_after,
         "tuningRecordId": row.tuning_record_id,
+        # P3-05（DEC-06）：实际回退人工确认事实（独立于 ROLLED_BACK 判断结论；
+        # false/未确认不得声称 DCS 已恢复）
+        "actualRollbackConfirmed": bool(row.actual_rollback_confirmed),
+        "rollbackConfirmedAt": _iso(row.rollback_confirmed_at),
+        "rollbackConfirmedBy": row.rollback_confirmed_by,
+        "rollbackNote": row.rollback_note,
         "cancelReason": row.cancel_reason,
         "status": row.status,
         "statusLabel": _ORDER_STATUS_LABELS.get(row.status, row.status),
@@ -343,14 +388,31 @@ def _kpi_summary(snap: KpiSnapshotHourly | None) -> dict[str, Any] | None:
     }
 
 
+def _implementation_anchor(order: HandlingOrder) -> tuple[datetime | None, str]:
+    """统一验证窗口/复诊时点锚（P3-05：统一窗口/执行期排除契约）。
+
+    implemented_at（实际实施时刻）优先；未申报时退 submitted_at（提交时刻
+    =实施已发生的最早确证时点）；均无 → None（未知）。返回 (锚点, 来源标签)，
+    来源标签供序列化显式说明窗口锚定依据（诚实化：不静默混用两种口径）。
+    """
+    if order.implemented_at:
+        return order.implemented_at, "implementedAt"
+    if order.submitted_at:
+        return order.submitted_at, "submittedAt"
+    return None, "unknown"
+
+
 async def _pull_kpi_windows(
     db: AsyncSession, order: HandlingOrder
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    """拉取 KPI 前后窗口快照摘要（§4.3 v2.0：前窗以 started_at 为界，后窗以 submitted_at 为界）。
+    """拉取 KPI 前后窗口快照摘要（§4.3 v2.0 + P3-05 统一窗口契约）。
 
     - kpi_before：[started_at − 24h, started_at]（开工前最后基线，原 handled_at 口径平移）
-    - kpi_after：[submitted_at, submitted_at + 24h]（提交验证后线上效果）
-    两侧窗口隔离：处置执行期数据不参与对比；窗口不足/无快照侧为 None。
+    - kpi_after：[anchor, anchor + 24h]，anchor=implemented_at ?? submitted_at
+      （P3-05：后窗锚定实际实施时刻——补录场景下 submitted_at 晚于实施时刻，
+      按提交时刻开窗会把实施后最初一段效果错切进"执行期排除"）
+    两侧窗口隔离：处置执行期 [started_at, anchor] 数据不参与对比；
+    窗口不足/无快照侧为 None（verify 据此判 MANUAL_CONFIRMATION）。
 
     2026-10-04 B2 口径统一：由"窗口内最新单条"改为"窗口均值"（对齐 tracker
     自动验证与整定效果验证页）；等级字段取窗口内最新一条，附 snapshotCount。
@@ -360,10 +422,9 @@ async def _pull_kpi_windows(
         before = await window_avg_summary(
             db, order.loop_id, order.started_at - _KPI_WINDOW, order.started_at
         )
-    if order.submitted_at:
-        after = await window_avg_summary(
-            db, order.loop_id, order.submitted_at, order.submitted_at + _KPI_WINDOW
-        )
+    anchor, _src = _implementation_anchor(order)
+    if anchor:
+        after = await window_avg_summary(db, order.loop_id, anchor, anchor + _KPI_WINDOW)
     return before, after
 
 
@@ -371,24 +432,138 @@ async def _writeback_tuning_record(db: AsyncSession, order: HandlingOrder, statu
     """整定记录状态回写（09 设计方案 §5.4）：仅 TUNING 类且已关联整定记录的工单。
 
     模块热插拔：整定模块禁用时跳过回写（软依赖，handling 不硬依赖 tuning）。
+    P3-05（ENG-02 严格关联）：回写前校验整定记录与工单同回路——存量脏关联
+    （历史建单只验存在未验回路）在回写点显式拒绝，不允许状态写进别的记录
+    （同回路 A/B 方案不串工单）。
     """
     if order.action_type != "TUNING" or not order.tuning_record_id:
         return
     if not is_module_enabled("tuning"):
         return
     rec = await db.get(TuningRecord, order.tuning_record_id)
-    if rec is not None:
-        rec.status = status
+    if rec is None:
+        return
+    if str(rec.loop_id) != str(order.loop_id):
+        raise _err_param(
+            f"整定记录 {order.tuning_record_id} 属于其他回路，与工单 {order.order_no} "
+            "关联不一致（历史脏数据），拒绝回写整定状态——请修正关联后再流转"
+        )
+    rec.status = status
+
+
+#: PID 反馈合法键（P3-05：结构校验契约）
+_PID_FEEDBACK_KEYS = frozenset({"p", "i", "d"})
+
+
+def _validate_pid_feedback(pid: Any, field: str) -> None:
+    """P/PI/PID 反馈按结构校验（P3-05，ENG-03：无结构完整性契约的旧口径废止）。
+
+    契约（01§3.4"PID反馈按P/PI/PID及型号要求校验"的键集结构面）：
+    - 键集 ⊆ {p, i, d}，且必须为非空 dict；
+    - p 必填（P/PI/PID 三种反馈结构均以比例项为基础，无 p 无结构可言）；
+    - 有 d 必有 i（P+D 不是标准反馈结构，型号要求不会出现）；
+    - 每个值为有限数值（bool 除外——是 int 子类但语义非数值；字符串/None/NaN/Inf 拒绝）。
+    合法结构：{p}=P、{p,i}=PI、{p,i,d}=PID。
+    """
+    if not isinstance(pid, dict) or not pid:
+        raise _err_param(f"{field} 必填且为非空对象（P/I/D 数值键）")
+    extra = set(pid) - _PID_FEEDBACK_KEYS
+    if extra:
+        raise _err_param(f"{field} 仅允许 p/i/d 数值键（多余键: {', '.join(sorted(extra))}）")
+    if "p" not in pid:
+        raise _err_param(f"{field} 缺少比例项 p（P/PI/PID 结构均必填 p）")
+    if "d" in pid and "i" not in pid:
+        raise _err_param(f"{field} 含微分项 d 时必须同时填写积分项 i（无标准 P+D 反馈结构）")
+    for key, value in pid.items():
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise _err_param(f"{field}.{key} 必须为有限数值（当前值不是有效数字）")
+
+
+async def _snapshot_pid_feedback_context(
+    db: AsyncSession, order: HandlingOrder, detail: dict[str, Any]
+) -> dict[str, Any]:
+    """提交时刻冻结 PID 反馈表示上下文（P3-05：before/after PID 及表示）。
+
+    复用 P3-03/B1 工程事实（engineering_facts.pidRepresentation）与
+    pid_conversion.standard_pid_from_facts 单源转换（B2 冻结链同源，不分叉）：
+    - 把提交的 pidBefore/pidAfter 原始值转换为标准形式（Kp/Ti/Td 秒）并连同
+      表示依据（pType/iUnit/dUnit/dcsTemplateRevision）冻结进 action_detail；
+      后续 DCS 配置变化不漂移（B2 冻结语义）。
+    - 诚实化：DCS 表示未知（REPRESENTATION_UNKNOWN）/转换数值异常
+      （CONVERSION_ERROR）/工程事实不可解析（UNRESOLVED）均显式记录，
+      不默认标准 kp/ti/td——快照失败不阻断提交（表示上下文为证据增强，
+      结构校验已独立把关），失败原因留痕供人工核对。
+    """
+    from app.services.engineering_facts import resolve_loop_engineering_facts
+    from app.services.pid_conversion import (
+        DcsPid,
+        PidRepresentationUnknownError,
+        standard_pid_from_facts,
+    )
+
+    ctx: dict[str, Any] = {
+        "capturedAt": _iso(_utcnow_naive()),
+        "pidRepresentation": None,
+        "pidBeforeStandard": None,
+        "pidAfterStandard": None,
+        "conversionStatus": "UNRESOLVED",
+        "reason": None,
+    }
+    try:
+        facts = await resolve_loop_engineering_facts(db, order.loop_id)
+        pid_repr = facts.get("pidRepresentation")
+    except Exception as exc:  # noqa: BLE001 —— 快照失败不阻断提交，显式留痕
+        ctx["reason"] = f"工程事实解析失败：{exc}"
+        return ctx
+    # 防御：表示事实必须为纯文本 dict（mock/异常路径产出不可序列化值时按未解析处理）
+    if not isinstance(pid_repr, dict) or not isinstance(pid_repr.get("status"), str):
+        ctx["reason"] = "PID 表示工程事实不可用（status 非文本），按未解析处理"
+        return ctx
+    ctx["pidRepresentation"] = pid_repr
+
+    def _standard(node: Any) -> dict[str, float] | None:
+        if not isinstance(node, dict) or not node:
+            return None
+        try:
+            return standard_pid_from_facts(
+                DcsPid(
+                    p=float(node["p"]),
+                    i=float(node.get("i") or 0.0),
+                    d=float(node.get("d") or 0.0),
+                ),
+                pid_repr,  # type: ignore[arg-type]
+            ).to_dict()
+        except PidRepresentationUnknownError as exc:
+            ctx["conversionStatus"] = "REPRESENTATION_UNKNOWN"
+            ctx["reason"] = str(exc)
+            return None
+        except (KeyError, TypeError, ValueError) as exc:
+            ctx["conversionStatus"] = "CONVERSION_ERROR"
+            ctx["reason"] = f"DCS 私有表示转标准 PID 数值异常：{exc}"
+            return None
+
+    ctx["pidBeforeStandard"] = _standard(detail.get("pidBefore"))
+    ctx["pidAfterStandard"] = _standard(detail.get("pidAfter"))
+    if ctx["conversionStatus"] == "UNRESOLVED" and ctx["reason"] is None:
+        ctx["conversionStatus"] = "KNOWN"
+    return ctx
 
 
 def _validate_action_detail(action_type: str | None, detail: dict[str, Any]) -> None:
-    """submit 按类型校验必填子字段（§5.2：TUNING 必填 pidAfter；其余仅要求非空对象）。"""
+    """submit 按类型校验必填子字段（§5.2 + P3-05 结构契约）。
+
+    TUNING 必填 pidAfter 且按 P/PI/PID 结构校验（ENG-03：原"非空 dict 即过"
+    的弱校验废止——任一项非空可通过、字符串/残缺结构混入的口径关闭）；
+    其余类型仅要求非空对象。
+    """
     if not detail:
         raise _err_param("actionDetail 必填且为非空对象")
     if action_type == "TUNING":
-        pid_after = detail.get("pidAfter")
-        if not isinstance(pid_after, dict) or not pid_after:
-            raise _err_param("TUNING 类型提交验证时 actionDetail.pidAfter 必填（非空对象）")
+        _validate_pid_feedback(detail.get("pidAfter"), "actionDetail.pidAfter")
 
 
 # ---------------------------------------------------------------------------
@@ -814,6 +989,15 @@ def _order_list_row_to_dict(r: Any, unit_paths: dict[str, str]) -> dict[str, Any
         "startedAt": _iso(r.started_at),
         "feedbackCount": len(feedback_log),
         "submittedAt": _iso(r.submitted_at),
+        # P3-05：实施时刻/证据等级/严格关联字段（清单行加性暴露，效果验证页
+        # 按 tuningRecordId 精确反查不再取"该回路最近一条"——ENG-02）
+        "implementedAt": _iso(r.implemented_at),
+        "tuningRecordId": str(r.tuning_record_id) if r.tuning_record_id else None,
+        "closureEvidence": r.closure_evidence,
+        "closureEvidenceLabel": (
+            _CLOSURE_EVIDENCE_LABELS.get(r.closure_evidence) if r.closure_evidence else None
+        ),
+        "actualRollbackConfirmed": bool(r.actual_rollback_confirmed),
         "verifyResult": r.verify_result,
         "verifyResultLabel": (
             {"EFFECTIVE": "有效", "INEFFECTIVE": "无效"}.get(r.verify_result)
@@ -845,6 +1029,11 @@ def _build_order_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
     if args.get("loop_id"):
         conds.append("ho.loop_id = :loop_id")
         params["loop_id"] = args["loop_id"]
+    if args.get("tuning_record_id"):
+        # P3-05（ENG-02）：严格按整定记录关联过滤——效果验证页由整定记录精确
+        # 定位其工单，替代"按回路取最近一条 TUNING 工单"（A/B 方案串工单源头）
+        conds.append("ho.tuning_record_id = CAST(:tuning_record_id AS uuid)")
+        params["tuning_record_id"] = args["tuning_record_id"]
     if args.get("handler"):
         conds.append("ho.handler ILIKE :handler")
         params["handler"] = f"%{args['handler']}%"
@@ -888,6 +1077,9 @@ async def list_orders(
     source: str | None = Query(None, pattern="^(DIAGNOSIS|MANUAL)$"),
     plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
     loopId: str | None = Query(None),
+    tuningRecordId: str | None = Query(
+        None, description="严格按整定记录关联过滤（tuning_record_id 精确匹配）"
+    ),
     handler: str | None = Query(None, description="处置人模糊"),
     keyword: str | None = Query(None, description="处置编号/回路位号/标题模糊"),
     plannedBefore: datetime | None = Query(None, description="计划时间止（ISO）"),
@@ -903,12 +1095,15 @@ async def list_orders(
     + updated_at DESC（§6.2）。
 
     时间窗口筛选：plannedBefore/plannedAfter 按 planned_at；createdBefore/createdAfter
-    按 created_at；verifiedBefore/verifiedAfter 按 verified_at；均为闭区间。"""
+    按 created_at；verifiedBefore/verifiedAfter 按 verified_at；均为闭区间。
+    tuningRecordId（P3-05/ENG-02）：精确匹配工单-整定记录关联，效果验证页由
+    整定记录精确反查工单，替代"按回路取最近一条 TUNING 工单"。"""
     args: dict[str, Any] = {
         "status": status,
         "action_type": actionType,
         "source": source,
         "loop_id": loopId,
+        "tuning_record_id": tuningRecordId,
         "handler": handler,
         "keyword": keyword,
         "planned_before": _to_naive_utc(plannedBefore) if plannedBefore else None,
@@ -1174,11 +1369,19 @@ async def create_order(
     planned_at = _to_naive_utc(body.plannedAt) if body.plannedAt else None
     # 2026-10-04 P0：TUNING 工单 ↔ 整定记录关联（显式字段优先，actionDetail 兜底
     # 兼容存量前端写法）。查无记录即报错，不做静默丢弃。
+    # P3-05（ENG-02 严格关联）：另校验整定记录与工单同回路——同回路 A/B 方案
+    # 各关联各的记录，跨回路关联会让验证/回写串到别的方案的工单上。
     tuning_record_id = body.tuningRecordId or (body.actionDetail or {}).get("tuningRecordId")
     if tuning_record_id:
         tuning_record_id = str(tuning_record_id)
-        if await db.get(TuningRecord, tuning_record_id) is None:
+        rec = await db.get(TuningRecord, tuning_record_id)
+        if rec is None:
             raise _err_param(f"整定记录不存在: {tuning_record_id}")
+        if str(rec.loop_id) != str(body.loopId):
+            raise _err_param(
+                f"整定记录 {tuning_record_id} 属于其他回路（跨回路关联拒绝，"
+                "同回路 A/B 方案不得串用工单）"
+            )
     order: HandlingOrder | None = None
     for attempt in (0, 1):
         try:
@@ -1230,14 +1433,20 @@ async def start_order(
     if body.actionDetail:
         detail.update(body.actionDetail)
     if body.pidBefore is not None:
-        # TUNING 类型开工时回填调整前 P/I/D（§6.2）
+        # TUNING 类型开工时回填调整前 P/I/D（§6.2）；P3-05：提供即按结构校验
+        # （ENG-03——开工侧同样不接受残缺/非数值反馈）
+        if order.action_type == "TUNING" and body.pidBefore:
+            _validate_pid_feedback(body.pidBefore, "pidBefore")
         detail["pidBefore"] = body.pidBefore
     order.action_detail = detail or None
     order.handler = body.handler or user.username
     order.started_at = _utcnow_naive()
     if order.status == "REOPENED":
-        # 新一轮处置：清空上一轮验证字段
+        # 新一轮处置：清空上一轮验证字段（P3-05：实施时刻/证据等级随轮清空；
+        # 回退确认字段保留——人工回退是跨轮事实，最新确认覆盖）
         order.submitted_at = None
+        order.implemented_at = None
+        order.closure_evidence = None
         order.verify_run_id = None
         order.verify_result = None
         order.verify_note = None
@@ -1283,20 +1492,41 @@ async def submit_order(
 ) -> dict:
     """提交验证（EXECUTING → VERIFYING，§4.2 #4）。
 
-    守卫：action_detail 必填（TUNING 必填 pidAfter）；与开工时已填详情合并
-    （保留 pidBefore 等先填字段），提交键覆盖同名键。
+    守卫：action_detail 必填（TUNING 必填 pidAfter 且按 P/PI/PID 结构校验）；
+    与开工时已填详情合并（保留 pidBefore 等先填字段），提交键覆盖同名键。
+
+    P3-05（补录时刻与实施时刻分离）：implementedAt=实际实施时刻（可选申报），
+    - 不晚于当前时刻（实施是已发生事实）、不早于开工时刻；
+    - 缺省不伪填 submitted_at（语义=未知，implementationTimeKnown=false）；
+    - submitted_at 恒为服务端补录/提交时刻，二者各自独立不改写。
+    TUNING 提交时冻结 PID 反馈表示上下文（pidFeedbackContext，见
+    _snapshot_pid_feedback_context——B2 冻结链工单侧扩展）。
     """
     order = await _get_order_or_404(db, order_id)
     if order.status != "EXECUTING":
         raise _err_order_state(order, "提交验证")
     _validate_action_detail(order.action_type, body.actionDetail or {})
 
+    implemented_at: datetime | None = None
+    if body.implementedAt is not None:
+        implemented_at = _to_naive_utc(body.implementedAt)
+        now = _utcnow_naive()
+        if implemented_at > now:
+            raise _err_param("implementedAt 不能晚于当前时间（实施是已发生的事实，不接受未来时刻）")
+        if order.started_at and implemented_at < order.started_at:
+            raise _err_param("implementedAt 不能早于开工时间 startedAt（实施发生在开工之后）")
+
     merged: dict[str, Any] = dict(order.action_detail or {})
     merged.update(body.actionDetail or {})
-    order.action_detail = merged
+    if implemented_at is not None:
+        order.implemented_at = implemented_at
+    if order.action_type == "TUNING":
+        merged["pidFeedbackContext"] = await _snapshot_pid_feedback_context(db, order, merged)
+    order.action_detail = merged or None
     order.submitted_at = _utcnow_naive()
     order.status = "VERIFYING"
-    # 09 设计方案 §5.4：TUNING 类提交验证 → 回写整定记录 APPLIED（同事务提交）
+    # 09 设计方案 §5.4：TUNING 类提交验证 → 回写整定记录 APPLIED（同事务提交；
+    # P3-05：回写内含同回路校验，脏关联显式拒绝）
     await _writeback_tuning_record(db, order, "APPLIED")
     await db.commit()
     await db.refresh(order)
@@ -1312,8 +1542,19 @@ async def verify_order(
 ) -> dict:
     """验证结论（VERIFYING → CLOSED/REOPENED，§4.2 #5/#6）。
 
-    服务端此刻固化 kpi_before/kpi_after（前窗 started_at 口径，§4.3 v2.0），
-    再落 verify 字段；验证人=当前登录用户。
+    服务端此刻固化 kpi_before/kpi_after（前窗 started_at 口径，后窗锚
+    implemented_at ?? submitted_at——P3-05 统一窗口契约），再落 verify 字段；
+    验证人=当前登录用户。
+
+    P3-05（DEC-06 已裁）：
+    - 复诊记录（verifyRunId）须同回路、完成（SUCCESS/PARTIAL）、实施后创建
+      （ENG-04：跨回路/未完成/实施前的记录一律拒绝）；
+    - 闭环证据三分类服务端派生：前后窗 KPI 数据均在 + conditionComparable
+      确认 → COMPARABLE_CONDITION_VERIFIED；数据均在未确认 → DATA_VERIFIED；
+      任一侧无数据 → MANUAL_CONFIRMATION（闭环必须填理由，且统计侧不计入
+      数据验证通过数——统计与数据验证分开）；
+    - 验证无效仍回写 ROLLED_BACK（判断结论），但"DCS 已恢复"只能由独立的
+      rollback-confirm 端点确认（actualRollbackConfirmed），本端点不写。
     """
     order = await _get_order_or_404(db, order_id)
     if order.status != "VERIFYING":
@@ -1321,27 +1562,62 @@ async def verify_order(
     if body.verifyResult not in ("EFFECTIVE", "INEFFECTIVE"):
         raise _err_param("verifyResult 必填且为 EFFECTIVE / INEFFECTIVE")
     if body.verifyRunId is not None:
-        run = (
-            await db.execute(select(DiagnosisRun.id).where(DiagnosisRun.id == body.verifyRunId))
+        _ensure_uuid(body.verifyRunId, "verifyRunId")
+        revisit_run = (
+            await db.execute(select(DiagnosisRun).where(DiagnosisRun.id == body.verifyRunId))
         ).scalar_one_or_none()
-        if run is None:
+        if revisit_run is None:
             raise BizError(
                 code="ERR_PARAM",
                 message=f"复诊诊断记录不存在: {body.verifyRunId}",
                 status_code=400,
             )
+        # P3-05（ENG-04）：复诊必须是同回路、实施后的完成记录
+        if str(revisit_run.loop_id) != str(order.loop_id):
+            raise _err_param(f"复诊记录 {body.verifyRunId} 属于其他回路（跨回路复诊拒绝）")
+        if revisit_run.status not in ("SUCCESS", "PARTIAL"):
+            raise _err_param(
+                f"复诊记录 {body.verifyRunId} 未完成（status={revisit_run.status}，"
+                "复诊须为 SUCCESS/PARTIAL 完成记录）"
+            )
+        anchor, _src = _implementation_anchor(order)
+        run_moment = revisit_run.created_at or revisit_run.started_at
+        if anchor is not None and run_moment is not None and run_moment < anchor:
+            raise _err_param(
+                f"复诊记录 {body.verifyRunId} 创建于实施时刻之前"
+                f"（{anchor.isoformat()}），不是实施后的复诊记录"
+            )
 
     kpi_before, kpi_after = await _pull_kpi_windows(db, order)
+    data_available = kpi_before is not None and kpi_after is not None
+    if data_available and body.conditionComparable is True:
+        closure_evidence = "COMPARABLE_CONDITION_VERIFIED"
+    elif data_available:
+        closure_evidence = "DATA_VERIFIED"
+    else:
+        closure_evidence = "MANUAL_CONFIRMATION"
+    if (
+        closure_evidence == "MANUAL_CONFIRMATION"
+        and body.verifyResult == "EFFECTIVE"
+        and not (body.verifyNote or "").strip()
+    ):
+        raise _err_param(
+            "前后窗 KPI 数据不足，人工闭环必须填写理由（verifyNote 必填；"
+            "无数据人工验收单独统计，不计入数据验证通过数）"
+        )
     order.kpi_before = kpi_before
     order.kpi_after = kpi_after
     order.verify_result = body.verifyResult
     order.verify_note = body.verifyNote
     order.verify_run_id = body.verifyRunId
+    order.closure_evidence = closure_evidence
     order.verified_by = user.username
     order.verified_at = _utcnow_naive()
     order.status = "CLOSED" if body.verifyResult == "EFFECTIVE" else "REOPENED"
     # 09 设计方案 §5.4：TUNING 类验证有效 → VERIFIED；无效重开 → ROLLED_BACK
-    # （2026-10-04 用户裁决：启用 ROLLED_BACK，回滚率报表真实有数）
+    # （2026-10-04 用户裁决：启用 ROLLED_BACK，回滚率报表真实有数；
+    # P3-05/DEC-06：ROLLED_BACK=验证判断结论，不代表 DCS 人工回退已发生——
+    # 回退事实由 rollback-confirm 端点独立确认）
     await _writeback_tuning_record(
         db, order, "VERIFIED" if body.verifyResult == "EFFECTIVE" else "ROLLED_BACK"
     )
@@ -1378,6 +1654,98 @@ async def cancel_order(
     return success(_order_to_dict(order))
 
 
+@router.post("/orders/{order_id}/rollback-confirm", response_model=ApiResponse[dict])
+async def rollback_confirm_order(
+    order_id: str,
+    body: RollbackConfirmBody,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("handling:operate")),
+) -> dict:
+    """实际回退人工确认（P3-05，DEC-06：actualRollbackConfirmed 独立字段）。
+
+    - 仅验证结论已落（CLOSED/REOPENED）的工单可确认——回退是对已实施处置的
+      后续现场动作，验证前不存在"回退"语义；
+    - confirmed=true/false 均可写（误确认可更正），最新确认覆盖；
+    - 语义边界：ROLLED_BACK 是验证无效的判断结论（verify 自动写），本端点
+      存的是 DCS 人工回退事实——二者独立，未确认（false/未操作）不得声称
+      "DCS 已恢复"（ENG-05）；
+    - 确认回退（true）必须填写说明（何时/依据何种现场记录确认）。
+    """
+    order = await _get_order_or_404(db, order_id)
+    if order.status not in ("CLOSED", "REOPENED"):
+        raise _err_order_state(order, "实际回退确认")
+    if body.confirmed is None:
+        raise _err_param("confirmed 必填（true=已人工回退，false=更正为未回退）")
+    if body.confirmed and not (body.note or "").strip():
+        raise _err_param("确认已回退必须填写说明（何时/依据何种现场记录确认）")
+    order.actual_rollback_confirmed = body.confirmed
+    order.rollback_confirmed_at = _utcnow_naive()
+    order.rollback_confirmed_by = user.username
+    order.rollback_note = (body.note or "").strip() or None
+    await db.commit()
+    await db.refresh(order)
+    return success(_order_to_dict(order))
+
+
+@router.get(
+    "/orders/{order_id}/revisit-candidates",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
+async def list_revisit_candidates(
+    order_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """同回路、实施后的完成复诊记录候选（P3-05，ENG-04）。
+
+    返回该工单回路在实施锚点（implementedAt ?? submittedAt）之后创建的
+    SUCCESS/PARTIAL 诊断 run（近 20 条，新→旧），供验证时选择回填
+    verifyRunId——服务端给出合格候选，前端以选择替代手工 UUID 输入；
+    空列表=尚无合格复诊记录（引导先发起复诊，而非手填任意 UUID）。
+    仅 VERIFYING 阶段可查询（验证交互时点）。
+    """
+    order = await _get_order_or_404(db, order_id)
+    if order.status != "VERIFYING":
+        raise _err_order_state(order, "复诊候选查询")
+    anchor, anchor_source = _implementation_anchor(order)
+    stmt = (
+        select(DiagnosisRun)
+        .where(
+            DiagnosisRun.loop_id == order.loop_id,
+            DiagnosisRun.status.in_(("SUCCESS", "PARTIAL")),
+        )
+        .order_by(DiagnosisRun.created_at.desc())
+        .limit(20)
+    )
+    if anchor is not None:
+        stmt = stmt.where(DiagnosisRun.created_at >= anchor)
+    rows = (await db.execute(stmt)).scalars().all()
+    return success(
+        {
+            "id": order.id,
+            "loopId": order.loop_id,
+            "implementationAnchor": _iso(anchor),
+            "anchorSource": anchor_source,
+            "items": [
+                {
+                    "id": r.id,
+                    "status": r.status,
+                    "triggerType": r.trigger_type,
+                    "triggeredBy": r.triggered_by,
+                    "primaryCategory": r.primary_category,
+                    "severity": r.severity,
+                    "createdAt": _iso(r.created_at),
+                    "finishedAt": _iso(r.finished_at),
+                    "windowStart": _iso(r.time_window_start),
+                    "windowEnd": _iso(r.time_window_end),
+                }
+                for r in rows
+            ],
+        }
+    )
+
+
 @router.post("/orders/{order_id}/kpi-comparison", response_model=ApiResponse[dict])
 async def order_kpi_comparison(
     order_id: str,
@@ -1389,6 +1757,8 @@ async def order_kpi_comparison(
     if order.status != "VERIFYING":
         raise _err_order_state(order, "KPI 对比预览")
     kpi_before, kpi_after = await _pull_kpi_windows(db, order)
+    # P3-05：后窗锚定实施锚点（implementedAt ?? submittedAt），来源显式回显
+    anchor, anchor_source = _implementation_anchor(order)
     return success(
         {
             "id": order.id,
@@ -1399,8 +1769,12 @@ async def order_kpi_comparison(
             "window": {
                 "beforeStart": _iso(order.started_at - _KPI_WINDOW) if order.started_at else None,
                 "beforeEnd": _iso(order.started_at),
-                "afterStart": _iso(order.submitted_at),
-                "afterEnd": _iso(order.submitted_at + _KPI_WINDOW) if order.submitted_at else None,
+                "afterStart": _iso(anchor),
+                "afterEnd": _iso(anchor + _KPI_WINDOW) if anchor else None,
+                # 锚定依据：implementedAt=申报实施时刻；submittedAt=未申报退化锚
+                # （implementationTimeKnown=false 时 UI 须提示"实施时刻未知"）
+                "afterAnchorSource": anchor_source,
+                "implementationTimeKnown": order.implemented_at is not None,
             },
         }
     )

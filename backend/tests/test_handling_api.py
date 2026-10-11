@@ -24,6 +24,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import IntegrityError
 
+from app.models.diagnosis_run import DiagnosisRun
 from app.models.handling_order import HandlingOrder
 from app.models.loop_action_item import LoopActionItem
 from app.models.metric import KpiSnapshotHourly
@@ -835,8 +836,8 @@ class TestOrderVerifyEndpoint:
         assert data["kpiAfter"] is None
 
     def test_verify_kpi_window_boundaries_started_at(self, client) -> None:
-        """KPI 窗口口径（§4.3 v2.0）：前窗 [started_at−24h, started_at]，
-        后窗 [submitted_at, submitted_at+24h]，处置执行期数据隔离。"""
+        """KPI 窗口口径（§4.3 v2.0 + P3-05）：前窗 [started_at−24h, started_at]，
+        后窗 [锚点, 锚点+24h]（未申报实施时刻时锚=submitted_at），处置执行期数据隔离。"""
         order = self._verifying_order()
         captured: list = []
         _capture_override_db(
@@ -844,7 +845,10 @@ class TestOrderVerifyEndpoint:
             [_scalar_result(order), _scalars_all_result([]), _scalars_all_result([])],
             captured,
         )
-        resp = self._post(client, {"verifyResult": "EFFECTIVE"})
+        resp = self._post(
+            client,
+            {"verifyResult": "EFFECTIVE", "verifyNote": "现场确认（无快照→人工闭环）"},
+        )
         assert resp.status_code == 200
         # 第 1 条 SQL：取工单；第 2 条：前窗快照；第 3 条：后窗快照
         before_sql = _pg_sql(captured[1])
@@ -852,24 +856,40 @@ class TestOrderVerifyEndpoint:
         # 前窗 [2026-08-09 08:00, 2026-08-10 08:00]（started_at 口径）
         assert "2026-08-09 08:00:00" in before_sql
         assert "2026-08-10 08:00:00" in before_sql
-        # 后窗 [2026-08-12 09:30, 2026-08-13 09:30]
+        # 后窗 [2026-08-12 09:30, 2026-08-13 09:30]（未申报 implementedAt → 锚=submitted_at）
         assert "2026-08-12 09:30:00" in after_sql
         assert "2026-08-13 09:30:00" in after_sql
 
     def test_verify_with_run_id(self, client) -> None:
-        """verifyRunId 关联复诊记录（存在性校验通过后落库）。"""
+        """verifyRunId 关联复诊记录（同回路/完成/实施后校验通过后落库，P3-05）。"""
         order = self._verifying_order()
         revisit_run_id = str(uuid4())
+        revisit_run = DiagnosisRun(
+            id=revisit_run_id,
+            loop_id=LOOP_ID,
+            triggered_by="ic_engineer",
+            time_window_start=datetime(2026, 8, 12, 10, 0, 0),
+            time_window_end=datetime(2026, 8, 13, 9, 0, 0),
+            status="SUCCESS",
+        )
+        revisit_run.created_at = datetime(2026, 8, 13, 9, 30, 0)  # 实施锚（submitted_at）之后
         _override_db(
             client,
             [
                 _scalar_result(order),
-                _scalar_result(revisit_run_id),  # diagnosis_run 存在性校验
+                _scalar_result(revisit_run),  # diagnosis_run 存在性+同回路+完成+实施后
                 _scalars_all_result([]),
                 _scalars_all_result([]),
             ],
         )
-        resp = self._post(client, {"verifyResult": "EFFECTIVE", "verifyRunId": revisit_run_id})
+        resp = self._post(
+            client,
+            {
+                "verifyResult": "EFFECTIVE",
+                "verifyRunId": revisit_run_id,
+                "verifyNote": "复诊无异常",
+            },
+        )
         assert resp.status_code == 200
         assert resp.json()["data"]["verifyRunId"] == revisit_run_id
 
@@ -1791,6 +1811,11 @@ class TestStatisticsEndpoint:
         SlaRow.sla_on_time = 3
         SlaRow.effective_count = 4
         SlaRow.ineffective_count = 2
+        # P3-05 证据等级拆分列（DEC-06；MagicMock 属性不会自动成 int，须显式置值）
+        SlaRow.effective_manual_count = 1
+        SlaRow.effective_data_count = 2
+        SlaRow.effective_comparable_count = 1
+        SlaRow.effective_legacy_count = 0
         FRow = namedtuple("FRow", ["status", "cnt"])
         WRow = namedtuple("WRow", ["user_name", "active_count", "closed_count", "sla_warned_count"])
         # 2026-09-24：责任看板 / 闭环率构成（插在 MV 查询之前，保持调用顺序）
