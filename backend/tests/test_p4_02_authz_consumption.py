@@ -358,13 +358,19 @@ class TestEndpointMappingSeedParity:
         assert 'require_roles("ADMIN")' in authorization  # P4-01 原样（protected 语义）
 
     def test_diagnosis_tuning_endpoints_untouched(self) -> None:
-        """tuning/diagnosis/loop_data 端点本批禁碰——零新增 require_perms 铺开
-        （tuning.py/diagnosis.py 的 require_perms 为 P1-04 既有读码，本批未改
-        这些文件；其运行时语义随 deps authorizer 统一切换，种子口径行为不变）。"""
+        """主体批边界复核：P4-02 主体批时 tuning/diagnosis/loop_data 端点禁碰。
+        尾批（p402authz03 同批）已接入 loop_data（data:import）与
+        diagnosis_v2（diagnosis:*/tuning:* 系动作码）——本断言更新为：
+        ①legacy diagnosis.py（四 router 未挂载的死代码链）仍零铺开；
+        ②尾批接入的等价性由 tests/test_p4_02t_authz_tail.py 独立钉死。
+        """
+        diagnosis_legacy = (_BACKEND / "app/api/v1/endpoints/diagnosis.py").read_text()
+        assert "require_perms" in diagnosis_legacy  # P1-04 既有读码原样（死代码链）
+        assert "diagnosis-config:manage" not in diagnosis_legacy  # 尾批不接死代码
         loop_data = (_BACKEND / "app/api/v1/endpoints/loop_data.py").read_text()
-        assert "require_perms" not in loop_data  # data:manage 种子窄于活链 A/I/P，登记不碰
+        assert 'require_perms("data:import")' in loop_data  # 尾批等价接入
         diagnosis_v2 = (_BACKEND / "app/api/v1/endpoints/diagnosis_v2.py").read_text()
-        assert "require_perms" not in diagnosis_v2
+        assert 'require_perms("diagnosis:trigger")' in diagnosis_v2
 
 
 # ===========================================================================

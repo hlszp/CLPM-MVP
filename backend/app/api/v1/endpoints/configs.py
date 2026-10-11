@@ -26,7 +26,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.modules import require_module
@@ -424,7 +424,8 @@ async def _apply_diagnosis_update(
 @router.get("/diagnosis", response_model=ApiResponse[DiagnosisConfigBatchResponse])
 async def batch_get_diagnosis_configs(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    # P4-02 尾批：原仅认证可读（五角色）→ diagnosis:view 种子亦五角色，零行为变化
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """批量获取诊断配置（全部 8 类诊断标签）.
@@ -450,7 +451,7 @@ async def batch_get_diagnosis_configs(
 async def batch_update_diagnosis_configs(
     body: DiagnosisConfigBatchUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("diagnosis-config:manage")),
     _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """批量更新诊断配置（事务性，任一项失败全部回滚）.
@@ -534,7 +535,7 @@ async def batch_update_diagnosis_configs(
 async def create_diagnosis_config(
     body: DiagnosisConfigCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("diagnosis-config:manage")),
     _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """新增单条诊断配置（diag_code 唯一，重复返回 409）.
@@ -633,7 +634,7 @@ async def create_diagnosis_config(
 async def delete_diagnosis_config(
     diag_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("diagnosis-config:manage")),
     _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """删除单条诊断配置（写审计日志）.
@@ -697,7 +698,9 @@ async def delete_diagnosis_config(
 @router.get("/diagnosis/history", response_model=ApiResponse[dict])
 async def get_diagnosis_config_history(
     db: AsyncSession = Depends(get_db),
+    # P4-02 尾批：ADMIN 锚保留 + config:view 读码双门（主体批 config history 读同款）
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
     _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """查询诊断配置版本历史（仅 ADMIN，快照含生效/失效时间）."""
@@ -731,7 +734,7 @@ async def get_diagnosis_config_history(
 async def rollback_diagnosis_config(
     version: int,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("diagnosis-config:manage")),
     _module: None = Depends(require_module("diagnosis")),
 ) -> dict:
     """回滚诊断配置到指定历史版本（仅 ADMIN）.

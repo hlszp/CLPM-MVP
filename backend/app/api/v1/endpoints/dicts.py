@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/dicts", tags=["dict"])
 
 @router.get("/types", response_model=ApiResponse[list])
 async def list_dict_types(
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """已注册字典类型（前端管理页下拉用）。"""
     data = [{"dictType": t, "title": title} for t, title in DICT_TYPE_TITLES.items()]
@@ -59,7 +59,7 @@ async def get_dict_items_endpoint(
     dict_type: str,
     enabledOnly: bool = Query(True, description="仅启用项（下拉框默认）"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """读取字典项 [(code, label)]（登录可读，前端下拉框用）。"""
     items = await get_dict_items(db, dict_type, enabled_only=enabledOnly)

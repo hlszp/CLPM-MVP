@@ -161,7 +161,11 @@ async def get_assessment(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/diagnosis", response_model=ApiResponse[dict])
+@router.get(
+    "/diagnosis",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("diagnosis:view"))],
+)
 async def get_diagnosis(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -193,7 +197,11 @@ async def get_diagnosis(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tuning", response_model=ApiResponse[dict])
+@router.get(
+    "/tuning",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("tuning:view"))],
+)
 async def get_tuning(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -285,7 +293,11 @@ async def mark_events_read(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tuning-scatters", response_model=ApiResponse[dict])
+@router.get(
+    "/tuning-scatters",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("tuning:view"))],
+)
 async def get_tuning_scatters(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),

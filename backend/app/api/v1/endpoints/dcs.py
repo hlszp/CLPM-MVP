@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import require_perms
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.models.sys_user import SysUser
@@ -132,7 +132,7 @@ router = APIRouter(prefix="/dcs", tags=["dcs"])
 @router.get("/vendors", response_model=ApiResponse[list[DcsVendorItem]])
 async def list_vendors_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部 DCS 品牌（所有认证用户可读）。"""
     data = await svc_list_vendors(db)
@@ -231,7 +231,7 @@ async def delete_vendor_endpoint(
 async def list_models_endpoint(
     vendor_id: str | None = Query(None, description="按品牌筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部 DCS 型号（所有认证用户可读，可按品牌筛选）。"""
     data = await svc_list_models(db=db, vendor_id=vendor_id)
@@ -329,7 +329,7 @@ async def delete_model_endpoint(
 @router.get("/mode-definitions", response_model=ApiResponse[list[ModeDefinitionItem]])
 async def list_mode_definitions_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部标准 MODE 定义（所有认证用户可读）。"""
     data = await svc_list_mode_definitions(db)
@@ -369,7 +369,7 @@ async def update_mode_definition_endpoint(
 async def list_mode_mappings_endpoint(
     dcs_model_id: str | None = Query(None, description="按型号筛选（含本系统默认）"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取 MODE 映射列表（所有认证用户可读，可按型号筛选）。"""
     data = await svc_list_mappings(db=db, dcs_model_id=dcs_model_id)
@@ -416,7 +416,7 @@ async def delete_mode_mapping_endpoint(
 @router.get("/mode-matrix", response_model=ApiResponse[ModeMatrixView])
 async def get_mode_matrix_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取 MODE 映射矩阵视图（行=标准 MODE，列=各型号，第一列为本系统默认）。
 
@@ -435,7 +435,7 @@ async def get_mode_matrix_endpoint(
 @router.get("/pid-structures", response_model=ApiResponse[list[DcsPidStructureItem]])
 async def list_pid_structures_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部 PID 结构模板（含型号信息，所有认证用户可读）。"""
     data = await svc_list_pid_structures(db)
@@ -449,7 +449,7 @@ async def list_pid_structures_endpoint(
 async def get_pid_structure_endpoint(
     model_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取某型号的 PID 结构模板；未配置返回 data=null。"""
     data = await svc_get_pid_structure(db, model_id)

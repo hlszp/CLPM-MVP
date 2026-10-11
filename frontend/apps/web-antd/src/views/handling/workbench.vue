@@ -22,7 +22,6 @@ import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -58,6 +57,7 @@ import { getPlantNodeTreeApi } from '#/api/plant-node';
 import ClpmDataCanvas from '#/components/clpm/data-canvas.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { showPageHelp } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import { IMPORTANCE_LEVEL_LABEL } from '#/constants/clpm-ui';
@@ -76,7 +76,6 @@ import {
 } from './constants';
 
 const route = useRoute();
-const userStore = useUserStore();
 
 // ===========================================================================
 // 五段式路由预设（批次 C：读 route.meta.handlingView；预设只是初始值，
@@ -118,11 +117,11 @@ const pageTitle = computed(() => {
   return titles[handlingView.value] ?? '处置工作台';
 });
 
-/** 流转操作角色（§7：IC_ENGINEER/PE_ENGINEER/ADMIN；SPONSOR/EXPERT 只读） */
-const canOperate = computed(() => {
-  const roles = userStore.userInfo?.roles ?? [];
-  return roles.some((r) => ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'].includes(r));
-});
+/** 流转操作权限（W8 绑定语义升级：原角色数组 {ADMIN/IC/PE} ==
+ * handling:operate 码种子，等价替换为码判定——DB 矩阵收紧即时生效；
+ * SPONSOR/EXPERT 只读语义不变；两抽屉经 canOperate prop 继承） */
+const { hasPerm } = useClpmRoles();
+const canOperate = computed(() => hasPerm('handling:operate'));
 
 const { tableSize, densityLabel, cycleDensity } =
   useTableDensity('handling-list');

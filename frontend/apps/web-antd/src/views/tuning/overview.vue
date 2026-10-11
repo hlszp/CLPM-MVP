@@ -15,7 +15,6 @@ import type { TableColumnsType } from 'ant-design-vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import { Page } from '@vben/common-ui';
-import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -38,6 +37,7 @@ import ClpmFitnessBadge from '#/components/clpm/fitness-badge.vue';
 import ClpmFitnessRulesModal from '#/components/clpm/fitness-rules-modal.vue';
 import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
 import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
@@ -57,21 +57,12 @@ import {
 
 defineOptions({ name: 'TuningOverview' });
 
-const userStore = useUserStore();
 
-/** 整定操作角色（D1：回路工作台剖面四角色；SPONSOR 只读） */
-const TUNING_OPERATE_ROLES = [
-  'ADMIN',
-  'EXPERT',
-  'IC_ENGINEER',
-  'PE_ENGINEER',
-] as const;
-const canOperateTuning = computed(() => {
-  const roles = userStore.userInfo?.roles ?? [];
-  return roles.some((r) =>
-    (TUNING_OPERATE_ROLES as readonly string[]).includes(r),
-  );
-});
+/** 整定操作权限（W8 绑定语义升级：原角色数组 {ADMIN/EXPERT/IC/PE} ==
+ * tuning:identify 码种子，等价替换为码判定——DB 矩阵收紧即时生效；
+ * SPONSOR 只读与 fitness L0/L1 门禁语义均不变，授权只收紧不放宽） */
+const { hasPerm } = useClpmRoles();
+const canOperateTuning = computed(() => hasPerm('tuning:identify'));
 
 const tuningTagsToText = (tags: string[]) =>
   tags.map((t) => fitnessTagToLabel(t)).join('、');

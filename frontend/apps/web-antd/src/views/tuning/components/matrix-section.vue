@@ -24,10 +24,17 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
+import { useClpmRoles } from '#/composables/use-clpm-roles';
+
 import { fmtNum2, tuningAlgoLabel } from '../constants';
 
 const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 const { ctx } = props;
+
+// W8 绑定语义（P4-02 尾批）：行级重算按 tuning:tune 码显隐
+// （种子四角色 == 后端 /tuning/tune 与 /tune/matrix require_perms，零行为变化）
+const { hasPerm } = useClpmRoles();
+const canRetune = computed(() => hasPerm('tuning:tune'));
 
 /** 算法特性备注（静态口径） */
 const ALGO_NOTES: Record<string, string> = {
@@ -203,6 +210,7 @@ const columns = [
                 style="width: 76px"
               />
               <Button
+                v-if="canRetune"
                 size="small"
                 :loading="(record as MatrixRow).recomputing"
                 @click="ctx.recomputeRow(record as MatrixRow)"

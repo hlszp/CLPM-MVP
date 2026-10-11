@@ -38,8 +38,6 @@ import type { HandlingApi } from '#/api/handling';
 
 import { computed, onMounted, ref, watch } from 'vue';
 
-import { useUserStore } from '@vben/stores';
-
 import {
   getHandlingLoopsApi,
   getHandlingOrderApi,
@@ -47,6 +45,7 @@ import {
   getHandlingStatisticsApi,
   getOrderKpiComparisonApi,
 } from '#/api/handling';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useWorkbenchStore } from '#/store/workbench';
 import OrderDetailDrawer from '#/views/handling/components/order-detail-drawer.vue';
 
@@ -60,7 +59,6 @@ import HelpBubble from './HelpBubble.vue';
 import { useCockpitDrill } from './use-drill';
 
 const store = useWorkbenchStore();
-const userStore = useUserStore();
 const { drill } = useCockpitDrill();
 
 // 追溯矩阵 §6 下钻接线（U1 断言数字 → 工单列表；窗口+scope 由 drill 携带）
@@ -121,10 +119,10 @@ const kpiCompare = ref<HandlingApi.KpiComparison | null>(null);
 const drawerOpen = ref(false);
 const drawerOrderId = ref<null | string>(null);
 
-const canOperate = computed(() => {
-  const roles = userStore.userInfo?.roles ?? [];
-  return roles.some((r) => ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'].includes(r));
-});
+// W8 绑定语义（P4-02 尾批）：原角色数组 {ADMIN/IC/PE} == handling:operate
+// 码种子，等价替换为码判定（SPONSOR/EXPERT 只读语义不变）
+const { hasPerm } = useClpmRoles();
+const canOperate = computed(() => hasPerm('handling:operate'));
 
 // ============ computed 聚合 ============
 const kanban = computed(() => ({
