@@ -293,6 +293,9 @@ class QualitySummary:
         bad_rate: 无效率 0~1
         missing_rate: 缺失率 0~1
         good_value_rate: PV 质量码为 Good 的时长占比 0~1（仅 QUALITY_HF 计算）
+        usable_rate: PV 数值可用比例 0~1（``pv_valid`` 口径：越限/坏质量等
+            预处理数值资格判定的交；P3-10a——与 good_value_rate 的 QC Good
+            来源质量分开口径，None=未记录）
         window_seconds: 请求窗口秒数（P3-08b 半开口径 ``[start, end)``；
             None=未记录（legacy/旧缓存）。R/Auto/Sat 的分母口径=完整请求
             窗口秒数，本字段使质量摘要与比率类指标分母可对账）
@@ -308,6 +311,9 @@ class QualitySummary:
     bad_rate: float = 0.0
     missing_rate: float = 0.0
     good_value_rate: float | None = None
+    # P3-10a（10§3.4 Good 行：QC Good 与 usable 分开，C04-EA3；
+    # 缺省 None=未记录，旧缓存/旧序列化兼容——与 window_seconds 同型增量）
+    usable_rate: float | None = None
     # P3-08b（契约 §2.1 比率口径字段；增量字段，缺省 None=未记录）
     window_seconds: float | None = None
     unknown_seconds: float | None = None

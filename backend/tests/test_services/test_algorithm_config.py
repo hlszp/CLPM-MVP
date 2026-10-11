@@ -144,8 +144,9 @@ def test_rebuild_merged_defaults_only(reset_cache):
         "sp_tracking_window": 60,
         "sp_tracking_window_seconds": 60.0,
     }
-    # 8 指标 × 4 控制类型 = 32 组合（2026-10-10 新增 saturation_rate.saturation_epsilon）
-    assert len(merged) == 32
+    # 9 指标 × 4 控制类型 = 36 组合（2026-10-10 新增 saturation_rate.saturation_epsilon；
+    # P3-10c 新增 setpoint_crossing_count.crossing_deadband 穿越死区）
+    assert len(merged) == 36
     assert merged[("saturation_rate", "STABLE")] == {"saturation_epsilon": 0.0}
 
 
@@ -242,6 +243,8 @@ def test_build_merged_view_covers_all_metrics(reset_cache):
         "output_trip_index",
         "stability_rate",
         "saturation_rate",
+        # P3-10c：穿越死区注册（默认 0=保留精确统计，仅新 profile 消费）
+        "setpoint_crossing_count",
     }
     for metric in view.values():
         assert set(metric.keys()) == {"STABLE", "SLOW", "FAST", "LOGIC"}
