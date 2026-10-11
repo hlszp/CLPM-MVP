@@ -22,17 +22,17 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime, timedelta
-from uuid import uuid4
 
 from sqlalchemy import select
 
 from app.core.config import settings
 from app.core.db import AsyncSessionLocal
+from app.core.redis import redis_client
 from app.core.tdengine import execute_sql
 from app.models.loop import LoopLedger
 from app.schemas.task import TaskType
 from app.services.data_import import _batch_get_loop_data
-from app.services.task_tracker import create_task
+from app.services.task_tracker import create_task, set_celery_task_ids
 from app.tasks.celery_app import AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
@@ -120,6 +120,24 @@ async def _logical_coverage_ok(loop_id: str, start: datetime, end: datetime) -> 
         return False
 
 
+async def _claim_scheduled_round(level: int | None) -> bool:
+    """同轮定时派发只发一次（P3-02 批次键：Beat 重启/双发防护）。
+
+    定时任务的幂等不能靠 (task_id, loop_id) 唯一约束（每轮新建任务 ID），
+    用 Redis SET NX 原子占位同轮派发权：daily 按日、分级按 ISO 周。
+    在门禁过滤后、实际派发前占位——门禁/查询异常不消耗轮次；派发一旦
+    开始不释放（本轮不再自动重发，避免半批重发放大）。
+    """
+    now = datetime.now(UTC)
+    if level is None:
+        round_key, ttl_s = now.strftime("%y%m%d"), 24 * 3600
+    else:
+        iso = now.isocalendar()
+        round_key, ttl_s = f"{iso[0]}-W{iso[1]:02d}", 8 * 24 * 3600
+    key = f"diagnosis:schedule-round:{'daily' if level is None else f'g{level}'}:{round_key}"
+    return bool(await redis_client.set(key, "1", nx=True, ex=ttl_s))
+
+
 async def _run_scheduled(level: int, window: timedelta) -> dict:
     """发起定时诊断（level=None 全量；密度+fitness 双门禁过滤，分批建任务）。"""
     loop_ids = await _loops_by_importance(level)
@@ -171,6 +189,11 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
     from app.services.diagnosis_titles import next_diagnosis_title
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
+    # 同轮派发占位（Beat 重启/双发不重复派发同轮批次）
+    if not await _claim_scheduled_round(level):
+        logger.info("分级定时诊断：本轮已派发过（幂等跳过），level=%s", level)
+        return {"level": level, "total": len(loop_ids), "dispatched": 0, "skippedRound": True}
+
     # 分批派发：每批独立 TaskTracker（全局 30min 硬杀 + autoretry 3 次，
     # 单任务串行回路数必须受限；批间进度/失败互不污染）
     batches = [
@@ -179,14 +202,17 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
     ]
     task_ids: list[str] = []
     for batch in batches:
-        task_id = str(uuid4())
         # 标题约定（2026-10-05 用户裁决）：回路诊断-YYMMDD-X；多批连续
         # 创建时序号自然递增即批次号。任务记录同步写入诊断时间窗。
         title = await next_diagnosis_title()
-        await create_task(
+        # P3-02：统一使用 create_task 返回 ID（此前调度侧自造 UUID 却丢弃
+        # 返回值，run 行 task_id 指向不存在的任务记录——任务/run/建议三方
+        # 对应断裂，任务列表看不到关联诊断）。created_by_id 留空=SYSTEM
+        # 身份（不冒充个人用户，不产生个人通知）。
+        task_id = await create_task(
             task_type=TaskType.DIAGNOSIS,
             created_by=f"scheduler-grade{level}" if level is not None else "scheduler-daily-all",
-            created_by_id="00000000-0000-0000-0000-000000000001",
+            created_by_id="",
             loop_ids=batch,
             triggered_by="schedule",
             title=title,
@@ -202,8 +228,6 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
             triggered_by="schedule",
             trigger_type="SCHEDULED",
         )
-        from app.services.task_tracker import set_celery_task_ids
-
         await set_celery_task_ids(task_id, [celery_result.id])
         task_ids.append(task_id)
     logger.info(
