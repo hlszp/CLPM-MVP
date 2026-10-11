@@ -2,15 +2,18 @@
 /**
  * KPI 算法参数配置（迁移自 system/algorithm-params）
  *
- * P0-B 可配置基础设施：3 指标 × 4 控制类型的算法参数覆盖管理。
- * - 列表区：按指标分组（振荡率 / 快速率 / 准确率），每个指标一张表，
+ * P0-B 可配置基础设施：算法参数覆盖管理（注册表指标 × 4 控制类型）。
+ * - 列表区：按指标分组，每个指标一张表，
  *   行=4 控制类型，列=该指标的算法参数键，并标记是否已被覆盖。
  * - 编辑区：Drawer 内按控制类型分组，可编辑数值参数、恢复默认、保存。
  * - 后端端点 /configs/algorithm-params，部分覆盖合并，未覆盖回落算法默认。
+ * - P2-01 前端同步（CFG-01 修复）：**参数键集合以远端注册表（paramMeta）
+ *   为全集**，本地只保留展示名/步进/精度增强；旧键（e_max_percentile）
+ *   不再出现，新键（e_max_tolerance_ratio 等）自动进列，保存只发注册键。
  *
  * 迁移说明（2026-08-03）：
  *   原位于系统管理模块（system/algorithm-params/index.vue），因业务内聚性
- *   （影响 3 核心 KPI 评分计算）迁移至性能评估-指标配置模块，作为第 6 个 Tab。
+ *   （影响核心 KPI 评分计算）迁移至性能评估-指标配置模块，作为第 6 个 Tab。
  *   原路由 /system/algorithm-params 已重定向到 /metric/config。
  */
 import type { TableColumnsType } from 'ant-design-vue';
@@ -83,108 +86,41 @@ interface ParamMeta {
   category?: string;
 }
 
-/** 指标元数据（中文名 + 参数列定义与校验边界） */
-const METRIC_META: Record<string, { params: ParamMeta[] }> = {
+/** 本地 UI 增强项（P2-01 前端同步·CFG-01：仅文案/步进/精度，不含 min/max） */
+interface ParamUiEnhance {
+  /** 展示名覆盖（缺省用注册表 label） */
+  title?: string;
+  /** InputNumber 步进（缺省按注册表 type 推导：int=1 / float=0.01） */
+  step?: number;
+  /** InputNumber 小数位（缺省 int=0 / float=3） */
+  precision?: number;
+}
+
+/**
+ * 参数 UI 增强表（P2-01 前端同步·CFG-01 修复）：
+ * **本地不再定义参数键集合**——远端注册表（GET paramMeta）的键即全集；
+ * 旧键（如 accuracy_rate 的 e_max_percentile）随注册表消失自动移出，
+ * 新键（e_max_tolerance_ratio / saturation_epsilon 等）自动进列，
+ * 新指标/新参数零前端改动接入。本地条目仅覆盖展示名与输入步进/精度，
+ * min/max 恒以注册表为准（避免第二份值域清单漂移）。
+ */
+const PARAM_UI_ENHANCEMENTS: Record<string, Record<string, ParamUiEnhance>> = {
   oscillation_rate: {
-    params: [
-      {
-        key: 'similarity_threshold',
-        title: '相似度阈值',
-        min: 0,
-        max: 1,
-        step: 0.01,
-        precision: 3,
-      },
-      {
-        key: 'min_ratio',
-        title: '最小比值',
-        min: 0,
-        max: 100,
-        step: 0.01,
-        precision: 3,
-      },
-      {
-        key: 'max_ratio',
-        title: '最大比值',
-        min: 0,
-        max: 1000,
-        step: 0.1,
-        precision: 2,
-      },
-    ],
+    similarity_threshold: { title: '相似度阈值', step: 0.01, precision: 3 },
+    min_ratio: { title: '最小比值', step: 0.01, precision: 3 },
+    max_ratio: { title: '最大比值', step: 0.1, precision: 2 },
   },
   fast_rate: {
-    params: [
-      {
-        key: 'ideal_settling_ratio',
-        title: '理想稳定比值',
-        min: 0,
-        max: 100,
-        step: 0.1,
-        precision: 2,
-      },
-      {
-        key: 'settling_tolerance',
-        title: '稳定容差',
-        min: 0,
-        max: 1,
-        step: 0.01,
-        precision: 3,
-      },
-      {
-        key: 'anti_disturbance_enabled',
-        title: '抗扰性分析',
-        min: 0,
-        max: 1,
-        step: 1,
-        precision: 0,
-        type: 'switch',
-      },
-      {
-        key: 'disturbance_band_sigma',
-        title: '扰动带(σ)',
-        min: 0.5,
-        max: 5,
-        step: 0.1,
-        precision: 2,
-      },
-      {
-        key: 'recovery_persistence',
-        title: '恢复持续点数',
-        min: 1,
-        max: 20,
-        step: 1,
-        precision: 0,
-      },
-      {
-        key: 'min_disturbance_duration',
-        title: '最小扰动时长(s)',
-        min: 0,
-        max: 60,
-        step: 0.5,
-        precision: 1,
-      },
-      {
-        key: 'sp_step_sigma',
-        title: 'SP阶跃阈值(σ)',
-        min: 1,
-        max: 10,
-        step: 0.5,
-        precision: 1,
-      },
-    ],
-  },
-  accuracy_rate: {
-    params: [
-      {
-        key: 'e_max_percentile',
-        title: '最大误差百分位',
-        min: 0,
-        max: 1,
-        step: 0.01,
-        precision: 3,
-      },
-    ],
+    ideal_settling_ratio: { title: '理想稳定比值', step: 0.1, precision: 2 },
+    settling_tolerance: { title: '稳定容差', step: 0.01, precision: 3 },
+    disturbance_band_sigma: { title: '扰动带(σ)', step: 0.1, precision: 2 },
+    recovery_persistence: { title: '恢复持续点数', step: 1, precision: 0 },
+    min_disturbance_duration: {
+      title: '最小扰动时长(s)',
+      step: 0.5,
+      precision: 1,
+    },
+    sp_step_sigma: { title: 'SP阶跃阈值(σ)', step: 0.5, precision: 1 },
   },
 };
 
@@ -197,39 +133,30 @@ const backendParamMeta = ref<
 >({});
 
 /**
- * 参数元数据解析（F6：注册表优先，前端硬编码兜底）：
- * - 本地 METRIC_META 已有的指标：保留 title/step/precision，min/max 以注册表为准，
- *   补充 description/unit/category；
- * - 无本地硬编码的新指标（settling_time/effective_auto_rate/output_trip_index 等）：
- *   完全由注册表生成参数列，实现"新指标零前端改动接入"。
+ * 参数元数据解析（P2-01 前端同步·CFG-01 修复：注册表键 = 全集）：
+ * - 遍历**远端注册表键**生成参数列（列集合与后端校验注册表单源一致），
+ *   本地增强只补展示名（title）与输入步进/精度，min/max 以注册表为准；
+ * - 注册表缺 label/description 时回落键名；type=bool 渲染开关、
+ *   type=int 步进取整（0.5 点数等非法输入由前端步进+后端校验双重拦截）；
+ * - 注册表为空的指标返回空列表（无可配置项即无可保存项，诚实呈现，
+ *   不再回落本地旧键清单——旧键保存必被后端以未知键 400 拒绝）。
  */
 function paramMetaOf(metricCode: string): ParamMeta[] {
-  const local = METRIC_META[metricCode]?.params ?? [];
   const remote = backendParamMeta.value[metricCode] ?? {};
-  if (local.length === 0) {
-    return Object.entries(remote).map(([key, m]) => ({
+  const enhance = PARAM_UI_ENHANCEMENTS[metricCode] ?? {};
+  return Object.entries(remote).map(([key, m]) => {
+    const ui = enhance[key];
+    return {
       category: m.category,
       description: m.description,
       key,
       max: m.max ?? 100,
       min: m.min ?? 0,
-      precision: 3,
-      step: 0.01,
-      title: m.description || key,
+      precision: ui?.precision ?? (m.type === 'int' ? 0 : 3),
+      step: ui?.step ?? (m.type === 'int' ? 1 : 0.01),
+      title: ui?.title || m.label || m.description || key,
       type: m.type === 'bool' ? ('switch' as const) : ('number' as const),
-      unit: m.unit,
-    }));
-  }
-  return local.map((p) => {
-    const m = remote[p.key];
-    if (!m) return p;
-    return {
-      ...p,
-      category: m.category,
-      description: m.description,
-      max: m.max ?? p.max,
-      min: m.min ?? p.min,
-      unit: m.unit,
+      unit: m.unit || undefined,
     };
   });
 }
@@ -533,10 +460,16 @@ async function handleSave() {
   saving.value = true;
   try {
     // 提交全部 4 控制类型的当前编辑值（后端做部分覆盖合并）
+    // P2-01：保存载荷只发注册表内键（后端对未知键/废弃键 400 拒绝）
+    const registryKeys = new Set(paramMetaOf(mc).map((p) => p.key));
     const items: MetricApi.AlgorithmParamsSaveItem[] = CONTROL_TYPES.map(
       (ct) => ({
         controlType: ct,
-        params: { ...editParams[mc]?.[ct] },
+        params: Object.fromEntries(
+          Object.entries(editParams[mc]?.[ct] ?? {}).filter(([k]) =>
+            registryKeys.has(k),
+          ),
+        ),
       }),
     );
     // F6 重置默认：编辑值全部回落默认、且该控制类型原已覆盖 → 走 resetControlTypes
@@ -569,11 +502,11 @@ onMounted(() => {
 
 /** 帮助内容（KPI 算法参数说明汇总） */
 const HELP_CONTENT = [
-  'KPI 算法参数配置：按指标（振荡率/快速率/准确率/稳态时间/有效自控率/输出行程指数）× 4 种控制类型（STABLE/SLOW/FAST/LOGIC）展示参数生效值。',
+  'KPI 算法参数配置：按指标（振荡率/快速率/准确率/稳态时间/有效自控率/输出行程指数/稳定率/饱和率等注册表全集）× 4 种控制类型（STABLE/SLOW/FAST/LOGIC）展示参数生效值。',
   '· 参数值来源三层合并：算法默认值 < 系统级覆盖（algorithm_parameter 表）< 指标级覆盖；「覆盖状态」列显示当前生效配置是否偏离算法默认。',
   '· 编辑抽屉按参数分组展示，含值域校验（min/max）、单位与说明；恢复默认将清空该指标对应控制类型的存储覆盖行，回落算法默认。',
   '· 保存后立即生效（运行时缓存热更新），KPI 计算任务下次执行时使用新参数。',
-  '· 参数说明由后端注册表（paramMeta）统一下发，新指标零前端改动接入。',
+  '· 参数键集合与说明由后端注册表（paramMeta）统一下发，新指标/新参数零前端改动接入。',
 ].join('\n');
 
 /** P3-01：子组件暴露 refresh() 替代父组件 tabKey 强制重建 */
@@ -581,6 +514,8 @@ function refresh() {
   return loadData();
 }
 
+// 单元测试经 @vue/test-utils setupState 代理访问内部绑定（先例：
+// loop-edit-drawer.test.ts 访问未 expose 的 wizardCurrent），不扩 expose 面
 defineExpose({ refresh });
 </script>
 

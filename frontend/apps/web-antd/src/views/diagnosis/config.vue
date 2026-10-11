@@ -105,7 +105,8 @@ const DIAG_CODE_OPTIONS = Object.keys(DIAG_CODE_TEXT);
 
 /** 帮助内容（汇总原两 Tab 说明） */
 const HELP_CONTENT = [
-  '诊断配置页（单页）：管理 8 类诊断标签的全局默认配置（算法类型/计算方法/算法参数/阈值/启停），支持新增、编辑、删除与行内启停，仅 ADMIN 可操作。',
+  '诊断配置页（单页）：管理 8 类诊断标签的全局默认配置（阈值/启停/名称为真实可调字段），支持新增、编辑、删除与行内启停，仅 ADMIN 可操作。',
+  '· 算法类型/计算方法/算法参数为代码级注册表说明字段，v2 诊断执行引擎不消费（仅供参考，编辑时只读展示）；调整诊断行为请使用阈值与启停。',
   '· 诊断指标（算子）为 11 个诊断元算子的代码级注册表（家族/输出指标/默认阈值参数/所需信号），不可通过配置新增算子——其完整信息见每行「详情」弹窗。',
   '· 生效优先级：全局默认 < 回路类型模板 < 装置 < 回路（修改全局默认不影响已配置的覆盖层）。',
   '· 每次增删改自动归档全量快照为新版本并立即生效；「版本」入口可查看各版本生效—失效时间并回滚。',
@@ -153,6 +154,40 @@ const configsLoading = ref(false);
 const configs = ref<DiagnosisConfigApi.ConfigItem[]>([]);
 const currentVersion = ref(0);
 
+/**
+ * P2-01 CFG-02：字段级元数据（GET /configs/diagnosis 响应 methodMeta）。
+ * algorithmType/calcMethod/params 标 readOnly=true（v2 活执行引擎不消费，
+ * 仅注册表说明）；threshold/isEnabled/diagName 真实可调。
+ * methodMeta 缺失（旧后端）时全部按可编辑处理，保持旧行为兼容。
+ */
+const methodMeta = ref<null | Record<string, DiagnosisConfigApi.FieldMeta>>(null);
+
+/** 字段是否只读（按 methodMeta readOnly 判定；缺元数据时恒 false） */
+function fieldReadOnly(field: string): boolean {
+  return methodMeta.value?.[field]?.readOnly === true;
+}
+
+/** 字段说明（methodMeta note；readOnly 字段用于"引擎未消费"标注） */
+function fieldNote(field: string): string {
+  return methodMeta.value?.[field]?.note ?? '';
+}
+
+/** 编辑表单中的注册表只读说明字段（CFG-02：说明区与可调字段分离） */
+const READONLY_FORM_FIELDS = ['algorithmType', 'calcMethod', 'params'] as const;
+
+/** 表单是否存在只读说明区（methodMeta 未下发时不渲染，字段保持可编辑） */
+const hasReadonlySection = computed(() =>
+  READONLY_FORM_FIELDS.some((f) => fieldReadOnly(f)),
+);
+
+/** 只读说明区提示文案（取首个非空 note，缺省兜底） */
+const readonlyNoteText = computed(() => {
+  const note = READONLY_FORM_FIELDS.map((f) => fieldNote(f)).find(Boolean);
+  return (
+    note || 'v2 诊断执行引擎不消费该字段；仅作注册表只读说明保留（仅供参考）'
+  );
+});
+
 /** 已存在的诊断代码（新增时禁用，防重复提交 409） */
 const existingDiagKeys = computed(
   () => new Set(configs.value.map((c) => c.diagKey ?? '')),
@@ -163,6 +198,8 @@ async function loadConfigs() {
   try {
     const resp = await getDiagnosisConfigsApi();
     configs.value = resp.items ?? [];
+    // P2-01 CFG-02：缓存字段级元数据（可选字段，旧后端为 null 保持兼容）
+    methodMeta.value = resp.methodMeta ?? null;
     // 版本号从历史接口头部获取（轻量：仅列表页首次加载时同步一次）
     void syncVersion();
   } finally {
@@ -540,6 +577,8 @@ onMounted(() => {
   void loadFeedback();
 });
 
+// 单元测试经 @vue/test-utils setupState 代理访问内部绑定（先例：
+// loop-edit-drawer.test.ts 访问未 expose 的 wizardCurrent），不扩 expose 面
 defineExpose({
   refresh: handleRefresh,
 });
@@ -939,6 +978,7 @@ defineExpose({
       @ok="isAdmin ? handleSave() : (modalVisible = false)"
     >
       <div class="flex flex-col gap-3 py-2">
+        <!-- P2-01 CFG-02：真实可调字段（threshold/isEnabled/diagName 等） -->
         <div class="flex items-center gap-3">
           <span class="w-28 shrink-0 text-sm">诊断代码</span>
           <Select
@@ -964,26 +1004,8 @@ defineExpose({
           <Input v-model:value="form.diagName" placeholder="诊断中文名" class="flex-1" />
         </div>
         <div class="flex items-center gap-3">
-          <span class="w-28 shrink-0 text-sm">算法类型</span>
-          <Input v-model:value="form.algorithmType" placeholder="如 IAE_FFT / SCATTER_FIT" class="flex-1" />
-        </div>
-        <div class="flex items-center gap-3">
-          <span class="w-28 shrink-0 text-sm">计算方法</span>
-          <Input v-model:value="form.calcMethod" placeholder="如 IAE_ZERO_CROSSING" class="flex-1" />
-        </div>
-        <div class="flex items-center gap-3">
           <span class="w-28 shrink-0 text-sm">启用</span>
           <Switch v-model:checked="form.isEnabled" checked-children="启" un-checked-children="停" />
-        </div>
-        <div class="flex flex-col gap-1">
-          <span class="text-sm">算法参数（JSON 对象）</span>
-          <Textarea
-            v-model:value="form.paramsText"
-            :rows="5"
-            :class="{ 'border-red-500': !!paramsError }"
-            placeholder="{&quot;param&quot;: value}"
-          />
-          <span v-if="paramsError" class="text-xs text-red-500">{{ paramsError }}</span>
         </div>
         <div class="flex flex-col gap-1">
           <span class="text-sm">阈值（JSON 对象，全局默认层）</span>
@@ -998,6 +1020,70 @@ defineExpose({
             修改全局默认不影响已配置的回路类型模板/装置/回路级覆盖（生效优先级：全局默认 &lt; 模板 &lt; 装置 &lt; 回路）；保存后自动生成新版本
           </span>
         </div>
+
+        <!-- P2-01 CFG-02：注册表只读说明区（引擎未消费字段，仅供参考） -->
+        <div
+          v-if="hasReadonlySection"
+          class="flex flex-col gap-3 rounded border border-dashed p-3"
+          style="border-color: hsl(var(--border))"
+        >
+          <div class="flex items-center gap-2">
+            <span class="text-sm font-medium">注册表说明（只读）</span>
+            <Tag class="border-0" color="default">仅供参考 · 引擎未消费</Tag>
+          </div>
+          <div class="text-xs text-muted-foreground">
+            {{ readonlyNoteText }}——调整诊断行为请使用上方「阈值」与「启用」。
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-28 shrink-0 text-sm">算法类型</span>
+            <Input
+              v-model:value="form.algorithmType"
+              class="flex-1"
+              :disabled="fieldReadOnly('algorithmType')"
+            />
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-28 shrink-0 text-sm">计算方法</span>
+            <Input
+              v-model:value="form.calcMethod"
+              class="flex-1"
+              :disabled="fieldReadOnly('calcMethod')"
+            />
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm">算法参数（JSON 对象）</span>
+            <Textarea
+              v-model:value="form.paramsText"
+              :rows="5"
+              :class="{ 'border-red-500': !!paramsError }"
+              :disabled="fieldReadOnly('params')"
+              placeholder="{&quot;param&quot;: value}"
+            />
+            <span v-if="paramsError" class="text-xs text-red-500">{{ paramsError }}</span>
+          </div>
+        </div>
+
+        <!-- methodMeta 未下发（旧后端）时保持可编辑的存量形态 -->
+        <template v-if="!hasReadonlySection">
+          <div class="flex items-center gap-3">
+            <span class="w-28 shrink-0 text-sm">算法类型</span>
+            <Input v-model:value="form.algorithmType" placeholder="如 IAE_FFT / SCATTER_FIT" class="flex-1" />
+          </div>
+          <div class="flex items-center gap-3">
+            <span class="w-28 shrink-0 text-sm">计算方法</span>
+            <Input v-model:value="form.calcMethod" placeholder="如 IAE_ZERO_CROSSING" class="flex-1" />
+          </div>
+          <div class="flex flex-col gap-1">
+            <span class="text-sm">算法参数（JSON 对象）</span>
+            <Textarea
+              v-model:value="form.paramsText"
+              :rows="5"
+              :class="{ 'border-red-500': !!paramsError }"
+              placeholder="{&quot;param&quot;: value}"
+            />
+            <span v-if="paramsError" class="text-xs text-red-500">{{ paramsError }}</span>
+          </div>
+        </template>
       </div>
     </Modal>
 

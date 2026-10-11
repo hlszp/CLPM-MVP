@@ -842,10 +842,24 @@ export namespace DiagnosisConfigApi {
     updatedBy: null | string;
   }
 
+  /**
+   * 字段级元数据（P2-01 CFG-02：区分注册表只读说明与真实可调字段）。
+   * algorithmType/calcMethod/params 标 readOnly=true / consumedByLiveEngine=false
+   * （可存但 v2 活执行引擎不消费）；threshold/isEnabled/diagName 真实可调。
+   */
+  export interface FieldMeta {
+    label?: null | string;
+    readOnly?: boolean | null;
+    consumedByLiveEngine?: boolean | null;
+    note?: null | string;
+  }
+
   /** 批量响应 */
   export interface BatchResponse {
     items: ConfigItem[];
     updatedCount?: null | number;
+    /** P2-01 CFG-02：字段级元数据（可选追加，旧客户端可忽略） */
+    methodMeta?: null | Record<string, FieldMeta>;
   }
 
   /** 更新项（批量 PUT） */

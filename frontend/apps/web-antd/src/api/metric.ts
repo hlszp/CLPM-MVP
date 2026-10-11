@@ -929,14 +929,22 @@ export namespace MetricApi {
     overridden: boolean;
   }
 
-  /** 参数元数据项（整改 F6：注册表单源下发） */
+  /**
+   * 参数元数据项（整改 F6：注册表单源下发；P2-01 补齐 label/type 全集）
+   * 后端 build_param_meta 下发 16 个元数据字段，前端消费其中的键集合与
+   * label/type/min/max/unit/description/category；其余字段（defaultBasis/
+   * kind/risk 等）透传保留，不在 UI 强制消费。
+   */
   export interface AlgorithmParamMeta {
+    label?: string;
+    /** 注册类型：bool=开关（存 0/1）/ int=整数点数 / float=数值（默认） */
+    type?: 'bool' | 'float' | 'int';
     min?: number;
     max?: number;
     unit?: string;
     description?: string;
     category?: string;
-    type?: 'bool';
+    [key: string]: unknown;
   }
 
   /** 指标参数组 */
@@ -944,7 +952,10 @@ export namespace MetricApi {
     metricCode: string;
     metricName: string;
     items: AlgorithmParamsControlItem[];
-    /** F6：参数元数据（min/max/unit/description/category），可能缺失时回落前端兜底 */
+    /**
+     * F6+P2-01：参数元数据（注册表单源），**键集合即该指标参数全集**
+     * （本地不再维护第二份键清单，旧键/新键随注册表自动增减）
+     */
     paramMeta?: Record<string, AlgorithmParamMeta>;
   }
 
