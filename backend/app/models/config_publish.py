@@ -112,7 +112,9 @@ class ConfigPublication(Base):
     - ``affected_loops``：受影响回路数（无法精确计数时为 NULL 并以 note 说明）。
     - ``rollback_revision``：回退目标版本（= 本次发布前 revision）。
     - ``operation``：PUBLISH（发布覆盖）/ RESET（重置层）/ ROLLBACK（回退）/
-      LEGACY_SYNC（algorithm-params PUT 等兼容通道写入）。
+      LEGACY_SYNC（algorithm-params PUT 等兼容通道写入）/ TEMPLATE_VERSION
+      （P2-04 工程模板版本发布——版本行追加式不可变，本账本只登记指针
+      前进/回拨与 before/after 摘要）。
 
     回退语义：``rollback(R)`` 将 R 号发布的 before 状态重新应用为一个**新
     revision**（方案 §6 "配置回退生成新 revision"），不删改任何历史行。
@@ -137,7 +139,7 @@ class ConfigPublication(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "operation IN ('PUBLISH', 'RESET', 'ROLLBACK', 'LEGACY_SYNC')",
+            "operation IN ('PUBLISH', 'RESET', 'ROLLBACK', 'LEGACY_SYNC', 'TEMPLATE_VERSION')",
             name="ck_config_publication_operation",
         ),
         UniqueConstraint("revision", name="uq_config_publication_revision"),

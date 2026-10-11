@@ -29,6 +29,10 @@ from app.models.dcs_vendor import DcsVendor
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.engine import EngineRule
+from app.models.engineering_template import (  # P2-04
+    EngineeringTemplate,
+    EngineeringTemplateVersion,
+)
 from app.models.event_bus import EventBus  # Workbench v2.0
 from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger, LoopTagMapping
@@ -109,6 +113,8 @@ __all__ = [
     "ConfigPublication",  # P2-02 统一配置发布快照
     "DiagnosisConfig",
     "EngineRule",
+    "EngineeringTemplate",
+    "EngineeringTemplateVersion",
     "KpiSnapshotHourly",
     "KpiSnapshotCustom",
     "LoopConfidenceLatest",
