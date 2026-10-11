@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from typing import Final
 
@@ -18,10 +19,22 @@ from app.constants.mode import AUTO_MODES, MODE_LABELS_EN
 
 logger = logging.getLogger(__name__)
 
-_MIN_SEGMENT_POINTS: Final[int] = 50  # 最小可辨识片段点数
+_MIN_SEGMENT_POINTS: Final[int] = 50  # 最小可辨识片段点数（P-12 物理公式的下限档）
 _OP_SATURATION_MARGIN: Final[float] = 0.01  # OP 距上下限 1% 内视为饱和
 _OP_SATURATION_RATIO: Final[float] = 0.80  # 80% 以上点饱和则整段排除
 _LOW_VALID_RATIO: Final[float] = 0.50  # 有效样本比例低于 50% 排除
+
+# P3-06b（P-12，oracle 冻结草案 §3 冻结值一字不差）：
+# 合格连续段最小点数物理化——
+#     min_pts = max(50 点, min(600 点, 2×(θ_max + 5×τ_预期) / ts))
+# θ_max 为 R1（P-02）公式结果（max(300s, 5×粗估 τ+θ) ≤ 数据时长/4；无粗估
+# 估时按 P-02 下限 300s 与时长/4 取小），τ_预期 为非参粗估 τ+θ（无粗估 → 0）。
+# 同一物理数据不同 ts 下段资格等价（C14-ID2）；50 点下限与 600 点上限均冻结。
+SEG_MIN_POINTS_FLOOR: Final[int] = 50  # P-12：max(50, ·) 下限
+SEG_MIN_POINTS_CAP: Final[int] = 600  # P-12：min(600, ·) 上限
+SEG_PHYS_TAU_FACTOR: Final[float] = 5.0  # P-12：5 × τ_预期
+SEG_PHYS_MIN_SECONDS: Final[float] = 300.0  # P-02 下限（无粗估时的 θ_max）
+SEG_PHYS_DURATION_QUARTER: Final[float] = 4.0  # P-02：θ_max ≤ 数据时长 / 4
 
 
 @dataclass
@@ -31,6 +44,12 @@ class SegmentSpec:
     与 ``SegmentInfo`` 的区别：``SegmentInfo`` 含激励检测结果（辨识后填充），
     ``SegmentSpec`` 仅描述切分边界与排除原因（辨识前生成），用于 preview API
     和 pipeline 的片段筛选。
+
+    P3-06b（P-14，加性字段、缺省不破坏既有构造/测试）：扩展对齐 P2-03
+    段与事件目录层——segmentId/tsStart/tsEnd/mode/regimeId/pidVersion/
+    sampleInterval；regimeId/pidVersion 恒 None（工况/PID 版本未知显式标记，
+    不自动伪填工况身份，07§3.2 第 2 层）。tsStart/tsEnd 为物理秒（相对
+    输入窗起点，绝对时间由快照层 window+ts_rel 承载）。
     """
 
     start_idx: int
@@ -40,6 +59,41 @@ class SegmentSpec:
     exclusion_reason: str | None  # 排除原因（None=可辨识）
     valid_sample_ratio: float  # 有效样本（非 NaN）比例 0~1
     point_count: int
+    # P-14 加性字段（P3-06b；None=未提供 ts 上下文，preview 旧路径不填）
+    segment_id: str | None = None  # 目录内稳定标识（"SEG-001" 按出现序）
+    ts_start: float | None = None  # 段起点物理秒（相对输入窗）
+    ts_end: float | None = None  # 段终点物理秒（相对输入窗，exclusive）
+    sample_interval: float | None = None  # 采样周期（秒）
+    regime_id: str | None = None  # 工况组 ID（未知显式 None，不伪填）
+    pid_version: str | None = None  # PID 参数版本（未知显式 None）
+    qualify_tier: int | None = None  # P-12 资格档（1=物理首选档 2=50 点下限档；None=排除段）
+
+
+def physical_min_segment_points(
+    ts: float,
+    total_points: int,
+    theta_max_seconds: float | None = None,
+    tau_expected_seconds: float | None = None,
+) -> int:
+    """P-12（冻结值）：合格连续段最小点数——物理时长折算.
+
+    min_pts = max(50 点, min(600 点, ceil(2×(θ_max + 5×τ_预期)/ts)))
+
+    - θ_max：显式给出时用之；否则按 R1（P-02）公式的可确定部分——
+      min(300s, 数据时长/4)（无非参粗估时 5×粗估项不可得，按 0 处理，
+      粗估接入由 pipeline 侧传入显式值）；
+    - τ_预期：非参粗估 τ+θ（None → 0）；
+    - 50 点下限与 600 点上限为冻结值（P-12 字面）。
+    """
+    if not math.isfinite(ts) or ts <= 0 or total_points <= 0:
+        return _MIN_SEGMENT_POINTS
+    duration_s = total_points * ts
+    if theta_max_seconds is None:
+        theta_max_seconds = min(SEG_PHYS_MIN_SECONDS, duration_s / SEG_PHYS_DURATION_QUARTER)
+    tau_expected_seconds = tau_expected_seconds or 0.0
+    physical_secs = 2.0 * (theta_max_seconds + SEG_PHYS_TAU_FACTOR * tau_expected_seconds)
+    physical_pts = math.ceil(physical_secs / ts)
+    return max(SEG_MIN_POINTS_FLOOR, min(SEG_MIN_POINTS_CAP, physical_pts))
 
 
 def segment_signals(
@@ -49,6 +103,9 @@ def segment_signals(
     op_min: float | None = None,
     op_max: float | None = None,
     min_segment_points: int = _MIN_SEGMENT_POINTS,
+    ts: float | None = None,
+    theta_max_seconds: float | None = None,
+    tau_expected_seconds: float | None = None,
 ) -> list[SegmentSpec]:
     """按 MODE/缺口/饱和事件边界切分时序.
 
@@ -64,13 +121,21 @@ def segment_signals(
     - ``TOO_SHORT``：片段点数不足（< min_segment_points）
     - ``None``：可辨识片段
 
+    P3-06b（P-12/P-14）：提供 ``ts`` 时最小点数按物理公式折算（忽略
+    ``min_segment_points`` 显式值），段规格填充 P-14 目录字段（segmentId/
+    tsStart/tsEnd/sampleInterval/regimeId/pidVersion=显式 None）。tier 归档
+    由调用方（pipeline 段目录构建器）处理——本函数仅按单一门槛判定。
+
     Args:
         pv: PV 时序（同轴后）
         op: OP 时序（同轴后）
         mode: MODE 时序（同轴后，可选；None 时跳过 MODE 切分，假设全 AUTO）
         op_min: OP 下限（量程），用于饱和检测；None 跳过饱和检测
         op_max: OP 上限（量程），用于饱和检测；None 跳过饱和检测
-        min_segment_points: 最小可辨识片段点数
+        min_segment_points: 最小可辨识片段点数（ts 未提供时生效）
+        ts: 采样周期秒（P-12 物理化；None=旧固定点数口径，preview 兼容）
+        theta_max_seconds: θ_max 物理秒（P-12；None 按可确定部分推）
+        tau_expected_seconds: τ_预期 物理秒（P-12；None → 0）
 
     Returns:
         SegmentSpec 列表（按时间顺序，含被排除片段）
@@ -83,12 +148,20 @@ def segment_signals(
     op_arr = np.array(op, dtype=float)
     mode_arr = np.array(mode, dtype=float) if mode else None
 
+    effective_min = (
+        physical_min_segment_points(
+            ts, n, theta_max_seconds=theta_max_seconds, tau_expected_seconds=tau_expected_seconds
+        )
+        if ts is not None
+        else min_segment_points
+    )
+
     # ── 1. 计算切分边界 ──
     cut_points = _detect_cut_points(pv_arr, op_arr, mode_arr)
 
     # ── 2. 按边界切分并标注 ──
     segments: list[SegmentSpec] = []
-    for start, end in cut_points:
+    for seg_no, (start, end) in enumerate(cut_points, start=1):
         if end <= start:
             continue
         spec = _build_segment_spec(
@@ -99,8 +172,16 @@ def segment_signals(
             end,
             op_min,
             op_max,
-            min_segment_points,
+            effective_min,
         )
+        if ts is not None:
+            spec.segment_id = f"SEG-{seg_no:03d}"
+            spec.ts_start = round(float(start) * ts, 4)
+            spec.ts_end = round(float(end) * ts, 4)
+            spec.sample_interval = float(ts)
+            spec.regime_id = None  # 工况未知显式 None（07§3.2：不自动伪填）
+            spec.pid_version = None  # PID 版本未知显式 None
+            spec.qualify_tier = 1 if spec.exclusion_reason is None else None
         segments.append(spec)
 
     return segments
@@ -242,4 +323,11 @@ def select_best_segment(segments: list[SegmentSpec]) -> SegmentSpec | None:
     return max(candidates, key=lambda s: (s.point_count, s.valid_sample_ratio))
 
 
-__all__ = ["SegmentSpec", "segment_signals", "select_best_segment"]
+__all__ = [
+    "SEG_MIN_POINTS_CAP",
+    "SEG_MIN_POINTS_FLOOR",
+    "SegmentSpec",
+    "physical_min_segment_points",
+    "segment_signals",
+    "select_best_segment",
+]

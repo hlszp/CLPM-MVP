@@ -960,7 +960,7 @@ class TestR17EvidenceSchema:
         assert ev["estimatorProfile"]["profileVersion"] == "TUNE_IDENT_PROFILE_v1"
         assert ev["estimatorProfile"]["structure"] == "FOPDT"
         assert ev["nonparamCheck"]["mode"] in {"CAP", "RECORD_ONLY"}
-        assert result.algorithm_version == ALGORITHM_VERSION == "TUNE_IDENT_v1.5"
+        assert result.algorithm_version == ALGORITHM_VERSION == "TUNE_IDENT_v1.6"
 
     def test_ipdt_drift_field_none_for_fopdt(self):
         """非 IPDT 结构 ipdtDrift=None（显式未记录，不伪补）."""

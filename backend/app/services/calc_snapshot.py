@@ -1051,6 +1051,36 @@ def deserialize_grid_signals(
 # ---------------------------------------------------------------------------
 
 
+def _identification_segments_section(preprocessing: dict[str, Any] | None) -> dict[str, Any]:
+    """P3-06b（R2/P-14）：manifest 第 2 层"段与事件目录"从 preprocessing 填充.
+
+    - 有 segmentCatalog（v1.6 起外层辨识必产）：逐段记录 segmentId/tsStart/
+      tsEnd/mode/regimeId/pidVersion/sampleInterval/排除原因/qualifyTier——
+      regimeId/pidVersion 恒 None（工况与 PID 版本未知显式标记，不自动伪填
+      工况身份，07§3.2）；abs tsStart/tsEnd 相对输入窗（绝对时间由 window+
+      consumed__ts_rel 承载）；
+    - 无该键（旧版本结果/内层窗切片）：保持 P2 占位语义（available=False
+      显式未知）——旧包读取行为不变。
+    """
+    catalog = (preprocessing or {}).get("segmentCatalog")
+    if not catalog:
+        return {
+            "available": False,
+            "regimeId": None,
+            "pidVersion": None,
+            "note": "该结果未运行结构化片段编目（P3-06b 前版本或内层窗切片）；"
+            "MODE 序列与时间轴见 consumed 数组，缺口以 NaN 保留不拼接",
+        }
+    return {
+        "available": True,
+        "regimeId": None,  # 目录层级工况组未知（段级 regimeId 亦恒 None，不伪填）
+        "pidVersion": None,
+        "catalog": catalog,
+        "note": "P3-06b R2 全保留段目录（tier1=P-12 物理最小点数档；"
+        "tier2=50 点下限降级档；exclusionReason=None 为合格段）",
+    }
+
+
 def _f64_with_nan(values: list[Any] | None) -> np.ndarray | None:
     """信号列 → float64（None→NaN；辨识管线按原样接收并清洗 NaN）."""
     if values is None:
@@ -1091,10 +1121,13 @@ async def save_identification_snapshot(
     1. 完整分析输入：``consumed__*`` 数组=进入算法栈的整窗输入（OP/PV/SP/
        MODE + 相对时间轴），缺口以 NaN 显式保留（管线按 P2-019 清洗规则
        确定性处理，不删点不跨 gap 拼接）；
-    2. 段与事件目录：``segments``——P2 无结构化片段目录，regimeId/工况
-       显式 None（未知不伪填）；MODE 序列即切分依据，随数组保存；
+    2. 段与事件目录：``segments``——P3-06b（R2/P-14）起从 preprocessing.
+       segmentCatalog 实填（全部连续段含排除原因与 qualifyTier；
+       regimeId/pidVersion 未知显式 None 不伪填）；旧版本结果保持占位
+       （available=False）；
     3. 搜索审计：``searchAudit``=autoSegment/autoWindow/multiWindow 结构化
-       窗位与理由（从 reason 提升；预算终止状态 P3 填入，显式 null）；
+       窗位与理由 + P3-06b ``windowSearch`` 四类清单（被检/选中/拒/未搜索）
+       与 B-05 预算终态（B-03 墙钟预算归 P3-04/P5-02，未执行显式 null）；
     4. 估计与分割身份：``estimation``=候选结构/估计方法/时滞来源与搜索轨迹/
        train-val-test 分割（evidence 摘要级）；
     5. 结果证据：``resultEvidence``=当前可得摘要（方法/拟合度/可信度），
@@ -1155,18 +1188,20 @@ async def save_identification_snapshot(
             "coverageRevision": getattr(point_ctx, "coverage_revision", None),
         },
         "validRate": valid_rate,
-        # 层 2：段与事件目录（P2 未运行片段编目——显式未知，不伪填工况身份）
-        "segments": {
-            "available": False,
-            "regimeId": None,
-            "pidVersion": None,
-            "note": "P2-03 未运行结构化片段编目（P3-06b 填入）；MODE 序列与"
-            "时间轴见 consumed 数组，缺口以 NaN 保留不拼接",
-        },
-        # 层 3：搜索审计（multiWindow/autoSegment/autoWindow 结构化窗位）
+        # 层 2：段与事件目录（P3-06b R2/P-14 起实填——preprocessing.segmentCatalog
+        # 存在时逐段记录；regimeId/pidVersion 工况与 PID 版本未知显式 None 不伪填；
+        # 旧结果无该键=当时未运行，保持占位语义显式 available=False）
+        "segments": _identification_segments_section(preprocessing),
+        # 层 3：搜索审计（multiWindow/autoSegment/autoWindow 结构化窗位 +
+        # P3-06b windowSearch 四类清单与 B-05 预算终态）
         "searchAudit": {
             "preprocessing": preprocessing,
-            "budgetTermination": None,
+            "windowSearch": (preprocessing or {}).get("windowSearch"),
+            # B-04/B-08：预算终态——B-05 候选窗数预算生效时为结构化记录；
+            # B-03 墙钟预算归 P3-04/P5-02 承接，未执行时 None 不伪补
+            "budgetTermination": (
+                ((preprocessing or {}).get("windowSearch") or {}).get("budgetTermination")
+            ),
         },
         # 层 4：估计与分割身份（evidence 摘要级；P3-06a R17：estimatorProfile 已填）
         "estimation": {

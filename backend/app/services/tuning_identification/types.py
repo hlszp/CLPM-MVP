@@ -272,8 +272,11 @@ class IdentificationResult:
     # v1.2=IPDT 默认候选+val 稳态防护；
     # v1.5=P3-06a 正确性子卡（R1 时滞物理边界公式+B-01 网格稀疏化与边界
     # 命中标记 / R6 有色 OP 粗增益校验降级记录 / R7 IPDT 显式漂移项 /
-    # R4+R5 final-test 三段分数与终验四态 / R17 估计身份证据节））
-    algorithm_version: str = "TUNE_IDENT_v1.5"
+    # R4+R5 final-test 三段分数与终验四态 / R17 估计身份证据节）；
+    # v1.6=P3-06b 片段与时间尺度子卡（R2 合格连续段全保留+段目录 P-14 /
+    # P-12 段最小点数物理化 / P-16 信息量通道 / P-17 自然事件锚点窗 /
+    # P-19 采样分辨率标记 / O-A6 时滞边界命中出口 / B-05~B-08 搜索审计））
+    algorithm_version: str = "TUNE_IDENT_v1.6"
     # P2-03（R2 §三 DEC-10 补表述）：结构化预处理参数——从 reason 字符串
     # 提升为结构化字段（三件套开关与参数/multi-window 入选窗位/分割比/
     # 清洗统计/后置 data_hash）；evidence.data_hash 等既有字段不受影响。

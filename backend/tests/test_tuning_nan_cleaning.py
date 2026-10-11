@@ -2,7 +2,9 @@
 
 验证 _clean_nan_segments 和 identify_from_history 入口清洗逻辑：
 - 小缺口（< 5 连续 NaN）线性插值恢复；
-- 大缺口（≥ 5 连续 NaN）取最长连续有效段；
+- 大缺口（≥ 5 连续 NaN）：_clean_nan_segments 单元级保留 legacy"取最长段"
+  口径（v1.5 前行为）；正式管线 P3-06b（R2）起为段目录全保留（不截断、
+  全部合格连续段进候选池，审计见 preprocessing.segmentCatalog）；
 - SP 同步清洗；
 - 纯 NaN / 清洗后不足 50 点拒绝；
 - 端点 NaN 按大缺口处理（无法插值）。
@@ -166,19 +168,36 @@ class TestIdentifyFromHistoryNanCleaning:
         assert "清洗后有效数据不足" in result.reason or "数据不足" in result.reason
 
     def test_large_gap_takes_longest_segment_and_identifies(self):
-        """大缺口取最长段后仍能辨识."""
+        """大缺口数据仍能辨识（P3-06b R2 语义更新：不再"取最长段"截断）.
+
+        旧断言（dropped_points>0 = 大缺口取最长段）对应 v1.5 前的截断行为；
+        R2 冻结裁决废弃"大缺口取最长段"——全部合格连续段进段目录（tier2
+        降级保留），清洗统计 dropped=0（不截断），缺口事实由 n_large_gaps
+        与段目录承载。200 点中间挖 20 连续 NaN：两段各 90 点（P-12 tier1
+        最小 100 点不满足，tier2 ≥50 降级保留），激励高者入选主段。
+        """
         from app.services.tuning_identification import identify_from_history
 
-        # 200 点，中间挖 20 连续 NaN（大缺口），取最长段（90 点）
+        # 200 点，中间挖 20 连续 NaN（大缺口），两段各 90 点
         nan_idx = list(range(90, 110))
         u, y = self._generate_fopdt(n=200, nan_indices=nan_idx)
         result = identify_from_history(op=u, pv=y, ts=1.0)
-        assert result.success, f"大缺口取段后应辨识成功，reason={result.reason}"
+        assert result.success, f"大缺口分段辨识应成功，reason={result.reason}"
         assert result.best_model is not None
         stats = result.best_model.evidence.cleaning_stats
         assert stats is not None
-        assert stats["dropped_points"] > 0
+        # R2：不截断（段目录全保留），大缺口事实显式记录
+        assert stats["dropped_points"] == 0
         assert stats["n_large_gaps"] == 1
+        # 段目录：两个有限段均保留（tier2 降级档，无一被静默丢弃）+
+        # 缺口区间本身作为 DATA_GAP 排除段入目录（缺口事实可查）
+        prep = result.preprocessing or {}
+        catalog = prep.get("segmentCatalog") or []
+        finite_segs = [rec for rec in catalog if rec["exclusionReason"] is None]
+        gap_segs = [rec for rec in catalog if rec["exclusionReason"] == "DATA_GAP"]
+        assert len(finite_segs) == 2
+        assert len(gap_segs) == 1
+        assert all(rec["qualifyTier"] == 2 for rec in finite_segs)
 
     def test_too_few_after_cleaning_rejected(self):
         """清洗后不足 50 点被拒绝."""
