@@ -90,12 +90,19 @@ type RowAction = 'event' | 'loop' | 'todo' | null;
 const list = reactive({
   columns: [] as ListColumn[],
   description: '',
+  /** 显式失败态（IA-01 诚实化）：非空 = 请求失败（422/500 等），与空数据区分 */
+  error: '',
+  /** 截断/总数提示（IA-01/E4：「仅当前 N 条（共 M 条）」等，空 = 无截断） */
+  footerNote: '',
   loading: false,
   open: false,
   rowAction: null as RowAction,
   rows: [] as Record<string, unknown>[],
   title: '',
 });
+
+/** 最近一次清单类 drill 意图（失败态「重试」按钮复用） */
+let lastListTarget: DrillTarget | null = null;
 
 const loopDetail = reactive({ loopId: null as null | string, open: false });
 const eventDetail = reactive({ eventId: null as null | string, open: false });
@@ -179,8 +186,43 @@ export function useCockpitDrill() {
     list.columns = opts.columns;
     list.rowAction = opts.rowAction ?? null;
     list.rows = [];
+    list.error = '';
+    list.footerNote = '';
     list.loading = true;
     list.open = true;
+  }
+
+  /** 请求失败 → 显式失败态（不吞错清空伪装成"暂无数据"） */
+  function failList(label: string, error_: unknown) {
+    list.rows = [];
+    const detail = error_ instanceof Error ? error_.message : '';
+    list.error = detail ? `${label}（${detail}）` : label;
+  }
+
+  /** ranking 端点单页上限 le=100（performance.py），limit 200 必 422——
+   *  IA-01：limit=100 + offset 循环分页拉全，超上限不再静默失败/截断 */
+  const RANK_PAGE_SIZE = 100;
+  /** 拉全保护上限（C26 ">100 条可查全"：千回路规模内全量可查，超出显式截断提示） */
+  const RANK_FETCH_CAP = 1000;
+
+  async function fetchRankingAll(
+    params: Omit<MetricApi.RankingQueryParams, 'limit' | 'offset'>,
+  ): Promise<{ items: MetricApi.RankingItem[]; truncated: boolean }> {
+    const items: MetricApi.RankingItem[] = [];
+    let offset = 0;
+    while (offset < RANK_FETCH_CAP) {
+      const chunk =
+        (await getRankingApi({ ...params, limit: RANK_PAGE_SIZE, offset })) ?? [];
+      items.push(...chunk);
+      if (chunk.length < RANK_PAGE_SIZE) return { items, truncated: false };
+      offset += RANK_PAGE_SIZE;
+    }
+    return { items, truncated: true };
+  }
+
+  /** 截断提示（truncated=true 时统一口径） */
+  function noteTruncated() {
+    list.footerNote = `仅显示前 ${RANK_FETCH_CAP} 条（结果超出上限已截断）`;
   }
 
   function pct(v: null | number | undefined): string {
@@ -203,13 +245,14 @@ export function useCockpitDrill() {
       title: t.title ?? '回路性能清单',
     });
     try {
-      const items = await getRankingApi({
-        limit: 200,
+      // IA-01：原 limit:200 超 ranking 端点 le=100 上限必 422 → 分页拉全
+      const { items, truncated } = await fetchRankingAll({
         plantNodeId: t.plantNodeId ? String(t.plantNodeId) : undefined,
         sortBy: 'score',
         sortOrder: t.sortOrder ?? 'desc',
         timeWindow: WINDOW_MAP[cockpitStore.timeWindow],
       });
+      if (truncated) noteTruncated();
       // t.grade 兼容英文枚举（等级分布图例）与中文等级名（历史口径）
       const GRADE_KEYS = [
         'EXCELLENT',
@@ -229,7 +272,7 @@ export function useCockpitDrill() {
               | 'WARNING'
             )[]
           ).find((k) => GRADE_LABELS[k] === t.grade);
-      list.rows = (items ?? [])
+      list.rows = items
         .filter((it) => it.includeInEvaluation !== false)
         .filter((it) => {
           if (!gradeEn) return true;
@@ -243,8 +286,8 @@ export function useCockpitDrill() {
           tagName: it.tagName,
           unitName: it.unitName,
         }));
-    } catch {
-      list.rows = [];
+    } catch (error_) {
+      failList('回路清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -268,30 +311,31 @@ export function useCockpitDrill() {
       title: '回路指标清单',
     });
     try {
-      const items = await getRankingApi({
-        limit: 200,
+      // IA-01：分页拉全（原 limit:200 必 422）；IA-02：数值列排序
+      const { items, truncated } = await fetchRankingAll({
         plantNodeId: t.plantNodeId ? String(t.plantNodeId) : undefined,
         sortBy: 'score',
         sortOrder: 'desc',
         timeWindow: WINDOW_MAP[cockpitStore.timeWindow],
       });
-      list.rows = (items ?? [])
+      if (truncated) noteTruncated();
+      list.rows = items
         .filter((it) => it.includeInEvaluation !== false)
         .map((it) => ({
           grade: GRADE_LABELS[gradeOfScore(it.score) ?? 'FAIR'] ?? '—',
           loopId: it.loopId,
           metricText: meta ? pct(it[meta.field] as null | number) : '—',
+          // IA-02：保留数值列（原对 "85.00%" 字符串 Number → NaN，降序排序全失效）
+          metricValue: meta ? ((it[meta.field] ?? null) as null | number) : null,
           scoreText: it.score.toFixed(2),
           tagName: it.tagName,
           unitName: it.unitName,
         }))
-        .toSorted((a, b) => {
-          const av = a.metricText === '—' ? -1 : Number(a.metricText);
-          const bv = b.metricText === '—' ? -1 : Number(b.metricText);
-          return (Number.isFinite(bv) ? bv : -1) - (Number.isFinite(av) ? av : -1);
-        });
-    } catch {
-      list.rows = [];
+        // IA-02：与回路卡片墙"数值排序"同款——数值降序、缺值（未计算）排末尾，
+        // 不再把缺值当 0 参与比较
+        .toSorted((a, b) => (b.metricValue ?? -1) - (a.metricValue ?? -1));
+    } catch (error_) {
+      failList('指标清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -331,8 +375,13 @@ export function useCockpitDrill() {
         statusLabel: e.acknowledgedAt ? '已确认' : '未确认',
         triggeredAtText: formatLocalTime(e.triggeredAt, 'MM-DD HH:mm:ss'),
       }));
-    } catch {
-      list.rows = [];
+      // IA-01/E4：limit 50 静默截断 → 显式"仅当前 N 条（共 M 条）"提示
+      const total = res?.total ?? 0;
+      if (total > list.rows.length) {
+        list.footerNote = `仅当前 ${list.rows.length} 条（共 ${total} 条），如需更多请缩小时间窗`;
+      }
+    } catch (error_) {
+      failList('预警事件清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -384,8 +433,8 @@ export function useCockpitDrill() {
         triggerLabel: r.triggerTypeLabel ?? '—',
         windowEndText: formatLocalTime(r.timeWindowEnd, 'MM-DD HH:mm'),
       }));
-    } catch {
-      list.rows = [];
+    } catch (error_) {
+      failList('诊断记录清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -436,8 +485,8 @@ export function useCockpitDrill() {
           statusLabel: TUNE_STATUS_LABEL[it.status] ?? it.status,
           tagName: it.tagName ?? it.loopId,
         }));
-    } catch {
-      list.rows = [];
+    } catch (error_) {
+      failList('整定记录清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -502,8 +551,8 @@ export function useCockpitDrill() {
         statusLabel: o.statusLabel,
         title: o.title,
       }));
-    } catch {
-      list.rows = [];
+    } catch (error_) {
+      failList('处置工单清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -541,8 +590,8 @@ export function useCockpitDrill() {
         loopTagName: s.loopTagName,
         sourceLabel: SRC[s.source] ?? s.source,
       }));
-    } catch {
-      list.rows = [];
+    } catch (error_) {
+      failList('处置建议清单加载失败，请重试', error_);
     } finally {
       list.loading = false;
     }
@@ -550,6 +599,20 @@ export function useCockpitDrill() {
 
   /** 统一入口：迁移组件内所有原 drill(...) 调用改指向这里 */
   async function drill(target: DrillTarget) {
+    // 清单类意图登记（失败态「重试」按钮复用最近一次请求；
+    // loop/sla/tab/trend 为详情/图表/路由意图，无清单可重试）
+    const LIST_KINDS = new Set([
+      'alerts',
+      'diagRuns',
+      'loops',
+      'metric',
+      'orders',
+      'suggestions',
+      'tuneTasks',
+    ]);
+    if (LIST_KINDS.has(target.kind)) {
+      lastListTarget = target;
+    }
     switch (target.kind) {
     case 'alerts': {
       await loadAlerts();
@@ -621,12 +684,18 @@ export function useCockpitDrill() {
     }
   }
 
+  /** 失败态「重试」：重发最近一次清单类 drill 意图 */
+  async function retryLastDrill() {
+    if (lastListTarget) await drill(lastListTarget);
+  }
+
   return {
     drill,
     eventDetail,
     list,
     loopDetail,
     onListRowClick,
+    retryLastDrill,
     sla,
     todoDetail,
     trend,

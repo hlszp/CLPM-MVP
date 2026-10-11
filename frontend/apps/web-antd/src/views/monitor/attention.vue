@@ -1,3 +1,42 @@
+<script lang="ts">
+/**
+ * 关注状态字典（IA-04，2026-10-10）：独立导出供单测校验完整性。
+ * VERIFYING 补齐——HANDLING 来源工单验证中（验证超期生成 HIGH 关注项），
+ * 与后端 monitor._VALID_STATUSES / monitor_attention 口径对齐；
+ * Record<AttentionStatus,...> 使缺态在 typecheck 即失败。
+ * （MonitorApi 类型由下方 <script setup> 的导入提供——两块编译为同一模块）
+ */
+export const ATTENTION_STATUS_LABEL: Record<
+  MonitorApi.AttentionStatus,
+  string
+> = {
+  ACKNOWLEDGED: '已确认',
+  IN_PROGRESS: '处理中',
+  OPEN: '待处理',
+  SUPPRESSED: '已抑制',
+  VERIFYING: '验证中',
+};
+
+export const ATTENTION_STATUS_COLOR: Record<
+  MonitorApi.AttentionStatus,
+  string
+> = {
+  ACKNOWLEDGED: 'warning',
+  IN_PROGRESS: 'processing',
+  OPEN: 'error',
+  SUPPRESSED: 'default',
+  VERIFYING: 'cyan',
+};
+
+export const ATTENTION_STATUS_ORDER: MonitorApi.AttentionStatus[] = [
+  'OPEN',
+  'IN_PROGRESS',
+  'VERIFYING',
+  'ACKNOWLEDGED',
+  'SUPPRESSED',
+];
+</script>
+
 <script lang="ts" setup>
 /**
  * 关注队列（列表页标杆 v2.0）
@@ -110,20 +149,8 @@ const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   HANDLING: 'processing',
 };
 
-const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
-  OPEN: '待处理',
-  ACKNOWLEDGED: '已确认',
-  SUPPRESSED: '已抑制',
-  IN_PROGRESS: '处理中',
-};
-
-const STATUS_COLOR: Record<MonitorApi.AttentionStatus, string> = {
-  OPEN: 'error',
-  ACKNOWLEDGED: 'warning',
-  SUPPRESSED: 'default',
-  IN_PROGRESS: 'processing',
-};
-
+// IA-04：状态字典移至文件头部导出（ATTENTION_STATUS_LABEL/COLOR/ORDER），
+// 与 api/monitor.ts AttentionStatus（含 VERIFYING）编译期对齐
 const PRIORITY_ORDER: MonitorApi.AttentionPriority[] = [
   'URGENT',
   'HIGH',
@@ -136,12 +163,6 @@ const SOURCE_ORDER: MonitorApi.AttentionSource[] = [
   'DATA_QUALITY',
   'FITNESS_ABNORMAL',
   'HANDLING',
-];
-const STATUS_ORDER: MonitorApi.AttentionStatus[] = [
-  'OPEN',
-  'IN_PROGRESS',
-  'ACKNOWLEDGED',
-  'SUPPRESSED',
 ];
 const SOURCE_SET = new Set<string>(SOURCE_ORDER);
 
@@ -554,9 +575,9 @@ const sourceOptions = computed(() =>
   })),
 );
 
-const statusOptions = STATUS_ORDER.map((s) => ({
+const statusOptions = ATTENTION_STATUS_ORDER.map((s) => ({
   value: s,
-  label: STATUS_LABEL[s],
+  label: ATTENTION_STATUS_LABEL[s],
 }));
 
 // ===== 工具栏（标准工具：刷新/筛选/帮助 + 密度自定义） =====
@@ -962,11 +983,11 @@ watch(
                 <template v-else-if="column.key === 'status'">
                   <Tag
                     :color="
-                      STATUS_COLOR[record.status as keyof typeof STATUS_COLOR]
+                      ATTENTION_STATUS_COLOR[record.status as keyof typeof ATTENTION_STATUS_COLOR]
                     "
                   >
                     {{
-                      STATUS_LABEL[record.status as keyof typeof STATUS_LABEL]
+                      ATTENTION_STATUS_LABEL[record.status as keyof typeof ATTENTION_STATUS_LABEL]
                     }}
                   </Tag>
                 </template>
@@ -1161,11 +1182,11 @@ watch(
           <DescriptionsItem label="状态">
             <Tag
               :color="
-                STATUS_COLOR[currentItem.status as keyof typeof STATUS_COLOR]
+                ATTENTION_STATUS_COLOR[currentItem.status as keyof typeof ATTENTION_STATUS_COLOR]
               "
             >
               {{
-                STATUS_LABEL[currentItem.status as keyof typeof STATUS_LABEL]
+                ATTENTION_STATUS_LABEL[currentItem.status as keyof typeof ATTENTION_STATUS_LABEL]
               }}
             </Tag>
             <span class="ml-2 text-xs text-gray-400">
