@@ -14,6 +14,9 @@ from typing import Any
 import numpy as np
 
 from app.services.diagnosis_operators.base import (
+    ASSESSMENT_ERROR,
+    ASSESSMENT_INSUFFICIENT_DATA,
+    REASON_TOO_FEW_POINTS,
     EvidenceItem,
     OperatorInput,
     OperatorMeta,
@@ -250,7 +253,13 @@ def _iae_kernel(
 def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResult:
     pv = input.signals.get("pv")
     if pv is None or len(pv) < 16:
-        return OperatorResult("oscillation_fft", executed=False, skip_reason="pv 数据不足")
+        return OperatorResult(
+            "oscillation_fft",
+            executed=False,
+            skip_reason="pv 数据不足",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
     # D1 兜底（2026-09-25）：点表同轴输入历史上可能仍是 object dtype，
     # 数值 ufunc（rfft 等）遇 object 直接抛错；此处强制转 float64 并让异常可见。
     try:
@@ -261,8 +270,44 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
             "oscillation_fft",
             executed=False,
             error=f"{type(exc).__name__}: {exc}",
+            assessment_state=ASSESSMENT_ERROR,
+            reason_code=f"{type(exc).__name__}: {exc}"[:200],
         )
-    res = _fft_kernel(pv, float(input.meta.get("sample_interval", 1.0)), threshold)
+    # D1（DIA-03/C14-D01，08§3.2.4）：FFT 只在**连续等距段**内运行——缺口
+    # 两侧不拼接（拼接会在缺口处制造虚假低频分量）。取最长连续段分析，
+    # 段数/选用段长随特征落库；单段（无缺口）行为与原实现一致。
+    segments = input.meta.get("consecutive_segments") or []
+    segment_count = len(segments) if segments else 1
+    used_points = int(len(pv))
+    seg_bounds: tuple[int, int] | None = None
+    if len(segments) > 1:
+        seg_bounds = max(segments, key=lambda s: s[1] - s[0])
+        pv = pv[seg_bounds[0] : seg_bounds[1]]
+        used_points = int(seg_bounds[1] - seg_bounds[0])
+        if len(pv) < 16:
+            return OperatorResult(
+                "oscillation_fft",
+                executed=False,
+                skip_reason="最长连续有效段不足（缺口分割后 <16 点）",
+                assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+                reason_code=REASON_TOO_FEW_POINTS,
+            )
+    elif segments:
+        seg_bounds = segments[0]
+    # 段内实际采样率：用真实时间轴（ts 与 pv 同轴切片）估计，避免"压缩
+    # 数值后仍按原 sample_interval"造成的频率尺度失真（DIA-03 后半）
+    ts_arr = np.asarray(input.timestamps, dtype=float)
+    fs_interval = float(input.meta.get("sample_interval", 1.0))
+    if (
+        seg_bounds is not None
+        and len(ts_arr) >= seg_bounds[1]
+        and seg_bounds[1] - seg_bounds[0] >= 2
+    ):
+        seg_ts = ts_arr[seg_bounds[0] : seg_bounds[1]]
+        span = float(seg_ts[-1] - seg_ts[0])
+        if span > 0:
+            fs_interval = span / (len(seg_ts) - 1)
+    res = _fft_kernel(pv, fs_interval, threshold)
     return OperatorResult(
         "oscillation_fft",
         executed=True,
@@ -272,6 +317,10 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
             "frequency": res["frequency"],
             "amplitude": res["amplitude"],
             "index": res["index"],
+            # D1：连续段消费透明化（段数/选用段点数/段内实际采样间隔）
+            "consecutive_segment_count": segment_count,
+            "analyzed_points": used_points,
+            "analyzed_sample_interval": round(fs_interval, 4),
         },
         error=res.get("_error"),
         evidence=[
@@ -281,7 +330,9 @@ def detect_fft(input: OperatorInput, threshold: dict[str, Any]) -> OperatorResul
                 "index",
                 round(float(res["index"]), 4),
                 threshold.get("fft_osc_index_threshold"),
-                "主峰能量占比" + ("达标" if res["detected"] else "未达标"),
+                "主峰能量占比"
+                + ("达标" if res["detected"] else "未达标")
+                + (f"（最长连续段 {segment_count} 段中取 1 段分析）" if segment_count > 1 else ""),
             ),
         ],
     )

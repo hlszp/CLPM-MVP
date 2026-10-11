@@ -161,6 +161,9 @@ def _compact_operator_metrics(operator_results: dict[str, Any] | None) -> dict[s
             "detected": bool(r.get("detected")),
             "confidence": r.get("confidence"),
             "skipReason": r.get("skipReason"),
+            # D2（08§4.1）：八态随精简视图透出（reader-first）
+            "assessmentState": r.get("assessmentState"),
+            "reasonCode": r.get("reasonCode"),
             "features": r.get("features") or {},
         }
     return out
@@ -200,6 +203,10 @@ def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
         # 2026-10-05 指标透明化：数据质量列（门禁）+ 算子指标列组展开数据源
         "dataGate": row.data_gate,
         "operatorMetrics": _compact_operator_metrics(row.operator_results),
+        # D2（08§4.2 reader-first）：诊断科学结论元信息（judgementStatus 五值 /
+        # causeStatus 三值 / 覆盖分母三等式）。NULL=历史 run 无科学结论元信息，
+        # 读端按 LEGACY_UNVERIFIABLE 口径处理（前端显示归 D6，此处只落字段）
+        "assessment": row.assessment_meta,
     }
 
 
@@ -218,6 +225,10 @@ def _run_to_detail(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
             "metricSummary": row.metric_summary,
             "thresholdVersion": row.threshold_version,
             "algorithmVersion": row.algorithm_version,
+            # D1（08§3.1）：不可变输入包引用（NULL=该 run 不可完整复现）
+            "datasetSnapshotId": (
+                str(row.dataset_snapshot_id) if row.dataset_snapshot_id else None
+            ),
             "startedAt": row.started_at.isoformat() if row.started_at else None,
             "finishedAt": row.finished_at.isoformat() if row.finished_at else None,
             "durationMs": row.duration_ms,

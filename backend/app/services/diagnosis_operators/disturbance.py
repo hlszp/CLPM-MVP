@@ -12,6 +12,8 @@ from typing import Any
 import numpy as np
 
 from app.services.diagnosis_operators.base import (
+    ASSESSMENT_INSUFFICIENT_DATA,
+    REASON_TOO_FEW_POINTS,
     EvidenceItem,
     OperatorInput,
     OperatorMeta,
@@ -32,6 +34,8 @@ def _empty_bias_shift_result() -> dict[str, Any]:
         "max_cusum": 0.0,
         "shift_magnitude": 0.0,
         "shift_frequency": 0.0,
+        # D1（DIA-06）：与 SP 阶跃时间重合被排除的候选突变数（SP 响应归因）
+        "sp_coincident_shifts": 0,
     }
 
 
@@ -41,7 +45,13 @@ def _bias_shift_kernel(
     ts: np.ndarray | list[float] | None = None,
     threshold: dict | None = None,
 ) -> dict[str, Any]:
-    """偏差突变检测（等价复制自引擎 L3285-3420；CUSUM 触发后需突变确认）。"""
+    """偏差突变检测（等价复制自引擎 L3285-3420；CUSUM 触发后需突变确认）。
+
+    D1（DIA-06，08§5 disturbance_burst 行 / C16-D02）：**SP 主动变更排除**——
+    SP 阶跃本身会造成 PV-SP 偏差的真实跳变，属"SP 响应"而非独立外扰。
+    确认窗内出现 SP 阶跃（变化 > SP 量程 5%，与阶跃响应算子同判据）的
+    候选突变跳过，不计数、不称"与 SP 变更无关"。
+    """
     if not isinstance(threshold, dict):
         threshold = {}
     freq_threshold = float(threshold.get("bias_shift_freq_threshold", 5.0))
@@ -55,6 +65,14 @@ def _bias_shift_kernel(
     try:
         pv_arr = pv[:min_len].astype(float)
         sp_arr = sp[:min_len].astype(float)
+
+        # SP 阶跃索引（变化超过 SP 量程 5%——与 _step_kernel/_slow_kernel 同判据）
+        sp_range = float(np.max(sp_arr) - np.min(sp_arr))
+        sp_step_indices = (
+            np.where(np.abs(np.diff(sp_arr)) > sp_range * 0.05)[0]
+            if sp_range > 1e-9
+            else np.array([], dtype=int)
+        )
 
         bias = pv_arr - sp_arr
         bias_mean = float(np.mean(bias))
@@ -80,13 +98,22 @@ def _bias_shift_kernel(
                 cusum_pos[i] = 0.0
                 cusum_neg[i] = 0.0
 
-        # 突变确认：触发点前后确认窗内偏差均值的跳变幅度需 > amplitude_k×σ
+        # 突变确认：触发点前后确认窗内偏差均值的跳变幅度需 > amplitude_k×σ；
+        # 且确认窗内无 SP 阶跃（SP 响应不算独立外扰——DIA-06）
         shift_points: list[int] = []
         shift_changes: list[float] = []
+        sp_coincident = 0
         for idx, direction in raw_shifts:
             pre = bias_centered[max(0, idx - confirm_window) : idx]
             post = bias_centered[idx : min(min_len, idx + confirm_window)]
             if len(pre) < 5 or len(post) < 5:
+                continue
+            # SP 阶跃排除：确认窗 [idx-confirm_window, idx+confirm_window) 内
+            # 出现 SP 阶跃 → 该偏差跳变归因 SP 响应，不计独立突变
+            if len(sp_step_indices) and np.any(
+                (sp_step_indices >= idx - confirm_window) & (sp_step_indices < idx + confirm_window)
+            ):
+                sp_coincident += 1
                 continue
             level_change = float(np.mean(post) - np.mean(pre))
             if level_change * direction > amplitude_k * bias_std:
@@ -118,6 +145,7 @@ def _bias_shift_kernel(
             "max_cusum": max_cusum,
             "shift_magnitude": shift_magnitude,
             "shift_frequency": shift_frequency,
+            "sp_coincident_shifts": sp_coincident,
         }
     except Exception as exc:  # noqa: BLE001
         logger.warning("偏差突变检测失败: %s", exc)
@@ -152,7 +180,13 @@ def detect_bias_shift(input: OperatorInput, threshold: dict[str, Any]) -> Operat
     pv = input.signals.get("pv")
     sp = input.signals.get("sp")
     if pv is None or sp is None or min(len(pv), len(sp)) < 16:
-        return OperatorResult("disturbance_burst", executed=False, skip_reason="pv/sp 数据不足")
+        return OperatorResult(
+            "disturbance_burst",
+            executed=False,
+            skip_reason="pv/sp 数据不足",
+            assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+            reason_code=REASON_TOO_FEW_POINTS,
+        )
     res = _bias_shift_kernel(pv, sp, input.timestamps, threshold)
     return OperatorResult(
         "disturbance_burst",
@@ -163,13 +197,19 @@ def detect_bias_shift(input: OperatorInput, threshold: dict[str, Any]) -> Operat
             "shift_count": res["shift_count"],
             "shift_frequency": round(float(res["shift_frequency"]), 3),
             "shift_magnitude": res["shift_magnitude"],
+            "sp_coincident_shifts": res.get("sp_coincident_shifts", 0),
         },
         evidence=[
             EvidenceItem(
                 "shift_frequency",
                 round(float(res["shift_frequency"]), 3),
                 threshold.get("bias_shift_freq_threshold"),
-                "确认突变频率" + ("达阈" if res["detected"] else "未达阈"),
+                (
+                    "确认突变频率达阈（已排除 SP 阶跃重合候选 "
+                    f"{int(res.get('sp_coincident_shifts', 0))} 次）"
+                    if res["detected"]
+                    else "确认突变频率未达阈"
+                ),
             ),
         ],
     )

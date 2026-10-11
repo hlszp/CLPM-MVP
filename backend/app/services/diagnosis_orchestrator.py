@@ -26,7 +26,22 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.data_source.factory import get_provider
+from app.services.diagnosis_assessment import build_assessment_meta, derive_run_status
 from app.services.diagnosis_operators import OPERATOR_REGISTRY, OperatorInput, OperatorResult
+from app.services.diagnosis_operators.base import (
+    ASSESSMENT_ERROR,
+    ASSESSMENT_INSUFFICIENT_DATA,
+    ASSESSMENT_NEGATIVE,
+    ASSESSMENT_NOT_APPLICABLE,
+    ASSESSMENT_POSITIVE,
+    REASON_DISABLED_BY_CONFIG,
+    REASON_GATE_BLOCKED,
+    REASON_MISSING_SIGNALS,
+    REASON_NO_LIMIT_CYCLE,
+    REASON_NOT_SELECTED,
+    REASON_OUT_OF_PROFILE,
+    REASON_TOO_FEW_POINTS,
+)
 from app.services.diagnosis_operators.classification import (
     NO_SYMPTOM,
     ClassificationResult,
@@ -477,13 +492,29 @@ def _build_metric_summary(
 
 
 async def _effective_thresholds(db: Any, loop_id: str) -> dict[str, dict[str, Any]]:
-    """四级阈值覆盖（复用 diagnosis_threshold.recommend_for_loop）；失败回退算子默认。"""
+    """四级阈值覆盖（复用 diagnosis_threshold.recommend_for_loop）.
+
+    DIA-01/CFG-02 修复（P3-01 D1，2026-10-11）：``recommend_for_loop`` 的
+    返回结构是 ``{"loopId":…, "recommendations": [{diagCode, effectiveThreshold,
+    scopeChain,…}]}``——**没有顶层 effectiveThreshold 键**。原实现读
+    ``result.get("effectiveThreshold")`` 恒为空 dict，四级覆盖（全局默认→
+    回路类型模板→装置→回路）从未真正进入算子执行，配置页改阈值后诊断行为
+    不变（恒用算子注册表默认）。修复：从 ``recommendations[]`` 按 diagCode
+    提取各诊断项的 ``effectiveThreshold``（已按四级优先级合并的生效值），
+    失败仍回退算子默认（注册表 threshold_schema，经 ``_thresholds_for``
+    合并语义等价于"无覆盖"）。
+    """
     try:
         from app.services.diagnosis_threshold import recommend_for_loop
 
         result = await recommend_for_loop(db, loop_id)
-        effective = result.get("effectiveThreshold")
-        return effective if isinstance(effective, dict) else {}
+        effective: dict[str, dict[str, Any]] = {}
+        for rec in result.get("recommendations") or []:
+            diag_code = rec.get("diagCode")
+            thresholds = rec.get("effectiveThreshold")
+            if diag_code and isinstance(thresholds, dict) and thresholds:
+                effective[str(diag_code)] = thresholds
+        return effective
     except Exception as exc:  # noqa: BLE001
         logger.info("阈值覆盖加载失败（回退算子默认值）: %s", exc)
         return {}
@@ -568,6 +599,83 @@ def _build_chart_snapshots(
 # ---------------------------------------------------------------------------
 
 
+async def _save_diagnosis_raw_snapshot(
+    db: Any,
+    *,
+    run_id: str,
+    loop_id: str,
+    raw_series: RawTimeSeries | None,
+    start: datetime,
+    end: datetime,
+    manifest_extra: dict[str, Any],
+    dataset_ref: str | None,
+) -> str | None:
+    """诊断宽表原始输入落包（D1，08§3.1：一个可复现的诊断输入包）.
+
+    P2-03 已备列（diagnosis_run.dataset_snapshot_id）+ 存取服务
+    （KIND_DIAGNOSIS_RAW），本函数即接线写入方——把实际进入诊断的宽表
+    原始输入（PV/SP/OP/MODE + PV 质量码 + 原始时间戳）序列化为不可变
+    NPZ 包，run.id 作为创建引用。
+
+    失败降级（与 KPI 链 ``_persist_snapshot`` 同口径）：返回 None（列
+    NULL=显式不可完整复现，不伪称），不阻断诊断主链路。
+    """
+    if raw_series is None or len(raw_series.timestamps) == 0:
+        return None
+    try:
+        from app.models.calc_dataset_snapshot import KIND_DIAGNOSIS_RAW
+        from app.services.calc_snapshot import (
+            save_calculation_snapshot,
+            serialize_grid_signals,
+        )
+
+        def _num(values: list[Any] | None) -> list[float | None]:
+            out: list[float | None] = []
+            for v in values or []:
+                if v is None:
+                    out.append(None)
+                    continue
+                try:
+                    out.append(float(v))
+                except (TypeError, ValueError):
+                    out.append(None)
+            return out
+
+        n = len(raw_series.timestamps)
+        signals = {
+            name: _num((raw_series.signals.get(name) or [])[:n])
+            for name in ("pv", "sp", "op", "mode")
+        }
+        quality = {
+            "pv": list((raw_series.quality_codes.get("pv_quality") or [])[:n]),
+        }
+        arrays, grid_desc = serialize_grid_signals(
+            timestamps=list(raw_series.timestamps),
+            signals=signals,
+            quality_codes=quality,
+            prefix="grid",
+        )
+        manifest = {
+            "diagnosis": manifest_extra,
+            "grid": grid_desc,
+        }
+        snap = await save_calculation_snapshot(
+            db,
+            kind=KIND_DIAGNOSIS_RAW,
+            ts_start=start,
+            ts_end=end,
+            dataset_ref=dataset_ref or f"diag-raw:{loop_id}",
+            arrays=arrays,
+            manifest_extra=manifest,
+            created_by_record_id=run_id,
+            loop_id=str(loop_id),
+        )
+        return str(snap.id) if snap is not None else None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("诊断输入包保存失败（dataset_snapshot_id 置空=不可完整复现）: %s", exc)
+        return None
+
+
 def _operator_result_to_dict(r: OperatorResult) -> dict[str, Any]:
     return {
         "operator": r.operator,
@@ -586,7 +694,41 @@ def _operator_result_to_dict(r: OperatorResult) -> dict[str, Any]:
             for e in r.evidence
         ],
         "error": r.error,
+        # D2（08§4.1）：版本化八态 + 细分原因码（旧字段保留兼容）
+        "assessmentState": r.assessment_state,
+        "reasonCode": r.reason_code,
     }
+
+
+def _consecutive_segments(
+    ts_seconds: np.ndarray,
+    sample_interval: float,
+    *,
+    gap_factor: float = 3.0,
+) -> list[tuple[int, int]]:
+    """连续等距段目录（D1，08§3.2/C14-D01：断点不造频谱）。
+
+    按真实时间轴划分：相邻时间差 > gap_factor×采样间隔 视为缺口，
+    段边界另由调用方（MODE/SP 事件）在算子内处理。返回半开区间
+    ``[(start_idx, end_idx), …]``（与 DataBlock.consecutive_segments
+    同构）。B4 删点/质量过滤后的"压缩数组"由此恢复真实连续性——
+    波形算子（FFT/椭圆/IAE/慢响应）只在段内运行，不跨 gap 拼接。
+    """
+    n = len(ts_seconds)
+    if n == 0:
+        return []
+    base = float(sample_interval) if sample_interval and sample_interval > 0 else 1.0
+    threshold = base * gap_factor
+    segments: list[tuple[int, int]] = []
+    seg_start = 0
+    for i in range(1, n):
+        dt = float(ts_seconds[i] - ts_seconds[i - 1])
+        if not math.isfinite(dt) or dt <= 0 or dt > threshold:
+            if i - seg_start >= 1:
+                segments.append((seg_start, i))
+            seg_start = i
+    segments.append((seg_start, n))
+    return [s for s in segments if s[1] - s[0] >= 2]
 
 
 def _scoped_operator_input(op_input: OperatorInput, meta: Any) -> tuple[OperatorInput, str | None]:
@@ -634,18 +776,53 @@ def _scoped_operator_input(op_input: OperatorInput, meta: Any) -> tuple[Operator
     sliced_signals["pv_quality"] = op_input.signals["pv_quality"]  # 全轴
     if "pv_quality_ts" in op_input.signals:
         sliced_signals["pv_quality_ts"] = op_input.signals["pv_quality_ts"]  # 全轴
+    # D1 连续段同步（08§3.2：掩码切片与段目录同一索引集）——切片后时间轴
+    # 重新计算段目录，算子消费 meta["consecutive_segments"] 不跨 gap 拼接
+    sliced_ts = np.asarray(op_input.timestamps, dtype=float)[idx]
+    segments = _consecutive_segments(sliced_ts, op_input.meta.get("sample_interval", 1.0))
     scoped = OperatorInput(
         loop_id=op_input.loop_id,
         signals=sliced_signals,
-        timestamps=np.asarray(op_input.timestamps)[idx],
+        timestamps=sliced_ts,
         meta={
             **{k: v for k, v in op_input.meta.items() if k != "signals_valid"},
             "sample_interval": op_input.meta.get("sample_interval", 1.0),
             "total_points": int(len(idx)),
+            "consecutive_segments": segments,
         },
         kpi_context=op_input.kpi_context,
     )
     return scoped, None
+
+
+def _derive_assessment_state(r: OperatorResult) -> None:
+    """执行后八态兜底派生（算子内已自赋值的不覆盖）。
+
+    - executed=False：error→ERROR；skip_reason 含"不足/缺失"→INSUFFICIENT_DATA
+    - executed=True：detected→POSITIVE；极限环门控证据（features.reason
+      =no_limit_cycle 或 evidence 含 limit_cycle_gate）→NOT_APPLICABLE；
+      其余→NEGATIVE（满足执行要求的未命中）
+    """
+    if r.assessment_state is not None:
+        return
+    if not r.executed:
+        if r.error:
+            r.assessment_state = ASSESSMENT_ERROR
+            r.reason_code = r.reason_code or str(r.error)[:200]
+            return
+        if r.skip_reason and ("不足" in r.skip_reason or "缺失" in r.skip_reason):
+            r.assessment_state = ASSESSMENT_INSUFFICIENT_DATA
+            r.reason_code = r.reason_code or REASON_TOO_FEW_POINTS
+        return
+    if r.detected:
+        r.assessment_state = ASSESSMENT_POSITIVE
+        return
+    reason = str((r.features or {}).get("reason") or "")
+    if reason == "no_limit_cycle" or any(e.feature == "limit_cycle_gate" for e in r.evidence):
+        r.assessment_state = ASSESSMENT_NOT_APPLICABLE
+        r.reason_code = REASON_NO_LIMIT_CYCLE
+        return
+    r.assessment_state = ASSESSMENT_NEGATIVE
 
 
 def _run_operators(
@@ -660,18 +837,38 @@ def _run_operators(
     operators 为单算子细选白名单（None=不细选）：与 fast 组过滤叠加生效。
     disabled_diag_codes 为诊断配置页停用的 diag_code 集合（P0-2：启停
     开关接入 v2 链路，停用算子记 skip 而非静默执行）。
+
+    D2（08§4.1）：每个算子结果带八态 assessmentState——selected 集合内
+    必有状态（POSITIVE/NEGATIVE/NOT_APPLICABLE/INSUFFICIENT_DATA/ERROR），
+    profile 外/显式排除（fast 组外/配置停用/未细选）为 None（不进八类
+    分母，属 explicitlyExcluded 或 profileExpected 之外）。
     """
     selected = set(operators) if operators else None
     results: dict[str, OperatorResult] = {}
     for name, (meta, fn) in OPERATOR_REGISTRY.items():
         if operator_group == "fast" and not meta.fast_group:
-            results[name] = OperatorResult(name, executed=False, skip_reason="fast 组未包含该算子")
+            results[name] = OperatorResult(
+                name,
+                executed=False,
+                skip_reason="fast 组未包含该算子",
+                reason_code=REASON_OUT_OF_PROFILE,
+            )
             continue
         if disabled_diag_codes and meta.diag_code in disabled_diag_codes:
-            results[name] = OperatorResult(name, executed=False, skip_reason="诊断配置已停用该算法")
+            results[name] = OperatorResult(
+                name,
+                executed=False,
+                skip_reason="诊断配置已停用该算法",
+                reason_code=REASON_DISABLED_BY_CONFIG,
+            )
             continue
         if selected is not None and name not in selected:
-            results[name] = OperatorResult(name, executed=False, skip_reason="未在本次细选算子内")
+            results[name] = OperatorResult(
+                name,
+                executed=False,
+                skip_reason="未在本次细选算子内",
+                reason_code=REASON_NOT_SELECTED,
+            )
             continue
         missing = [
             s
@@ -680,7 +877,11 @@ def _run_operators(
         ]
         if missing:
             results[name] = OperatorResult(
-                name, executed=False, skip_reason=f"输入信号缺失: {','.join(missing)}"
+                name,
+                executed=False,
+                skip_reason=f"输入信号缺失: {','.join(missing)}",
+                assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+                reason_code=REASON_MISSING_SIGNALS,
             )
             continue
         try:
@@ -691,14 +892,28 @@ def _run_operators(
             if op_input.meta.get("point_axis"):
                 fn_input, scope_skip = _scoped_operator_input(op_input, meta)
                 if scope_skip is not None:
-                    results[name] = OperatorResult(name, executed=False, skip_reason=scope_skip)
+                    results[name] = OperatorResult(
+                        name,
+                        executed=False,
+                        skip_reason=scope_skip,
+                        assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+                        reason_code=REASON_TOO_FEW_POINTS,
+                    )
                     continue
             results[name] = fn(fn_input, thresholds)
         except Exception as exc:  # noqa: BLE001
             logger.warning("算子 %s 执行异常: %s", name, exc)
-            results[name] = OperatorResult(name, executed=False, error=str(exc))
+            results[name] = OperatorResult(
+                name,
+                executed=False,
+                error=str(exc),
+                assessment_state=ASSESSMENT_ERROR,
+                reason_code=str(exc)[:200],
+            )
 
     # 按症状标签分组融合（每算子恰一个 symptom_tag）
+    for r in results.values():
+        _derive_assessment_state(r)
     groups: dict[str, list[OperatorResult]] = {}
     family_of: dict[str, str] = {}
     for name, (meta, _fn) in OPERATOR_REGISTRY.items():
@@ -708,6 +923,35 @@ def _run_operators(
 
     fusions = {tag: fuse_family(family_of[tag], tag, group) for tag, group in groups.items()}
     return results, fusions
+
+
+def _profile_expected_operators(operator_group: str, operators: list[str] | None) -> list[str]:
+    """本次 profile 期望算子清单（08§4.3：任务开始固定，不因结果缩小）。
+
+    full=注册表全集；fast=fast 组；custom=细选白名单 ∩ 注册表
+    （与 ``_run_operators`` 的过滤顺序一致：fast 过滤在细选之前叠加）。
+    """
+    if operator_group == "fast":
+        return sorted(n for n, (m, _fn) in OPERATOR_REGISTRY.items() if m.fast_group)
+    if operators is not None:
+        return sorted(set(operators) & set(OPERATOR_REGISTRY))
+    return sorted(OPERATOR_REGISTRY)
+
+
+def _explicitly_excluded(
+    results: dict[str, OperatorResult],
+) -> dict[str, str]:
+    """显式排除目录（profileExpected − selected；08§4.3 第一等式）。
+
+    只登记"在 profileExpected 内但被显式排除"的算子：配置停用
+    （DISABLED_BY_CONFIG）/ 未细选（NOT_SELECTED）。fast 组外
+    （OUT_OF_PROFILE）不在 profileExpected 内，不属显式排除。
+    """
+    return {
+        name: r.reason_code
+        for name, r in results.items()
+        if r.reason_code in (REASON_DISABLED_BY_CONFIG, REASON_NOT_SELECTED)
+    }
 
 
 async def run_diagnosis_for_loop(
@@ -904,6 +1148,20 @@ async def run_diagnosis_for_loop(
     else:
         sample_interval = _compute_sample_interval(aligned) if aligned else 1.0
 
+    # D1（DIA-08，08§3.3）：expected τ 消费工程来源（B1 供数
+    # resolve_assessment_supply_facts 的 T′——回路字段>工程模板>回路类型默认）。
+    # 一阶系统 T′（2% 稳态带）≈ 4τ，换算基准随来源记录；供数失败或无来源
+    # （source=UNKNOWN）时 expected_tau=None——慢响应算子只报告测得动态特征，
+    # 不判断"比应有速度慢"（NOT_APPLICABLE，不伪称阴性）。
+    expected_tau_info: dict[str, Any] | None = None
+    try:
+        from app.services.engineering_facts import resolve_assessment_supply_facts
+
+        supply = await resolve_assessment_supply_facts(db, str(loop_id))
+        expected_tau_info = supply.get("idealSettlingTime") or {}
+    except Exception as exc:  # noqa: BLE001
+        logger.info("expected τ 工程供数加载失败（慢响应按无来源处理）: %s", exc)
+
     # ---- 算子执行 + 融合 + 分类 ----
     if gate.passed:
         if is_point:
@@ -983,6 +1241,12 @@ async def run_diagnosis_for_loop(
 
         ts_seconds = _ts_list_to_seconds([d["ts"] for d in aligned])
         ts_seconds = ts_seconds - (np.nanmin(ts_seconds) if len(ts_seconds) else 0.0)
+        # D1 连续段目录（legacy 路径与 point 同轴切片同一 helper）：波形算子
+        # 只在段内运行（C14-D01 断点不造频谱；point 路径在 _scoped_operator_input
+        # 切片后重算）。B4 删点压缩后的时间轴由此恢复真实连续性。
+        legacy_segments = _consecutive_segments(ts_seconds, sample_interval)
+        _pv_range = _resolve_pv_range(mappings, tags_map)
+        _op_range = _resolve_op_range(mappings, tags_map)
         op_input = OperatorInput(
             loop_id=str(loop_id),
             signals=signals,
@@ -991,7 +1255,14 @@ async def run_diagnosis_for_loop(
                 "sample_interval": sample_interval,
                 "total_points": len(aligned),
                 "loop_type": loop.loop_type,
-                "pv_range": _resolve_pv_range(mappings, tags_map),
+                "pv_range": _pv_range,
+                # D1（DIA-05，08§3.3）：OP 真实量程进 meta——椭圆法归一化
+                # 消费 PV/OP 各自量程（双轴默认 100 仅在量程缺失时兜底，
+                # 来源随 assess_stiction_features 的 range_source 记录）
+                "op_range": _op_range,
+                "consecutive_segments": legacy_segments,
+                # D1（DIA-08）：expected τ 工程来源（B1 供数；None=无来源）
+                "expected_tau_info": expected_tau_info,
                 # AD04：point 同轴模式——_run_operators 按各算子 required_signals
                 # 公共有效掩码切片（信号/时间同轴）；legacy 无此标记（原行为）
                 **(
@@ -1013,7 +1284,22 @@ async def run_diagnosis_for_loop(
         await _report(0.9, "融合与分类")
         classification: ClassificationResult = classify(fusions, op_results, kpi_ctx, gate)
     else:
+        # D2（08§4.2 行 5）：L0 门禁/缺数据——selected 集合展开为
+        # INSUFFICIENT_DATA(GATE_BLOCKED) 条目（"所选检查保存门禁阻断原因"），
+        # 科学结论 INCONCLUSIVE + primary=DATA_INSUFFICIENT（分类层既有
+        # 裁决保留：L0 手动放行产出正式 DATA_INSUFFICIENT）
         op_results = {}
+        for name in _profile_expected_operators(operator_group, operators):
+            meta = OPERATOR_REGISTRY[name][0]
+            if disabled_diag_codes and meta.diag_code in disabled_diag_codes:
+                continue
+            op_results[name] = OperatorResult(
+                name,
+                executed=False,
+                skip_reason=f"数据门禁未通过: {gate.reason}",
+                assessment_state=ASSESSMENT_INSUFFICIENT_DATA,
+                reason_code=REASON_GATE_BLOCKED,
+            )
         fusions = {}
         classification = classify({}, {}, kpi_ctx, gate)
 
@@ -1029,11 +1315,60 @@ async def run_diagnosis_for_loop(
     metric_summary = _build_metric_summary(
         kpi_avgs, {name: _operator_result_to_dict(r) for name, r in op_results.items()}
     )
-    has_error = any(r.error for r in op_results.values())
     finished_at = datetime.utcnow()
 
+    # D2：覆盖分母与科学结论（08§4.2/§4.3）——任务开始固定的 profile 期望
+    # 集合 + 显式排除目录；selected 集合空（零检查）→ NOT_ASSESSED
+    profile_expected = _profile_expected_operators(operator_group, operators)
+    explicitly_excluded = _explicitly_excluded(op_results)
+    selected_states = [
+        r.assessment_state for r in op_results.values() if r.assessment_state is not None
+    ]
+    selected_is_empty = not selected_states
+    primary_category_raw = classification.primary.category if classification.primary else None
+    assessment_meta = build_assessment_meta(
+        op_results=op_results,
+        explicitly_excluded=explicitly_excluded,
+        profile_expected_operators=profile_expected,
+        primary_category=primary_category_raw,
+        gate_passed=bool(gate.passed),
+        gate_reason=gate.reason,
+        selected_is_empty=selected_is_empty,
+    )
+    run_status = derive_run_status(
+        op_results=op_results, gate_passed=bool(gate.passed), selected_is_empty=selected_is_empty
+    )
+
+    run_id = str(uuid4())
+    # D1：诊断宽表原始输入落包（KIND_DIAGNOSIS_RAW——P2-03 已备列/服务，
+    # 此处为唯一写入方；失败显式降级 NULL=不可完整复现，不阻断主链）
+    dataset_snapshot_id = await _save_diagnosis_raw_snapshot(
+        db,
+        run_id=run_id,
+        loop_id=str(loop_id),
+        raw_series=raw_series,
+        start=start,
+        end=end,
+        dataset_ref=(point_ctx.dataset_ref if is_point and point_ctx is not None else None),
+        manifest_extra={
+            "operatorGroup": ("custom" if operators else operator_group),
+            "selectedOperators": operators,
+            "algorithmVersion": MVP_DIAG_VERSION,
+            "thresholdVersion": (
+                "default" if not effective_thresholds else f"override:{len(effective_thresholds)}"
+            ),
+            "effectiveThresholds": effective_thresholds,
+            "loopType": loop.loop_type,
+            "pvRange": list(_resolve_pv_range(mappings, tags_map)),
+            "opRange": list(_resolve_op_range(mappings, tags_map)),
+            "sampleInterval": float(sample_interval),
+            "gate": gate.to_dict(),
+            "expectedTau": expected_tau_info,
+        },
+    )
+
     run = DiagnosisRun(
-        id=str(uuid4()),
+        id=run_id,
         task_id=task_id,
         loop_id=str(loop_id),
         triggered_by=triggered_by,
@@ -1041,8 +1376,12 @@ async def run_diagnosis_for_loop(
         time_window_start=start,
         time_window_end=end,
         operator_group="custom" if operators else operator_group,
-        status="PARTIAL" if has_error else "SUCCESS",
+        # D2（08§4.2 组合决定表）：执行状态与科学结论分层——status 由
+        # derive_run_status 按八态组合决定（原"有 error 即 PARTIAL"保留于
+        # PARTIAL 分支；新增全 ERROR→FAILED / selected 空→FAILED）
+        status=run_status,
         data_gate=gate.to_dict(),
+        dataset_snapshot_id=dataset_snapshot_id,
         operator_results={name: _operator_result_to_dict(r) for name, r in op_results.items()},
         fusion_results={tag: f.to_dict() for tag, f in fusions.items()},
         symptom_tags={
@@ -1052,6 +1391,8 @@ async def run_diagnosis_for_loop(
         # D3（2026-09-25）：NO_SYMPTOM 是内部哨兵（"数据充足但全部症状未命中"）。
         # ck_diagnosis_run_category 仅允许 8 类取值（或 NULL），故落库映射为 NULL，
         # 避免把"未发现异常"谎报成 DATA_INSUFFICIENT（数据不足）。
+        # D2（08§4.2）：NULL 不再被当成"正常"的充分条件——科学结论以
+        # assessment_meta.judgementStatus 为准（VALID_NEGATIVE 才是范围内阴性）。
         primary_category=(
             classification.primary.category
             if classification.primary and classification.primary.category != NO_SYMPTOM
@@ -1069,6 +1410,7 @@ async def run_diagnosis_for_loop(
         recommendations=[r.to_dict() for r in classification.recommendations],
         evidence_charts=charts,
         metric_summary=metric_summary,
+        assessment_meta=assessment_meta,
         threshold_version=(
             "default" if not effective_thresholds else f"override:{len(effective_thresholds)}"
         ),
