@@ -988,14 +988,23 @@ def _history_unit_basis(
     → 0~100），K 量纲恒为 %PV/%OP；工程域换算只在 PV/OP tag 量程均已
     核实（TAG_RANGE）时给出，默认 0~100 假设不冒充工程换算（诚实未知）。
     """
-    from app.services import tuning_units as tu
-
-    pv_span, op_span = tu.spans_from_engineering_facts(facts)
     params = None
     k_value = None
     if getattr(result, "success", False) and result.best_model is not None:
         params = result.best_model.params.to_dict()
         k_value = params.get("K")
+    return _normalized_k_basis(facts, k_value)
+
+
+def _normalized_k_basis(facts: dict[str, Any] | None, k_value: Any) -> dict[str, Any]:
+    """历史链 K（归一化域）单位域声明与工程域换算（``_history_unit_basis`` 的 K 级核心）.
+
+    P3-B2 W5 抽出：保存链冻结 unitBasis 与辨识链共用同一换算口径
+    （tuning_units 唯一仿射入口，不分叉第二套实现）。
+    """
+    from app.services import tuning_units as tu
+
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
     block = tu.unit_basis_block(
         tu.BASIS_NORMALIZED,
         pv_span=pv_span,
@@ -1903,6 +1912,162 @@ def _simulate_multi_pid(
 # 整定任务管理
 # ---------------------------------------------------------------------------
 
+#: W5：currentPid 三元组读取涉及的 PID tag 角色
+_PID_RUNTIME_ROLES = ("PID_P", "PID_I", "PID_D")
+
+#: W5：标准 PID 转换依据的引擎版本标识（B1 pid_conversion 工程事实驱动入口）
+_PID_CONVERSION_ENGINE = "PID_CONVERSION_FACTS_V1"
+
+
+def _frozen_unit_basis(
+    facts: dict[str, Any] | None,
+    k_value: Any,
+    identify_method: str | None,
+) -> dict[str, Any]:
+    """W5：保存链冻结模型 K 单位域（tuning_units 换算层接入）.
+
+    按来源辨识记录的链路声明单位域并给出跨域换算（kConverted）或诚实未知：
+    - HISTORICAL_* → 归一化域（与历史辨识链 ``_normalized_k_basis`` 同源）；
+    - STEP_* → 存储原值域（与阶跃辨识链 ``_step_unit_basis`` 同源）；
+    - 无来源方法（MANUAL 人工模型）→ 单位域未声明，诚实 UNKNOWN
+      （工程师自证，平台不冒充辨识链 provenance）。
+    """
+    from app.services import tuning_units as tu
+
+    method = str(identify_method or "")
+    if method.startswith("STEP_"):
+        return _step_unit_basis(facts, k_value)
+    if method.startswith("HISTORICAL_"):
+        return _normalized_k_basis(facts, k_value)
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
+    return tu.unit_basis_block(
+        "UNKNOWN",
+        pv_span=pv_span,
+        op_span=op_span,
+        note="人工模型：单位域未声明（无辨识链 provenance，K 量纲由工程师自证）",
+        k_source=k_value,
+    )
+
+
+async def _current_pid_snapshot(
+    db: AsyncSession,
+    loop: LoopLedger,
+    facts: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """W5：保存链 currentPid 三元组快照（标准形式 / 原始表示 / 转换依据）.
+
+    服务端读取回路 PID_P/PID_I/PID_D 实时值（Redis 优先、tag.current_value
+    兜底——与回路详情 runtimeParams 同口径），经工程事实 ``pidRepresentation``
+    驱动的 ``pid_conversion.standard_pid_from_facts``（B1 入口，单源复用）
+    转换为标准形式（Kp 无量纲 / Ti、Td 秒）。
+
+    诚实化原则：未知 DCS 表示不默认标准 kp/ti/td（显式 REPRESENTATION_UNKNOWN）；
+    转换数值异常（如 PB=0 除零）显式 CONVERSION_ERROR；实时值缺失显式
+    UNAVAILABLE——一律不伪造标准形式。
+
+    Returns:
+        {"status": KNOWN|REPRESENTATION_UNKNOWN|CONVERSION_ERROR|UNAVAILABLE,
+         "standard": {kp,ti,td}|None, "raw": {p,i,d}|None,
+         "representation": {...}, "conversion": {...}|None,
+         "readAt": str|None, "reason": str|None}
+    """
+    from app.models.loop import LoopTagMapping
+    from app.models.tag import TagRegistry
+    from app.services.pid_conversion import (
+        DcsPid,
+        PidRepresentationUnknownError,
+        standard_pid_from_facts,
+    )
+
+    pid_repr = (facts or {}).get("pidRepresentation") or {}
+
+    result = await db.execute(
+        select(LoopTagMapping, TagRegistry)
+        .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+        .where(
+            LoopTagMapping.loop_id == str(loop.id),
+            LoopTagMapping.tag_role.in_(_PID_RUNTIME_ROLES),
+        )
+    )
+    role_tag: dict[str, TagRegistry] = {m.tag_role: t for m, t in result.all()}
+
+    # Redis 实时缓存（失败/无缓存回退 tag.current_value，与回路详情同口径）
+    cached: dict[str, dict] = {}
+    tag_names = [t.tag_name for t in role_tag.values() if t.tag_name]
+    if tag_names:
+        try:
+            from app.services.data_source.realtime_subscriber import get_subscriber
+
+            for item in await get_subscriber().get_cached_values(tag_names):
+                tc = item.get("tagCode")
+                if tc:
+                    cached[tc] = item
+        except Exception:  # noqa: BLE001
+            logger.warning("保存链读取 PID 实时缓存失败（回退 tag.current_value）")
+
+    def _role_value(role: str) -> tuple[float | None, Any]:
+        tag = role_tag.get(role)
+        if tag is None:
+            return None, None
+        item = cached.get(tag.tag_name) if tag.tag_name else None
+        read_at = item.get("collectTime") if item else None
+        if item is not None:
+            try:
+                return float(item.get("value")), read_at
+            except (TypeError, ValueError):
+                pass
+        value = getattr(tag, "current_value", None)
+        try:
+            return (float(value) if value is not None else None), read_at
+        except (TypeError, ValueError):
+            return None, read_at
+
+    p_val, read_p = _role_value("PID_P")
+    i_val, read_i = _role_value("PID_I")
+    d_val, _ = _role_value("PID_D")
+    read_at = max((x for x in (read_p, read_i) if x is not None), default=None)
+
+    snapshot: dict[str, Any] = {
+        "status": "UNAVAILABLE",
+        "standard": None,
+        "raw": None,
+        "representation": pid_repr or None,
+        "conversion": None,
+        "readAt": str(read_at) if read_at is not None else None,
+        "reason": None,
+    }
+    if p_val is None or i_val is None:
+        snapshot["reason"] = (
+            "回路未绑定 PID_P/PID_I 位号或无实时值，无法形成当前 PID 快照（不伪造）"
+        )
+        return snapshot
+
+    snapshot["raw"] = {"p": p_val, "i": i_val, "d": d_val}
+    try:
+        standard = standard_pid_from_facts(
+            DcsPid(p=p_val, i=i_val, d=d_val if d_val is not None else 0.0), pid_repr
+        )
+    except PidRepresentationUnknownError as exc:
+        snapshot["status"] = "REPRESENTATION_UNKNOWN"
+        snapshot["reason"] = str(exc)
+        return snapshot
+    except ValueError as exc:
+        snapshot["status"] = "CONVERSION_ERROR"
+        snapshot["reason"] = f"DCS 私有表示转标准 PID 数值异常：{exc}"
+        return snapshot
+    snapshot["status"] = "KNOWN"
+    snapshot["standard"] = standard.to_dict()
+    snapshot["conversion"] = {
+        "engine": _PID_CONVERSION_ENGINE,
+        "modelId": pid_repr.get("modelId"),
+        "modelCode": pid_repr.get("modelCode"),
+        "pType": pid_repr.get("pType"),
+        "iUnit": pid_repr.get("iUnit"),
+        "dUnit": pid_repr.get("dUnit"),
+        "dcsTemplateRevision": pid_repr.get("dcsTemplateRevision"),
+    }
+    return snapshot
+
 
 async def create_tuning_task(
     db: AsyncSession,
@@ -1911,27 +2076,137 @@ async def create_tuning_task(
     model_params: dict[str, Any],
     algorithm: str,
     recommended_pid: dict[str, Any],
-    current_pid: dict[str, Any] | None = None,
-    fitting_score: float | None = None,
+    *,
+    model_source: str | None,
+    source_record_id: str | None = None,
+    risk_confirmed: bool = False,
     simulation_result: dict[str, Any] | None = None,
     status: str = "SIMULATED",
     created_by: str | None = None,
-    # Phase 2.2 新增字段
-    identify_method: str | None = None,
-    data_source: str | None = None,
-    confidence_level: str | None = None,
-    confidence_reason: str | None = None,
-    excitation_score: float | None = None,
-    residual_test_passed: bool | None = None,
-    pid_candidates: dict[str, Any] | None = None,
-    candidate_results: dict[str, Any] | None = None,
-    # V62-P3-007 人工实施清单（2026-10-04 P0 修复：此前 current_pid 收参后丢弃）
-    rollback_pid: dict[str, Any] | None = None,
     risk_assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """创建整定任务记录。"""
-    # 校验回路
+    """保存最终选定整定方案（P3-B2 W4：服务端校验冻结，G2-INC-c 闭合）.
+
+    与推荐链（/tune /simulate /compare）和异步任务链
+    （``_do_tune_and_simulate``）共用同一授权门禁
+    ``authorize_tuning_model``——同回路（跨回路引用拒绝）、来源可访问性
+    （伪造/过期来源拒绝）、模型绑定一致（请求参数须与服务端持久化辨识
+    记录逐项一致）。冻结语义（保存→落库→回读不漂移，与 G2-INC-a 同源）：
+
+    - 模型类型/参数：授权后一律取服务端持久化值（process_model_version 优先），
+      并随 ``process_model_version_id`` 绑定模型版本身份；
+    - 来源元数据（identify_method/data_source/confidence*/fitting_score 等）：
+      从来源辨识记录服务端派生；MANUAL 人工模型全部置空（诚实标记人工，
+      不冒充算法输出）；
+    - 辨识时间窗 / 输入包引用 / DCS 模板：随来源记录冻结入列与 calc_context；
+    - currentPid（W5）：服务端读取回路实时 PID 原始值并经工程事实转换为
+      标准形式（Kp/Ti/Td 秒），三元组（标准/原始/转换依据）冻结入
+      calc_context；未知 DCS 表示不默认标准 kp/ti/td。
+
+    旧协议（``model_source`` 缺省的裸模型保存）显式拒绝，与推荐链
+    "旧版裸模型请求已停止放行"同口径。
+    """
+    if model_source is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message="最终方案保存必须声明模型来源（modelSource）；旧版裸模型保存已停止放行",
+            status_code=400,
+        )
+
     loop = await _get_loop(db, loop_id)
+
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=model_type,
+        requested_model_params=dict(model_params),
+        loop_id=str(loop.id),
+        source_record_id=source_record_id,
+        model_source=model_source,
+        risk_confirmed=risk_confirmed,
+    )
+    # 授权后模型以服务端持久化值为准（客户端请求参数已通过逐项一致性校验）
+    model_type = source_context.model_type
+    model_params = dict(source_context.model_params)
+
+    # SIMULATED 状态必须有仿真证据（服务端 /compare 输出形态），拒绝"声称已仿真"
+    if str(status) == "SIMULATED":
+        candidate_responses = (
+            simulation_result.get("candidateResponses")
+            if isinstance(simulation_result, dict)
+            else None
+        )
+        if not (isinstance(candidate_responses, list) and candidate_responses):
+            raise BizError(
+                code="ERR_TUNING_SIMULATION_EVIDENCE_REQUIRED",
+                message=(
+                    "SIMULATED 状态的最终方案必须携带含 candidateResponses 的仿真证据"
+                    "（服务端 /tuning/compare 输出）"
+                ),
+                status_code=400,
+            )
+
+    # 来源辨识记录（authorize 已验证存在；session 身份映射内复用）
+    source_record = None
+    if source_record_id is not None:
+        source_record = await db.get(TuningRecord, source_record_id)
+
+    if source_record is not None:
+        identify_method = source_record.identify_method
+        data_source = source_record.data_source
+        confidence_level = source_record.confidence_level
+        confidence_reason = source_record.confidence_reason
+        excitation_score = source_record.excitation_score
+        residual_test_passed = source_record.residual_test_passed
+        fitting_score = source_record.fitting_score
+        model_version_id = (
+            str(source_record.process_model_version_id)
+            if source_record.process_model_version_id
+            else None
+        )
+        source_snapshot_id = (
+            str(source_record.dataset_snapshot_id) if source_record.dataset_snapshot_id else None
+        )
+        source_window = {
+            "tsStart": source_record.time_window_start.isoformat()
+            if source_record.time_window_start
+            else None,
+            "tsEnd": source_record.time_window_end.isoformat()
+            if source_record.time_window_end
+            else None,
+        }
+        time_window_start = source_record.time_window_start
+        time_window_end = source_record.time_window_end
+    else:
+        # MANUAL 人工模型：来源元数据全部置空（诚实标记，不冒充算法输出）
+        identify_method = None
+        data_source = None
+        confidence_level = None
+        confidence_reason = None
+        excitation_score = None
+        residual_test_passed = None
+        fitting_score = None
+        model_version_id = None
+        source_snapshot_id = None
+        source_window = None
+        time_window_start = None
+        time_window_end = None
+
+    # 工程事实（单位域/DCS 模板/currentPid 转换依据共用一次解析；失败按未知）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        facts = await resolve_loop_engineering_facts(db, str(loop.id))
+    except Exception:  # noqa: BLE001
+        logger.warning("保存链工程事实解析失败（unitBasis/currentPid 按显式未知，不伪补）")
+        facts = None
+
+    pid_repr = (facts or {}).get("pidRepresentation") or {}
+    dcs_revision = pid_repr.get("dcsTemplateRevision") or _dcs_template_revision(loop)
+
+    # W5：currentPid 三元组 + K 单位域冻结
+    pid_snapshot = await _current_pid_snapshot(db, loop, facts)
+    standard_current_pid = pid_snapshot.get("standard")
+    unit_basis = _frozen_unit_basis(facts, model_params.get("K"), identify_method)
 
     record = TuningRecord(
         id=str(uuid4()),
@@ -1944,21 +2219,39 @@ async def create_tuning_task(
         fitting_score=fitting_score,
         status=status,
         created_by=created_by,
-        # Phase 2.2 元数据
         identify_method=identify_method,
         data_source=data_source,
         confidence_level=confidence_level,
         confidence_reason=confidence_reason,
         excitation_score=excitation_score,
         residual_test_passed=residual_test_passed,
-        pid_candidates=pid_candidates,
-        candidate_results=candidate_results,
-        # V62-P3-007：人工实施清单落库（回退方案缺省=实施前参数）
-        current_pid=dict(current_pid) if current_pid else None,
-        rollback_pid=(
-            dict(rollback_pid) if rollback_pid else dict(current_pid) if current_pid else None
-        ),
+        # 人工实施清单：当前/回退 PID = 服务端标准形式快照（未知/缺失时 None，
+        # 不伪造 naive kp/ti/td）
+        current_pid=dict(standard_current_pid) if standard_current_pid else None,
+        rollback_pid=dict(standard_current_pid) if standard_current_pid else None,
         risk_assessment=risk_assessment,
+        # W4 冻结身份（与异步 TUNING_PROPOSAL 链同字段口径）
+        source_record_id=source_record_id,
+        process_model_version_id=model_version_id,
+        dcs_template_revision=str(dcs_revision),
+        time_window_start=time_window_start,
+        time_window_end=time_window_end,
+        calc_context={
+            "schemaVersion": "1",
+            "kind": "TUNING_PROPOSAL",
+            "savedVia": "WORKBENCH_FINAL_SELECTION",
+            "loopId": str(loop.id),
+            "sourceRecordId": source_record_id,
+            "modelSource": source_context.model_source,
+            "modelVersionId": model_version_id,
+            "frozenModel": {"modelType": model_type, "modelParams": dict(model_params)},
+            "sourceWindow": source_window,
+            "datasetSnapshotId": source_snapshot_id,
+            "dcsTemplateRevision": str(dcs_revision),
+            "unitBasis": unit_basis,
+            "currentPid": pid_snapshot,
+            "riskConfirmed": bool(risk_confirmed),
+        },
     )
     db.add(record)
     await db.commit()
@@ -2202,6 +2495,8 @@ def _record_to_dict(
     effective_params = (
         model_params_override if model_params_override is not None else record.model_params
     )
+    # P3-B2 W4/W5：冻结上下文（旧记录无 calc_context → None，诚实不伪补）
+    calc_ctx = record.calc_context if isinstance(record.calc_context, dict) else {}
     data: dict[str, Any] = {
         "id": str(record.id),
         "loopId": str(record.loop_id),
@@ -2236,6 +2531,12 @@ def _record_to_dict(
         if record.time_window_start
         else None,
         "timeWindowEnd": record.time_window_end.isoformat() if record.time_window_end else None,
+        # P3-B2 W4/W5：来源身份与冻结上下文（加性键；旧记录为 None）
+        "sourceRecordId": str(record.source_record_id) if record.source_record_id else None,
+        "dcsTemplateRevision": record.dcs_template_revision,
+        "modelSource": calc_ctx.get("modelSource"),
+        "unitBasis": calc_ctx.get("unitBasis"),
+        "currentPidContext": calc_ctx.get("currentPid"),
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result
