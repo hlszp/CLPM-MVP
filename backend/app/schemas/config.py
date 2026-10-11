@@ -583,10 +583,178 @@ class AlgorithmParamsSaveRequest(CamelModel):
     Attributes:
         items: 4 控制类型的参数覆盖项（可只传部分控制类型）
         resetControlTypes: 需重置为算法默认的控制类型（整改 F6 重置默认；与 items 合并生效）
+        expectedRevision: 期望的统一配置 revision（P2-02 乐观锁，可选——
+            提供且与持久 revision 不一致时 409；旧前端不传保持原行为）
+        reason: 变更原因（P2-02 发布审计；未填时记默认文案）
     """
 
     items: list[AlgorithmParamsSaveItem] = Field(default_factory=list)
     resetControlTypes: list[ControlType] = Field(default_factory=list)
+    expectedRevision: int | None = Field(default=None, ge=0)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+# ---------------------------------------------------------------------------
+# P2-02 分层配置发布（统一作用域 DEFAULT < TEMPLATE < NODE < LOOP < TASK）
+# ---------------------------------------------------------------------------
+
+#: EffectiveParameter.source 取值（方案 01 §3.2）
+ConfigSource = Literal["DEFAULT", "TEMPLATE", "NODE", "LOOP", "TASK"]
+
+#: 覆盖层（TASK 层不落库；DEFAULT 层复用 algorithm_parameter / metric_config.threshold）
+OverrideLayer = Literal["TEMPLATE", "NODE", "LOOP"]
+
+
+class EffectiveParameterItem(CamelModel):
+    """有效参数单项（key/value/unit/source/sourceId/sourceRevision）."""
+
+    key: str
+    value: bool | int | float | str | None = None
+    unit: str = ""
+    source: ConfigSource
+    sourceId: str | None = None
+    sourceRevision: str = ""
+
+
+class ShadowedParameterItem(CamelModel):
+    """被遮盖参数单项（重置/覆盖解释：低层值 + 遮盖它的高层来源）."""
+
+    key: str
+    value: bool | int | float | str | None = None
+    source: ConfigSource
+    sourceId: str | None = None
+    shadowedBy: ConfigSource
+    shadowedBySourceId: str | None = None
+    shadowedByValue: bool | int | float | str | None = None
+
+
+class EffectiveParamsResponse(CamelModel):
+    """统一作用域链有效参数解析结果（有效值/来源/遮盖关系可查询）."""
+
+    metricCode: str
+    controlType: str
+    revision: int
+    params: dict[str, Any] = Field(default_factory=dict)
+    effective: list[EffectiveParameterItem] = Field(default_factory=list)
+    shadowed: list[ShadowedParameterItem] = Field(default_factory=list)
+
+
+class OverrideItem(CamelModel):
+    """分层覆盖行（config_override）."""
+
+    id: str
+    layer: OverrideLayer
+    scopeId: str
+    metricCode: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    isEnabled: bool = True
+    publishedRevision: int = 0
+    updatedBy: str | None = None
+    updatedAt: str | None = None
+    version: int = 1
+
+
+class OverridePublishRequest(CamelModel):
+    """发布一层覆盖（ADMIN，DEC-03；整组替换语义 + expectedRevision 乐观锁）.
+
+    Attributes:
+        layer: 覆盖层（TEMPLATE / NODE / LOOP）
+        scopeId: 作用域目标键（TEMPLATE=模板键 / NODE=plant_node.id / LOOP=loop_id）
+        metricCode: 指标代码（须在注册表内）
+        params: 该层覆盖的参数键值对（整组替换该层该作用域该指标的覆盖）
+        expectedRevision: 期望的当前统一配置 revision（冲突 409）
+        reason: 发布原因（必填，入审计）
+        controlType: 校验上下文控制类型（可选；缺省对全部 4 类校验组合约束）
+    """
+
+    layer: OverrideLayer
+    scopeId: str = Field(min_length=1, max_length=64)
+    metricCode: str = Field(min_length=1, max_length=50)
+    params: dict[str, Any] = Field(default_factory=dict)
+    expectedRevision: int = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=500)
+    controlType: ControlType | None = None
+
+
+class ResetExplanationItem(CamelModel):
+    """重置解释单项：被重置层的某键仍被更高层覆盖的来源说明."""
+
+    key: str
+    value: bool | int | float | str | None = None
+    source: ConfigSource
+    sourceId: str | None = None
+    sourceRevision: str = ""
+
+
+class OverrideResetRequest(CamelModel):
+    """重置一层覆盖（ADMIN；重置低层后高层仍生效，响应附可解释说明）.
+
+    Attributes:
+        expectedRevision: 期望的当前统一配置 revision（冲突 409）
+        reason: 重置原因（必填，入审计）
+        templateKey / nodeId / loopId: 更高层作用域（用于组装"重置后哪些键仍被
+            更高层覆盖"的解释；不传则该层解释缺省）
+    """
+
+    expectedRevision: int = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=500)
+    templateKey: str | None = Field(default=None, max_length=64)
+    nodeId: str | None = Field(default=None, max_length=64)
+    loopId: str | None = Field(default=None, max_length=64)
+
+
+class PublishResultResponse(CamelModel):
+    """发布/重置结果（新 revision + before/after + 影响范围）."""
+
+    revision: int
+    rollbackRevision: int | None = None
+    affectedLoops: int | None = None
+    note: str | None = None
+    before: dict[str, Any] | None = None
+    after: dict[str, Any] | None = None
+    layer: str | None = None
+    scopeId: str | None = None
+    metricCode: str | None = None
+    resetExplanation: list[ResetExplanationItem] = Field(default_factory=list)
+
+
+class PublicationItem(CamelModel):
+    """发布账本行（config_publication）."""
+
+    revision: int
+    operation: Literal["PUBLISH", "RESET", "ROLLBACK", "LEGACY_SYNC"]
+    layer: str | None = None
+    scope: dict[str, Any] = Field(default_factory=dict)
+    reason: str
+    operator: str
+    beforeValue: str | None = None
+    afterValue: str | None = None
+    affectedLoops: int | None = None
+    rollbackRevision: int | None = None
+    createdAt: str | None = None
+
+
+class RevisionInfoResponse(CamelModel):
+    """当前统一配置 revision + 最近一次发布摘要."""
+
+    revision: int
+    lastPublication: PublicationItem | None = None
+
+
+class RollbackRequest(CamelModel):
+    """回退指定发布（ADMIN；生成新 revision，不删历史）."""
+
+    expectedRevision: int = Field(ge=0)
+    reason: str = Field(min_length=1, max_length=500)
+
+
+class RollbackResultResponse(CamelModel):
+    """回退结果."""
+
+    revision: int
+    rollbackRevision: int | None = None
+    rolledBackRevision: int
+    description: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -845,6 +1013,7 @@ __all__ = [
     "AlgorithmParamsSaveItem",
     "AlgorithmParamsSaveRequest",
     "AlgorithmParamsSchema",
+    "ConfigSource",
     "ConfidenceThresholdItem",
     "ConfidenceThresholdSaveRequest",
     "ConfidenceThresholdSchema",
@@ -857,6 +1026,8 @@ __all__ = [
     "DiagnosisLabel",
     "DiagnosisTriggerSaveRequest",
     "DiagnosisTriggerSchema",
+    "EffectiveParameterItem",
+    "EffectiveParamsResponse",
     "FitnessThresholdItem",
     "FitnessThresholdSaveItem",
     "FitnessThresholdSaveRequest",
@@ -882,6 +1053,17 @@ __all__ = [
     "OutlierParamsSchema",
     "OutlierThresholdParams",
     "OutlierThresholdViewItem",
+    "OverrideItem",
+    "OverrideLayer",
+    "OverridePublishRequest",
+    "OverrideResetRequest",
+    "PublicationItem",
+    "PublishResultResponse",
+    "ResetExplanationItem",
+    "RevisionInfoResponse",
+    "RollbackRequest",
+    "RollbackResultResponse",
+    "ShadowedParameterItem",
     "VersionHistoryItem",
     "VersionHistorySchema",
     "WeightTemplateItem",
