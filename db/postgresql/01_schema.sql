@@ -127,6 +127,9 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     ideal_settling_time FLOAT,
     complex_loop_group_id UUID,
     complex_role    VARCHAR(10),
+    control_action_direction VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN',
+    engineering_template_id UUID,
+    engineering_template_version INTEGER,
     CONSTRAINT uk_loop_ledger_tag_name UNIQUE (tag_name),
     CONSTRAINT fk_loop_ledger_unit_id  FOREIGN KEY (unit_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
     CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE')),
@@ -136,6 +139,9 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     CONSTRAINT ck_loop_ledger_complex_group_coherence CHECK (
         (complex_loop_group_id IS NULL AND complex_role IS NULL)
         OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL)
+    ),
+    CONSTRAINT ck_loop_ledger_control_action_direction CHECK (
+        control_action_direction IN ('DIRECT', 'REVERSE', 'UNKNOWN')
     )
 );
 
@@ -1309,11 +1315,15 @@ CREATE TABLE IF NOT EXISTS dcs_pid_structure (
     d_filter_enabled        BOOLEAN         NOT NULL DEFAULT FALSE,
     d_filter_unit           VARCHAR(10),
     d_filter_multiplier     BOOLEAN         NOT NULL DEFAULT FALSE,
+    representation_status   VARCHAR(16)     NOT NULL DEFAULT 'KNOWN',
     description             VARCHAR(500),
     created_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_dcs_pid_structure_model FOREIGN KEY (dcs_model_id) REFERENCES dcs_model(id) ON DELETE CASCADE,
-    CONSTRAINT ck_dcs_pid_structure_filter_unit CHECK (d_filter_enabled = FALSE OR d_filter_unit IS NOT NULL)
+    CONSTRAINT ck_dcs_pid_structure_filter_unit CHECK (d_filter_enabled = FALSE OR d_filter_unit IS NOT NULL),
+    CONSTRAINT ck_dcs_pid_structure_representation_status CHECK (
+        representation_status IN ('KNOWN', 'UNKNOWN')
+    )
 );
 
 -- =============================================================================
@@ -1483,6 +1493,8 @@ CREATE INDEX IF NOT EXISTS idx_loop_ledger_status  ON loop_ledger (status);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_tag_name ON loop_ledger (tag_name);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_importance_level ON loop_ledger (importance_level);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_dcs_model ON loop_ledger (dcs_model_id);
+CREATE INDEX IF NOT EXISTS idx_loop_ledger_engineering_template
+    ON loop_ledger (engineering_template_id);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_complex_group ON loop_ledger (complex_loop_group_id);
 
 -- tag_registry 索引
@@ -2427,7 +2439,9 @@ CREATE TABLE IF NOT EXISTS config_publication (
     affected_loops      INTEGER,
     rollback_revision   INTEGER,
     created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
-    CONSTRAINT ck_config_publication_operation CHECK (operation IN ('PUBLISH', 'RESET', 'ROLLBACK', 'LEGACY_SYNC')),
+    CONSTRAINT ck_config_publication_operation CHECK (
+        operation IN ('PUBLISH', 'RESET', 'ROLLBACK', 'LEGACY_SYNC', 'TEMPLATE_VERSION')
+    ),
     CONSTRAINT uq_config_publication_revision UNIQUE (revision)
 );
 
@@ -2438,7 +2452,7 @@ COMMENT ON COLUMN config_override.scope_id IS '作用域目标键：TEMPLATE=模
 COMMENT ON COLUMN config_override.published_revision IS '最近发布本行的全局 config revision（sourceRevision）';
 COMMENT ON TABLE  config_publication IS '统一配置发布快照（追加式账本，全局单调 revision，P2-02）';
 COMMENT ON COLUMN config_publication.revision IS '持久版本号（Redis 仅加速通知）；唯一约束实现并发 409';
-COMMENT ON COLUMN config_publication.operation IS 'PUBLISH/RESET/ROLLBACK/LEGACY_SYNC';
+COMMENT ON COLUMN config_publication.operation IS 'PUBLISH/RESET/ROLLBACK/LEGACY_SYNC/TEMPLATE_VERSION（模板版本发布，P2-04）';
 COMMENT ON COLUMN config_publication.rollback_revision IS '回退目标版本（= 发布前 revision）';
 
 -- =============================================================================
@@ -2528,6 +2542,70 @@ BEGIN
             ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
             ADD CONSTRAINT fk_diagnosis_run_dataset_snapshot
             FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
+
+-- =============================================================================
+-- 8.12 engineering_template / engineering_template_version（工程模板，P2-04，
+--   迁移 p204engtpl01）
+--   模板按响应/控制特征组织；template_key 即 config_override TEMPLATE 层
+--   scope_id——模板实体化后 TEMPLATE→回路映射经 loop_ledger.engineering_
+--   template_id 精确计数（消除 affectedLoops=None 诚实降级成因）。
+--   版本行追加式不可变：发布只 INSERT 新行 + 前进 current_version 指针；
+--   已固定引用（loop pin 版本 / revisionRef）发布新版后解析结果不变。
+--   发布/回拨接 P2-02 统一发布链（config_publication.operation=
+--   TEMPLATE_VERSION，revision 乐观锁 + 审计）。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS engineering_template (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_key    VARCHAR(64)     NOT NULL,
+    name            VARCHAR(200)    NOT NULL,
+    category        VARCHAR(32)     NOT NULL DEFAULT 'RESPONSE',
+    current_version INTEGER,
+    description     VARCHAR(500),
+    created_by      VARCHAR(50),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_engineering_template_category CHECK (category IN ('RESPONSE', 'CONTROL')),
+    CONSTRAINT uq_engineering_template_key UNIQUE (template_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_engineering_template_key ON engineering_template (template_key);
+
+CREATE TABLE IF NOT EXISTS engineering_template_version (
+    id            UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id   UUID            NOT NULL,
+    version       INTEGER         NOT NULL,
+    profile       JSONB           NOT NULL,
+    reason        TEXT            NOT NULL,
+    published_by  VARCHAR(50),
+    published_at  TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_engineering_template_version_template
+        FOREIGN KEY (template_id) REFERENCES engineering_template(id) ON DELETE CASCADE,
+    CONSTRAINT uq_engineering_template_version UNIQUE (template_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_engineering_template_version_template
+    ON engineering_template_version (template_id, version);
+
+COMMENT ON TABLE  engineering_template IS '工程模板（响应/控制特征；TEMPLATE 层覆盖的作用域目标，P2-04）';
+COMMENT ON COLUMN engineering_template.template_key IS '模板键（全局唯一；config_override TEMPLATE 层 scope_id）';
+COMMENT ON COLUMN engineering_template.current_version IS '当前版本指针；发布=追加版本行+前进指针，回拨=指针回拨（历史保持追加式）';
+COMMENT ON TABLE  engineering_template_version IS '工程模板不可变版本（追加式；发布新版不自动改已固定引用）';
+COMMENT ON COLUMN engineering_template_version.profile IS '版本内容（响应/控制特征工程档案；算法消费归后续阶段）';
+
+-- 延迟外键：loop_ledger → engineering_template（表定义顺序在前）
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_loop_ledger_engineering_template'
+          AND conrelid = 'loop_ledger'::regclass
+    ) THEN
+        ALTER TABLE loop_ledger
+            ADD CONSTRAINT fk_loop_ledger_engineering_template
+            FOREIGN KEY (engineering_template_id) REFERENCES engineering_template(id) ON DELETE SET NULL;
     END IF;
 END
 $$;

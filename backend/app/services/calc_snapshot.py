@@ -18,9 +18,10 @@
    拒绝），读取恒 ``allow_pickle=False``。
 
 schemaVersion 策略（P2-03 Owner 定稿，见交接文档）：manifest 主版本冻结
-``1``，次版本随六层语义**版本化扩展**递增（本批 "1.1"）。读取端按主版本
-门禁：主版本一致即接受，未知**可选**节按显式 null/"未计算"处理；主版本
-不一致显式拒绝。禁止在次版本内改字段语义（只加不改）。
+``1``，次版本随六层语义**版本化扩展**递增（1.1 = P2-03 初版；1.2 = P2-04
+增补 engineeringFacts 工程事实节）。读取端按主版本门禁：主版本一致即接受，
+未知**可选**节按显式 null/"未计算"处理；主版本不一致显式拒绝。禁止在次
+版本内改字段语义（只加不改）。
 """
 
 from __future__ import annotations
@@ -57,8 +58,12 @@ from app.models.calc_dataset_snapshot import (
 logger = logging.getLogger(__name__)
 
 # manifest 结构版本（主版本 1 = 01§3.2 冻结的 CalculationContext schema 系；
-# 次版本 1 = P2-03 初版含 07 号文六层可选节）
-SNAPSHOT_SCHEMA_VERSION = "1.1"
+# 次版本 1 = P2-03 初版含 07 号文六层可选节；
+# 次版本 2 = P2-04 增补 engineeringFacts 节——回路工程事实：控制作用方向/
+# 实际 OP 限幅/PV 量程与单位/PID 表示与时间单位（未知态显式 UNKNOWN）/
+# DCS 与工程模板 revisionRef。只加不改：1.1 包缺本节仍按主版本门禁可读，
+# 读取端按节缺失=当时未记录处理，不伪补）
+SNAPSHOT_SCHEMA_VERSION = "1.2"
 _SUPPORTED_SCHEMA_MAJOR = 1
 
 # DEC-10：NORMAL 包默认保留 90 天
@@ -1006,6 +1011,7 @@ async def save_identification_snapshot(
     dataset_ref: str | None = None,
     valid_rate: float | None = None,
     point_ctx: Any = None,
+    engineering_facts: dict[str, Any] | None = None,
     retention_days: int = RETENTION_DAYS_DEFAULT,
 ) -> CalculationDatasetSnapshot | None:
     """保存辨识任务不可变输入包（完整分析输入，不只胜出片段）.
@@ -1028,6 +1034,12 @@ async def save_identification_snapshot(
 
     DEC-10：预处理参数以 ``preprocess`` 结构化记录（三件套开关与实际生效
     参数 + multi-window 窗位），同 reason 字符串并存（evidence 不破坏）。
+
+    schemaVersion 1.2（P2-04，只加不改）：``engineeringFacts`` 节从回路工程
+    事实填充（``engineering_facts`` 参数，None=当时未记录，显式 null 不伪补）——
+    控制作用方向 / 实际 OP 限幅（含来源）/ PV 量程与单位 / PID 表示与时间
+    单位（未知态 status=UNKNOWN，绝不默认标准 kp/ti/td）/ DCS 与工程模板
+    revisionRef。转换与算法消费归 P3-03。
     """
     arrays: dict[str, np.ndarray] = {
         "consumed__ts_rel": np.asarray(timestamps_rel, dtype=np.float64),
@@ -1104,6 +1116,8 @@ async def save_identification_snapshot(
             "opLimits": (0.0, 100.0),
         },
         "preprocess": preprocessing,
+        # schemaVersion 1.2（P2-04）：回路工程事实（None=当时未记录，不伪补）
+        "engineeringFacts": engineering_facts,
         "source": {
             "algorithmVersion": result_dict.get("algorithmVersion"),
             "configRevision": None,  # 辨识链不消费全局配置发布（显式 null）

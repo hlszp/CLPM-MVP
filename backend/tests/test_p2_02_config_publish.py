@@ -401,9 +401,11 @@ class TestPublishOverride:
         db = self._db(
             [
                 _scalar_result(9),  # 当前 revision
+                _none_result(),  # P2-04：LOOP 层下层链解析（回路行，scope 未注册）
                 _none_result(),  # DEFAULT 层 algorithm_parameter（校验）
                 _none_result(),  # DEFAULT 层 metric threshold（校验）
                 _none_result(),  # 既有覆盖（新建）
+                _count_result(1),  # P2-04：LOOP 影响数存在性核验
                 # commit 后 sync_runtime_cache：
                 _scalars_all_result([]),
                 _all_result([]),
@@ -456,6 +458,7 @@ class TestPublishOverride:
         db = self._db(
             [
                 _scalar_result(0),
+                _none_result(),  # P2-04：LOOP 层下层链解析（回路行）
                 _scalar_result(
                     _make_ap_row(
                         "output_trip_index",
@@ -487,7 +490,10 @@ class TestPublishOverride:
 
     def test_all_control_types_validated_when_ct_omitted(self) -> None:
         """controlType 缺省：DEFAULT 层 4 控制类型合并视图全量校验."""
-        db = self._db([_scalar_result(0)] + [_none_result(), _none_result()] * 4)
+        db = self._db(
+            [_scalar_result(0), _scalars_all_result([])]  # P2-04：NODE 层下层链解析（单位回路集）
+            + [_none_result(), _none_result()] * 4
+        )
         with pytest.raises(BizError) as exc_info:
             asyncio_run(
                 cp.publish_override(
@@ -510,9 +516,11 @@ class TestPublishOverride:
         db = self._db(
             [
                 _scalar_result(0),
+                _none_result(),  # P2-04：LOOP 层下层链解析（回路行）
                 _none_result(),
                 _none_result(),
                 _none_result(),
+                _count_result(1),  # P2-04：LOOP 影响数存在性核验
                 # rollback 后 get_current_revision（最新版本）
                 _scalar_result(1),
             ]
@@ -568,10 +576,16 @@ class TestResetOverride:
             {"similarity_threshold": 0.65},
             published_revision=4,
         )
+        template_entity = MagicMock()
+        template_entity.id = "tpl-1"
+        template_entity.template_key = "FAST_RESP"
         db = self._db(
             [
                 _scalar_result(6),  # revision
                 _scalar_result(template_row),  # 既有覆盖行
+                # P2-04：TEMPLATE 影响数（模板实体 + 关联回路计数）
+                _scalar_result(template_entity),
+                _count_result(2),
                 # commit 后 sync_runtime_cache
                 _scalars_all_result([]),
                 _all_result([]),
@@ -942,9 +956,11 @@ class TestConfigPublishEndpoints:
         mock_db.execute = AsyncMock(
             side_effect=[
                 _scalar_result(0),
+                _none_result(),  # P2-04：LOOP 层下层链解析（回路行）
                 _none_result(),
                 _none_result(),
                 _none_result(),
+                _count_result(1),  # P2-04：LOOP 影响数存在性核验
                 _scalars_all_result([]),
                 _all_result([]),
                 _scalar_result(1),
@@ -979,6 +995,7 @@ class TestConfigPublishEndpoints:
             side_effect=[
                 _scalar_result(1),
                 _scalar_result(row),
+                _count_result(1),  # P2-04：LOOP 影响数存在性核验
                 _scalars_all_result([]),
                 _all_result([]),
                 _scalar_result(2),

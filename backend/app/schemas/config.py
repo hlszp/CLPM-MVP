@@ -686,6 +686,27 @@ class ResetExplanationItem(CamelModel):
     sourceRevision: str = ""
 
 
+class PreviewPublishRequest(CamelModel):
+    """发布预览（P2-04 dry-run，只读；expectedRevision 失配不 409 而是报告）.
+
+    Attributes:
+        layer: 覆盖层（TEMPLATE / NODE / LOOP）
+        scopeId: 作用域目标键（TEMPLATE=模板键 / NODE=plant_node.id / LOOP=loop_id）
+        metricCode: 指标代码（须在注册表内）
+        params: 预览的参数键值对（与发布同形，整组替换语义）
+        expectedRevision: 可选——提供且与当前 revision 不一致时响应
+            wouldConflict=true（预览不抛 409）
+        controlType: 校验上下文控制类型（可选；缺省对全部 4 类求合并视图）
+    """
+
+    layer: OverrideLayer
+    scopeId: str = Field(min_length=1, max_length=64)
+    metricCode: str = Field(min_length=1, max_length=50)
+    params: dict[str, Any] = Field(default_factory=dict)
+    expectedRevision: int | None = Field(default=None, ge=0)
+    controlType: ControlType | None = None
+
+
 class OverrideResetRequest(CamelModel):
     """重置一层覆盖（ADMIN；重置低层后高层仍生效，响应附可解释说明）.
 

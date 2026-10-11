@@ -480,6 +480,7 @@ async def upsert_pid_structure_endpoint(
         d_filter_unit=body.d_filter_unit,
         d_filter_multiplier=body.d_filter_multiplier,
         description=body.description,
+        representation_status=body.representation_status,
         operator=user.username,
     )
     return success(data=data, message="保存成功")

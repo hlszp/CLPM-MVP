@@ -57,6 +57,8 @@ from app.api.v1.endpoints import (
     diagnosis_v2,
     # 通用字典项（可配置枚举：测点类型等）
     dicts,
+    # P2-04: 工程模板（版本化模板 + TEMPLATE→回路映射）
+    engineering_templates,
     # 工厂模型 AAS 同步（工厂配置页：独立同步配置区 + 全量同步）
     factory_sync,
     # diagnosis_trigger_config,
@@ -1222,6 +1224,7 @@ def create_app() -> FastAPI:
     v1_router.include_router(algorithm_config.router)
     # P2-02: 分层配置发布（发布/重置/回退 ADMIN，DEC-03）
     v1_router.include_router(config_publish.router)
+    v1_router.include_router(engineering_templates.router)
     # MVP 精简：已屏蔽诊断模块 → 不挂载 diagnosis_trigger_config.router
     # v1_router.include_router(diagnosis_trigger_config.router)
     # v4.0: 评估任务管理（标准/自定义）

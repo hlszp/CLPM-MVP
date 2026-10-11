@@ -115,7 +115,8 @@ class TestBatchUpdateLoopsMonitored:
                 operator="admin",
             )
 
-        assert result == 2
+        assert result["affected"] == 2
+        assert result["dryRun"] is False
         # 验证 is_active 被置为 True
         assert loop1.is_active is True
         assert loop2.is_active is True
@@ -160,7 +161,12 @@ class TestBatchDisableLinkage:
                 operator="admin",
             )
 
-        assert result == 2
+        # P2-04 diff 口径：affected=真实发生变化的回路数（loop2 False→False 无差异）
+        assert result["affected"] == 1
+        assert result["dryRun"] is False
+        by_id = {r["loopId"]: r for r in result["results"]}
+        assert by_id["loop-001"]["status"] == "OK"
+        assert by_id["loop-002"]["status"] == "UNCHANGED"
         # 跳变回路：停用 + 联动不参评
         assert loop1.is_active is False
         assert loop1.include_in_evaluation is False
@@ -255,7 +261,8 @@ class TestBatchUpdateLoopsLevel:
             operator="admin",
         )
 
-        assert result == 2
+        assert result["affected"] == 2
+        assert result["dryRun"] is False
         assert loop1.importance_level == 1
         assert loop2.importance_level == 1
         assert db.add.call_count == 2
@@ -278,7 +285,7 @@ class TestBatchUpdateLoopsLevel:
             operator="admin",
         )
 
-        assert result == 1
+        assert result["affected"] == 1
         assert loop1.include_in_evaluation is False
         db.add.assert_called_once()
         db.commit.assert_called_once()

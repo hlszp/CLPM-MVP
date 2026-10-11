@@ -139,6 +139,9 @@ class TestLoopToggleCacheInvalidation:
         loop.remark = None
         loop.complex_loop_group_id = None
         loop.complex_role = None
+        loop.control_action_direction = "UNKNOWN"
+        loop.engineering_template_id = None
+        loop.engineering_template_version = None
         loop.updated_at = None
         loop.updated_by = "admin"
         return loop
