@@ -106,6 +106,17 @@ def compute_quality_summary(
         good_count = sum(1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD)
         good_value_rate = good_count / len(quality_codes)
 
+    # PV 数值可用比例（P3-10a，10§3.4 Good 行：QC Good 与 usable 分开，
+    # C04-EA3）：``pv_valid`` 口径——越限/坏质量等预处理数值资格判定的交。
+    # good_value_rate 反映**来源质量码**（缺质量码=None 不可判定，不用本值
+    # 冒充）；usable_rate 反映**数值可用性**（含越限，QC Good 但 PV 越界的
+    # 点 usable=False）。无 pv_valid 标记时 None（未记录，不猜测）。
+    pv_valid = validity.get("pv_valid")
+    usable_rate: float | None = None
+    if pv_valid and total > 0:
+        usable_count = sum(1 for v in pv_valid[:total] if v)
+        usable_rate = usable_count / total
+
     summary = QualitySummary(
         total_count=total,
         valid_count=valid_count,
@@ -115,6 +126,7 @@ def compute_quality_summary(
         bad_rate=round(bad_rate, 4),
         missing_rate=round(missing_rate, 4),
         good_value_rate=round(good_value_rate, 4) if good_value_rate is not None else None,
+        usable_rate=round(usable_rate, 4) if usable_rate is not None else None,
         window_seconds=window_seconds,
         unknown_seconds=unknown_seconds,
     )

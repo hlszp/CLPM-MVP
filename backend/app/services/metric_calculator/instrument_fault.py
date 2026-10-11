@@ -42,6 +42,7 @@ FROZEN 复合判据（P1 整改：FROZEN 改为仅标记不置 invalid 后的误
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import numpy as np
 
@@ -84,7 +85,9 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
         Returns:
             MetricResult：value 为故障率 0~100；
             details 含 freeze_count/overrange_count/
-            fault_point_count/sample_count/source
+            fault_point_count/sample_count/source；
+            新 profile：value 仅计**已确认**故障（复合判据过/OUT_OF_RANGE），
+            未确认 FROZEN 候选保留在 details（不升级为已确认，C15-EA2）
         """
         block = bundle.data_block
         n = block.point_count
@@ -96,6 +99,10 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
 
         # 读取 PV 异常原因码，按复合判据过滤未确认的 FROZEN 标记
         pv_reasons = block.outlier_reasons.get("pv", [])
+
+        if self.new_semantics:
+            return self._calculate_new_profile(bundle, block, n, pv_reasons)
+
         filtered_reasons = self._filter_unconfirmed_frozen(block, pv_reasons)
 
         # 委托独立工具函数执行核心统计
@@ -125,6 +132,156 @@ class InstrumentFaultRateCalculator(MetricCalculatorBase):
                 "source": result.source,
             },
         )
+
+    # ------------------------------------------------------------------
+    # P3-10b 新 profile：缺依据不确诊（C15-EA2）
+    # ------------------------------------------------------------------
+
+    def _calculate_new_profile(
+        self,
+        bundle: MetricDataBundle,
+        block: DataBlock,
+        n: int,
+        pv_reasons: list[list[str]],
+    ) -> MetricResult:
+        """新 profile 仪表故障率：只计已确认故障，候选保留不确诊.
+
+        - 复合判据**可用**：持续 ≥ N 分钟且同期 OP 有变化的 FROZEN 段计
+          确认（输出为**声明条件下的疑似**，``faultNature`` 明示，不冒充
+          物理确诊）；未过判据的 FROZEN（OP 恒定/时长不足）为未确认候选；
+        - 复合判据**不可用**（缺 OP/时间戳/阈值配置）：全部 FROZEN 保留为
+          未确认候选、不计故障（legacy 回落旧口径直接计，即 EA-09 的
+          "缺证据表达得过于确定"）；
+        - 未确认候选 > 0 → ``assessmentState=PARTIAL``（有候选未定论，
+          不把 value=0 读成"无故障"）。
+        """
+        filtered_reasons, audit = self._frozen_confirmation_audit(block, pv_reasons, n)
+
+        result = calculate_instrument_fault_rate(filtered_reasons, point_count=n)
+        if result is None:
+            return self._make_inconclusive(bundle, "empty_data_block")
+
+        unconfirmed = audit["frozen_unconfirmed_count"]
+        details: dict[str, Any] = {
+            "fault_rate": result.fault_rate,
+            "freeze_count": result.freeze_count,
+            "overrange_count": result.overrange_count,
+            "fault_point_count": result.fault_point_count,
+            "sample_count": result.sample_count,
+            "source": result.source,
+            **audit,
+            "assessmentState": "PARTIAL" if unconfirmed > 0 else "COMPLETE",
+        }
+        if result.freeze_count > 0:
+            # 确认 FROZEN 是声明判据下的疑似故障（复合判据），非物理确诊
+            details["faultNature"] = "suspected_under_declared_criteria"
+
+        logger.debug(
+            "[仪表故障率|新] confirmed=%d, unconfirmed=%d, basis=%s, rate=%.2f%%",
+            result.fault_point_count,
+            unconfirmed,
+            audit["confirmation_basis"],
+            result.fault_rate,
+        )
+        return self._make_result(bundle, result.fault_rate, details)
+
+    @staticmethod
+    def _frozen_confirmation_audit(
+        block: DataBlock,
+        pv_reasons: list[list[str]],
+        n: int,
+    ) -> tuple[list[list[str]], dict[str, Any]]:
+        """新 profile FROZEN 确认审计：返回（过滤后原因码, 审计信息）.
+
+        与 legacy :meth:`_filter_unconfirmed_frozen` 的差异（C15-EA2）：
+        - 判据不可用（缺 OP/时间戳/阈值）时**不回落旧口径**——全部 FROZEN
+          记为未确认候选并从故障统计中剔除（缺 OP 为未确认，不冒充已确认）；
+        - 逐段区分未确认原因（op_inactive / duration_too_short / 判据不可用）；
+        - 输出实际生效判据（applied_criteria），疑似结论可追溯。
+
+        Returns:
+            (filtered_reasons, audit)：filtered 与输入等长语义（未确认段的
+            FROZEN 被移除）；audit 含 marked/confirmed/unconfirmed 计数、
+            确认口径与未确认原因分布。
+        """
+        reasons: list[list[str]] = [list(r) for r in pv_reasons[:n]]
+        if len(reasons) < n:
+            reasons.extend([] for _ in range(n - len(reasons)))
+
+        frozen_indices = [i for i, r in enumerate(reasons) if _FROZEN in r]
+        audit: dict[str, Any] = {
+            "frozen_marked_count": len(frozen_indices),
+            "frozen_confirmed_count": 0,
+            "frozen_unconfirmed_count": len(frozen_indices),
+            "confirmation": "no_frozen_marks",
+            "confirmation_basis": None,
+            "unconfirmed_breakdown": {},
+        }
+        if not frozen_indices:
+            audit["frozen_unconfirmed_count"] = 0
+            return pv_reasons, audit
+
+        def _drop_all_frozen(basis: str) -> list[list[str]]:
+            audit["confirmation"] = "unavailable"
+            audit["confirmation_basis"] = basis
+            audit["unconfirmed_breakdown"] = {basis: len(frozen_indices)}
+            return [[r for r in point if r != _FROZEN] for point in reasons]
+
+        op = block.signals.get("op")
+        timestamps = block.timestamps
+        threshold = get_threshold_by_sampling_freq(block.sampling_freq)
+        if not op:
+            # 缺 OP：FROZEN 候选未确认（C15-EA2），不计故障
+            return _drop_all_frozen("missing_op"), audit
+        if len(timestamps) < n or len(timestamps) < 2:
+            return _drop_all_frozen("missing_timestamps"), audit
+        if threshold is None:
+            return _drop_all_frozen("missing_threshold_config"), audit
+
+        min_duration_s = threshold.frozen_fault_min_minutes * 60.0
+        op_std_epsilon = threshold.op_active_std_pct * 100.0
+        sample_interval_s = float(threshold.base_sampling_freq)
+        audit["confirmation"] = "compound_criterion"
+        audit["confirmation_basis"] = "duration_and_op_activity"
+        audit["applied_criteria"] = {
+            "min_duration_seconds": min_duration_s,
+            "op_active_std_epsilon": op_std_epsilon,
+            "sample_interval_seconds": sample_interval_s,
+        }
+
+        confirmed: set[int] = set()
+        breakdown: dict[str, int] = {}
+        for start, end in _contiguous_segments(frozen_indices):
+            # 零阶保持：段时长 = 首尾时间差 + 一个采样间隔
+            duration_s = (timestamps[end] - timestamps[start]).total_seconds() + sample_interval_s
+            if duration_s < min_duration_s:
+                breakdown["duration_too_short"] = breakdown.get("duration_too_short", 0) + (
+                    end - start + 1
+                )
+                continue
+            op_vals: list[float] = []
+            for i in range(start, end + 1):
+                if i >= len(op):
+                    break
+                try:
+                    op_vals.append(float(op[i]))
+                except (TypeError, ValueError):
+                    continue
+            if len(op_vals) >= 2 and float(np.std(op_vals)) > op_std_epsilon:
+                confirmed.update(range(start, end + 1))
+            else:
+                # OP 恒定/静止：控制器未动作，不能靠 PV 冻结确诊仪表卡死
+                breakdown["op_inactive"] = breakdown.get("op_inactive", 0) + (end - start + 1)
+
+        audit["frozen_confirmed_count"] = len(confirmed)
+        audit["frozen_unconfirmed_count"] = len(frozen_indices) - len(confirmed)
+        audit["unconfirmed_breakdown"] = breakdown
+
+        filtered = [
+            [r for r in point_reasons if r != _FROZEN or i in confirmed]
+            for i, point_reasons in enumerate(reasons)
+        ]
+        return filtered, audit
 
     # ------------------------------------------------------------------
     # FROZEN 复合判据

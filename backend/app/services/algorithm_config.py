@@ -119,6 +119,15 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
         "FAST": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
         "LOGIC": {"trip_inactive": 0.01, "trip_normal": 0.1, "trip_frequent": 1.0},
     },
+    # P3-10c（10§3.4 穿越次数行）：穿越死区，默认 0=保留精确统计；
+    # >0 须由工程分辨率/噪声依据确定；值为 0 时也不跨缺口连接。
+    # 仅新 profile（CANDIDATE_V3_RC1）消费；legacy 不读该键（行为不变）
+    "setpoint_crossing_count": {
+        "STABLE": {"crossing_deadband": 0.0},
+        "SLOW": {"crossing_deadband": 0.0},
+        "FAST": {"crossing_deadband": 0.0},
+        "LOGIC": {"crossing_deadband": 0.0},
+    },
     "fast_rate": {
         # settling_tolerance=0.0 + ideal_settling_ratio=1.0
         # → 阈值=ideal_t，与原 actual_t<=ideal_t 一致
@@ -748,6 +757,20 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "combo": ["trip_inactive", "trip_normal", "trip_frequent"],
         },
     },
+    "setpoint_crossing_count": {
+        "crossing_deadband": {
+            "label": "穿越死区",
+            "min": 0.0,
+            "max": 10.0,
+            "unit": "工程单位",
+            "description": "SP 穿越计数死区：|PV-SP| ≤ 死区按零平台吸收，不记穿越",
+            "defaultBasis": "P3-10c（10§3.4 穿越次数行）：默认 0=保留精确统计；"
+            ">0 须由工程分辨率/噪声依据确定；值为 0 时也不跨缺口连接",
+            "kind": "business",
+            "risk": "MEDIUM",
+            "riskNote": "死区过大会吸收真实穿越（漏计），过小噪声虚增穿越；仅新 profile 消费",
+        },
+    },
 }
 
 #: 已废弃参数键 → 迁移提示（P2-01：旧键拒绝且明确迁移提示，不再静默当未知键）
@@ -808,6 +831,7 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "trip_normal": "行程边界",
         "trip_frequent": "行程边界",
     },
+    "setpoint_crossing_count": {"crossing_deadband": "判定阈值"},
 }
 
 

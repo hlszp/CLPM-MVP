@@ -166,8 +166,9 @@ class TestGetAllAlgorithmParams:
         body = resp.json()
         assert body["code"] == "0"
         metrics = body["data"]["metrics"]
-        # 8 指标（2026-10-10 新增 saturation_rate.saturation_epsilon 可配置）
-        assert len(metrics) == 8
+        # 9 指标（2026-10-10 新增 saturation_rate.saturation_epsilon 可配置；
+        # P3-10c 新增 setpoint_crossing_count.crossing_deadband 穿越死区）
+        assert len(metrics) == 9
         codes = {m["metricCode"] for m in metrics}
         assert codes == {
             "oscillation_rate",
@@ -178,6 +179,7 @@ class TestGetAllAlgorithmParams:
             "output_trip_index",
             "stability_rate",
             "saturation_rate",
+            "setpoint_crossing_count",
         }
         # F6：paramMeta 注册表随视图下发（min/max/description/category 单源）
         osc = next(m for m in metrics if m["metricCode"] == "oscillation_rate")
