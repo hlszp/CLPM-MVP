@@ -64,6 +64,15 @@ REASON_NO_EXPECTED_TAU = "NO_EXPECTED_TAU"  # NOT_APPLICABLE：expected τ 无�
 REASON_DISABLED_BY_CONFIG = "DISABLED_BY_CONFIG"  # 显式排除：诊断配置停用（不进 selected）
 REASON_NOT_SELECTED = "NOT_SELECTED"  # 显式排除：不在细选白名单（不进 selected）
 REASON_OUT_OF_PROFILE = "OUT_OF_PROFILE"  # profile 外：fast 组未包含（不进 profileExpected）
+# D3/D4 增补码（P3-01 D3/D4 子卡 Owner 定稿，沿用 D0 契约 §6 O-4 码表机制）
+REASON_RESPONSE_INCOMPLETE = (
+    "RESPONSE_INCOMPLETE"  # INSUFFICIENT_DATA：响应窗被截断/到达率不足，响应未完成
+)
+REASON_MANUAL_MODE = "MANUAL_MODE"  # NOT_APPLICABLE：事件均在手动模式（AUTO 前提不成立）
+REASON_OP_SATURATED = "OP_SATURATED"  # NOT_APPLICABLE：事件窗口输出受限（限幅前提不成立）
+REASON_INSUFFICIENT_FIT = (
+    "INSUFFICIENT_FIT"  # INSUFFICIENT_DATA：拟合信息不足（低相关/R² 低——证据不足不确诊，08§4.1）
+)
 
 
 @dataclass(frozen=True)
@@ -186,3 +195,47 @@ def list_operators() -> list[dict[str, Any]]:
             }
         )
     return out
+
+
+# ---------------------------------------------------------------------------
+# D3/D4 段目录消费 helper（08§3.2 逐段评估——不跨 gap 拼接）
+# ---------------------------------------------------------------------------
+
+
+def segment_bounds(meta: dict[str, Any], n: int) -> list[tuple[int, int]]:
+    """读取 D1 段目录（meta["consecutive_segments"]）并校验有效性。
+
+    - 段目录缺失（直调/旧输入）→ 单段全窗 [(0, n)]（与 D1 前行为一致）；
+    - 段越界/倒序时剔除非法段；全部非法 → 单段全窗兜底（不虚构空输入）。
+    """
+    raw = meta.get("consecutive_segments")
+    if not raw:
+        return [(0, n)] if n > 0 else []
+    bounds: list[tuple[int, int]] = []
+    for seg in raw:
+        try:
+            start, end = int(seg[0]), int(seg[1])  # type: ignore[index]
+        except (TypeError, ValueError, IndexError):
+            continue
+        if 0 <= start < end <= n:
+            bounds.append((start, end))
+    return bounds or ([(0, n)] if n > 0 else [])
+
+
+def merge_segment_states(states: list[str]) -> str:
+    """多段态归并（08§3.2 推荐规则：每段单独特征与状态，窗口不外推）。
+
+    优先级：POSITIVE > NEGATIVE > NOT_APPLICABLE；
+    无任何可归并态（全为空/INSUFFICIENT）→ INSUFFICIENT_DATA——
+    没有任何一段完成有效评估时，窗口不得宣称范围内阴性。
+    """
+    unique = {s for s in states if s}
+    if ASSESSMENT_POSITIVE in unique:
+        return ASSESSMENT_POSITIVE
+    if ASSESSMENT_NEGATIVE in unique:
+        return ASSESSMENT_NEGATIVE
+    if ASSESSMENT_NOT_APPLICABLE in unique:
+        return ASSESSMENT_NOT_APPLICABLE
+    if ASSESSMENT_ERROR in unique and len(unique) == 1:
+        return ASSESSMENT_ERROR
+    return ASSESSMENT_INSUFFICIENT_DATA
