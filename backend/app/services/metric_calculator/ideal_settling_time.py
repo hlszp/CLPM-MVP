@@ -82,11 +82,17 @@ class IdealSettlingTimeCalculator(MetricCalculatorBase):
         model_t = self._compute_from_model(signals)
         if model_t is not None and model_t > 0:
             logger.debug("[理想稳态时间] 模型计算: T'=%.1f 秒", model_t)
-            return self._make_result(
-                bundle,
-                model_t,
-                {"source": "model", "ideal_settling_time": round(model_t, 2)},
-            )
+            # P3-09a 新 profile（10§3.4/§2.6）：模型法只消费 P3-06 已通过独立
+            # 终验且工况匹配的模型——终验证据链未接线前不冒称已验证模型，
+            # 显式标 verifiedModel=false（诚实化：来源可查，不静默降级也不
+            # 静默采用）。legacy：details 不变（零回归）。
+            model_details: dict = {"source": "model", "ideal_settling_time": round(model_t, 2)}
+            if self.new_semantics:
+                model_details["verifiedModel"] = False
+                model_details["sourceNote"] = (
+                    "模型法 T'=α·(τ+θ) 消费配置 τ/θ；P3-06 独立终验证据未接线，不冒称已验证模型"
+                )
+            return self._make_result(bundle, model_t, model_details)
 
         # 方式三：控制类型默认值
         control_type = self._read_control_type(signals)

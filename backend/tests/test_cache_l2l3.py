@@ -870,8 +870,9 @@ class TestDataPlannerL2Integration:
         assert len(query_log) == 1
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
         assert len(l2_keys) == 1
-        # P3-08b：key 末尾追加时间/质量契约策略分量（data_version）
-        assert ":cfg_1000:" in l2_keys[0] and l2_keys[0].endswith(":tqpv1")
+        # P3-08b：key 末尾追加时间/质量契约策略分量（data_version）；
+        # P3-09c 翻 tqpv2（stability 带内率分母改契约全窗口径）
+        assert ":cfg_1000:" in l2_keys[0] and l2_keys[0].endswith(":tqpv2")
 
         # 相同配置版本：L2 命中，不查 TDengine
         await _planner("cfg_1000").request_bundles(
@@ -892,4 +893,4 @@ class TestDataPlannerL2Integration:
         assert len(query_log) == 2
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
         assert len(l2_keys) == 2
-        assert any(":cfg_2000:" in k and k.endswith(":tqpv1") for k in l2_keys)
+        assert any(":cfg_2000:" in k and k.endswith(":tqpv2") for k in l2_keys)

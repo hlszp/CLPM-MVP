@@ -41,6 +41,7 @@ from __future__ import annotations
 
 import logging
 from datetime import timedelta
+from typing import Any
 
 import numpy as np
 
@@ -79,6 +80,10 @@ _DEFAULT_SP_TRACKING_WINDOW = 60
 #: PV 量程归一化默认值（signals 无 pv_range CONFIG 时使用，与 stability 一致）
 _DEFAULT_PV_RANGE = 100.0
 
+#: P3-09c：SP 暂态剔除窗的物理秒默认值（10§3.3"暂态剔除改为可追溯的真实
+#: 秒数"；60 点×1s 的兼容迁移初值=60s，来源登记 legacy_points_conversion）
+_DEFAULT_SP_TRACKING_WINDOW_SECONDS = 60.0
+
 
 class OscillationRateCalculator(MetricCalculatorBase):
     """振荡率计算器（算法说明 §4.6）.
@@ -110,7 +115,12 @@ class OscillationRateCalculator(MetricCalculatorBase):
             return self._make_inconclusive(
                 bundle,
                 "insufficient_data",
-                {"is_oscillating": False, "oscillation_period": 0.0, "sample_count": n},
+                {
+                    "is_oscillating": False,
+                    "oscillation_period": 0.0,
+                    "sample_count": n,
+                    **({"assessmentState": "UNASSESSABLE"} if self.new_semantics else {}),
+                },
             )
 
         # P0-B: 从配置链读取算法参数（control_type 为响应类别 STABLE/SLOW/FAST/LOGIC）
@@ -136,43 +146,100 @@ class OscillationRateCalculator(MetricCalculatorBase):
 
         # P2 SP 阶跃剔除：剔除阶跃后跟踪窗内的点，跟踪暂态不入零交叉/IAE 判定
         # （SP 多次阶跃的暂态段同型 → IAE 相似率 1.0，会被误判为"振荡"）
+        # P3-09c 新 profile：跟踪窗改物理秒（sp_tracking_window_seconds，
+        # 默认 60s——旧 60 点 × 声明周期的兼容迁移初值）；剔除边界形成段
+        # 边界，零交叉/IAE 半周期段不跨剔除区拼接（C14-EA1"跨剔除边界不拼
+        # 周期"）；剔除秒数可追溯（excluded_transient_seconds）。
         sp_steps = 0
         sp_excluded = 0
+        sp_excluded_seconds: float | None = None
+        sp_window_source = "legacy_points"
         ts_aligned = self._get_masked_timestamps(bundle)
         if len(ts_aligned) != n:
             ts_aligned = []
         # P3：IAE 时间计权（零阶保持点时长，与 errors 对齐；时间戳不可用时
         # 退回按采样点计权，均匀 1s 采样下与旧实现逐位一致）
         point_durations = self._point_durations(ts_aligned) if ts_aligned else None
+        # 保留段的连续区间（kept 空间索引对，新 profile 用于不跨剔除拼接）
+        kept_runs: list[tuple[int, int]] = [(0, len(errors) - 1)] if len(errors) else []
         if sp_exclusion:
             sp_vals = [float(sp) for _, sp in pairs]
             interval = 1.0
             if ts_aligned:
                 total = self._total_duration_seconds(ts_aligned)
                 interval = total / (n - 1) if total > 0 and n > 1 else 1.0
-            tracking = detect_sp_tracking_windows(
-                sp_vals,
-                n,
-                ideal_t=0.0,
-                sample_interval=interval,
-                sp_step_sigma=sp_step_sigma,
-                window_points=sp_window,
-            )
+            if self.new_semantics:
+                window_seconds = float(
+                    params.get(
+                        "sp_tracking_window_seconds",
+                        _DEFAULT_SP_TRACKING_WINDOW_SECONDS,
+                    )
+                )
+                sp_window_source = "physical_seconds"
+                tracking = detect_sp_tracking_windows(
+                    sp_vals,
+                    n,
+                    ideal_t=0.0,
+                    sample_interval=interval,
+                    sp_step_sigma=sp_step_sigma,
+                    window_seconds=window_seconds,
+                )
+            else:
+                tracking = detect_sp_tracking_windows(
+                    sp_vals,
+                    n,
+                    ideal_t=0.0,
+                    sample_interval=interval,
+                    sp_step_sigma=sp_step_sigma,
+                    window_points=sp_window,
+                )
             sp_steps = sum(1 for i in range(1, n) if tracking[i] and not tracking[i - 1])
             sp_excluded = sum(tracking)
             if sp_excluded:
                 keep = np.array([not t for t in tracking], dtype=bool)
+                # 保留段连续区间（原始空间 → kept 空间）：剔除区两侧不拼接
+                kept_runs = []
+                run_start: int | None = None
+                kept_idx = 0
+                for i in range(n):
+                    if keep[i]:
+                        if run_start is None:
+                            run_start = kept_idx
+                        kept_idx += 1
+                    elif run_start is not None:
+                        kept_runs.append((run_start, kept_idx - 1))
+                        run_start = None
+                if run_start is not None:
+                    kept_runs.append((run_start, kept_idx - 1))
+                # 剔除秒数（可追溯真实秒）：被剔除点的时长和（有 Δt 时），
+                # 无 Δt 回退点数 × 平均间隔并记录口径
+                if point_durations is not None:
+                    sp_excluded_seconds = round(
+                        float(np.sum(np.asarray(point_durations)[~keep])), 3
+                    )
+                elif interval > 0:
+                    sp_excluded_seconds = round(sp_excluded * interval, 3)
                 errors = errors[keep]
                 if ts_aligned:
                     ts_aligned = [t for t, k in zip(ts_aligned, keep, strict=True) if k]
                 if point_durations is not None:
                     point_durations = [d for d, k in zip(point_durations, keep, strict=True) if k]
                 logger.debug(
-                    "[振荡率] SP 阶跃剔除: steps=%d, excluded=%d/%d, window=%d",
+                    "[振荡率] SP 阶跃剔除: steps=%d, excluded=%d/%d, window=%s(%s)",
                     sp_steps,
                     sp_excluded,
                     n,
-                    sp_window,
+                    (
+                        f"{
+                            params.get(
+                                'sp_tracking_window_seconds',
+                                _DEFAULT_SP_TRACKING_WINDOW_SECONDS,
+                            )
+                        }s"
+                        if self.new_semantics
+                        else f"{sp_window}pts"
+                    ),
+                    sp_window_source,
                 )
                 if len(errors) < 4:
                     return self._make_inconclusive(
@@ -183,12 +250,45 @@ class OscillationRateCalculator(MetricCalculatorBase):
                             "oscillation_period": 0.0,
                             "sp_steps_detected": sp_steps,
                             "sp_excluded_points": sp_excluded,
+                            **({"assessmentState": "UNASSESSABLE"} if self.new_semantics else {}),
                         },
                     )
-        sp_info = {"sp_steps_detected": sp_steps, "sp_excluded_points": sp_excluded}
+        sp_info: dict[str, Any] = {
+            "sp_steps_detected": sp_steps,
+            "sp_excluded_points": sp_excluded,
+        }
+        if self.new_semantics:
+            sp_info["sp_tracking_window_source"] = sp_window_source
+            if sp_excluded_seconds is not None:
+                sp_info["sp_excluded_transient_seconds"] = sp_excluded_seconds
+
+        # P3-09c 偏置振荡补充证据（C14-EA2）：围绕 SP 的 IAE 零交叉法只反映
+        # 自身定义；偏置正弦（如 5+2sin）不交叉零 → 原口径判非振荡属正确，
+        # 补充证据识别"分离偏置/慢趋势后的周期性"——**仅辅助证据**，不改
+        # is_oscillating/value，不直接扣 S（纳入 S 属后续版本裁决）。
+        bias_evidence: dict[str, Any] | None = None
+        if self.new_semantics:
+            bias_evidence = self._bias_oscillation_evidence(
+                errors,
+                self._read_pv_range(bundle),
+                min_half_period_samples=min_half_period,
+                min_amplitude_ratio=min_amplitude_ratio,
+                similarity_threshold=similarity_threshold,
+                min_zero_crossings=min_zero_crossings,
+            )
+        bias_key = {"biasOscillation": bias_evidence} if bias_evidence is not None else {}
 
         # 步骤 2：识别零交叉点
-        zero_crossings = self._find_zero_crossings(errors)
+        # P3-09c 新 profile：零交叉在**保留段内**分别识别（不跨剔除区拼接，
+        # C14-EA1）；legacy：剔除后整段连续识别（既有行为）。
+        if self.new_semantics and kept_runs:
+            zero_crossings: list[int] = []
+            for seg_a, seg_b in kept_runs:
+                if seg_b - seg_a + 1 >= 2:
+                    run_crossings = self._find_zero_crossings(errors[seg_a : seg_b + 1])
+                    zero_crossings.extend(c + seg_a for c in run_crossings)
+        else:
+            zero_crossings = self._find_zero_crossings(errors)
         if len(zero_crossings) < min_zero_crossings:
             logger.debug(
                 "[振荡率] 零交叉点 %d < %d，返回 0", len(zero_crossings), min_zero_crossings
@@ -200,13 +300,22 @@ class OscillationRateCalculator(MetricCalculatorBase):
                     "is_oscillating": False,
                     "oscillation_period": 0.0,
                     "zero_crossings": len(zero_crossings),
+                    **({"assessmentState": "COMPLETE"} if self.new_semantics else {}),
+                    **bias_key,
                     **sp_info,
                 },
             )
 
         # 步骤 3：计算相邻零交叉间的 IAE 与持续时间（首尾残缺半周期已剔除；
-        # P3：IAE 按点时长 Δt 加权，对齐设计文档 ∫|E|dt）
-        segments = self._compute_iae_segments(errors, zero_crossings, point_durations)
+        # P3：IAE 按点时长 Δt 加权，对齐设计文档 ∫|E|dt；
+        # P3-09c 新 profile：半周期段不跨保留段边界（跨界的零交叉对弃用））
+        if self.new_semantics and kept_runs:
+            segments = []
+            for seg_a, seg_b in kept_runs:
+                in_run = [c for c in zero_crossings if seg_a <= c <= seg_b]
+                segments.extend(self._compute_iae_segments(errors, in_run, point_durations))
+        else:
+            segments = self._compute_iae_segments(errors, zero_crossings, point_durations)
         pos_iae = [s[0] for s in segments if s[2] > 0]
         neg_iae = [s[0] for s in segments if s[2] < 0]
         pos_dur = [s[1] for s in segments if s[2] > 0]
@@ -220,6 +329,8 @@ class OscillationRateCalculator(MetricCalculatorBase):
                     "is_oscillating": False,
                     "oscillation_period": 0.0,
                     "reason": "empty_polarity",
+                    **({"assessmentState": "COMPLETE"} if self.new_semantics else {}),
+                    **bias_key,
                     **sp_info,
                 },
             )
@@ -320,9 +431,101 @@ class OscillationRateCalculator(MetricCalculatorBase):
                 "mean_half_period_samples": round(mean_half_period, 2),
                 "amplitude": round(amplitude, 4),
                 "amplitude_ratio": round(amplitude_ratio, 6),
+                **({"assessmentState": "COMPLETE"} if self.new_semantics else {}),
+                **bias_key,
                 **sp_info,
             },
         )
+
+    def _bias_oscillation_evidence(
+        self,
+        errors: np.ndarray,
+        pv_range: float,
+        *,
+        min_zero_crossings: int = 4,
+        min_half_period_samples: float = 8.0,
+        min_amplitude_ratio: float = 0.002,
+        similarity_threshold: float = 0.4,
+    ) -> dict[str, Any]:
+        """偏置振荡补充证据（P3-09c，C14-EA2；纯辅助证据，不参与评分）.
+
+        算法（10§3.3"偏置振荡候选"行）：连续段上分离偏置（均值）与允许的
+        慢趋势（线性拟合），再验证去偏信号的四重条件——完整周期数（零交叉
+        ≥ min_zero_crossings）、周期一致性（半周期时长相似率 ≥ 阈值，正负
+        极性分别）、幅度（均值绝对偏差 ≥ min_amplitude_ratio×U）、最短半
+        周期（≥ min_half_period_samples）。
+
+        拒绝语义：单调漂移/白噪声/有色噪声去趋势后残差幅度不足或周期不
+        一致，不因"去趋势"自动命中；少点周期（粗采样）按最短半周期拒绝。
+
+        Returns:
+            证据字典（evidenceOnly=True 恒定——只作辅助证据，不另造评分引擎）。
+        """
+        out: dict[str, Any] = {
+            "detected": False,
+            "evidenceOnly": True,
+            "note": "偏置振荡补充证据：不改变振荡率判定，不参与 S 修正",
+        }
+        n = len(errors)
+        if n < 8 or pv_range <= 0:
+            out["reason"] = "insufficient_data"
+            return out
+        arr = np.asarray(errors, dtype=float)
+        offset_mean = float(np.mean(arr))
+        centered = arr - offset_mean
+        # 分离慢趋势（线性拟合）：漂移的主要成分被移除后残差幅度不足即拒绝
+        idx = np.arange(n, dtype=float)
+        slope: float | None = None
+        try:
+            fit_slope, intercept = np.polyfit(idx, centered, 1)
+            detrended = centered - (fit_slope * idx + intercept)
+            slope = float(fit_slope)
+        except np.linalg.LinAlgError:
+            detrended = centered
+        amplitude_mean = float(np.mean(np.abs(detrended)))
+        out.update(
+            {
+                "offsetMean": round(offset_mean, 6),
+                "trendSlopePerSample": round(slope, 8) if slope is not None else None,
+                "amplitudeMean": round(amplitude_mean, 6),
+                "amplitudeRatio": round(amplitude_mean / pv_range, 6),
+            }
+        )
+        # 幅度条件（量程比例）
+        if amplitude_mean < min_amplitude_ratio * pv_range:
+            out["reason"] = "amplitude_below_floor"
+            return out
+        # 完整周期数与周期一致性
+        crossings = self._find_zero_crossings(detrended)
+        out["zeroCrossings"] = len(crossings)
+        if len(crossings) < min_zero_crossings:
+            out["reason"] = "insufficient_complete_cycles"
+            return out
+        segments = self._compute_iae_segments(detrended, crossings, None)
+        pos_dur = [s[1] for s in segments if s[2] > 0]
+        neg_dur = [s[1] for s in segments if s[2] < 0]
+        if not pos_dur or not neg_dur:
+            out["reason"] = "empty_polarity"
+            return out
+        mean_half = float(np.mean(pos_dur + neg_dur))
+        out["meanHalfPeriodSamples"] = round(mean_half, 2)
+        if mean_half < min_half_period_samples:
+            out["reason"] = "half_period_below_floor"
+            return out
+        s_ta = self._similarity_rate(pos_dur)
+        s_tb = self._similarity_rate(neg_dur)
+        out["durationSimilarity"] = {"s_ta": round(s_ta, 4), "s_tb": round(s_tb, 4)}
+        if s_ta < similarity_threshold or s_tb < similarity_threshold:
+            out["reason"] = "period_inconsistent"
+            return out
+        out.update(
+            {
+                "detected": True,
+                "cycles": len(crossings) // 2,
+                "periodSamples": round(2.0 * mean_half, 2),
+            }
+        )
+        return out
 
     def _mean_half_period_seconds(
         self,

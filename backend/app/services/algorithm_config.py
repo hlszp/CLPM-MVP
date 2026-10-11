@@ -52,6 +52,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
         "SLOW": {
             "similarity_threshold": 0.4,
@@ -63,6 +64,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
         "FAST": {
             "similarity_threshold": 0.4,
@@ -74,6 +76,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
         "LOGIC": {
             "similarity_threshold": 0.4,
@@ -85,6 +88,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
     },
     # 整改 F2（2026-08-08）：原硬编码参数配置化，默认值与计算器常量一致（行为不变）
@@ -128,6 +132,15 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "recovery_persistence": 5,
             "min_disturbance_duration": 3.0,
             "sp_step_sigma": 3.0,
+            # P3-09a 静稳 F 参考资格（EA-D02 采纳口径内登记；仅
+            # CANDIDATE_V3_RC1 profile 消费，legacy 不读）
+            "reference_min_valid_rate": 0.95,
+            "reference_min_samples": 100,
+            "reference_min_coverage": 0.95,
+            "reference_noise_floor_ratio": 0.001,
+            "reference_sp_range_ratio": 0.001,
+            "reference_trend_ratio": 0.001,
+            "reference_op_range_ratio": 0.001,
         },
         "SLOW": {
             "ideal_settling_ratio": 1.0,
@@ -137,6 +150,13 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "recovery_persistence": 5,
             "min_disturbance_duration": 3.0,
             "sp_step_sigma": 3.0,
+            "reference_min_valid_rate": 0.95,
+            "reference_min_samples": 100,
+            "reference_min_coverage": 0.95,
+            "reference_noise_floor_ratio": 0.001,
+            "reference_sp_range_ratio": 0.001,
+            "reference_trend_ratio": 0.001,
+            "reference_op_range_ratio": 0.001,
         },
         "FAST": {
             "ideal_settling_ratio": 1.0,
@@ -146,6 +166,13 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "recovery_persistence": 5,
             "min_disturbance_duration": 3.0,
             "sp_step_sigma": 3.0,
+            "reference_min_valid_rate": 0.95,
+            "reference_min_samples": 100,
+            "reference_min_coverage": 0.95,
+            "reference_noise_floor_ratio": 0.001,
+            "reference_sp_range_ratio": 0.001,
+            "reference_trend_ratio": 0.001,
+            "reference_op_range_ratio": 0.001,
         },
         "LOGIC": {
             "ideal_settling_ratio": 1.0,
@@ -155,6 +182,13 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "recovery_persistence": 5,
             "min_disturbance_duration": 3.0,
             "sp_step_sigma": 3.0,
+            "reference_min_valid_rate": 0.95,
+            "reference_min_samples": 100,
+            "reference_min_coverage": 0.95,
+            "reference_noise_floor_ratio": 0.001,
+            "reference_sp_range_ratio": 0.001,
+            "reference_trend_ratio": 0.001,
+            "reference_op_range_ratio": 0.001,
         },
     },
     "accuracy_rate": {
@@ -179,6 +213,8 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            # P3-09c：SP 暂态剔除窗物理秒（新 profile 优先；legacy 读点数键）
+            "sp_tracking_window_seconds": 60.0,
         },
         "SLOW": {
             "decay_ratio": 0.05,
@@ -187,6 +223,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
         "FAST": {
             "decay_ratio": 0.05,
@@ -195,6 +232,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
         "LOGIC": {
             "decay_ratio": 0.05,
@@ -203,6 +241,7 @@ _DEFAULTS: dict[str, dict[str, dict[str, Any]]] = {
             "sp_step_exclusion_enabled": True,
             "sp_step_sigma": 3.0,
             "sp_tracking_window": 60,
+            "sp_tracking_window_seconds": 60.0,
         },
     },
 }
@@ -334,6 +373,21 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "risk": "MEDIUM",
             "riskNote": "窗口过大将缩小有效统计样本",
         },
+        "sp_tracking_window_seconds": {
+            "label": "SP 跟踪剔除窗（秒）",
+            "min": 5.0,
+            "max": 3600.0,
+            "unit": "s",
+            "description": (
+                "SP 阶跃后剔除的跟踪窗物理秒数（P3-09c 暂态秒数迁移；仅新 profile 消费）"
+            ),
+            "defaultBasis": (
+                "P3-09c：60s（旧 60 点×1s 声明周期的兼容迁移初值，来源=legacy_points_conversion）"
+            ),
+            "kind": "business",
+            "risk": "MEDIUM",
+            "riskNote": "同一物理秒在不同采样周期下剔除点数不同；过大将缩小有效统计样本",
+        },
     },
     "fast_rate": {
         "ideal_settling_ratio": {
@@ -414,6 +468,86 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "kind": "internal",
             "risk": "LOW",
             "riskNote": "阶跃检测灵敏度",
+        },
+        "reference_min_valid_rate": {
+            "label": "参考资格最小有效率",
+            "min": 0.5,
+            "max": 1.0,
+            "unit": "",
+            "description": "静稳 F 参考资格的最小 mask 有效点占比（仅新 profile 消费）",
+            "defaultBasis": "P3-09a（EA-D02 采纳口径内登记）：0.95=A 级有效数据率门槛",
+            "kind": "internal",
+            "risk": "MEDIUM",
+            "riskNote": "收紧后静稳参考资格更难获得",
+        },
+        "reference_min_samples": {
+            "label": "参考资格最少样本",
+            "type": "int",
+            "min": 10,
+            "max": 10000,
+            "unit": "点",
+            "description": "静稳 F 参考资格的最少连续观测样本数（仅新 profile 消费）",
+            "defaultBasis": "P3-09a：100 点，与 settling_time MIN_POINTS 同源",
+            "kind": "internal",
+            "risk": "LOW",
+            "riskNote": "连续观测时长/样本下限",
+        },
+        "reference_min_coverage": {
+            "label": "参考资格最小覆盖率",
+            "min": 0.5,
+            "max": 1.0,
+            "unit": "",
+            "description": "静稳 F 参考资格的时间视图最小覆盖率（未知不补；仅新 profile 消费）",
+            "defaultBasis": "P3-09a：0.95（视图可用时才检查，不可用记录 TIME_VIEW_UNAVAILABLE）",
+            "kind": "internal",
+            "risk": "MEDIUM",
+            "riskNote": "降低后缺覆盖窗口也可能获参考分",
+        },
+        "reference_noise_floor_ratio": {
+            "label": "参考资格噪声底",
+            "min": 0.0001,
+            "max": 0.01,
+            "unit": "",
+            "description": "静稳资格冻结噪声上限（σ(E) 占量程比例；仅新 profile 消费）",
+            "defaultBasis": "P3-09a：0.001，与 settling_time noise_floor_ratio 同源",
+            "kind": "internal",
+            "risk": "MEDIUM",
+            "riskNote": "放宽后有波动的窗口也可能获参考分",
+        },
+        "reference_sp_range_ratio": {
+            "label": "参考资格SP平稳带",
+            "min": 0.0001,
+            "max": 0.05,
+            "unit": "",
+            "description": "静稳资格 SP 平稳上限（max−min 占量程比例；超限即拒；仅新 profile）",
+            "defaultBasis": "P3-09a：0.001（SP 事件/爬坡直接拒参考）",
+            "kind": "internal",
+            "risk": "MEDIUM",
+            "riskNote": "放宽后带 SP 事件的窗口可能获参考分",
+        },
+        "reference_trend_ratio": {
+            "label": "参考资格PV趋势上限",
+            "min": 0.0001,
+            "max": 0.05,
+            "unit": "",
+            "description": (
+                "静稳资格 PV 净趋势上限（|斜率|×时长 占量程比例；同步斜坡拒；仅新 profile）"
+            ),
+            "defaultBasis": "P3-09a：0.001（C07-EA6 同步斜坡不套参考 100）",
+            "kind": "internal",
+            "risk": "MEDIUM",
+            "riskNote": "放宽后爬坡窗口可能获参考分",
+        },
+        "reference_op_range_ratio": {
+            "label": "参考资格OP行程上限",
+            "min": 0.0001,
+            "max": 0.05,
+            "unit": "",
+            "description": ("静稳资格 OP 无激励上限（max−min 占 OP 量程比例；信号在包内时检查）"),
+            "defaultBasis": "P3-09a：0.001（OP 不在 bundle 时记录 NOT_IN_BUNDLE 不冒称已检查）",
+            "kind": "internal",
+            "risk": "LOW",
+            "riskNote": "仅 OP 信号存在时生效",
         },
     },
     "accuracy_rate": {
@@ -497,6 +631,21 @@ PARAM_META: dict[str, dict[str, dict[str, Any]]] = {
             "kind": "business",
             "risk": "MEDIUM",
             "riskNote": "窗口过大将缩小有效统计样本",
+        },
+        "sp_tracking_window_seconds": {
+            "label": "SP 跟踪剔除窗（秒）",
+            "min": 5.0,
+            "max": 3600.0,
+            "unit": "s",
+            "description": (
+                "SP 阶跃后剔除的跟踪窗物理秒数（P3-09c 暂态秒数迁移；仅新 profile 消费）"
+            ),
+            "defaultBasis": (
+                "P3-09c：60s（旧 60 点×1s 声明周期的兼容迁移初值，来源=legacy_points_conversion）"
+            ),
+            "kind": "business",
+            "risk": "MEDIUM",
+            "riskNote": "同一物理秒在不同采样周期下剔除点数不同；过大将缩小有效统计样本",
         },
     },
     "saturation_rate": {
@@ -623,6 +772,7 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "sp_step_exclusion_enabled": "SP阶跃剔除",
         "sp_step_sigma": "SP阶跃剔除",
         "sp_tracking_window": "SP阶跃剔除",
+        "sp_tracking_window_seconds": "SP阶跃剔除",
     },
     "fast_rate": {
         "ideal_settling_ratio": "稳定判定",
@@ -632,6 +782,13 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "recovery_persistence": "扰动分析",
         "min_disturbance_duration": "扰动分析",
         "sp_step_sigma": "扰动分析",
+        "reference_min_valid_rate": "静稳参考资格",
+        "reference_min_samples": "静稳参考资格",
+        "reference_min_coverage": "静稳参考资格",
+        "reference_noise_floor_ratio": "静稳参考资格",
+        "reference_sp_range_ratio": "静稳参考资格",
+        "reference_trend_ratio": "静稳参考资格",
+        "reference_op_range_ratio": "静稳参考资格",
     },
     "accuracy_rate": {"e_max_tolerance_ratio": "判定阈值"},
     "stability_rate": {
@@ -641,6 +798,7 @@ PARAM_CATEGORY: dict[str, dict[str, str]] = {
         "sp_step_exclusion_enabled": "SP阶跃剔除",
         "sp_step_sigma": "SP阶跃剔除",
         "sp_tracking_window": "SP阶跃剔除",
+        "sp_tracking_window_seconds": "SP阶跃剔除",
     },
     "settling_time": {"settling_threshold": "判定阈值", "noise_floor_ratio": "判定阈值"},
     "effective_auto_rate": {"default_e_max_ratio": "判定阈值", "saturation_epsilon": "判定阈值"},

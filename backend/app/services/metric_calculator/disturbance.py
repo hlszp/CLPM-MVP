@@ -204,13 +204,18 @@ def detect_sp_tracking_windows(
     sample_interval: float,
     sp_step_sigma: float,
     window_points: int | None = None,
+    window_seconds: float | None = None,
 ) -> list[bool]:
     """检测 SP 阶跃并标记跟踪窗口（公共接口，fast_rate 扰动分析与稳定率剔除共用）。
 
     阶跃判定：|sp[i+1]-sp[i]| > sp_step_sigma × pstdev(sp_diffs)。
     跟踪窗口从阶跃点（新 SP 首个点）起持续：
-    - window_points 显式给定时取该值（无 ideal_t 上下文的调用方，如稳定率）
-    - 否则按约 ideal_t 时长换算（ideal_t<=0 时回退 60 点）
+    - ``window_seconds`` 给定时按**物理秒**换算点数（P3-09c 暂态秒数迁移：
+      ceil(seconds / sample_interval)——同一物理 60s 剔除在 1/5/10s 采样下
+      剔除秒数一致，不再"5 秒采样的 60 点变成 60 秒"；10§3.3"SP 暂态剔除
+      改为可追溯的真实秒数"）；
+    - ``window_points`` 显式给定时取该值（legacy 点数口径，向后兼容）；
+    - 否则按约 ideal_t 时长换算（ideal_t<=0 时回退 60 点）。
 
     Returns:
         布尔数组（长度 n），True 表示该点处于 SP 阶跃后的跟踪窗口内
@@ -229,7 +234,10 @@ def detect_sp_tracking_windows(
         return tracking
 
     step_threshold = sp_step_sigma * sp_diff_std
-    if window_points is not None:
+    if window_seconds is not None and sample_interval > 0:
+        # P3-09c：物理秒口径（ceil 保证不少于声明的秒数；至少 1 点）
+        window_size = max(1, math.ceil(window_seconds / sample_interval))
+    elif window_points is not None:
         window_size = max(1, window_points)
     elif ideal_t > 0 and sample_interval > 0:
         window_size = max(5, int(ideal_t / sample_interval))
