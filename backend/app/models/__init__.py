@@ -14,6 +14,7 @@ from app.models.alert import (
     AlertSuppression,
 )
 from app.models.algorithm_parameter import AlgorithmParameter
+from app.models.assessment_release import AssessmentReleaseRegistry  # P3-08a
 from app.models.audit import SysAuditLog
 from app.models.base import Base, TimestampMixin
 from app.models.calc_dataset_snapshot import CalculationDatasetSnapshot  # P2-03
@@ -87,6 +88,7 @@ __all__ = [
     "LoopHealthFlag",
     "TimestampMixin",
     "AlgorithmParameter",
+    "AssessmentReleaseRegistry",  # P3-08a 评估发布代际登记
     "SysDictItem",
     "SysUser",
     "PlantNode",

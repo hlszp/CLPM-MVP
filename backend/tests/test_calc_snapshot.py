@@ -153,7 +153,9 @@ class _LoadDB:
         self._db = db
 
 
-def _kpi_manifest_extra(loop_id="loop-1", weights=None, effective_params=None, **extra) -> dict:
+def _kpi_manifest_extra(
+    loop_id="loop-1", weights=None, effective_params=None, source_extra=None, **extra
+) -> dict:
     meta = {
         "loopId": loop_id,
         "window": {"tsStart": _TS0.isoformat(), "tsEnd": _TS1.isoformat()},
@@ -175,6 +177,9 @@ def _kpi_manifest_extra(loop_id="loop-1", weights=None, effective_params=None, *
             "fitness": {},
             **effective_params,
         }
+    if source_extra is not None:
+        # P3-08a：source 发布三节（assessmentProfile/releaseGeneration/dataPolicyVersion）
+        meta["source"].update(source_extra)
     meta.update(extra)
     return meta
 

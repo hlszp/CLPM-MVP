@@ -46,6 +46,11 @@ RETENTION_FROZEN = "FROZEN"
 KIND_KPI_GRID = "KPI_GRID"  # KPI/评估：DataBlock 网格（缺口=逐槽 mask，不删点）
 KIND_IDENTIFICATION = "IDENTIFICATION"  # 辨识：完整分析输入（多段+审计目录）
 KIND_DIAGNOSIS_RAW = "DIAGNOSIS_RAW"  # 诊断：宽表原始序列+质量码
+# P3-08a（10§3.5 两类对照输入区分）：原事件包——同一时点冻结的原始事件、
+# 质量、缺口覆盖、窗口前初始状态、绑定与单位解释；派生网格包（KPI_GRID）
+# 经 manifest.derivation 引用本包（原事件包 hash + 派生网格双 hash 可复核）。
+# 缺原事件的旧粗网格包只能做公式重放，不可伪称已验证取数修复。
+KIND_KPI_ORIGINAL_EVENTS = "KPI_ORIGINAL_EVENTS"
 
 
 class CalculationDatasetSnapshot(Base):
@@ -96,7 +101,7 @@ class CalculationDatasetSnapshot(Base):
             name="ck_calc_dataset_snapshot_retention",
         ),
         CheckConstraint(
-            "kind IN ('KPI_GRID', 'IDENTIFICATION', 'DIAGNOSIS_RAW')",
+            "kind IN ('KPI_GRID', 'IDENTIFICATION', 'DIAGNOSIS_RAW', 'KPI_ORIGINAL_EVENTS')",
             name="ck_calc_dataset_snapshot_kind",
         ),
         CheckConstraint(
@@ -126,6 +131,7 @@ __all__ = [
     "KIND_DIAGNOSIS_RAW",
     "KIND_IDENTIFICATION",
     "KIND_KPI_GRID",
+    "KIND_KPI_ORIGINAL_EVENTS",
     "RETENTION_FROZEN",
     "RETENTION_NORMAL",
     "CalculationDatasetSnapshot",
