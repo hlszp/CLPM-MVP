@@ -131,6 +131,18 @@ class TestBackfillTaskEvaluate:
         assert resp.status_code == 403
         assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
 
+    def test_start_task_pe_engineer_forbidden(self, client, task_redis, fake_redis) -> None:
+        """P4-02 D1（REWORK）回归：start_task 启动 PENDING 的 BACKFILL 任务，
+        为历史重算同入口——PE 即使持有 metric:task-run 种子码（A/I/P）也必须
+        被 A/I 角色锚拦下（403，守卫先于任务查找，任意 taskId 均可验证）。"""
+        with mock_current_user(TEST_USERS["pe_engineer"]):
+            resp = client.post(
+                "/api/v1/tasks/00000000-0000-0000-0000-000000000301/start",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
+
     def test_backfill_loop_ids_priority_over_plant_node_ids(
         self, client, task_redis, fake_redis
     ) -> None:

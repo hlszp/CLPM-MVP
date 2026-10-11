@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
@@ -67,7 +67,11 @@ router = APIRouter(prefix="/performance", tags=["performance"])
 _FLOOR_DT = datetime(1970, 1, 1)
 
 
-@router.get("/gate-overview", response_model=ApiResponse[dict])
+@router.get(
+    "/gate-overview",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_gate_overview_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -86,7 +90,11 @@ async def get_gate_overview_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/metrics", response_model=ApiResponse[list[MetricConfigItem]])
+@router.get(
+    "/metrics",
+    response_model=ApiResponse[list[MetricConfigItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_metrics_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -101,7 +109,7 @@ async def update_metric_endpoint(
     metric_id: str,
     body: MetricConfigUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新指标配置（仅 ADMIN）。
 
@@ -126,7 +134,11 @@ async def update_metric_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/rules", response_model=ApiResponse[list[EngineRuleItem]])
+@router.get(
+    "/rules",
+    response_model=ApiResponse[list[EngineRuleItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_rules_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -141,7 +153,7 @@ async def update_rule_endpoint(
     rule_id: str,
     body: EngineRuleUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新引擎规则（仅 ADMIN）。"""
     data = await update_engine_rule(
@@ -160,7 +172,11 @@ async def update_rule_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/ranking", response_model=ApiResponse[list[RankingItem]])
+@router.get(
+    "/ranking",
+    response_model=ApiResponse[list[RankingItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_ranking_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
@@ -218,7 +234,11 @@ async def get_ranking_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/analytics", response_model=ApiResponse[AnalyticsData])
+@router.get(
+    "/analytics",
+    response_model=ApiResponse[AnalyticsData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_analytics_endpoint(
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
@@ -240,7 +260,11 @@ async def get_analytics_endpoint(
     return success(data=data)
 
 
-@router.post("/analytics/export", response_class=PlainTextResponse)
+@router.post(
+    "/analytics/export",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def export_analytics_endpoint(
     body: ExportRequest,
     db: AsyncSession = Depends(get_db),
@@ -267,7 +291,11 @@ async def export_analytics_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/realtime-auto-rate", response_model=ApiResponse[dict])
+@router.get(
+    "/realtime-auto-rate",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_realtime_auto_rate_endpoint(
     plantNodeId: str | None = Query(None, description="工厂节点 ID（不传则全厂）"),
     db: AsyncSession = Depends(get_db),
@@ -379,7 +407,11 @@ def _fitness_tags_list(val) -> list[str] | None:
 # ---------------------------------------------------------------------------
 
 
-@router.get("/grade-distribution", response_model=ApiResponse[dict])
+@router.get(
+    "/grade-distribution",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_grade_distribution_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
@@ -419,7 +451,11 @@ async def get_grade_distribution_endpoint(
     return success(data=data)
 
 
-@router.get("/valve-alerts", response_model=ApiResponse[dict])
+@router.get(
+    "/valve-alerts",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_valve_alerts_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选（递归子树）"),
     timeWindow: str = Query(
@@ -460,7 +496,11 @@ async def get_valve_alerts_endpoint(
     return success(data=data)
 
 
-@router.get("/loops/snapshots", response_model=ApiResponse[KpiSnapshotListData])
+@router.get(
+    "/loops/snapshots",
+    response_model=ApiResponse[KpiSnapshotListData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_loop_snapshots_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
@@ -684,7 +724,11 @@ async def list_loop_snapshots_endpoint(
     return success(data=data)
 
 
-@router.get("/loops/metric-series", response_model=ApiResponse[MetricSeriesData])
+@router.get(
+    "/loops/metric-series",
+    response_model=ApiResponse[MetricSeriesData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_loop_metric_series_endpoint(
     loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤10 个）"),
     metricKey: str = Query(..., description="指标键（snake_case，服务端白名单校验）"),
@@ -728,7 +772,11 @@ async def get_loop_metric_series_endpoint(
     return success(data=data)
 
 
-@router.get("/loops/snapshots/window-agg", response_model=ApiResponse[dict])
+@router.get(
+    "/loops/snapshots/window-agg",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def window_agg_snapshots_endpoint(
     startTime: str = Query(..., description="窗口起始（ISO 8601）"),
     endTime: str = Query(..., description="窗口结束（ISO 8601）"),
@@ -774,7 +822,7 @@ def _parse_iso_arg(value: str | None) -> datetime | None:
 async def batch_delete_snapshots_endpoint(
     body: SnapshotBatchDeleteRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    _: SysUser = Depends(require_perms("metric:snapshot-manage")),
 ) -> dict:
     """按筛选条件批量删除历史快照（dryRun 默认 True 仅预览计数）。
 
@@ -845,7 +893,7 @@ async def get_result_record_endpoint(
 async def delete_snapshot_endpoint(
     snapshot_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    _: SysUser = Depends(require_perms("metric:snapshot-manage")),
 ) -> dict:
     """删除单条历史快照。"""
     from app.services.performance import delete_snapshot_by_id

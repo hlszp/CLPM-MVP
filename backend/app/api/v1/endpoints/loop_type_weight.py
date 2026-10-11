@@ -17,7 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -27,7 +27,11 @@ from app.services.loop_config import list_loop_type_weights, update_loop_type_we
 router = APIRouter(prefix="/configs/loop-type-weights", tags=["loop-type-weight"])
 
 
-@router.get("", response_model=ApiResponse[list[LoopTypeWeightItem]])
+@router.get(
+    "",
+    response_model=ApiResponse[list[LoopTypeWeightItem]],
+    dependencies=[Depends(require_perms("config:view"))],
+)
 async def list_loop_type_weights_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -42,7 +46,7 @@ async def update_loop_type_weight_endpoint(
     loop_type: str,
     body: LoopTypeWeightUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新指定回路类型权重（仅 ADMIN）。
 

@@ -48,10 +48,7 @@ import {
   Upload,
 } from 'ant-design-vue';
 
-import {
-  DICT_TYPE_LOOP_TYPE,
-  getDictItemsApi,
-} from '#/api/dict';
+import { DICT_TYPE_LOOP_TYPE, getDictItemsApi } from '#/api/dict';
 import {
   batchConfigLoopsApi,
   batchGroupLoopsApi,
@@ -308,7 +305,9 @@ const loopTypeDictAll = ref<DictApi.DictItemOption[]>([]);
 const loopTypeDictEnabled = ref<DictApi.DictItemOption[]>([]);
 
 const loopTypeLabelMap = computed<Record<string, string>>(() =>
-  Object.fromEntries(loopTypeDictAll.value.map((i) => [i.itemCode, i.itemLabel])),
+  Object.fromEntries(
+    loopTypeDictAll.value.map((i) => [i.itemCode, i.itemLabel]),
+  ),
 );
 
 /** 列表展示：字典 label 优先，未知 code 兜底显示原值 */
@@ -1485,7 +1484,7 @@ watch(
             @click="handleAdd"
           />
           <ClpmToolbarButton
-            v-permission="['ADMIN']"
+            v-permission="['loop:batch-config']"
             icon="ant-design:setting-outlined"
             label="批量设置"
             variant="primary"
@@ -1494,7 +1493,7 @@ watch(
             @click="handleBatchConfig"
           />
           <ClpmToolbarButton
-            v-permission="['ADMIN']"
+            v-permission="['loop:batch-config']"
             icon="ant-design:check-square-outlined"
             :label="`全选筛选结果(${total})`"
             :disabled="total === 0 || selectingAll"
@@ -1502,7 +1501,7 @@ watch(
             @click="handleSelectAllFiltered"
           />
           <ClpmToolbarButton
-            v-permission="['ADMIN', 'IC_ENGINEER']"
+            v-permission="['loop:batch-grouping']"
             icon="ant-design:group-outlined"
             label="批量分组"
             :disabled="selectedRowKeys.length < 2"
@@ -1510,7 +1509,7 @@ watch(
             @click="handleBatchGroup"
           />
           <ClpmToolbarButton
-            v-permission="['ADMIN']"
+            v-permission="['loop:batch-config']"
             icon="delete"
             label="批量删除"
             variant="danger"
@@ -2057,7 +2056,7 @@ watch(
                   </Tooltip>
                   <Tooltip title="删除回路">
                     <Button
-                      v-permission="['ADMIN']"
+                      v-permission="['loop:delete']"
                       type="text"
                       size="small"
                       danger
@@ -2236,7 +2235,6 @@ watch(
         </div>
       </div>
     </Modal>
-
   </Page>
 </template>
 

@@ -111,7 +111,11 @@ class UserInfo(CamelModel):
     displayName: str
     email: str | None = None
     role: str
+    # P4-02：动作码（按钮显隐）——DB 持久矩阵下发（sys_role_permission），
+    # 显式码集合（无通配；ADMIN 亦为全量展开），前端 v-permission 直接消费
     permissions: list[str]
+    # P4-02：页面码（菜单按可达页生成）——catalog kind=PAGE 的授权码集合
+    pageCodes: list[str] = []
     defaultHome: str = "/dashboard"
     lastLoginAt: str | None = None
 

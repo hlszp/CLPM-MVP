@@ -22,7 +22,7 @@ import logging
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.sys_user import SysUser
@@ -43,7 +43,7 @@ router = APIRouter(prefix="/configs/outlier-params", tags=["outlier-config"])
 @router.get("", response_model=ApiResponse[OutlierParamsSchema])
 async def get_outlier_params(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取 8 类异常值检测参数配置的合并视图.
 
@@ -65,7 +65,7 @@ async def get_outlier_params(
 async def save_outlier_params(
     body: OutlierParamsSaveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新异常值检测参数覆盖与检测开关（仅 ADMIN）.
 

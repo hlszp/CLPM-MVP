@@ -20,7 +20,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.models.plant_node import PlantNode
@@ -163,7 +163,7 @@ async def list_plant_nodes_paged(
 async def create_plant_node_endpoint(
     body: PlantNodeCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("plant:manage")),
 ) -> dict:
     """创建工厂节点（仅 ADMIN）。"""
     data = await create_plant_node(
@@ -186,7 +186,7 @@ async def create_plant_node_endpoint(
 @router.get("/export")
 async def export_plant_nodes_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> StreamingResponse:
     """导出工厂层级为 Excel 文件（.xlsx）。
 
@@ -206,7 +206,7 @@ async def export_plant_nodes_endpoint(
 async def import_plant_nodes_endpoint(
     file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("plant:manage")),
 ) -> dict:
     """批量导入工厂层级（Excel .xlsx）。
 
@@ -228,7 +228,7 @@ async def update_plant_node_endpoint(
     node_id: uuid.UUID,
     body: PlantNodeUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("plant:manage")),
 ) -> dict:
     """更新工厂节点（名称 + 排序 + 是否纳入性能评估 + 类型/父节点，仅 ADMIN）。"""
     data = await update_plant_node(
@@ -248,7 +248,7 @@ async def update_plant_node_endpoint(
 async def delete_plant_node_endpoint(
     node_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("plant:manage")),
 ) -> dict:
     """删除工厂节点（仅 ADMIN）。
 

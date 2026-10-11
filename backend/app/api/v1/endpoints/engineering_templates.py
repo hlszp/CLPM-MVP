@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Path
 from pydantic import Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.base import CamelModel
@@ -64,7 +64,7 @@ class TemplateVersionRollbackRequest(CamelModel):
 @router.get("", response_model=ApiResponse[dict])
 async def list_templates_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """模板列表（含版本数与关联回路数——TEMPLATE→回路映射可查）."""
     items = await et.list_templates(db)
@@ -76,6 +76,7 @@ async def create_template_endpoint(
     body: TemplateCreateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """创建工程模板（ADMIN；不发布版本）."""
     data = await et.create_template(
@@ -93,7 +94,7 @@ async def create_template_endpoint(
 async def get_template_endpoint(
     template_id: str = Path(min_length=1),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """模板详情 + 当前版本内容（无版本时 currentVersion=null）."""
     template = await et.get_template_by_id(db, template_id)
@@ -125,7 +126,7 @@ async def get_template_endpoint(
 async def list_versions_endpoint(
     template_id: str = Path(min_length=1),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """版本历史（追加式不可变账本，按版本倒序）."""
     items = await et.list_versions(db, template_id)
@@ -138,6 +139,7 @@ async def publish_version_endpoint(
     body: TemplateVersionPublishRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """发布不可变新版本（ADMIN；追加版本行 + 前进 current_version 指针）.
 
@@ -173,6 +175,7 @@ async def rollback_version_endpoint(
     body: TemplateVersionRollbackRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """current_version 指针回拨到既有版本（ADMIN；版本历史保持追加式）."""
     if body is None:  # pragma: no cover
@@ -201,7 +204,7 @@ async def list_template_loops_endpoint(
     template_id: str = Path(min_length=1),
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_READ_ROLES)),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """模板关联回路清单（发布影响范围可查；pin/跟随状态见回路详情）."""
     template = await et.get_template_by_id(db, template_id)

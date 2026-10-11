@@ -30,10 +30,10 @@ from app.services.auth import (
     authenticate,
     change_password,
     get_default_home,
-    get_permissions,
     logout,
     refresh_tokens,
 )
+from app.services.authz_runtime import get_effective_codes
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -43,8 +43,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # ---------------------------------------------------------------------------
 
 
-def _build_user_info(user: SysUser) -> dict:
-    """Build the user info dict for login / me responses."""
+def _build_user_info(user: SysUser, effective: dict[str, list[str]]) -> dict:
+    """Build the user info dict for login / me responses.
+
+    P4-02：permissions/pageCodes 改由 DB 持久授权矩阵（sys_role_permission，
+    经 authz_runtime.get_effective_codes）下发——显式码集合（无通配），
+    数据库保存驱动真实授权，不依赖前端常量。
+    """
     last_login = user.last_login_at.isoformat() if user.last_login_at else None
     return {
         "id": str(user.id),
@@ -52,7 +57,8 @@ def _build_user_info(user: SysUser) -> dict:
         "displayName": user.display_name,
         "email": user.email,
         "role": user.role,
-        "permissions": get_permissions(user.role),
+        "permissions": effective["actions"],
+        "pageCodes": effective["pages"],
         "defaultHome": get_default_home(user.role),
         "lastLoginAt": last_login,
     }
@@ -74,13 +80,14 @@ async def login(body: LoginRequest, request: Request, db: AsyncSession = Depends
         remember_me=body.rememberMe,
         device_ip=client_ip,
     )
+    effective = await get_effective_codes(db, user.role)
     return success(
         data={
             "accessToken": tokens.accessToken,
             "refreshToken": tokens.refreshToken,
             "tokenType": "Bearer",
             "expiresIn": tokens.expiresIn,
-            "user": _build_user_info(user),
+            "user": _build_user_info(user, effective),
         }
     )
 
@@ -112,9 +119,13 @@ async def logout_endpoint(
 
 
 @router.get("/me", response_model=ApiResponse[UserInfo])
-async def me(user: SysUser = Depends(get_current_user)) -> dict:
+async def me(
+    user: SysUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
     """Get current user info including permissions and default home."""
-    return success(data=_build_user_info(user))
+    effective = await get_effective_codes(db, user.role)
+    return success(data=_build_user_info(user, effective))
 
 
 @router.put("/password", response_model=ApiResponse[dict])

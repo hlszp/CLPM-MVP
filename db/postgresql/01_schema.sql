@@ -2706,7 +2706,7 @@ CREATE TABLE IF NOT EXISTS sys_authz_policy (
     after_value JSONB,
     rollback_of INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
-    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK')),
+    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION')),
     CONSTRAINT uq_sys_authz_policy_rollback_of UNIQUE (rollback_of)
 );
 CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_operation ON sys_authz_policy (operation);

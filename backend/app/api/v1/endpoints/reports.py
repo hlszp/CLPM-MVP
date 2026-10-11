@@ -31,7 +31,7 @@ from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS, _run_to_summary
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -136,7 +136,7 @@ def _parse_date_range(
 @router.get("/configs", response_model=ApiResponse[list[ReportConfigItem]])
 async def list_configs_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("system:view")),
 ) -> dict:
     """获取报表配置列表（仅 ADMIN）。"""
     data = await list_configs(db)
@@ -147,7 +147,7 @@ async def list_configs_endpoint(
 async def create_config_endpoint(
     body: ReportConfigCreateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:report-config")),
 ) -> dict:
     """创建报表配置（仅 ADMIN）。"""
     data = await create_config(
@@ -167,7 +167,7 @@ async def update_config_endpoint(
     config_id: uuid.UUID,
     body: ReportConfigUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:report-config")),
 ) -> dict:
     """更新报表配置（仅 ADMIN）。"""
     data = await update_config(
@@ -187,7 +187,7 @@ async def update_config_endpoint(
 async def generate_report_endpoint(
     body: ReportGenerateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:report-config")),
 ) -> dict:
     """手动触发报表生成（仅 ADMIN，异步任务，返回 taskId）。"""
     data = await trigger_report_generation(
@@ -203,7 +203,7 @@ async def generate_report_endpoint(
 async def get_task_status_endpoint(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("system:view")),
 ) -> dict:
     """查询报表任务状态（仅 ADMIN，用于前端轮询）。"""
     data = await get_task_status(db=db, task_id=str(task_id))
@@ -215,7 +215,11 @@ async def get_task_status_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/overview", response_model=ApiResponse[ReportOverviewData])
+@router.get(
+    "/overview",
+    response_model=ApiResponse[ReportOverviewData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_overview(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -257,7 +261,11 @@ async def get_report_diagnosis_statistics(
     return success(data=data)
 
 
-@router.get("/benefit", response_model=ApiResponse[ReportBenefitData])
+@router.get(
+    "/benefit",
+    response_model=ApiResponse[ReportBenefitData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_benefit(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -277,7 +285,11 @@ async def get_report_benefit(
     return success(data=data)
 
 
-@router.get("/benefit/orders", response_model=ApiResponse[dict])
+@router.get(
+    "/benefit/orders",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_benefit_orders(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -352,7 +364,11 @@ async def _report_run_plant_condition(db: AsyncSession, plant_node_id: str | Non
     return [LoopLedger.unit_id.in_(unit_ids)]
 
 
-@router.get("/data-quality", response_model=ApiResponse[dict])
+@router.get(
+    "/data-quality",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_data_quality(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -375,7 +391,11 @@ async def get_report_data_quality(
 _DQ_AUDIT_ISSUE_TYPES = ("no_data", "bad_quality", "low_density", "held")
 
 
-@router.get("/data-quality/audit", response_model=ApiResponse[DataQualityAuditData])
+@router.get(
+    "/data-quality/audit",
+    response_model=ApiResponse[DataQualityAuditData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_data_quality_audit(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -489,7 +509,11 @@ async def get_report_data_quality_audit(
     return success(data=data)
 
 
-@router.get("/alert-statistics", response_model=ApiResponse[dict])
+@router.get(
+    "/alert-statistics",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_alert_statistics(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -518,7 +542,11 @@ async def get_report_alert_statistics(
     return success(data=data)
 
 
-@router.get("/handling-statistics", response_model=ApiResponse[dict])
+@router.get(
+    "/handling-statistics",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_handling_statistics(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -541,7 +569,11 @@ async def get_report_handling_statistics(
     return success(data=data)
 
 
-@router.get("/diagnosis-runs", response_model=ApiResponse[dict])
+@router.get(
+    "/diagnosis-runs",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_report_diagnosis_runs(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -588,6 +620,7 @@ async def get_report_diagnosis_runs(
 @router.get(
     "/diagnosis-runs/export",
     response_class=PlainTextResponse,
+    dependencies=[Depends(require_perms("metric:view"))],
 )
 async def export_report_diagnosis_runs(
     db: AsyncSession = Depends(get_db),
@@ -655,7 +688,11 @@ async def export_report_diagnosis_runs(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/stage-lock", response_model=ApiResponse[ReportStageLockState])
+@router.get(
+    "/stage-lock",
+    response_model=ApiResponse[ReportStageLockState],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_stage_lock_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -678,7 +715,7 @@ async def get_stage_lock_endpoint(
 async def put_stage_lock_endpoint(
     body: ReportStageLockUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:report-config")),
     plantNodeId: str | None = Query(None),
 ) -> dict:
     """设置/解除阶段锁定（仅 ADMIN）。传 stage=null 解除锁定。"""
@@ -738,7 +775,11 @@ _ttl_thread = threading.Thread(target=_ttl_cleanup_pdf_tasks, daemon=True)
 _ttl_thread.start()
 
 
-@router.post("/export-pdf", response_model=ApiResponse[ReportPdfExportTask])
+@router.post(
+    "/export-pdf",
+    response_model=ApiResponse[ReportPdfExportTask],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def trigger_export_pdf(
     body: ReportPdfExportRequest,
     db: AsyncSession = Depends(get_db),
@@ -827,7 +868,11 @@ async def _async_pdf_export_wrapper(kwargs: dict) -> None:
                 rec["error"] = str(exc)
 
 
-@router.get("/export-tasks/{task_id}", response_model=ApiResponse[ReportPdfExportTask])
+@router.get(
+    "/export-tasks/{task_id}",
+    response_model=ApiResponse[ReportPdfExportTask],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_export_task_status_endpoint(
     task_id: str,
     _: SysUser = Depends(get_current_user),
@@ -853,7 +898,7 @@ async def get_export_task_status_endpoint(
 from fastapi.responses import Response as _Response  # noqa: E402
 
 
-@router.get("/export-download/{task_id}")
+@router.get("/export-download/{task_id}", dependencies=[Depends(require_perms("metric:view"))])
 async def download_export_pdf(
     task_id: str,
     _: SysUser = Depends(get_current_user),

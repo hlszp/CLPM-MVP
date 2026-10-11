@@ -45,7 +45,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -506,7 +506,11 @@ def _build_suggestion_filters(params: dict[str, Any], args: dict[str, Any]) -> s
     return " AND ".join(conds)
 
 
-@router.get("/suggestions", response_model=ApiResponse[dict])
+@router.get(
+    "/suggestions",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
 async def list_suggestions(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -583,7 +587,7 @@ async def list_suggestions(
 async def create_suggestion(
     body: CreateSuggestionBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """手动新增建议（§6.1：run_id 置空、source=MANUAL、建议人=当前登录用户）。"""
     if not body.loopId:
@@ -611,7 +615,11 @@ async def create_suggestion(
     return success(_suggestion_to_dict(row))
 
 
-@router.get("/suggestions/{suggestion_id}", response_model=ApiResponse[dict])
+@router.get(
+    "/suggestions/{suggestion_id}",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
 async def get_suggestion(
     suggestion_id: str,
     db: AsyncSession = Depends(get_db),
@@ -649,7 +657,7 @@ async def get_suggestion(
 async def accept_suggestion(
     suggestion_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """接受（PENDING → ACCEPTED；记录审核人/时间，§4.1 #1）。"""
     sug = await _get_suggestion_or_404(db, suggestion_id)
@@ -668,7 +676,7 @@ async def reject_suggestion(
     suggestion_id: str,
     body: RejectBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """驳回（PENDING → REJECTED 终态；rejected_reason 必填，§4.1 #2）。"""
     sug = await _get_suggestion_or_404(db, suggestion_id)
@@ -690,7 +698,7 @@ async def ignore_suggestion(
     suggestion_id: str,
     body: IgnoreBody,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    _: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """忽略（PENDING → IGNORED 终态；ignore_reason 必填，§4.1 #3）。"""
     sug = await _get_suggestion_or_404(db, suggestion_id)
@@ -709,7 +717,7 @@ async def ignore_suggestion(
 async def convert_suggestions(
     body: ConvertBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """转工单（§4.1 #4：ACCEPTED → CONVERTED，多建议合一单并各自回链）。
 
@@ -867,7 +875,11 @@ def _build_order_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
     return " AND ".join(conds)
 
 
-@router.get("/orders", response_model=ApiResponse[dict])
+@router.get(
+    "/orders",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
 async def list_orders(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -967,7 +979,7 @@ def _fmt_csv_ts(iso: str | None) -> str:
     return iso[:19].replace("T", " ") if iso else ""
 
 
-@router.get("/orders/export")
+@router.get("/orders/export", dependencies=[Depends(require_perms("handling:view"))])
 async def export_handling_orders(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -1112,7 +1124,11 @@ async def _load_order_suggestions(db: AsyncSession, order: HandlingOrder) -> lis
     ]
 
 
-@router.get("/orders/{order_id}", response_model=ApiResponse[dict])
+@router.get(
+    "/orders/{order_id}",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
 async def get_order(
     order_id: str,
     db: AsyncSession = Depends(get_db),
@@ -1143,7 +1159,7 @@ async def get_order(
 async def create_order(
     body: CreateOrderBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """手动新建工单（§6.2：source=MANUAL；loopId/actionType 必填，title 缺省 content 前 50 字）。"""
     if not body.loopId:
@@ -1199,7 +1215,7 @@ async def start_order(
     order_id: str,
     body: OrderStartBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """开工（PENDING/REOPENED → EXECUTING，§4.2 #1/#7）。
 
@@ -1242,7 +1258,7 @@ async def feedback_order(
     order_id: str,
     body: FeedbackBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """执行反馈（EXECUTING 自环，§4.2 #3：content 必填，追加 feedback_log，状态不变）。"""
     order = await _get_order_or_404(db, order_id)
@@ -1263,7 +1279,7 @@ async def submit_order(
     order_id: str,
     body: SubmitBody,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    _: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """提交验证（EXECUTING → VERIFYING，§4.2 #4）。
 
@@ -1292,7 +1308,7 @@ async def verify_order(
     order_id: str,
     body: VerifyBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    user: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """验证结论（VERIFYING → CLOSED/REOPENED，§4.2 #5/#6）。
 
@@ -1339,7 +1355,7 @@ async def cancel_order(
     order_id: str,
     body: CancelBody,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    _: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """作废（PENDING/EXECUTING → CANCELLED 终态，§4.2 #2；cancel_reason 必填）。
 
@@ -1366,7 +1382,7 @@ async def cancel_order(
 async def order_kpi_comparison(
     order_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_HANDLING_ROLES)),
+    _: SysUser = Depends(require_perms("handling:operate")),
 ) -> dict:
     """KPI 前后对比预览（VERIFYING 阶段实时拉取，不落库；verify 时才固化）。"""
     order = await _get_order_or_404(db, order_id)
@@ -1460,7 +1476,11 @@ def _loop_agg_row_to_dict(r: Any, unit_paths: dict[str, str]) -> dict[str, Any]:
     }
 
 
-@router.get("/loops", response_model=ApiResponse[dict])
+@router.get(
+    "/loops",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
 async def list_handling_loops(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -1588,7 +1608,11 @@ async def list_handling_loops(
     )
 
 
-@router.get("/statistics", response_model=ApiResponse[dict])
+@router.get(
+    "/statistics",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("handling:view"))],
+)
 async def get_handling_statistics(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),

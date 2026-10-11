@@ -19,6 +19,7 @@ const routes: RouteRecordRaw[] = [
     path: '/loop/workbench360',
     component: () => import('#/views/loop/workbench360/index.vue'),
     meta: {
+      permCode: 'page:workbench.main',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'EXPERT'],
       fullPathKey: false,
       icon: 'lucide:panel-top-close',

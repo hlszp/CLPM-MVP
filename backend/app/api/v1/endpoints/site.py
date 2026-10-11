@@ -28,7 +28,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -208,7 +208,7 @@ async def get_site_config(
 async def update_site_config(
     body: SiteConfigUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:basic-manage")),
 ) -> dict:
     """更新基础信息（仅 ADMIN，事务性 + 写审计）."""
     current = await _load_site_config(db)
@@ -262,7 +262,7 @@ async def upload_logo(
         description="LOGO 类型：cover=封面页（横向布局）/ content=内容页（方形）",
     ),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:basic-manage")),
 ) -> dict:
     """上传 LOGO 图片，返回静态访问 URL.
 

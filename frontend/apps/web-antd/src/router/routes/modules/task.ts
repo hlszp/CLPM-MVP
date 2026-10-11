@@ -12,6 +12,7 @@ const routes: RouteRecordRaw[] = [
     path: '/tasks/:taskId',
     component: () => import('#/views/task/detail.vue'),
     meta: {
+      permCode: 'page:task.detail',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
       hideInMenu: true,
       title: '任务详情',

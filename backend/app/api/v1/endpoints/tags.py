@@ -26,7 +26,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -140,7 +140,7 @@ async def export_tags_endpoint(
 async def import_tags_endpoint(
     file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("tag:manage")),
 ) -> dict:
     """批量导入测点清单（Excel .xlsx）。
 
@@ -157,6 +157,7 @@ async def batch_delete_tags_endpoint(
     body: TagBatchDeleteRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("tag:manage")),
 ) -> dict:
     """批量删除测点（仅 ADMIN）。
 
@@ -176,7 +177,7 @@ async def batch_delete_tags_endpoint(
 async def create_tag_endpoint(
     body: TagCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("tag:manage")),
 ) -> dict:
     """新建测点（ADMIN/IC_ENGINEER）。
 
@@ -275,7 +276,7 @@ async def update_tag_endpoint(
     tag_id: str,
     body: TagUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("tag:manage")),
 ) -> dict:
     """更新测点（描述/量程/单位/测点类型/参数类型/TDengine tag ID）。"""
     data = await update_tag(
@@ -298,6 +299,7 @@ async def delete_tag_endpoint(
     tag_id: str,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("tag:manage")),
 ) -> dict:
     """删除测点（仅 ADMIN）。
 

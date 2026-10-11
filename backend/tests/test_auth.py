@@ -49,7 +49,10 @@ class TestLogin:
         user = data["user"]
         assert user["username"] == "admin"
         assert user["role"] == "ADMIN"
-        assert user["permissions"] == ["*"]
+        # P4-02：显式码（无 "*" 通配），pageCodes 含系统管理页
+        assert "*" not in user["permissions"]
+        assert "loop:delete" in user["permissions"]
+        assert "page:system.users" in user["pageCodes"]
         assert user["defaultHome"] == "/workbench"
 
     def test_login_success_all_roles(self, client, mock_db, fake_redis) -> None:
@@ -62,29 +65,76 @@ class TestLogin:
             )
             assert resp.status_code == 200, f"{username} login failed: {resp.json()}"
             perms = resp.json()["data"]["user"]["permissions"]
+            pages = resp.json()["data"]["user"]["pageCodes"]
+            # P4-02：permissions 改由 DB 授权矩阵（种子兜底）下发显式码集合
+            # （无通配，ADMIN 亦全量展开），pageCodes=菜单可达页码集合
             if username == "admin":
-                assert perms == ["*"]
+                assert "*" not in perms
+                assert "loop:delete" in perms
+                assert "system:user-manage" in perms
+                assert "alert:subscription-manage" in perms
+                assert "page:system.permissions" in pages
             elif username == "ic_engineer":
-                assert "loop:*" in perms
+                assert "loop:create" in perms
+                assert "loop:import" in perms
+                assert "loop:delete" not in perms
                 assert "portal:view" in perms
+                assert "page:config.tag" in pages
+                assert "page:system.users" not in pages
             elif username == "pe_engineer":
-                assert "tracker:*" in perms
+                assert "tracker:operate" in perms
                 assert "loop:view" in perms
                 # P1-04/AUTH-02：PE 提交→轮询→结果/记录链闭合（读码）
                 assert "tuning:view" in perms
             elif username == "sponsor":
-                # P1-04/AUTH-02：模块查看五角色——补 loop:view/tuning:view（只读）
+                # P1-04/AUTH-02：模块查看五角色——只读 7 码（零写红线）
                 assert perms == [
-                    "portal:view",
-                    "metric:view",
-                    "diagnosis:view",
                     "alert:view",
+                    "diagnosis:view",
                     "handling:view",
                     "loop:view",
+                    "metric:view",
+                    "portal:view",
                     "tuning:view",
+                ]
+                assert pages == [
+                    "page:assess.dashboard",
+                    "page:assess.indicator",
+                    "page:assess.kpi-report",
+                    "page:assess.loop-evaluation",
+                    "page:assess.matrix",
+                    "page:assess.performance",
+                    "page:cockpit.diagnosis",
+                    "page:cockpit.handling",
+                    "page:cockpit.loops",
+                    "page:cockpit.overview",
+                    "page:cockpit.performance",
+                    "page:cockpit.tuning",
+                    "page:diagnosis.overview",
+                    "page:diagnosis.records",
+                    "page:diagnosis.tasks",
+                    "page:handling.archive",
+                    "page:handling.orders",
+                    "page:handling.statistics",
+                    "page:handling.suggestions",
+                    "page:handling.tasks",
+                    "page:handling.workbench",
+                    "page:monitor.alerts",
+                    "page:monitor.attention",
+                    "page:monitor.loops",
+                    "page:reports.alert-statistics",
+                    "page:reports.benefit",
+                    "page:reports.data-quality",
+                    "page:reports.diagnosis",
+                    "page:reports.handling",
+                    "page:reports.performance",
+                    "page:tuning.overview",
+                    "page:tuning.records",
+                    "page:tuning.verification",
                 ]
             elif username == "expert":
                 assert "tracker:review" in perms
+                assert "tuning:advanced" in perms
 
     def test_login_user_not_found(self, client, mock_db, fake_redis) -> None:
         """Non-existent user returns ERR_INVALID_CREDENTIALS (400).
@@ -368,7 +418,10 @@ class TestMe:
         data = resp.json()["data"]
         assert data["username"] == "admin"
         assert data["role"] == "ADMIN"
-        assert data["permissions"] == ["*"]
+        # P4-02：DB 授权矩阵显式码 + pageCodes
+        assert "*" not in data["permissions"]
+        assert "loop:delete" in data["permissions"]
+        assert "page:system.users" in data["pageCodes"]
         assert data["defaultHome"] == "/workbench"
 
     def test_me_no_token(self, client) -> None:

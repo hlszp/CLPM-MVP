@@ -31,6 +31,7 @@ const routes: RouteRecordRaw[] = [
         path: '/tuning/overview',
         component: () => import('#/views/tuning/overview.vue'),
         meta: {
+          permCode: 'page:tuning.overview',
           authority: [
             'ADMIN',
             'EXPERT',
@@ -46,8 +47,12 @@ const routes: RouteRecordRaw[] = [
         // 旧「整定工作台」书签兼容（2026-10-04 D3 转型）：query 透传（loopId 高亮定位）
         name: 'TuningWorkbench',
         path: '/tuning/workbench',
-        redirect: (to) => ({ path: '/tuning/overview', query: { ...to.query } }),
+        redirect: (to) => ({
+          path: '/tuning/overview',
+          query: { ...to.query },
+        }),
         meta: {
+          permCode: 'page:tuning.overview',
           hideInMenu: true,
           title: '整定总览',
         },
@@ -57,6 +62,7 @@ const routes: RouteRecordRaw[] = [
         path: '/tuning/records',
         component: () => import('#/views/tuning/records.vue'),
         meta: {
+          permCode: 'page:tuning.records',
           authority: [
             'ADMIN',
             'EXPERT',
@@ -73,6 +79,7 @@ const routes: RouteRecordRaw[] = [
         path: '/tuning/verification',
         component: () => import('#/views/tuning/verification.vue'),
         meta: {
+          permCode: 'page:tuning.verification',
           authority: [
             'ADMIN',
             'EXPERT',

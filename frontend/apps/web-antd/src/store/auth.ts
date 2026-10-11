@@ -12,6 +12,7 @@ import { defineStore } from 'pinia';
 
 import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
+import { setGrantedPageCodes } from '#/router/routes';
 
 /**
  * 角色默认首页（实现契约 §5 + UI/UX §4.2 三方对齐基准 + 方案 11 §3.1）
@@ -75,11 +76,16 @@ export const useAuthStore = defineStore('auth', () => {
         accessStore.setAccessToken(accessToken);
         accessStore.setRefreshToken(refreshToken);
 
-        // 3. 获取完整用户信息（/auth/me），包含 permissions 和 defaultHome
+        // 3. 获取完整用户信息（/auth/me），包含 permissions/pageCodes/defaultHome
+        //    P4-02：permissions=动作码（按钮显隐）、pageCodes=页面码（菜单可达页）
+        //    均由后端 DB 授权矩阵下发（显式码，无通配）
         const [currentUser, accessCodes] = await Promise.all([
           getUserInfoApi(),
           fetchAccessCodes(loginUser.permissions),
         ]);
+
+        // 页面码写入路由表模块（守卫在 generateAccess 前消费）
+        setGrantedPageCodes(currentUser.pageCodes ?? []);
 
         // 4. 转换为框架 UserInfo 并存储（首页按角色映射，见 ROLE_DEFAULT_HOME）
         userInfo = {
@@ -139,7 +145,7 @@ export const useAuthStore = defineStore('auth', () => {
     }
   }
 
-    /**
+  /**
    * 登出（对齐 IDS v3.2 §5.3）
    * 清空 Store + localStorage，跳转登录页
    *
@@ -189,9 +195,10 @@ export const useAuthStore = defineStore('auth', () => {
         await router.replace({ path: LOGIN_PATH, query: targetQuery });
       } catch {
         // Vue Router 中断或守卫抛错时兜底硬跳转，保证登出必达
-        const qs = redirect && currentFullPath
-          ? `?redirect=${encodeURIComponent(currentFullPath)}`
-          : '';
+        const qs =
+          redirect && currentFullPath
+            ? `?redirect=${encodeURIComponent(currentFullPath)}`
+            : '';
         window.location.replace(`${LOGIN_PATH}${qs}`);
       }
     }
@@ -215,6 +222,8 @@ export const useAuthStore = defineStore('auth', () => {
     };
     userStore.setUserInfo(userInfo);
     accessStore.setAccessCodes(currentUser.permissions || []);
+    // P4-02：页面码随用户信息刷新（守卫菜单过滤消费；无值时不过滤=旧后端兼容）
+    setGrantedPageCodes(currentUser.pageCodes ?? []);
     return userInfo;
   }
 

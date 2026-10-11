@@ -32,7 +32,7 @@ from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.redis import redis_client
@@ -540,7 +540,11 @@ async def _active_custom_task_details(user_id: str | None = None) -> list[dict[s
     return active
 
 
-@router.get("/active", response_model=ApiResponse[dict])
+@router.get(
+    "/active",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_active_tasks(
     user: SysUser = Depends(get_current_user),
 ) -> dict:
@@ -729,7 +733,7 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
 @router.post("/standard/evaluate", response_model=ApiResponse[TaskResponse])
 async def trigger_standard_evaluation(
     body: StandardTaskCreate,
-    user: SysUser = Depends(require_roles(*_TASK_CREATOR_ROLES)),
+    user: SysUser = Depends(require_perms("metric:task-run")),
 ) -> dict:
     """触发标准评估任务（手动触发每小时定时评估）.
 
@@ -804,7 +808,7 @@ async def trigger_standard_evaluation(
 async def trigger_custom_evaluation(
     body: CustomTaskCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_TASK_CREATOR_ROLES)),
+    user: SysUser = Depends(require_perms("metric:task-run")),
 ) -> dict:
     """触发自定义评估任务（按需触发）.
 
@@ -921,6 +925,7 @@ async def trigger_backfill(
     body: BackfillTaskCreate,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    _perm: SysUser = Depends(require_perms("metric:task-run")),
 ) -> dict:
     """触发历史重算任务（按时间窗批量重算，覆盖标准快照）.
 
@@ -1064,7 +1069,10 @@ async def trigger_backfill(
 @router.post("/{task_id}/start", response_model=ApiResponse[dict])
 async def start_task(
     task_id: str,
+    # D1（REWORK）：该端点启动 PENDING 的 BACKFILL 任务——与 trigger_backfill
+    # 同属历史重算入口，PE 不放开，镜像 backfill 双门（A/I 角色锚 + 码可收紧）
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    _perm: SysUser = Depends(require_perms("metric:task-run")),
 ) -> dict:
     """启动待执行（PENDING）的手动评估任务.
 
@@ -1148,7 +1156,11 @@ async def start_task(
 # 会被 /{task_id} 路径参数拦截（task_id="notifications"）。
 
 
-@router.get("/notifications", response_model=ApiResponse[dict])
+@router.get(
+    "/notifications",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_notifications(
     limit: int = Query(20, ge=1, le=100, description="返回条数（最多 100）"),
     user: SysUser = Depends(get_current_user),
@@ -1166,7 +1178,11 @@ async def list_notifications(
     return success(data={"items": notifications, "total": len(notifications)})
 
 
-@router.post("/notifications/{task_id}/read", response_model=ApiResponse[dict])
+@router.post(
+    "/notifications/{task_id}/read",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def mark_notification_read(
     task_id: str,
     user: SysUser = Depends(get_current_user),
@@ -1192,7 +1208,11 @@ async def mark_notification_read(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{task_id}", response_model=ApiResponse[TaskResponse])
+@router.get(
+    "/{task_id}",
+    response_model=ApiResponse[TaskResponse],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_task_status(
     task_id: str,
     _: SysUser = Depends(get_current_user),
@@ -1223,7 +1243,11 @@ async def get_task_status(
 # ---------------------------------------------------------------------------
 
 
-@router.get("", response_model=ApiResponse[TaskListResponse])
+@router.get(
+    "",
+    response_model=ApiResponse[TaskListResponse],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_tasks(
     taskType: str | None = Query(None, description="按任务类型筛选：STANDARD/CUSTOM/BACKFILL"),
     excludeTaskTypes: str | None = Query(
@@ -1352,7 +1376,7 @@ async def list_tasks(
 @router.post("/{task_id}/cancel", response_model=ApiResponse[TaskResponse])
 async def cancel_task(
     task_id: str,
-    user: SysUser = Depends(require_roles(*_TASK_CREATOR_ROLES)),
+    user: SysUser = Depends(require_perms("metric:task-manage")),
 ) -> dict:
     """取消运行中的任务.
 
@@ -1423,7 +1447,7 @@ async def cancel_task(
 @router.delete("/{task_id}", response_model=ApiResponse[dict])
 async def delete_task(
     task_id: str,
-    user: SysUser = Depends(require_roles(*_TASK_CREATOR_ROLES)),
+    user: SysUser = Depends(require_perms("metric:task-manage")),
 ) -> dict:
     """删除任务记录.
 
@@ -1469,7 +1493,11 @@ async def delete_task(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{task_id}/results", response_model=ApiResponse[dict])
+@router.get(
+    "/{task_id}/results",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_task_results(
     task_id: str,
     page: int = Query(1, ge=1, description="页码"),
@@ -1611,7 +1639,7 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{task_id}/download")
+@router.get("/{task_id}/download", dependencies=[Depends(require_perms("metric:view"))])
 async def download_task_artifact_endpoint(
     task_id: str,
     user: SysUser = Depends(get_current_user),

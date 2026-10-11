@@ -17,7 +17,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.sys_user import SysUser
@@ -48,7 +48,7 @@ router = APIRouter(prefix="/datasource", tags=["datasource"])
 @router.get("/config", response_model=ApiResponse[DataSourceConfigInfo])
 async def get_datasource_config_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """获取数据源配置（仅 ADMIN）。"""
     data = await get_datasource_config(db)
@@ -72,7 +72,7 @@ async def get_datasource_health_endpoint(
 async def update_datasource_config_endpoint(
     body: DataSourceConfigUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """更新数据源配置（仅 ADMIN）。
 
@@ -133,7 +133,7 @@ async def update_datasource_config_endpoint(
 @router.post("/test-history-api", response_model=ApiResponse[DataSourceTestResult])
 async def test_history_api_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """测试历史数据 API 连通性（仅 ADMIN，使用当前已保存配置，不写入数据库）。
 
@@ -164,7 +164,7 @@ async def test_history_api_endpoint(
 @router.post("/test-signalr", response_model=ApiResponse[DataSourceTestResult])
 async def test_signalr_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """测试 SignalR Hub 连通性（仅 ADMIN）。
 
@@ -179,7 +179,7 @@ async def test_signalr_endpoint(
 
 @router.post("/refresh-subscription", response_model=ApiResponse[SubscriptionRefreshResult])
 async def refresh_subscription_endpoint(
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """手工刷新实时订阅（仅 ADMIN）。
 
@@ -216,7 +216,7 @@ async def get_storage_mode_endpoint(
 async def update_storage_mode_endpoint(
     body: StorageModeUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """修改历史写入布局（仅 ADMIN，2026-09-25 收敛为单态）。
 

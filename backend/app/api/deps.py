@@ -10,6 +10,11 @@ Usage in endpoints::
 
     @router.get("", dependencies=[Depends(require_perms("loop:view"))])
     async def list_loops(...): ...
+
+P4-02：``require_perms`` 是服务端 authorizer 唯一规则——消费 P4-01 授权
+目录（显式 page/action 码）与 DB 持久矩阵（``sys_role_permission``），
+数据库保存驱动真实授权；``require_roles`` 保留角色锚定语义（ADMIN 专属
+系统管理端点、域码下 ADMIN 专属子集端点）。
 """
 
 from __future__ import annotations
@@ -27,6 +32,9 @@ from app.core.exceptions import BizError
 from app.core.security import JWTError, decode_token
 from app.models.sys_user import SysUser
 from app.services.auth import ROLE_PERMISSIONS, is_token_blacklisted
+
+# P4-02：require_perms 消费 DB 持久矩阵（延迟导入避免环）；ROLE_PERMISSIONS
+# 静态链保留给 has_perms 旧调用方（历史兼容），不再是服务端 API 门禁事实源。
 
 # Token extraction — auto-populates Swagger UI "Authorize" button.
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -151,18 +159,49 @@ def has_perms(role: str, *codes: str) -> bool:
 def require_perms(*codes: str) -> Callable[..., Awaitable[SysUser]]:
     """Return a dependency that enforces the user's role holds all ``codes``.
 
-    基于 ``ROLE_PERMISSIONS`` 映射做服务端权限码校验（P2 D5：权限码只下发
-    不执行的问题修复，先覆盖敏感读端点）。用法::
+    P4-02 起为服务端 authorizer 唯一规则：码必须在 P4-01 目录（
+    ``services.authz_catalog.CATALOG``）登记，授权判定读 DB 持久矩阵
+    （``sys_role_permission``，经 ``services.authz_runtime`` 每请求比对
+    revision——移除授权即下一请求收紧），不依赖前端常量。
+
+    - 未知码在路由注册期即 ``ValueError``（fail-fast，防拼写漂移）；
+    - SPONSOR 零写红线结构性强制：只读码（``*:view``/tracker:review）
+      之外的动作码恒拒，矩阵编辑不可绕过（P1-04 裁决）。
+
+    用法::
 
         @router.get("", dependencies=[Depends(require_perms("loop:view"))])
         async def list_loops(...): ...
     """
+    from app.services.authz_catalog import CATALOG
+    from app.services.authz_runtime import READ_ONLY_ACTION_CODES
 
-    async def _check(user: SysUser = Depends(get_current_user)) -> SysUser:
-        if not has_perms(user.role, *codes):
+    unknown = [code for code in codes if code not in CATALOG]
+    if unknown:
+        raise ValueError(
+            f"require_perms 引用了未在授权目录登记的码（注册期拒绝）: {', '.join(unknown)}"
+        )
+
+    async def _check(
+        user: SysUser = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> SysUser:
+        from app.services.authz_runtime import get_role_codes
+
+        if user.role == "SPONSOR":
+            write_codes = [code for code in codes if code not in READ_ONLY_ACTION_CODES]
+            if write_codes:
+                raise BizError(
+                    code="ERR_PERMISSION_DENIED",
+                    message=(f"SPONSOR 为只读角色（零写红线），无权执行: {', '.join(write_codes)}"),
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+        granted = await get_role_codes(db, user.role)
+        missing = [code for code in codes if code not in granted]
+        if missing:
             raise BizError(
                 code="ERR_PERMISSION_DENIED",
-                message=f"权限不足，需要权限码: {', '.join(codes)}",
+                message=f"权限不足，需要权限码: {', '.join(missing)}",
                 status_code=status.HTTP_403_FORBIDDEN,
             )
         return user

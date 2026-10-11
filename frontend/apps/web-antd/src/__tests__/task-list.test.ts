@@ -377,28 +377,42 @@ describe('统一任务列表 task/list.vue 诊断口径', () => {
   });
 });
 
-// ============ AUTH-03（P1-04）：取消/删除/批量删除按 _TASK_CREATOR_ROLES 显隐 ============
+// ============ AUTH-03（P1-04）→ P4-02：取消/删除/批量删除按动作码显隐 ============
 
 /**
  * 验证三处按钮（工具栏"批量删除"/操作列"取消"/"删除"）携带
- * v-permission="['ADMIN','IC_ENGINEER','PE_ENGINEER']"，与后端
- * tasks.py _TASK_CREATOR_ROLES 白名单一致——EXPERT/SPONSOR 不再
- * 渲染必然 403 的按钮。
+ * v-permission="['metric:task-manage']"（P4-02 起动作码绑定，与后端
+ * require_perms("metric:task-manage") 同源；种子角色集=原 _TASK_CREATOR_ROLES
+ * A/I/P）——EXPERT/SPONSOR 无码不渲染必然 403 的按钮。
  *
  * 手法：自定义 ATable 桩渲染 bodyCell 插槽（默认 stub 不渲染插槽内容），
- * permission 指令桩按注入角色复刻真实指令的"无权→注释占位替换"语义
- * （真实指令语义由 __tests__/directives.test.ts 覆盖，此处只验模板绑定）。
+ * permission 指令桩按注入的"角色+动作码"集合复刻真实指令的
+ * "无权→注释占位替换"语义（真实指令语义由 __tests__/directives.test.ts
+ * 覆盖，此处只验模板绑定）。
  */
 describe('统一任务列表 task/list.vue AUTH-03 角色显隐', () => {
   const TASK_CREATOR_ROLES = ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'];
 
-  /** 角色感知的 v-permission 指令桩（复刻真实指令隐藏语义） */
-  const makePermDirective = (roles: string[]) => ({
+  /**
+   * 角色 → /auth/me 下发的 granted 集合（角色名 + 动作码）。
+   * P4-02：评估任务创建者三角色持 metric:task-run/task-manage；
+   * EXPERT/SPONSOR 无任务管理码（SPONSOR 零写红线）。
+   */
+  const GRANTED_BY_ROLE: Record<string, string[]> = {
+    ADMIN: ['ADMIN', 'metric:task-run', 'metric:task-manage'],
+    EXPERT: ['EXPERT'],
+    IC_ENGINEER: ['IC_ENGINEER', 'metric:task-run', 'metric:task-manage'],
+    PE_ENGINEER: ['PE_ENGINEER', 'metric:task-run', 'metric:task-manage'],
+    SPONSOR: ['SPONSOR'],
+  };
+
+  /** granted 集合感知的 v-permission 指令桩（复刻真实指令隐藏语义） */
+  const makePermDirective = (granted: string[]) => ({
     mounted(el: HTMLElement, binding: { value: string | string[] }) {
       const required = Array.isArray(binding.value)
         ? binding.value
         : [binding.value];
-      if (!required.some((v) => roles.includes(v))) {
+      if (!required.some((v) => granted.includes(v))) {
         el.replaceWith(document.createComment(' v-permission(hidden) '));
       }
     },
@@ -429,9 +443,11 @@ describe('统一任务列表 task/list.vue AUTH-03 角色显隐', () => {
   };
 
   function mountWithRoles(roles: string[]) {
+    // 指令桩消费"角色+动作码"granted 集合（P4-02：/auth/me permissions 语义）
+    const granted = roles.flatMap((r) => GRANTED_BY_ROLE[r] ?? [r]);
     return mount(TaskList, {
       global: {
-        directives: { permission: makePermDirective(roles) },
+        directives: { permission: makePermDirective(granted) },
         stubs: {
           ...mountOptions.global.stubs,
           ATable: tableStub,

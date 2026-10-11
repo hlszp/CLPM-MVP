@@ -36,6 +36,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/link',
         component: () => import('#/views/loop/aas.vue'),
         meta: {
+          permCode: 'page:config.link',
           // 实现契约 §5：datasource.py/dcs.py 写端点仅 ADMIN
           authority: ['ADMIN'],
           icon: 'lucide:refresh-cw',
@@ -48,6 +49,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/tag',
         component: () => import('#/views/tag/list.vue'),
         meta: {
+          permCode: 'page:config.tag',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:list',
           order: 2,
@@ -59,6 +61,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/loop',
         component: () => import('#/views/loop/manage.vue'),
         meta: {
+          permCode: 'page:config.loop',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:network',
           order: 3,
@@ -72,6 +75,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/ledger',
         redirect: '/config/loop',
         meta: {
+          permCode: 'page:config.ledger',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '回路台账',
@@ -82,6 +86,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/factory',
         component: () => import('#/views/factory/config.vue'),
         meta: {
+          permCode: 'page:config.factory',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:factory',
           order: 6,
@@ -93,6 +98,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/datasource',
         component: () => import('#/views/loop/data.vue'),
         meta: {
+          permCode: 'page:config.datasource',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           icon: 'lucide:database',
           order: 7,
@@ -104,6 +110,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/metric',
         component: () => import('#/views/metric/config.vue'),
         meta: {
+          permCode: 'page:config.metric',
           authority: ['ADMIN'],
           icon: 'lucide:settings',
           order: 8,
@@ -115,6 +122,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/diagnosis',
         component: () => import('#/views/diagnosis/config.vue'),
         meta: {
+          permCode: 'page:config.diagnosis',
           authority: ['ADMIN'],
           icon: 'lucide:stethoscope',
           order: 9,
@@ -126,6 +134,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/alert-rules',
         component: () => import('#/views/alert/rules.vue'),
         meta: {
+          permCode: 'page:config.alert-rules',
           authority: ['ADMIN'],
           icon: 'lucide:bell-ring',
           order: 10,
@@ -138,6 +147,7 @@ const routes: RouteRecordRaw[] = [
         path: '/config/pid-template',
         redirect: '/config/link',
         meta: {
+          permCode: 'page:config.pid-template',
           authority: ['ADMIN'],
           hideInMenu: true,
           title: 'PID 结构模板',
@@ -148,13 +158,19 @@ const routes: RouteRecordRaw[] = [
         name: 'LegacyLoopAasSync',
         path: '/loop/aas-sync',
         redirect: '/config/link',
-        meta: { authority: ['ADMIN'], hideInMenu: true, title: '链路配置' },
+        meta: {
+          permCode: 'page:config.link',
+          authority: ['ADMIN'],
+          hideInMenu: true,
+          title: '链路配置',
+        },
       },
       {
         name: 'LegacyTagList',
         path: '/tag/list',
         redirect: '/config/tag',
         meta: {
+          permCode: 'page:config.tag',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '测点配置',
@@ -165,6 +181,7 @@ const routes: RouteRecordRaw[] = [
         path: '/tag',
         redirect: '/config/tag',
         meta: {
+          permCode: 'page:config.tag',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '测点配置',
@@ -175,6 +192,7 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/manage',
         redirect: '/config/loop',
         meta: {
+          permCode: 'page:config.loop',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '回路配置',
@@ -185,6 +203,7 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/factory',
         redirect: '/config/loop',
         meta: {
+          permCode: 'page:config.loop',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '工厂模型',
@@ -195,6 +214,7 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/ledger',
         redirect: '/config/loop',
         meta: {
+          permCode: 'page:config.loop',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '回路台账',
@@ -205,6 +225,7 @@ const routes: RouteRecordRaw[] = [
         path: '/loop/data',
         redirect: '/config/datasource',
         meta: {
+          permCode: 'page:config.datasource',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
           hideInMenu: true,
           title: '数据管理',
@@ -214,19 +235,34 @@ const routes: RouteRecordRaw[] = [
         name: 'LegacyMetricConfig',
         path: '/metric/config',
         redirect: '/config/metric',
-        meta: { authority: ['ADMIN'], hideInMenu: true, title: '指标配置' },
+        meta: {
+          permCode: 'page:config.metric',
+          authority: ['ADMIN'],
+          hideInMenu: true,
+          title: '指标配置',
+        },
       },
       {
         name: 'LegacyDiagnosisConfig',
         path: '/diagnosis/config',
         redirect: '/config/diagnosis',
-        meta: { authority: ['ADMIN'], hideInMenu: true, title: '诊断配置' },
+        meta: {
+          permCode: 'page:config.diagnosis',
+          authority: ['ADMIN'],
+          hideInMenu: true,
+          title: '诊断配置',
+        },
       },
       {
         name: 'LegacySystemPidTemplate',
         path: '/system/pid-template',
         redirect: '/config/link',
-        meta: { authority: ['ADMIN'], hideInMenu: true, title: 'PID 结构模板' },
+        meta: {
+          permCode: 'page:config.link',
+          authority: ['ADMIN'],
+          hideInMenu: true,
+          title: 'PID 结构模板',
+        },
       },
     ],
   },

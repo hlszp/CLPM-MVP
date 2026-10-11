@@ -20,7 +20,7 @@ from datetime import datetime
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.contracts.data_types import ControlType, TimeWindow
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -174,7 +174,7 @@ def _confidence_from_valid_rate(valid_rate: float) -> str:
 async def submit_plan(
     body: PlanRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """提交查询计划（仅 ADMIN）。
 
@@ -233,7 +233,7 @@ async def submit_plan(
 async def get_bundle(
     body: BundleRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """执行查询计划并返回 Bundle 摘要（仅 ADMIN）。
 
@@ -318,7 +318,7 @@ async def get_bundle(
 
 @router.get("/cache/stats", response_model=ApiResponse[CacheStatsResponse])
 async def get_cache_stats(
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """查看缓存统计（仅 ADMIN）。
 
@@ -387,7 +387,7 @@ async def get_cache_stats(
 @router.delete("/cache/{loop_id}", response_model=ApiResponse[dict])
 async def invalidate_cache(
     loop_id: str,
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("data:manage")),
 ) -> dict:
     """失效指定回路的缓存（仅 ADMIN）。
 

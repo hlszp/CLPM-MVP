@@ -24,7 +24,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -62,7 +62,11 @@ def _norm_filters(
     return sources, priorities, statuses
 
 
-@router.get("/attention", response_model=ApiResponse[dict])
+@router.get(
+    "/attention",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def list_attention_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     source: list[str] | None = Query(
@@ -119,7 +123,11 @@ async def list_attention_endpoint(
     return success(data=data)
 
 
-@router.get("/attention/export", response_class=PlainTextResponse)
+@router.get(
+    "/attention/export",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def export_attention_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     source: list[str] | None = Query(None, description="来源筛选（可重复）"),
@@ -239,6 +247,7 @@ async def get_workbench_summary_endpoint(
     # 权限与当前工作台一致：ADMIN/IC/PE/EXPERT 可读，Sponsor 不开放（前端不发起）。
     # PE 返回同结构但所有写动作 disabled（由服务端 nextAction 按角色生成）。
     user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
+    _perm: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """工作台首屏摘要（BFF）——一次返回首屏所需的全部摘要。
 

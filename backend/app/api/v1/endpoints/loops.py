@@ -170,7 +170,7 @@ async def list_loops_endpoint(
 async def create_loop_endpoint(
     body: LoopCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:create")),
 ) -> dict:
     """创建回路。"""
     score_weights = None
@@ -216,7 +216,7 @@ async def create_loop_endpoint(
 async def batch_config_loops_endpoint(
     body: LoopBatchConfigRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("loop:batch-config")),
 ) -> dict:
     """批量配置回路（仅 ADMIN）。
 
@@ -296,7 +296,7 @@ async def batch_config_loops_endpoint(
 async def batch_group_loops_endpoint(
     body: LoopBatchGroupingRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:batch-grouping")),
 ) -> dict:
     """批量建立复杂回路分组（仅 ADMIN / IC_ENGINEER）。
 
@@ -330,6 +330,7 @@ async def list_complex_groups_endpoint(
 @router.post("/health-flags/recompute", response_model=ApiResponse[dict])
 async def recompute_health_flags_endpoint(
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("loop:edit")),
 ) -> dict:
     """手动触发 SP 随动等健康标记判定（仅 ADMIN，2026-10-10 运维圈选）。
 
@@ -444,7 +445,7 @@ async def export_loops_endpoint(
     includeInEvaluation: bool | None = Query(None, description="按参评状态筛选"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("loop:export")),
 ) -> StreamingResponse:
     """导出回路台账为 Excel 文件（.xlsx）。"""
     content = await export_loops(
@@ -470,7 +471,7 @@ async def export_loops_endpoint(
 async def import_loops_endpoint(
     file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:import")),
 ) -> dict:
     """批量导入回路台账（Excel .xlsx）。
 
@@ -533,7 +534,7 @@ async def update_loop_endpoint(
     loop_id: str,
     body: LoopUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:edit")),
 ) -> dict:
     """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。"""
     score_weights = None
@@ -588,7 +589,7 @@ async def update_loop_endpoint(
 async def delete_loop_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("loop:delete")),
 ) -> dict:
     """删除回路（仅 ADMIN，硬删除）。
 
@@ -621,7 +622,7 @@ async def update_loop_tags_endpoint(
     loop_id: str,
     body: LoopTagMappingUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:edit")),
 ) -> dict:
     """批量更新回路 Tag 关联。
 
@@ -680,6 +681,7 @@ async def get_loop_monitor_detail_endpoint(
     db: AsyncSession = Depends(get_db),
     # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻回路监控详情（趋势/性能）
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
+    _perm: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。"""
     data = await get_loop_monitor_detail(
