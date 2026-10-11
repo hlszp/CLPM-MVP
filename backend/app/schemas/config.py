@@ -254,10 +254,14 @@ class DiagnosisConfigBatchResponse(CamelModel):
     Attributes:
         items: 诊断配置列表
         updatedCount: 更新条数（仅批量更新响应返回）
+        methodMeta: 字段级元数据（P2-01 CFG-02：区分注册表只读说明与真实
+            可调字段——algorithmType/calcMethod/params 活执行引擎不消费，
+            标注 readOnly；threshold/isEnabled 真实可调）。旧客户端可忽略。
     """
 
     items: list[DiagnosisConfigItem] = Field(default_factory=list)
     updatedCount: int | None = None
+    methodMeta: dict[str, dict[str, Any]] | None = None
 
 
 # ---------------------------------------------------------------------------

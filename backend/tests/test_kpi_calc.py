@@ -3465,6 +3465,82 @@ class TestSaturationUnifiedCaliber:
         await run(None, None, (20.0, 80.0), (20.0, 80.0))  # 配置缺失：按 0~100 兜底
 
 
+class TestC08FitnessCounterBaseline:
+    """C08 验收基线（P2-01，04-验收与容量基线 §C08）——fitness counter 纯函数直测.
+
+    - OP 饱和：OP=[0,1,3,50,97,99,100]、限位 0~100、全自控：
+      2% 带 → 4/7（0,1,99,100）；4% 带 → 6/7（0,1,3,97,99,100）
+    - SP-PV 偏差：误差=[1,5,15]、量程 100、3 点：
+      10% 偏差 → 1/3（仅 15>10）；20% 偏差 → 0/3
+    """
+
+    @staticmethod
+    def _op_counters(op_band: float) -> dict:
+        """OP 饱和场景：SP=PV（偏差恒 0，不干扰饱和判定）."""
+        from app.services.loop_fitness import compute_time_ratio_counters
+
+        return compute_time_ratio_counters(
+            op_series=[0.0, 1.0, 3.0, 50.0, 97.0, 99.0, 100.0],
+            sp_series=[50.0] * 7,
+            pv_series=[50.0] * 7,
+            mode_series=[1] * 7,
+            op_range=(0.0, 100.0),
+            pv_range=(0.0, 100.0),
+            op_sat_band_pct=op_band,
+            sp_pv_dev_pct=0.0,  # 偏差阈值 0 也不影响（|SP-PV|=0 恒不大于）
+        )
+
+    @staticmethod
+    def _dev_counters(dev_pct: float) -> dict:
+        """SP-PV 偏差场景：误差 [1,5,15]、OP 居中（不触发饱和）."""
+        from app.services.loop_fitness import compute_time_ratio_counters
+
+        return compute_time_ratio_counters(
+            op_series=[50.0, 50.0, 50.0],
+            sp_series=[0.0, 0.0, 0.0],
+            pv_series=[1.0, 5.0, 15.0],
+            mode_series=[1] * 3,
+            op_range=(0.0, 100.0),
+            pv_range=(0.0, 100.0),
+            op_sat_band_pct=0.0,  # 严格贴限（OP=50 居中不饱和，不干扰偏差判定）
+            sp_pv_dev_pct=dev_pct,
+        )
+
+    def test_c08_op_band_2pct_saturates_4_of_7(self) -> None:
+        """2% 带：阈值 [2, 98] → 0/1/99/100 饱和 = 4/7."""
+        counters = self._op_counters(op_band=2.0)
+        assert counters["auto_valid_count"] == 7
+        assert counters["_op_sat_count"] == 4
+        assert counters["op_saturated_ratio"] == pytest.approx(4 / 7)
+
+    def test_c08_op_band_4pct_saturates_6_of_7(self) -> None:
+        """4% 带：阈值 [4, 96] → 0/1/3/97/99/100 饱和 = 6/7."""
+        counters = self._op_counters(op_band=4.0)
+        assert counters["_op_sat_count"] == 6
+        assert counters["op_saturated_ratio"] == pytest.approx(6 / 7)
+
+    def test_c08_dev_10pct_counts_1_of_3(self) -> None:
+        """PV-SP 误差 [1,5,15]、量程 100：10% 阈值 → 仅 15 命中 = 1/3."""
+        counters = self._dev_counters(dev_pct=10.0)
+        assert counters["auto_valid_count"] == 3
+        assert counters["_dev_count"] == 1
+        assert counters["sp_pv_deviation_ratio"] == pytest.approx(1 / 3)
+
+    def test_c08_dev_20pct_counts_0(self) -> None:
+        """PV-SP 误差 [1,5,15]、量程 100：20% 阈值 → 0 命中 = 0/3."""
+        counters = self._dev_counters(dev_pct=20.0)
+        assert counters["_dev_count"] == 0
+        assert counters["sp_pv_deviation_ratio"] == 0.0
+
+    def test_c08_op_and_dev_independent_dimensions(self) -> None:
+        """独立性：饱和判定与偏差判定互不串扰（OP 场景偏差恒 0、
+        偏差场景 OP 恒居中，两维各自按实际阈值计数）."""
+        op_counters = self._op_counters(op_band=2.0)
+        assert op_counters["_dev_count"] == 0
+        dev_counters = self._dev_counters(dev_pct=10.0)
+        assert dev_counters["_op_sat_count"] == 0
+
+
 class TestSaveSnapshotPhase1Columns:
     """测试 _save_snapshot() 接受并持久化 Phase 1 新增 15 列。"""
 
