@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+from typing import Any
 
 import numpy as np
 
@@ -471,7 +472,7 @@ def _lowpass_signals(
     y: np.ndarray,
     sp: np.ndarray | None,
     ts: float,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray | None, str | None, dict | None]:
     """低通滤波：PV 谱主导频率自适应截止，Butterworth-2 + filtfilt 零相位.
 
     两条铁律：
@@ -485,10 +486,13 @@ def _lowpass_signals(
     峰），谱估计 detrend='constant' 且跳过 DC bin。Wn 夹在
     [0.005, 0.4]×Nyquist，≥ 上限说明快动态无安全余量 → 跳过。
     任一信号含非有限值时跳过（filtfilt 对 NaN 不稳健；清洗后不应出现）。
+
+    P2-03：第 5 返回值为结构化参数（appliedWn 等实际生效值，供辨识证据
+    契约的结构化预处理字段；note 字符串保持不变）。
     """
     arrs = [u, y] + ([sp] if sp is not None else [])
     if any(not np.isfinite(a).all() for a in arrs) or len(y) < 16:
-        return u, y, sp, None
+        return u, y, sp, None, None
 
     from scipy import signal as _sp_signal
 
@@ -496,16 +500,16 @@ def _lowpass_signals(
     nperseg = int(min(len(y), 256))
     freqs, psd = _sp_signal.welch(y, fs=fs, nperseg=nperseg, detrend="constant")
     if len(psd) < 3:
-        return u, y, sp, None
+        return u, y, sp, None, None
     psd_ac = psd[1:]  # 跳过 DC bin（残余均值不为谱峰）
     med = float(np.median(psd_ac))
     peak_i = int(np.argmax(psd_ac))
     if med <= 0 or float(psd_ac[peak_i]) <= _LOWPASS_PEAK_PROMINENCE * med:
-        return u, y, sp, None  # 无显著主峰：宽带信号（纯噪声/快动态），跳过
+        return u, y, sp, None, None  # 无显著主峰：宽带信号（纯噪声/快动态），跳过
     fc = float(freqs[peak_i + 1]) * _LOWPASS_FREQ_MARGIN
     wn = fc / (fs / 2.0)
     if wn >= _LOWPASS_WN_MAX:
-        return u, y, sp, None
+        return u, y, sp, None, None
     wn = max(wn, _LOWPASS_WN_MIN)
     b, a = _sp_signal.butter(2, wn)
     fu = _sp_signal.filtfilt(b, a, u)
@@ -515,10 +519,11 @@ def _lowpass_signals(
     y_std = float(np.std(y - np.mean(y)))
     diff_ratio = float(np.std(fy - y)) / y_std if y_std > 1e-12 else 0.0
     if diff_ratio < _LOWPASS_MIN_DIFF_RATIO:
-        return u, y, sp, None
+        return u, y, sp, None, None
     fsp = _sp_signal.filtfilt(b, a, sp) if sp is not None else None
     note = f"lowpass: fc={wn * fs / 2:.4g}Hz(Wn={wn:.3f}) butter2·filtfilt"
-    return fu, fy, fsp, note
+    meta = {"applied": True, "appliedWn": round(float(wn), 6), "appliedFcHz": round(float(fc), 8)}
+    return fu, fy, fsp, note, meta
 
 
 def _feasibility_dict(feasibility) -> dict | None:
@@ -537,6 +542,57 @@ def _evidence_cleaning_stats(cleaning_stats: dict) -> dict | None:
     if cleaning_stats["interpolated_points"] > 0 or cleaning_stats["dropped_points"] > 0:
         return cleaning_stats
     return None
+
+
+def _build_preprocessing_record(
+    *,
+    cleaning_stats: dict,
+    seg_note: str | None,
+    win_note: str | None,
+    detrend_note: str | None,
+    lowpass_meta: dict | None,
+    mode_provided: bool,
+    op_limits: tuple[float, float] | None,
+) -> dict[str, Any]:
+    """P2-03（R2 §三 DEC-10 补表述）：辨识预处理链结构化记录.
+
+    把原先只拼进 reason 字符串的三件套（自动选段 / 动态感知子窗 / 去趋势+
+    低通滤波）开关与实际生效参数提升为结构化字段；reason 字符串与既有
+    evidence 字段（data_hash 等）保持不变——evidence.data_hash 仍按预处理
+    后数据取，原始输入与预处理参数由不可变输入包 manifest.preprocess 承载
+    （app/services/calc_snapshot.py::save_identification_snapshot）。
+
+    字段口径（调用侧不可得时为显式 None，不伪补）：
+    - ``cleaning``：坏点清洗统计（P2-019）；
+    - ``autoSegment``：MODE/缺口/饱和切分（applied=note 非空）；
+    - ``autoWindow``：动态感知子窗（applied=note 非空）；
+    - ``detrend``：去趋势（enabled=全局开关，applied=实际生效）；
+    - ``lowpass``：低通滤波（applied=False 或含 appliedWn/appliedFcHz）；
+    - ``multiWindow``：v1.4 多窗编排窗位（外层编排器回填，含被检/入选/
+      胜出窗位与各窗拟合度）。
+    """
+    return {
+        "cleaning": {
+            "originalPoints": int(cleaning_stats.get("original_points", 0)),
+            "validPoints": int(cleaning_stats.get("valid_points", 0)),
+            "interpolatedPoints": int(cleaning_stats.get("interpolated_points", 0)),
+            "droppedPoints": int(cleaning_stats.get("dropped_points", 0)),
+        },
+        "autoSegment": {
+            "modeProvided": bool(mode_provided),
+            "opLimits": list(op_limits) if op_limits is not None else None,
+            "applied": bool(seg_note),
+            "note": seg_note,
+        },
+        "autoWindow": {"applied": bool(win_note), "note": win_note},
+        "detrend": {
+            "enabled": bool(_DETREND_ENABLED),
+            "applied": bool(detrend_note),
+            "note": detrend_note,
+        },
+        "lowpass": dict(lowpass_meta) if lowpass_meta else {"applied": False},
+        "multiWindow": None,  # 外层多窗编排回填（无编排时显式 None=未运行）
+    }
 
 
 def identify_from_history(
@@ -626,6 +682,23 @@ def identify_from_history(
                     f"（各段 fit={[round(t[1].best_model.fitting_score, 1) for t in _ok]}）；"
                     + (best_r.reason or "")
                 )
+                # P2-03（DEC-10）：多窗编排窗位结构化——被检/入选/胜出窗位
+                # 与各窗拟合度（reason 字符串保持不变；预算终止状态 P3 填入）
+                if best_r.preprocessing is None:
+                    best_r.preprocessing = {}
+                best_r.preprocessing["multiWindow"] = {
+                    "checkedWindows": [{"start": int(w[1]), "end": int(w[2])} for w in _wins],
+                    "succeededWindows": [
+                        {
+                            "start": int(s),
+                            "end": int(e),
+                            "fittingScore": round(r.best_model.fitting_score, 2),
+                        }
+                        for _k, r, s, e in _ok
+                    ],
+                    "selectedWindow": {"start": int(_bs), "end": int(_be)},
+                    "budgetTermination": None,
+                }
                 return best_r
             # 全窗失败 → 落回整窗既有流程（下方）
 
@@ -692,6 +765,8 @@ def identify_from_history(
     # 三项均可独立跳过，标注拼入 reason 透明化（不静默改变辨识输入）。
     # 激励检测（层 1）使用滤波前副本：滤波会抹平 OP 微小方向变化，
     # 在滤波后数据上检测会系统性偏严（闭环 OP 本就渐进少变号）。
+    # P2-03（R2 §三 DEC-10）：同步产出结构化预处理参数（steps 开关/参数/
+    # applied 事实），reason 字符串保持不变；data_hash 仍按预处理后数据取。
     preprocess_notes: list[str] = []
     u_raw, y_raw, sp_raw, seg_note = _auto_select_segment(u_raw, y_raw, sp_raw, mode, op_limits)
     if seg_note:
@@ -700,15 +775,25 @@ def identify_from_history(
     u_raw, y_raw, sp_raw, win_note = _auto_select_window(u_raw, y_raw, sp_raw, ts)
     if win_note:
         preprocess_notes.append(win_note)
+    detrend_note: str | None = None
     if _DETREND_ENABLED:
         u_raw, y_raw, sp_raw, detrend_note = _detrend_signals(u_raw, y_raw, sp_raw)
         if detrend_note:
             preprocess_notes.append(detrend_note)
     u_exc_probe, y_exc_probe = u_raw.copy(), y_raw.copy()
-    u_raw, y_raw, sp_raw, lowpass_note = _lowpass_signals(u_raw, y_raw, sp_raw, ts)
+    u_raw, y_raw, sp_raw, lowpass_note, lowpass_meta = _lowpass_signals(u_raw, y_raw, sp_raw, ts)
     if lowpass_note:
         preprocess_notes.append(lowpass_note)
     preprocess_note = "; ".join(preprocess_notes)
+    preprocess_structured = _build_preprocessing_record(
+        cleaning_stats=cleaning_stats,
+        seg_note=seg_note,
+        win_note=win_note,
+        detrend_note=detrend_note,
+        lowpass_meta=lowpass_meta,
+        mode_provided=mode is not None,
+        op_limits=op_limits,
+    )
 
     if sp_raw is not None:
         sp_range = float(np.ptp(sp_raw))
@@ -783,6 +868,7 @@ def identify_from_history(
             reason=f"{_fail_note}激励不足：{exc.verdict}",
             segments=[],
             theta_source=theta_source,
+            preprocessing=preprocess_structured,
         )
     exc_score = excitation_score(exc.condition_number, exc.significant_changes)
 
@@ -1069,6 +1155,7 @@ def identify_from_history(
             success=False,
             reason=f"{_fail_note}所有算法/阶次辨识均失败",
             theta_source=theta_source,
+            preprocessing=preprocess_structured,
         )
 
     # P2-006：Occam 削减 — SOPDT 优于 FOPDT 当且仅当 R²_val 相对提升 > 5% 且 BIC 下降
@@ -1082,6 +1169,7 @@ def identify_from_history(
             reason=f"{_fail_note}辨识可信度不足：{best.reason}",
             candidates=results,
             theta_source=theta_source,
+            preprocessing=preprocess_structured,
         )
 
     # P0-2：记录去均值偏置量（增量模型的零位基准，供结果审计追溯）
@@ -1095,6 +1183,7 @@ def identify_from_history(
         candidates=results,
         reason=f"{_ok_note}辨识成功（{offset_note}）",
         theta_source=theta_source,
+        preprocessing=preprocess_structured,
     )
 
 

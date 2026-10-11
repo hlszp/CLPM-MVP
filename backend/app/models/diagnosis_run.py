@@ -37,6 +37,12 @@ class DiagnosisRun(Base, TimestampMixin):
     trigger_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="MANUAL")
     time_window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     time_window_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # P2-03：不可变输入包引用（诊断宽表原始输入；NULL=该 run 不可完整复现）
+    dataset_snapshot_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_dataset_snapshot.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     operator_group: Mapped[str] = mapped_column(String(8), nullable=False, server_default="full")
 
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="RUNNING")

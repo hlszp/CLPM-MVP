@@ -777,6 +777,18 @@ def _resample_mode_to_grid(
     }
 
 
+def _dcs_template_revision(loop) -> str:
+    """P2-03：DCS 模板 revision（冻结口径：绑定 dcs_model 时 "dcs_model:{id}"）.
+
+    未绑定 DCS 型号 → 显式 ``UNKNOWN_DCS_TEMPLATE``（P2-04/P3-03 前不伪补
+    标准 kp/ti/td 表示；07 号文 §3.3 红线）。
+    """
+    dcs_model_id = getattr(loop, "dcs_model_id", None)
+    if dcs_model_id:
+        return f"dcs_model:{dcs_model_id}"
+    return "UNKNOWN_DCS_TEMPLATE"
+
+
 async def identify_model_from_history(
     db: AsyncSession,
     loop_id: str,
@@ -784,6 +796,7 @@ async def identify_model_from_history(
     end_time: str,
     candidate_model_types: list[str] | None = None,
     theta_estimate: float | None = None,
+    tuning_record_id: str | None = None,
 ) -> dict[str, Any]:
     """基于历史数据辨识过程对象 G_plant = PV/OP（Phase 2 主路径）.
 
@@ -797,9 +810,13 @@ async def identify_model_from_history(
         end_time: 结束时间（ISO 8601）
         candidate_model_types: 候选模型类型列表，默认 ["FOPDT","SOPDT"]
         theta_estimate: 纯滞后预估值（秒），None 自动估计
+        tuning_record_id: P2-03 输入包创建引用（tuning_record.id；任务层
+            先建占位记录再辨识，包与记录互链；None=无宿主记录不落包）
 
     Returns:
-        辨识结果 dict（含 modelType/params/fittingScore/confidenceLevel 等）
+        辨识结果 dict（含 modelType/params/fittingScore/confidenceLevel 等；
+        P2-03 起附 ``inputSnapshot``={snapshotId,inputHash,status} 或显式
+        SAVE_FAILED 状态——保存失败不阻断辨识，但不可主张完整复现）
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_TUNING_DATA_INSUFFICIENT
@@ -860,6 +877,51 @@ async def identify_model_from_history(
         op_limits=(0.0, 100.0),
     )
 
+    # P2-03（DEC-10 类别②：整定/辨识任务落包）：保存完整分析输入不可变包
+    # （不只胜出片段；预处理参数结构化随包）。失败不阻断辨识主链，结果显式
+    # 标 SAVE_FAILED——不可主张完整复现（诚实化原则）。
+    input_snapshot: dict[str, Any] | None = None
+    if tuning_record_id is not None:
+        try:
+            from app.services import calc_snapshot as _cs
+
+            snap = await _cs.save_identification_snapshot(
+                db,
+                loop_id=str(loop.id),
+                ts_start=datetime.fromisoformat(start_time.replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                ),
+                ts_end=datetime.fromisoformat(end_time.replace("Z", "+00:00")).replace(tzinfo=None),
+                timestamps_rel=signals["timestamps"],
+                op=op,
+                pv=pv,
+                sp=sp if sp else None,
+                mode=signals.get("mode") or None,
+                sampling_period_seconds=ts,
+                theta_estimate=theta_estimate,
+                candidate_model_types=[mt.value for mt in candidates],
+                result_dict=result.to_dict(),
+                tuning_record_id=tuning_record_id,
+                dcs_template_revision=_dcs_template_revision(loop),
+                valid_rate=signals.get("valid_rate"),
+                point_ctx=signals.get("point_axis"),
+            )
+            if snap is not None:
+                input_snapshot = {
+                    "snapshotId": str(snap.id),
+                    "inputHash": snap.input_hash,
+                    "status": "SAVED",
+                }
+        except Exception:  # noqa: BLE001
+            input_snapshot = {"status": "SAVE_FAILED"}
+            logger.warning(
+                "辨识输入包保存失败（loop=%s 窗口 %s~%s），结果不可主张完整复现",
+                loop.tag_name,
+                start_time,
+                end_time,
+                exc_info=True,
+            )
+
     if not result.success:
         return {
             "success": False,
@@ -868,6 +930,8 @@ async def identify_model_from_history(
             "algorithmVersion": result.algorithm_version,
             "dataPoints": len(pv),
             "validRate": signals["valid_rate"],
+            "inputSnapshot": input_snapshot,
+            "dcsTemplateRevision": _dcs_template_revision(loop),
         }
 
     # 转换为 API 响应格式
@@ -893,6 +957,8 @@ async def identify_model_from_history(
         f"algorithm={algo_confidence}(R²={d.get('fittingScore', 0):.1f}%), "
         f"final={final_confidence}"
     )
+    d["inputSnapshot"] = input_snapshot
+    d["dcsTemplateRevision"] = _dcs_template_revision(loop)
     return d
 
 

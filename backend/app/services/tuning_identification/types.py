@@ -247,6 +247,10 @@ class IdentificationResult:
     theta_source: ThetaSource | None = None
     # 算法版本单一真相源（pipeline.py re-export 使用；v1.2=IPDT 默认候选+val 稳态防护）
     algorithm_version: str = "TUNE_IDENT_v1.4"
+    # P2-03（R2 §三 DEC-10 补表述）：结构化预处理参数——从 reason 字符串
+    # 提升为结构化字段（三件套开关与参数/multi-window 入选窗位/分割比/
+    # 清洗统计/后置 data_hash）；evidence.data_hash 等既有字段不受影响。
+    preprocessing: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（API 响应）."""
@@ -255,6 +259,7 @@ class IdentificationResult:
                 "success": False,
                 "reason": self.reason,
                 "algorithmVersion": self.algorithm_version,
+                "preprocessing": self.preprocessing,
             }
             if self.theta_source is not None:
                 result["thetaSource"] = self.theta_source.value
@@ -284,6 +289,7 @@ class IdentificationResult:
             ],
             "algorithmVersion": self.algorithm_version,
             "reason": self.best_model.reason,
+            "preprocessing": self.preprocessing,
         }
         if self.theta_source is not None:
             result["thetaSource"] = self.theta_source.value

@@ -840,6 +840,8 @@ async def _run_batch_loop_calculations(
     on_completed=None,
     bundle_cache=None,
     concurrency: int = CONCURRENCY,
+    save_input_snapshot: bool = False,
+    pinned_config_revision: str | None = None,
 ) -> list[dict | None | Exception]:
     """Run loop KPI calculations with shared bounded-concurrency orchestration.
 
@@ -851,6 +853,10 @@ async def _run_batch_loop_calculations(
             False=禁用 L1/L2 缓存（backfill 场景，避免无用的缓存读写 I/O）。
         logical_run_id: P1-05 结果账本批次级逻辑运行身份（None=由
             _calculate_loop_kpi 按运行上下文确定性推导）。
+        save_input_snapshot: P2-03 是否保存不可变输入包（DEC-10：小时例行
+            KPI 不落包；custom 人工评估=显式人工请求类落包）。
+        pinned_config_revision: P2-03 任务边界固定的全局配置 revision
+            （P2-02 持久 revision；None=沿用内容摘要口径）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -902,6 +908,8 @@ async def _run_batch_loop_calculations(
                         source=source,
                         source_task_id=source_task_id,
                         logical_run_id=logical_run_id,
+                        save_input_snapshot=save_input_snapshot,
+                        pinned_config_revision=pinned_config_revision,
                     )
                     await worker_db.commit()
                     return result
@@ -1090,6 +1098,9 @@ async def _do_calculate(
         loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
         logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
 
+        # P2-03：任务边界固定全局配置 revision（标准小时链；批内所有 record 共用）
+        pinned_config_revision = await _pin_config_revision(db)
+
     loops_count = len(loops)
 
     # 注：原 L2 命中率检查 + 兜底预热已废止。计算阶段由 DataPlanner 按需取数：
@@ -1120,6 +1131,7 @@ async def _do_calculate(
         source_task_id=source_task_id,
         logical_run_id=logical_run_id,
         on_completed=_on_completed if task_id else None,
+        pinned_config_revision=pinned_config_revision,
     )
     t_calc_elapsed = time.perf_counter() - t_calc_start
     logger.info(
@@ -1261,6 +1273,8 @@ async def _do_calculate_custom_loop(
 
         type_weights = await get_loop_type_weights_map(db)
 
+        # P2-03：任务边界固定配置 revision + 显式人工评估落包（DEC-10 类别③）
+        pinned_config_revision = await _pin_config_revision(db)
         data_planner = _build_data_planner(db)
         snap = await _calculate_loop_kpi(
             db=db,
@@ -1275,6 +1289,8 @@ async def _do_calculate_custom_loop(
             logical_run_id=result_ledger.derive_loop_logical_run_id(
                 ts_start_dt, custom_task_id=task_id
             ),
+            save_input_snapshot=True,
+            pinned_config_revision=pinned_config_revision,
         )
         await db.commit()
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
@@ -1351,6 +1367,9 @@ async def _do_calculate_custom_batch(
             logical_run_id=result_ledger.derive_loop_logical_run_id(
                 ts_start_dt, custom_task_id=task_id
             ),
+            # P2-03：显式人工批量评估落包 + 任务边界固定配置 revision（DEC-10 类别③）
+            save_input_snapshot=True,
+            pinned_config_revision=await _pin_config_revision(db),
         )
         t_calc_elapsed = time.perf_counter() - t_calc_start
         logger.info(
@@ -1613,6 +1632,21 @@ async def _load_fitness_sys_configs(db) -> dict[str, str] | None:
         return None
 
 
+async def _pin_config_revision(db) -> str | None:
+    """P2-03：任务边界读取全局持久配置 revision（P2-02，任务中不切参）.
+
+    直接读 config_publication 的当前 revision（不读 Redis）；失败返回 None
+    → record 的 configRevision 回落实际消费配置内容摘要口径（不伪补版本）。
+    """
+    try:
+        from app.services.config_publish import get_current_revision
+
+        return str(await get_current_revision(db))
+    except Exception:  # noqa: BLE001
+        logger.warning("任务边界读取配置 revision 失败，回落内容摘要口径", exc_info=True)
+        return None
+
+
 async def _calculate_loop_kpi(
     db,
     loop: LoopLedger,
@@ -1626,6 +1660,8 @@ async def _calculate_loop_kpi(
     source: str | None = None,
     source_task_id: str | None = None,
     logical_run_id: str | None = None,
+    save_input_snapshot: bool = False,
+    pinned_config_revision: str | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1641,6 +1677,13 @@ async def _calculate_loop_kpi(
     _persist_snapshot 按运行上下文推导）；config_revision 取实际消费配置
     （类型权重 + fitness sys_config）的内容摘要。
 
+    P2-03 计算上下文与历史复现：
+    - configRevision 接 P2-02 持久 revision（任务边界固定，格式
+      ``rev:{n}:{digest16}``；不可得时回落内容摘要 ``digest:...``）；
+    - ``save_input_snapshot=True`` 时按 DEC-10 类别（显式人工请求）保存
+      不可变 NPZ+manifest 输入包并填充 record.datasetSnapshotId；保存失败
+      显式降级（payload 标 inputSnapshot 状态，绝不静默冒充可复现）。
+
     Args:
         db: 异步数据库会话
         loop: 回路对象
@@ -1652,6 +1695,8 @@ async def _calculate_loop_kpi(
         custom_task_id: 自定义任务 ID（非 None 时写入 kpi_snapshot_custom）
         loop_cfg: 预加载的回路配置（op_lower/op_upper/range_min/range_max）
         logical_run_id: 结果账本逻辑运行身份（批次级，None=上下文推导）
+        save_input_snapshot: 保存不可变输入包（DEC-10 范围控制，默认关）
+        pinned_config_revision: 任务边界固定的全局配置 revision（P2-02）
 
     Returns:
         快照字典，包含 status 字段
@@ -1668,15 +1713,21 @@ async def _calculate_loop_kpi(
     except Exception:  # noqa: BLE001
         fitness_sys_configs = None  # 使用默认阈值
 
-    # P1-05 结果账本：实际消费配置内容摘要作为 configRevision（P2-02 落地
-    # 全局 revision 前的诚实口径——配置内容变 → record 可区分）
+    # P1-05 结果账本：实际消费配置内容摘要作为 configRevision；P2-03 起叠加
+    # P2-02 任务边界固定的全局持久 revision（格式 rev:{n}:{digest16}，任务中
+    # 不切参；不可得时回落内容摘要口径 digest:...，不伪补版本）
     config_revision = result_ledger.config_revision_digest(
         {"typeWeights": type_weights or {}, "fitness": fitness_sys_configs or {}}
     )
+    if pinned_config_revision is not None:
+        config_revision = f"rev:{pinned_config_revision}:{config_revision.removeprefix('digest:')}"
 
     # 分段计时（2026-10-08 评估吞吐优化观测）：read=TDengine 取数 /
     # persist=快照写库 / compute=其余（门禁+三层计算+fitness）。
     # 结果 dict 附 _timing 键（仅内存返回供批量聚合日志，不入库）。
+    # P2-03：输入包状态（save_input_snapshot 时在三层计算前填充；保存失败
+    # 显式降级标记随 payload 入账本，datasetSnapshotId=None）
+    dataset_snapshot_state: dict[str, Any] | None = None
     _t0 = time.perf_counter()
     _t_read = 0.0
     _t_persist = 0.0
@@ -1696,6 +1747,10 @@ async def _calculate_loop_kpi(
         # P1-05 结果账本：逻辑运行身份 + 配置摘要注入（调用方未显式指定时）
         kwargs.setdefault("logical_run_id", logical_run_id)
         kwargs.setdefault("config_revision", config_revision)
+        # P2-03：输入包引用注入（save_input_snapshot 时已保存；含显式降级标记）
+        if dataset_snapshot_state is not None:
+            kwargs.setdefault("dataset_snapshot_id", dataset_snapshot_state.get("snapshotId"))
+            kwargs.setdefault("input_snapshot_state", dataset_snapshot_state)
         _r = await _persist_snapshot(**kwargs)
         _t_persist += time.perf_counter() - _tp
         return _r
@@ -1787,6 +1842,78 @@ async def _calculate_loop_kpi(
     # 构造权重映射（MetricConfig.weight > LoopTypeWeight > None）
     score_type = infer_score_type(loop.loop_type)
     weights = _build_weights_map(type_weights, score_type, metric_configs)
+
+    # P2-03：保存不可变输入包（DEC-10 类别=显式人工请求；小时例行不落包）。
+    # 包内容=实际消费的 DataBlock 全网格（缺口以逐槽 mask 显式保留，不删点
+    # 不拼段）+ manifest（绑定/量程/权重/配置上下文/构建摘要）。写入次序=
+    # 先原子写文件核 hash 再提交 DB 引用；失败显式降级（不阻断计算主链）。
+    if save_input_snapshot:
+        try:
+            from app.services import calc_snapshot as cs
+
+            arrays, blocks_meta = cs.serialize_data_blocks(bundles)
+            dataset_ref = (
+                getattr(_point_ctx, "dataset_ref", None) if _point_ctx is not None else None
+            ) or f"loop:{loop.id}"
+            manifest_extra: dict[str, Any] = {
+                "loopId": str(loop.id),
+                "tagName": loop.tag_name,
+                "loopType": loop.loop_type,
+                "window": {"tsStart": ts_start.isoformat(), "tsEnd": ts_end.isoformat()},
+                "binding": {
+                    "datasetRef": dataset_ref,
+                    "bindingVersion": getattr(_point_ctx, "binding_version", None)
+                    if _point_ctx is not None
+                    else None,
+                },
+                "engineering": {
+                    "opRange": list(op_range) if op_range else None,
+                    "pvRange": list(pv_range) if pv_range else None,
+                },
+                "blocks": blocks_meta,
+                "replayContext": {
+                    "loopId": str(loop.id),
+                    "controlType": control_type,
+                    "idealSettlingTime": loop.ideal_settling_time,
+                    "weights": weights,
+                    "opRange": list(op_range) if op_range else None,
+                    "pvRange": list(pv_range) if pv_range else None,
+                },
+                "source": {
+                    "algorithmVersion": ALGORITHM_VERSION,
+                    "configRevision": config_revision,
+                    "effectiveParams": {
+                        "typeWeights": type_weights or {},
+                        "fitness": fitness_sys_configs or {},
+                    },
+                },
+            }
+            snap = await cs.save_calculation_snapshot(
+                db,
+                kind=cs.KIND_KPI_GRID,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                dataset_ref=dataset_ref,
+                arrays=arrays,
+                manifest_extra=manifest_extra,
+                loop_id=str(loop.id),
+            )
+            if snap is not None:
+                dataset_snapshot_state = {
+                    "snapshotId": str(snap.id),
+                    "inputHash": snap.input_hash,
+                    "schemaVersion": cs.SNAPSHOT_SCHEMA_VERSION,
+                    "status": "SAVED",
+                }
+        except Exception as exc:  # noqa: BLE001
+            dataset_snapshot_state = {"status": "SAVE_FAILED", "error": str(exc)}
+            logger.warning(
+                "输入包保存失败（回路 %s 窗口 %s~%s），record 将标记不可完整复现",
+                loop.tag_name,
+                ts_start,
+                ts_end,
+                exc_info=True,
+            )
 
     # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
     metric_results, composite_result = _compute_kpis_three_layer(bundles, config_bundle, weights)
@@ -3251,6 +3378,8 @@ async def _persist_snapshot(
     custom_task_id: str | None = None,
     logical_run_id: str | None = None,
     config_revision: str | None = None,
+    dataset_snapshot_id: str | None = None,
+    input_snapshot_state: dict | None = None,
     **kwargs,
 ) -> dict:
     """统一快照持久化入口（根据 custom_task_id 分发到对应表）.
@@ -3296,10 +3425,12 @@ async def _persist_snapshot(
             ts_end=ts_end,
             algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
             config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
+            dataset_snapshot_id=dataset_snapshot_id,
             payload={
                 "snapshotStatus": status,
                 "customTaskId": custom_task_id,
                 "metricsDetail": metrics_detail,
+                **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
                 **kwargs,
             },
         )
