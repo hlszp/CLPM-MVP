@@ -98,6 +98,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import (
     tasks as eval_tasks,
 )
+from app.api.v1.endpoints.system import authorization as system_authorization
 from app.api.v1.endpoints.system import modules as system_modules
 from app.core.config import settings
 from app.core.db import dispose_engine
@@ -1235,6 +1236,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(reports.router)
     # 系统-模块管理（基础模块，始终可用）
     v1_router.include_router(system_modules.router)
+    # P4-01 授权目录与持久策略管理（基础能力，始终可用；P4-02 起统一接线）
+    v1_router.include_router(system_authorization.router)
     # 站点基础信息（公开 + ADMIN 配置 + LOGO 上传）
     v1_router.include_router(site.router)
     # S7 回路整定：模型辨识、PID 整定、闭环仿真（09 设计方案恢复为一级模块）

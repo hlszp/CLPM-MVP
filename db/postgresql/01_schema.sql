@@ -2658,6 +2658,65 @@ BEGIN
 END
 $$;
 
+-- §9 授权目录与持久策略（P4-01，与迁移 p401authz01 同批同内容）
+CREATE TABLE IF NOT EXISTS sys_permission (
+    code VARCHAR(64) PRIMARY KEY,
+    kind VARCHAR(16) NOT NULL,
+    parent_code VARCHAR(64) REFERENCES sys_permission (code) ON DELETE RESTRICT,
+    requires_codes JSONB,
+    module_key VARCHAR(20),
+    is_protected BOOLEAN NOT NULL DEFAULT FALSE,
+    description VARCHAR(500),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_permission_kind CHECK (kind IN ('PAGE_GROUP', 'PAGE', 'ACTION')),
+    CONSTRAINT ck_sys_permission_parent_kind CHECK (kind = 'PAGE' OR parent_code IS NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_sys_permission_kind ON sys_permission (kind);
+CREATE INDEX IF NOT EXISTS idx_sys_permission_module_key ON sys_permission (module_key);
+
+CREATE TABLE IF NOT EXISTS sys_role_permission (
+    role VARCHAR(20) NOT NULL,
+    permission_code VARCHAR(64) NOT NULL REFERENCES sys_permission (code) ON DELETE RESTRICT,
+    granted_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_role_permission_role CHECK (role IN ('ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT')),
+    PRIMARY KEY (role, permission_code)
+);
+CREATE INDEX IF NOT EXISTS idx_sys_role_permission_role ON sys_role_permission (role);
+
+CREATE TABLE IF NOT EXISTS sys_user_scope (
+    user_id UUID PRIMARY KEY REFERENCES sys_user (id) ON DELETE CASCADE,
+    scope_type VARCHAR(20) NOT NULL,
+    node_id UUID REFERENCES plant_node (id) ON DELETE RESTRICT,
+    updated_by VARCHAR(50),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_user_scope_type CHECK (scope_type IN ('ALL', 'NODE_SUBTREE')),
+    CONSTRAINT ck_sys_user_scope_node CHECK ((scope_type = 'ALL' AND node_id IS NULL) OR (scope_type = 'NODE_SUBTREE' AND node_id IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS sys_authz_policy (
+    revision INTEGER PRIMARY KEY,
+    operation VARCHAR(20) NOT NULL,
+    role VARCHAR(20),
+    user_id UUID,
+    reason VARCHAR(500),
+    operator VARCHAR(50) NOT NULL,
+    before_value JSONB,
+    after_value JSONB,
+    rollback_of INTEGER,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK')),
+    CONSTRAINT uq_sys_authz_policy_rollback_of UNIQUE (rollback_of)
+);
+CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_operation ON sys_authz_policy (operation);
+CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_created_at ON sys_authz_policy (created_at);
+
+COMMENT ON TABLE sys_permission IS '页面码/动作码目录（P4-01；无机械通配展开）';
+COMMENT ON TABLE sys_role_permission IS '五角色授权矩阵（P4-01）';
+COMMENT ON TABLE sys_user_scope IS '用户数据范围 ALL/NODE_SUBTREE（P4-01；消费在 P4-03）';
+COMMENT ON TABLE sys_authz_policy IS '授权策略版本账本（P4-01；不可变追加式）';
+
 -- =============================================================================
 -- 脚本结束
 -- =============================================================================

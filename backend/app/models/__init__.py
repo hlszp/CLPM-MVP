@@ -16,6 +16,12 @@ from app.models.alert import (
 from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.assessment_release import AssessmentReleaseRegistry  # P3-08a
 from app.models.audit import SysAuditLog
+from app.models.authz import (  # P4-01
+    SysAuthzPolicy,
+    SysPermission,
+    SysRolePermission,
+    SysUserScope,
+)
 from app.models.base import Base, TimestampMixin
 from app.models.calc_dataset_snapshot import CalculationDatasetSnapshot  # P2-03
 from app.models.calculation_result import (
@@ -84,6 +90,10 @@ from app.models.workbench_loop_latest import (  # 驾驶舱 P1 预计算
 from app.models.workbench_summary import WorkbenchWindowSummary  # Workbench v2.0
 
 __all__ = [
+    "SysAuthzPolicy",
+    "SysPermission",
+    "SysRolePermission",
+    "SysUserScope",
     "Base",
     "LoopHealthFlag",
     "TimestampMixin",
