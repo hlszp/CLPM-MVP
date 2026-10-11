@@ -10,7 +10,7 @@
 import type { MetricApi } from '#/api/metric';
 import type { KpiSnapshotItem } from '#/api/metric';
 
-import { ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 
 import {
   Badge,
@@ -18,6 +18,7 @@ import {
   DescriptionsItem,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import { getLoopSnapshotsApi } from '#/api/metric';
@@ -69,6 +70,59 @@ function getGrade(score: null | number | undefined): null | number {
   const level = useScoreColor(score, props.gradingThresholds).level.value;
   return level === null ? null : Number(level);
 }
+
+// ===== R02-1（P3-D6b）：评估等级仅消费正式 P =====
+// 对齐 08d classify_roster_state 的 scorable 判定：快照状态非 SUCCESS、
+// score null（未计算）、或携带语义且 composite 非 COMPLETE（PARTIAL/
+// UNASSESSABLE = P 证据不足）时不可定级——F 参考分不进等级。
+const compositeState = computed(
+  () =>
+    props.record.metricsSemantic?.__composite__?.assessmentState ?? null,
+);
+
+/** 可定级的正式 P（不满足条件时 null → 等级显示 '—'） */
+const gradeScore = computed<null | number>(() => {
+  if (props.record.status !== 'SUCCESS') return null;
+  const score = props.record.score;
+  if (score === null || score === undefined) return null;
+  if (compositeState.value && compositeState.value !== 'COMPLETE') {
+    return null;
+  }
+  return score;
+});
+
+/** 等级不可用原因（'—' 单元格 Tooltip 说明，非 0 分） */
+const gradeUnavailableReason = computed(() => {
+  if (gradeScore.value !== null) return '';
+  if (props.record.status !== 'SUCCESS') {
+    return `快照状态 ${props.record.status}，无完整正式评分，不可定级（非 0 分）`;
+  }
+  if (props.record.score === null || props.record.score === undefined) {
+    return '该窗口评分未计算（null，非 0 分），不可定级';
+  }
+  if (compositeState.value && compositeState.value !== 'COMPLETE') {
+    return `综合评分 ${compositeState.value}（P 证据不足），不可定级`;
+  }
+  return '';
+});
+
+// ===== R02-2（P3-D6b）：快速率正式/参考分行 =====
+// record 携带 metricsSemantic.fast_rate 语义时拆"正式 F / 参考分"两行
+// （参考行加徽标）；未携带（当前 loop 级 API 不返回该键）按原单值渲染。
+const fastReferenceScore = computed<null | number>(() => {
+  const raw = props.record.metricsSemantic?.fast_rate?.details?.referenceScore;
+  return typeof raw === 'number' ? raw : null;
+});
+const fastFormalValue = computed<null | number>(() => {
+  const raw = props.record.metricsSemantic?.fast_rate?.value;
+  return typeof raw === 'number' ? raw : null;
+});
+/** 参考分行注记（R02-1：参考值不进等级，单独注记） */
+const fastReferenceNote = computed(() =>
+  fastReferenceScore.value === null
+    ? ''
+    : `快速性参考分 ${fastReferenceScore.value}% · 动态证据不足（静稳规则），不参与定级`,
+);
 
 /** 评分颜色（原页面 scoreColor 判定链） */
 function scoreColor(val: null | number | undefined): string {
@@ -146,13 +200,23 @@ watch(
         <span v-else>—</span>
       </DescriptionsItem>
       <DescriptionsItem label="评估等级">
+        <!-- R02-1：等级仅消费正式 P（SUCCESS + score 非 null + composite
+             COMPLETE）；不满足时 '—' 并说明原因（非 0 分），F 参考不进等级 -->
         <Tag
-          v-if="getGrade(record.score)"
-          :color="GRADE_COLOR_MAP[getGrade(record.score)!]"
+          v-if="getGrade(gradeScore)"
+          :color="GRADE_COLOR_MAP[getGrade(gradeScore)!]"
         >
-          {{ GRADE_LABEL_MAP[getGrade(record.score)!] }}
+          {{ GRADE_LABEL_MAP[getGrade(gradeScore)!] }}
         </Tag>
-        <span v-else>—</span>
+        <Tooltip v-else :title="gradeUnavailableReason">
+          <span class="cursor-help text-gray-400">—</span>
+        </Tooltip>
+        <div
+          v-if="fastReferenceNote"
+          class="mt-1 text-xs text-gray-400"
+        >
+          {{ fastReferenceNote }}
+        </div>
       </DescriptionsItem>
       <DescriptionsItem label="PV 量程">
         {{
@@ -218,7 +282,28 @@ watch(
             :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
           />
         </template>
-        {{ formatNumber(record.fastRate, '%') }}
+        <!-- R02-2：有语义（metricsSemantic.fast_rate.referenceScore）时拆
+             "正式 F / 参考分"两行，参考行加徽标；未携带语义按原单值渲染 -->
+        <template v-if="fastReferenceScore !== null">
+          <div>
+            <span class="text-gray-500">正式 F：</span>
+            <span class="font-mono text-xs">{{
+              formatNumber(fastFormalValue, '%')
+            }}</span>
+          </div>
+          <div class="mt-1 flex items-center gap-1">
+            <Tag color="default" class="m-0">参考</Tag>
+            <span class="font-mono text-xs">
+              参考分 {{ formatNumber(fastReferenceScore, '%') }}
+            </span>
+            <span class="text-xs text-gray-400">
+              · 动态证据不足（静稳规则）
+            </span>
+          </div>
+        </template>
+        <template v-else>
+          {{ formatNumber(record.fastRate, '%') }}
+        </template>
       </DescriptionsItem>
       <DescriptionsItem>
         <template #label>

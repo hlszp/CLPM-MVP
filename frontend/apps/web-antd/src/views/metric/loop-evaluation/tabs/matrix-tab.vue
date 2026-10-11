@@ -719,7 +719,24 @@ function cellTooltip(def: MetricDef, row: any): string {
   const v = row[def.field] as null | number;
   const value = formatCell(def, v);
   const ts = row.tsEnd || row.tsStart || '';
-  return `${def.title}: ${value} · 可信度 ${row.confidenceLevel ?? '—'} · 窗口 ${formatLocalTime(ts, 'MM-DD HH:mm')}`;
+  const parts = [
+    `${def.title}: ${value}`,
+    `可信度 ${row.confidenceLevel ?? '—'}`,
+    `窗口 ${formatLocalTime(ts, 'MM-DD HH:mm')}`,
+  ];
+  // R03-3（P3-D6b）：构成与版本——行携带语义时标注"正式/参考"构成
+  // （当前 loop 级 API 未携带 metricsSemantic，该分支就绪待增量键）；
+  // latest 行带算法版本；窗口均值行（window-agg）带样本数说明口径。
+  const fastRef = row.metricsSemantic?.fast_rate?.details?.referenceScore;
+  if (typeof fastRef === 'number') {
+    parts.push('构成：含快速率参考分（静稳，动态证据不足）');
+  }
+  if (row.algorithmVersion) {
+    parts.push(`算法版本 ${row.algorithmVersion}`);
+  } else if (typeof row.sampleCount === 'number') {
+    parts.push(`窗口均值（${row.sampleCount} 个小时快照样本，AVG 跳过 NULL）`);
+  }
+  return parts.join(' · ');
 }
 
 async function openCellDrawer(field: string, row: any) {

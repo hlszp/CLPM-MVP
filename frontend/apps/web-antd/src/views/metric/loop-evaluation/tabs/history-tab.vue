@@ -101,6 +101,14 @@ const loopOptions = ref<{ label: string; value: string }[]>([]);
 const drawerVisible = ref(false);
 const drawerRecord = ref<KpiSnapshotItem | null>(null);
 const drawerTrendSnapshots = ref<KpiSnapshotItem[]>([]);
+
+/** R03-2（P3-D6b）：趋势窗内评分未计算（null）的窗口数（断点标注用） */
+const drawerTrendNullCount = computed(
+  () =>
+    drawerTrendSnapshots.value.filter(
+      (s) => s.score === null || s.score === undefined,
+    ).length,
+);
 const drawerTrendLoading = ref(false);
 
 /** 点击"详情"按钮：打开抽屉并加载该行完整数据及趋势 */
@@ -1047,11 +1055,21 @@ onMounted(() => {
         <template v-else-if="drawerTrendSnapshots.length > 0">
           <div class="p-3 rounded-lg border border-border bg-muted/30">
             <div class="flex items-center justify-center gap-2">
+              <!-- R03-2（P3-D6b）：null 断点——未计算窗口断开不画（原 ?? 0
+                   把未计算画成 0 分）；比例尺仅按有值窗口计算 -->
               <ScoreSparkline
-                :data="drawerTrendSnapshots.map((s) => s.score ?? 0)"
+                :data="drawerTrendSnapshots.map((s) => s.score)"
                 :width="560"
                 :height="50"
               />
+            </div>
+            <!-- R03-2：存在未计算窗口时显式标注（ tooltips/清单各行已注明窗口与 '—'） -->
+            <div
+              v-if="drawerTrendNullCount > 0"
+              class="mt-1 text-center text-xs text-muted-foreground"
+            >
+              含 {{ drawerTrendNullCount }} 个未计算窗口，趋势断开显示（未画作
+              0 分）
             </div>
             <div
               class="flex justify-between mt-2 text-xs text-muted-foreground"
