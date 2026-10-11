@@ -142,6 +142,9 @@ def _base_cache_key(
     """
     if tw is None:
         tw = _time_window()
+    # P3-08b：DataPlanner 的 data_version 追加时间/质量契约策略分量
+    from app.services.metric_calculator.time_axis import TIME_QUALITY_POLICY_VERSION
+
     return L1DataBlockCache.build_key(
         loop_id=loop_id,
         tag_group=TagGroup.BASE.value,
@@ -151,6 +154,7 @@ def _base_cache_key(
         quality_policy="KEEP_ALL_WITH_VALIDITY",
         pre_version=PREPROCESS_VERSION,
         cfg_version=cfg_version,
+        data_version=f"legacy-v1:{TIME_QUALITY_POLICY_VERSION}",
     )
 
 
@@ -183,11 +187,15 @@ class TestQueryPlanMerge:
             control_type=ControlType.TEMPERATURE,
         )
 
-        # 存在 BASE 组时所有控制类型复用 BASE：HF 组派生 → 仅 1 次查询
-        assert len(query_log) == 1
-        # BASE 查询的 tags 为所有组并集（含 HF 需要的 op / pv_quality）
-        queried_tags = set(query_log[0]["tags"])
-        assert {"pv", "sp", "op", "pv_quality"} <= queried_tags
+        # P3-08b（EA-01/10§3.2）：TC BASE=5s 粗于 HF 所需 1s → HF 组禁止
+        # 从 BASE 派生（短事件保真，C03-EA1），BASE+3 个 HF 组各自独立查询
+        assert len(query_log) == 4
+        base_queries = [q for q in query_log if q["interval_s"] == 5]
+        hf_queries = [q for q in query_log if q["interval_s"] == 1]
+        assert len(base_queries) == 1
+        assert len(hf_queries) == 3
+        # BASE 只查自己的 roles（不再为派生并集 HF tags）
+        assert set(base_queries[0]["tags"]) == {"pv", "sp"}
         # 5 个指标 → 5 个 Bundle（CONFIG 不在其中）
         assert len(bundles) == 5
         # accuracy 和 stability 共享 BASE
@@ -342,8 +350,10 @@ class TestCacheHitMiss:
             control_type=ControlType.TEMPERATURE,
         )
 
-        # BASE 命中缓存；OP_HF/PVOP_HF/QUALITY_HF 复用 BASE 派生 → 0 次查询
-        assert len(query_log) == 0
+        # BASE 命中缓存；P3-08b 起 TC 的 HF 组独立查询（禁止粗 BASE 派生）
+        # → 3 个 HF 组各查 1 次（interval_s=1）
+        assert len(query_log) == 3
+        assert all(q["interval_s"] == 1 for q in query_log)
         assert len(bundles) == 5
 
 
@@ -417,8 +427,14 @@ class TestTagGroupReuse:
         assert op_bundle.data_block.tag_group == "OP_HF"
 
     @pytest.mark.asyncio
-    async def test_non_flow_loop_reuses_base(self) -> None:
-        """非流量回路（如温度 TC）同样复用 BASE：仅 1 次查询，HF 组从 BASE 派生."""
+    async def test_non_flow_loop_hf_independent(self) -> None:
+        """非流量回路（TC BASE=5s）：HF 组禁止从粗 BASE 派生，独立 1s 查询.
+
+        P3-08b（EA-01/C03-EA1）：BASE 实际周期大于 HF 所需周期（1s）时禁止
+        直接标成 HF 使用——1s 短手动/饱和/Bad 事件会被 5s 粗网格抹掉；
+        恢复符合 HF 契约的独立 1s 读取（10§3.2 正确性首版，允许暂时增加
+        读取成本，共享事件读取的优化归 P5）。
+        """
         requirements = _five_metrics_requirements()
         db = _make_db(requirements)
         query_log: list = []
@@ -437,14 +453,15 @@ class TestTagGroupReuse:
             control_type=ControlType.TEMPERATURE,
         )
 
-        # 温度回路 BASE=5s（非 1s）→ 同样仅 1 次 BASE 查询（interval 保持控制类型口径）
-        assert len(query_log) == 1
-        assert query_log[0]["interval_s"] == 5
-        # 派生的 HF 组与 BASE 共享时间戳，5 个 Bundle 全部生成
+        # 温度回路 BASE=5s → BASE 1 次（5s）+ 3 个 HF 组独立 1s 查询
+        assert len(query_log) == 4
+        assert sorted(q["interval_s"] for q in query_log) == [1, 1, 1, 5]
+        # 5 个 Bundle 全部生成；HF 组不再与 BASE 共享时间戳（独立网格）
         assert len(bundles) == 5
         base_bundle = next(b for b in bundles if b.metric_code == "accuracy_rate")
         op_bundle = next(b for b in bundles if b.metric_code == "output_trip_index")
-        assert base_bundle.data_block.timestamps == op_bundle.data_block.timestamps
+        assert op_bundle.data_block.tag_group == "OP_HF"
+        assert base_bundle.data_block.sampling_freq == "5s"
 
     @pytest.mark.asyncio
     async def test_hf_only_metrics_without_base_query_independently(self) -> None:
@@ -512,9 +529,10 @@ class TestPipelineBatchWrite:
             control_type=ControlType.TEMPERATURE,
         )
 
-        # 复用 BASE 后仅 BASE 1 个未命中 DataBlock 需要写入 → 1 次 Pipeline 调用
+        # P3-08b：TC 的 HF 组独立查询 → BASE+3 HF 共 4 个未命中 DataBlock
+        # 经一次 Pipeline 批量写入
         assert redis.pipeline_calls == 1
-        assert len(redis.keys) == 1
+        assert len(redis.keys) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -794,12 +812,12 @@ class TestKpiPathNoLttbDownsampling:
 
     @pytest.mark.asyncio
     async def test_kpi_hf_tag_group_always_1s(self) -> None:
-        """非 FC 回路的查询计划也只产生 1 个非复用 QueryTask（BASE），HF 组派生.
+        """非 FC 回路（TC=5s）：HF 组独立 1s 查询、BASE 保持 5s，不走 LTTB.
 
-        改动后所有控制类型复用 BASE：HF tagGroup（OP_HF/PVOP_HF/MODE_HF/
-        QUALITY_HF）一律 ``reused_from=BASE``，不再独立查询；派生组
-        ``interval_s`` 固定 1s（与原独立 HF 查询取值一致，仅为元数据），
-        BASE 组保持控制类型采样率（TC=5s）。不进入 LTTB 降采样路径。
+        P3-08b（EA-01/C03-EA1）：BASE 周期 > 1s 时 HF tagGroup（OP_HF/
+        PVOP_HF/MODE_HF/QUALITY_HF）禁止从粗 BASE 派生——恢复独立 1s 读取
+        保真短事件；BASE 组保持控制类型采样率（TC=5s）。仍不进入 LTTB
+        降采样路径（KPI 需全量点）。FLOW（BASE=1s）仍复用 BASE 派生。
         """
         requirements = {r.metric_code: r for r in _five_metrics_requirements()}
         planner = DataPlanner(
@@ -812,24 +830,24 @@ class TestKpiPathNoLttbDownsampling:
 
         plan = planner._build_query_plan(requirements, ControlType.TEMPERATURE)  # noqa: SLF001
 
-        # 仅 1 个非复用 QueryTask：BASE，interval 保持控制类型口径（5s），tags 为并集
-        non_reuse = [t for t in plan if t.reused_from is None]
-        assert len(non_reuse) == 1
-        base_task = non_reuse[0]
-        assert base_task.tag_group == TagGroup.BASE
-        assert base_task.interval_s == 5
-        assert set(base_task.tag_roles) == {"pv", "sp", "op", "pv_quality"}
-        # 3 个 HF 组全部标记 reused_from=BASE，interval_s 固定 1s
-        reuse = [t for t in plan if t.reused_from is not None]
-        assert len(reuse) == 3
-        for task in reuse:
-            assert task.reused_from == TagGroup.BASE
+        # 全部独立查询：BASE（5s）+ 3 个 HF（1s），无 reused_from
+        assert all(t.reused_from is None for t in plan)
+        base_tasks = [t for t in plan if t.tag_group == TagGroup.BASE]
+        hf_tasks = [t for t in plan if t.tag_group != TagGroup.BASE]
+        assert len(base_tasks) == 1 and base_tasks[0].interval_s == 5
+        assert len(hf_tasks) == 3
+        for task in hf_tasks:
             assert task.interval_s == 1
-        assert {t.tag_group for t in reuse} == {
+        assert {t.tag_group for t in hf_tasks} == {
             TagGroup.OP_HF,
             TagGroup.PVOP_HF,
             TagGroup.QUALITY_HF,
         }
+        # FLOW（BASE=1s）仍复用 BASE 派生（粗细同网格，派生无损）
+        flow_plan = planner._build_query_plan(requirements, ControlType.FLOW)  # noqa: SLF001
+        reuse = [t for t in flow_plan if t.reused_from is not None]
+        assert len(reuse) == 3
+        assert all(t.reused_from == TagGroup.BASE and t.interval_s == 1 for t in reuse)
 
     @pytest.mark.asyncio
     async def test_kpi_large_window_no_lttb_threshold(self) -> None:

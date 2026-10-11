@@ -310,8 +310,15 @@ class TestCounterexamples:
             try:
                 start, end = _win(cx_ds, 500, 1000)
                 got = await build_logical_wide(db, lid, ["PV"], start, end)
-                assert all(v is None for v in got.signals["pv"][100:400])  # 600~899
-                assert all(q == -1 for q in got.quality_codes["pv_quality"][100:400])
+                # P0（2026-09-26）+P3-08b 契约：gap 只标 unknown 不抹值——
+                # 值按 COV 保持保留（显示不变），未知经 role_coverage 游程
+                # 表达（六因=gap），下游不采信该窗为观测
+                assert all(v is not None for v in got.signals["pv"][100:400])  # 600~899 保持
+                cov = got.series_context.role_coverage["pv"]
+                unknown_by_reason = {(r.start, r.end): r.reason for r in cov.unknown}
+                assert any(reason == "gap" for reason in unknown_by_reason.values()), (
+                    f"gap 段未落入 unknown 游程: {unknown_by_reason}"
+                )
                 assert got.signals["pv"][400] is not None  # 900 恢复
             finally:
                 await db.execute(

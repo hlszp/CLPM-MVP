@@ -332,6 +332,13 @@ def _data_block_to_dict(block: DataBlock) -> dict[str, Any]:
         "series_context": (
             block.series_context.to_dict() if block.series_context is not None else None
         ),
+        # P3-08b（O-2）：查询窗口随块往返（与 L1 一致）
+        "query_window_start": (
+            block.query_window_start.isoformat() if block.query_window_start is not None else None
+        ),
+        "query_window_end": (
+            block.query_window_end.isoformat() if block.query_window_end is not None else None
+        ),
     }
 
 
@@ -380,6 +387,17 @@ def _data_block_from_dict(data: dict[str, Any]) -> DataBlock:
         loop_valid_rate=loop_valid_rate,
         control_type=data.get("control_type"),
         series_context=_series_context_from_dict(data.get("series_context")),
+        # P3-08b：查询窗口往返（旧缓存缺失 → None=未记录）
+        query_window_start=(
+            datetime.fromisoformat(data["query_window_start"])
+            if data.get("query_window_start")
+            else None
+        ),
+        query_window_end=(
+            datetime.fromisoformat(data["query_window_end"])
+            if data.get("query_window_end")
+            else None
+        ),
     )
 
 
@@ -393,6 +411,9 @@ def _quality_summary_to_dict(qs: QualitySummary) -> dict[str, Any]:
         "bad_rate": qs.bad_rate,
         "missing_rate": qs.missing_rate,
         "good_value_rate": qs.good_value_rate,
+        # P3-08b：时间口径摘要（None=未记录，旧缓存兼容）
+        "window_seconds": qs.window_seconds,
+        "unknown_seconds": qs.unknown_seconds,
     }
 
 
@@ -406,6 +427,8 @@ def _quality_summary_from_dict(data: dict[str, Any]) -> dict[str, Any]:
         "bad_rate": data.get("bad_rate", 0.0),
         "missing_rate": data.get("missing_rate", 0.0),
         "good_value_rate": data.get("good_value_rate"),
+        "window_seconds": data.get("window_seconds"),
+        "unknown_seconds": data.get("unknown_seconds"),
     }
 
 

@@ -39,6 +39,7 @@ import numpy as np
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.disturbance import detect_sp_tracking_windows
+from app.services.metric_calculator.time_axis import view_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -107,8 +108,16 @@ class StabilityRateCalculator(MetricCalculatorBase):
         # 计算控制偏差
         errors = np.array([float(pv) - float(sp) for pv, sp in pairs], dtype=float)
         # 点时间权重（与 errors 对齐；时间戳缺失时为空 → 带内率回退点等权）
+        # P3-08c 时间契约消费（08c→09c 串行链首位——本卡只接时间轴不改算法
+        # 本体，σ/振荡修正/带内公式不动）：时间视图可用时，逐点时长取**半开
+        # 槽秒数**（末槽截到窗口 end，不复制上一段时长越窗——C04-EA1）；
+        # 视图不可得（legacy/手工 bundle）→ 原 _point_durations 口径不变。
         ts = self._get_masked_timestamps(bundle)
-        durations = self._point_durations(ts) if len(ts) == n else []
+        view = view_or_none(bundle, ("pv", "sp"))
+        if view is not None and len(view.indices) >= 2 and len(ts) == n:
+            durations = view.masked_slot_seconds(bundle.masked_indices)
+        else:
+            durations = self._point_durations(ts) if len(ts) == n else []
 
         # SP 阶跃剔除：剔除阶跃后跟踪窗内的点（默认关闭，开启后σ/带内率仅基于稳态段）
         sp_steps = 0
@@ -182,6 +191,31 @@ class StabilityRateCalculator(MetricCalculatorBase):
         band = band_ratio * u
         band_in_rate = self._band_in_rate(errors, band, durations)
 
+        # P3-08c 时间契约对账字段：带内率的分子/分母秒数（分母=窗口减去
+        # 已剔除暂态后的**合法点**时长；未知段单列不缩分母——契约 §2.1
+        # 带内率行）。算法本体（分值）不因本字段改变。
+        band_in_numerator_s: float | None = None
+        band_in_denominator_s: float | None = None
+        unknown_seconds: float | None = None
+        if durations and len(durations) == len(errors):
+            in_band = np.abs(errors) <= band
+            weights = np.array(durations, dtype=float)
+            band_in_numerator_s = round(float(np.sum(weights[in_band])), 3)
+            band_in_denominator_s = round(float(np.sum(weights)), 3)
+        if view is not None:
+            unknown_seconds = round(
+                min(
+                    view.window_seconds,
+                    view.uncovered_window_seconds
+                    + sum(
+                        view.slot_seconds[i]
+                        for i in range(len(view.indices))
+                        if not view.roles_known(i)
+                    ),
+                ),
+                3,
+            )
+
         base_details = {
             "mean_error": round(mean_error, 4),
             "std_error": round(std_error, 4),
@@ -192,6 +226,13 @@ class StabilityRateCalculator(MetricCalculatorBase):
             "sp_step_exclusion": sp_exclusion,
             "sp_steps_detected": sp_steps,
             "sp_excluded_points": sp_excluded,
+            "band_in_numerator_seconds": band_in_numerator_s,
+            "band_in_denominator_seconds": band_in_denominator_s,
+            # 分母口径说明：当前=合法点（pv/sp 有效交集）时长减去 SP 暂态剔除；
+            # 契约 §2.1 带内率行的"窗口减已知被剔除暂态"全窗口径属 09c 算法
+            # 批裁决范围（本卡只接时间轴不改算法本体），未知先单列对账
+            "band_in_denominator_basis": "LEGAL_POINTS_MINUS_EXCLUDED_TRANSIENTS",
+            "unknown_seconds": unknown_seconds,
         }
 
         # 石化惯例分值模式：带内时间占比直接作为分值（不乘振荡修正）

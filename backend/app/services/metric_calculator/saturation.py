@@ -26,6 +26,7 @@ from typing import Any
 from app.contracts.data_types import MetricDataBundle, MetricResult
 from app.services.metric_calculator.auto_mode import AUTO_MODES
 from app.services.metric_calculator.base import MetricCalculatorBase
+from app.services.metric_calculator.time_axis import MetricTimeView, view_or_none
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +61,16 @@ class SaturationRateCalculator(MetricCalculatorBase):
         Returns:
             MetricResult：value 为饱和率 0~100，saturation_type 在 details 中；
             数据不足（点数<2 或总时长=0）时 INCONCLUSIVE。
+
+        时间契约（P3-08c，10§3.1 表 Sat 行/C04-EA2）：
+            - 分母 = 完整请求窗口秒数（半开 [start,end)；与 R/Auto 同口径）；
+            - 分子只计"已知自动模式且有效 OP 贴真实限位"的秒数；缺 MODE 不
+              假设 AUTO；OP 无值/无效不能证明饱和也不能证明未饱和；
+            - 未知段不补时、不缩分母——unknown ≠ 已确认未饱和；保留严格
+              端点与已批准 epsilon 配置（不随改造扩大）；
+            - 限位证据来源（P3-08b 三分）：op_limits_source/op_limits_provenance
+              在 signals 时透传进 details（DEFAULT_0_100=默认假设不当已核实）。
+            时间视图不可得（legacy/手工 bundle）→ 原 masked 压缩口径不变。
         """
         masked_op = self._get_masked_values(bundle, "op")
         masked_mode = self._get_masked_values(bundle, "mode")
@@ -73,6 +84,12 @@ class SaturationRateCalculator(MetricCalculatorBase):
 
         op_low, op_high, epsilon = self._read_op_bounds(bundle)
 
+        # P3-08c：时间视图可用 → 半开窗口契约口径（分母=全窗秒数）
+        view = view_or_none(bundle, ("mode", "op"))
+        if view is not None and len(view.indices) >= 2:
+            return self._calculate_with_view(bundle, view, op_low, op_high, epsilon)
+
+        # ---------------- legacy 回退（无窗口/上下文：原口径不变） ----------------
         # 采用零阶保持模型：每个采样点代表一个时间间隔（最后一个点沿用前段时长）
         # 数组长度可能不一致（信号与时间戳长度不齐），循环上界取各数组最小长度防止 IndexError
         durations = self._point_durations(masked_ts)
@@ -131,8 +148,85 @@ class SaturationRateCalculator(MetricCalculatorBase):
                 "op_low": op_low,
                 "op_high": op_high,
                 "epsilon": epsilon,
+                "time_basis": "legacy_masked_extent",
             },
         )
+
+    def _calculate_with_view(
+        self,
+        bundle: MetricDataBundle,
+        view: MetricTimeView,
+        op_low: float,
+        op_high: float,
+        epsilon: float,
+    ) -> MetricResult:
+        """契约口径计算（P3-08c）：分母=完整请求窗口秒数（半开）。
+
+        槽分类：MODE 或 OP 无依据 → unknown（不判分子，不缩分母）；已知
+        非自动（含手动）→ 仅分母；已知自动且 OP 有效贴限 → 分子；已知自动
+        但 OP 无效/无值 → 不能证明饱和（仅分母，不计未饱和结论）。
+        """
+        signals = bundle.data_block.signals
+        mode_sig = signals.get("mode") or []
+        op_sig = signals.get("op") or []
+        auto_duration = 0.0
+        sat_high_duration = 0.0
+        sat_low_duration = 0.0
+
+        def _eligible(slot: int) -> bool:
+            orig = view.indices[slot]
+            mode_val = _to_int(mode_sig[orig]) if orig < len(mode_sig) else -1
+            if mode_val not in AUTO_MODES or not view.role_valid("mode", slot):
+                return False
+            if not view.role_valid("op", slot):
+                return False
+            op_val = _to_float(op_sig[orig]) if orig < len(op_sig) else None
+            if op_val is None:
+                return False
+            return op_val >= op_high - epsilon or op_val <= op_low + epsilon
+
+        # 自控时长（已知自动模式；供 details 上下文）
+        for slot in range(len(view.indices)):
+            if not view.roles_known(slot, ("mode", "op")):
+                continue
+            orig = view.indices[slot]
+            mode_val = _to_int(mode_sig[orig]) if orig < len(mode_sig) else -1
+            if mode_val in AUTO_MODES and view.role_valid("mode", slot):
+                auto_duration += view.slot_seconds[slot]
+                if view.role_valid("op", slot):
+                    op_val = _to_float(op_sig[orig]) if orig < len(op_sig) else None
+                    if op_val is not None:
+                        if op_val >= op_high - epsilon:
+                            sat_high_duration += view.slot_seconds[slot]
+                        elif op_val <= op_low + epsilon:
+                            sat_low_duration += view.slot_seconds[slot]
+
+        accounting = view.ratio_accounting(_eligible, roles=("mode", "op"))
+        if accounting.denominator_seconds <= 0:
+            return self._make_inconclusive(bundle, "zero_total_duration")
+        rate = self._clamp(accounting.proven_ratio * 100.0)
+        sat_type = _determine_type(sat_high_duration, sat_low_duration)
+
+        details: dict[str, Any] = {
+            "saturation_type": sat_type,
+            "sat_high_duration_s": round(sat_high_duration, 2),
+            "sat_low_duration_s": round(sat_low_duration, 2),
+            "auto_duration_s": round(auto_duration, 2),
+            "total_duration_s": round(accounting.denominator_seconds, 2),
+            "op_low": op_low,
+            "op_high": op_high,
+            "epsilon": epsilon,
+            "time_basis": "half_open_window",
+        }
+        # P3-08b 限位来源三分（B1 语义消费；缺失=未记录）
+        source = MetricCalculatorBase._read_config_scalar(signals, "op_limits_source")
+        provenance = MetricCalculatorBase._read_config_scalar(signals, "op_limits_provenance")
+        if source is not None:
+            details["op_limits_source"] = source
+        if provenance is not None:
+            details["op_limits_provenance"] = provenance
+        details.update(accounting.to_details())
+        return self._make_result(bundle, rate, details)
 
     def _read_op_bounds(self, bundle: MetricDataBundle) -> tuple[float, float, float]:
         """读取 OP 上下限与饱和容差.
