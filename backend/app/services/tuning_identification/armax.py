@@ -42,14 +42,18 @@ def identify_armax(
     max_iter: int = 200,
     tol: float = 1e-6,
 ) -> ARMAXResult:
-    """ARMAX 辨识：A·y = B·u + C·e.
+    """ARMAX 辨识：A·y = B·u + C·e（e = C·ε，C 为 MA 多项式）.
 
-    迭代 PEM：
+    迭代 PEM（P3-06a O-A3 一致性修复）：
     1. ARX 得初始 A/B
-    2. 计算残差 e
-    3. 估 C：e(t) = -c1*e(t-1) - ... + eps
-    4. 重估 A/B：y + a1*y(t-1) = b1*u(t-d) + c1*e(t-1) + eps
-    5. 收敛判断
+    2. 计算方程误差 e = A·y − B·u
+    3. 由当前 C 反滤波得一步预测误差估计 ε̂（ε̂ = e/C，递推）
+    4. 估 C：e(t) = Σ c_j·ε̂(t−j) + ε —— **与消费语义一致**（e = C·ε）；
+       原实现按 AR 形回归 e(t) = −Σ c_j·e(t−j)，与 e = C·ε 的前向消费
+       （ε = e/C 反滤波、轨 2 LB 检验）不一致：对一阶噪声反滤波会二次
+       注入自相关（实测 ε̂ acf₁≈0.95，创新契约系统性失败——C19-ID1）
+    5. 重估 A/B：y + a1·y(t-1) = b1·u(t-d) + c1·ε̂(t-1) + ε
+    6. 收敛判断
     """
     arx = identify_arx(u, y, d, na, nb)
     a_coeffs = list(arx.a_coeffs)
@@ -75,16 +79,25 @@ def identify_armax(
             for j in range(nb):
                 e[i] -= b_coeffs[j] * u[idx - d - j]
 
-        # 估 C：e(t) = -c1*e(t-1) - ... + eps
+        # 一步预测误差估计 ε̂ = e/C（当前 C 反滤波；首迭代 C=0 → ε̂=e）
+        eps_hat = np.zeros(rows)
+        for i in range(rows):
+            val = e[i]
+            for j, cj in enumerate(c_coeffs):
+                if i - 1 - j >= 0:
+                    val -= cj * eps_hat[i - 1 - j]
+            eps_hat[i] = val
+
+        # 估 C（MA 形，与 e = C·ε 消费语义一致）：e(t) = Σ c_j·ε̂(t−j) + ε
         if nc > 0:
             E_phi = np.zeros((rows, nc))
             for i in range(rows):
                 for j in range(nc):
-                    E_phi[i, j] = -e[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
+                    E_phi[i, j] = eps_hat[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
             c_theta, _, _, _ = np.linalg.lstsq(E_phi, e, rcond=None)
             c_coeffs = [float(t) for t in c_theta]
 
-        # 重估 A/B：y + a1*y(t-1) = b1*u(t-d) + c1*e(t-1) + eps
+        # 重估 A/B：y + a1*y(t-1) = b1*u(t-d) + c1*ε̂(t-1) + eps
         Phi = np.zeros((rows, na + nc + nb))
         y_reg = np.zeros(rows)
         for i in range(rows):
@@ -92,7 +105,7 @@ def identify_armax(
             for j in range(na):
                 Phi[i, j] = -y[idx - 1 - j]
             for j in range(nc):
-                Phi[i, na + j] = -e[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
+                Phi[i, na + j] = eps_hat[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
             for j in range(nb):
                 Phi[i, na + nc + j] = u[idx - d - j]
             y_reg[i] = y[idx]
