@@ -875,7 +875,7 @@ class TestEvidenceSchemaAndVersion:
             candidate_models=[ModelType.FOPDT],
         )
         assert result.success, result.reason
-        assert result.algorithm_version == ALGORITHM_VERSION == "TUNE_IDENT_v1.7"
+        assert result.algorithm_version == ALGORITHM_VERSION == "TUNE_IDENT_v1.8"
         d = result.best_model.evidence.to_dict()
         assert set(d.keys()) >= {
             "spExogeneity",

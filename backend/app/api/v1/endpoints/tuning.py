@@ -442,6 +442,8 @@ async def simulate_endpoint(
         setpoint_step=body.setpointStep,
         disturbance_type=body.disturbanceType,
         pid_candidates=pid_candidates_dicts,
+        disturbance_amplitude=body.disturbanceAmplitude,
+        disturbance_time=body.disturbanceTime,
     )
     return success(data=data)
 
@@ -488,6 +490,9 @@ async def compare_pids_endpoint(
         sim_duration=body.simDuration,
         sim_step=body.simStep,
         setpoint_step=body.setpointStep,
+        disturbance_type=body.disturbanceType,
+        disturbance_amplitude=body.disturbanceAmplitude,
+        disturbance_time=body.disturbanceTime,
     )
     return success(data=data)
 
@@ -639,30 +644,20 @@ async def get_task_status_endpoint(
 @router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
 async def cancel_task_endpoint(
     task_id: str,
+    db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:task-manage")),
 ) -> dict:
     """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
     task_id 为 Celery 任务 ID。仅 PENDING/RUNNING 状态可取消。
     V62-P1-013: 同步 tuning_progress 和 TaskTracker 状态为 CANCELLED。
+    P3-04：委托 ``cancel_tuning_task``——记录侧同步落定 RUNNING→INCONCLUSIVE
+    （原因"用户主动取消"），取消语义端到端明确。
     """
-    from celery.result import AsyncResult
+    from app.services.tuning import cancel_tuning_task
 
-    from app.services.tuning_progress import update_progress
-    from app.tasks.celery_app import celery_app
-
-    result = AsyncResult(task_id, app=celery_app)
-    if result.state in ("PENDING", "RUNNING", "STARTED"):
-        result.revoke(terminate=True, signal="SIGTERM")
-        # V62-P1-013: 同步 tuning_progress → TaskTracker
-        await update_progress(
-            task_id,
-            status="CANCELLED",
-            message="用户主动取消",
-        )
-        return success(data={"taskId": task_id, "status": "CANCELLED"})
-    # 已终态（SUCCESS/FAILED/REVOKED）不可取消
-    return success(data={"taskId": task_id, "status": result.state})
+    data = await cancel_tuning_task(task_id, db=db)
+    return success(data=data)
 
 
 @router.post("/tasks", status_code=201, response_model=ApiResponse[dict])

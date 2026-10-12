@@ -314,7 +314,7 @@ class IdentificationResult:
     # 适用面收窄+O-C3 恒 SP 闭环无 IV 通道降级 / P-22+P-23 段块堆叠共同
     # 估计与每段偏置 / P-24 独立动态事件终验 / P-25 跨窗稳定性 25% 门禁 /
     # P-26+P-27 重选时滞-结构重复估计不确定性 / B-09~B-10 预算审计））
-    algorithm_version: str = "TUNE_IDENT_v1.7"
+    algorithm_version: str = "TUNE_IDENT_v1.8"
     # P2-03（R2 §三 DEC-10 补表述）：结构化预处理参数——从 reason 字符串
     # 提升为结构化字段（三件套开关与参数/multi-window 入选窗位/分割比/
     # 清洗统计/后置 data_hash）；evidence.data_hash 等既有字段不受影响。
