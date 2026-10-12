@@ -16,12 +16,14 @@ oracle 独立性纪律（草案 §0.2）：
 - R15 冻结值（GM≥2.0/PM≥30°/超调≤20%/集合≤64）为冻结常量守卫，
   **不得失败后调整**（本文件断言其与冻结文本一致）。
 
-登记（2026-10-12，P3-07 停点 S1 同款机制）：
-- IPDT 冻结公式（R12）在 R14 注册 λ 范围 [0.1,5.0] 内**无法**满足
-  R15 超调≤20%（λ_ratio=5.0 时超调 ≈20.7~20.8%）：GM/PM/OP 三项在
-  λ_ratio≥~1.6 后均过，唯超调在 λ 上限 5.0 处仍差 ~0.8pct。本文件
-  按冻结纪律如实断言"标记不通过"（不调冻结值），停点呈报主协调裁决
-  （详见 P3-07-交接.md 停点登记节）。
+登记（2026-10-12 λ 停点终裁已落地，DEC 清单 λ 终裁行）：
+- 原 P3-07 停点（IPDT 冻结公式在 R14 注册 λ 范围 [0.1,5.0] 内无法满足
+  R15 超调≤20%）经用户裁决=方案 a：**R14 λ 范围 [0.1,5.0]→[0.1,7.0] +
+  IPDT 默认 λ=7.0**（仅 IPDT；SOPDT/FOPDT 不变）；R15 四项冻结指标
+  一字不动。落地实测（宽 CI K±5%/θ±10%，64 集合）：λ=7.0 四项全过
+  （超调 19.12%，余量 0.88pct）；λ=6.5 超调 19.62% 过；λ=6.0 超调
+  20.23% 不过——验证器"如实标记"行为保持（本文件持续断言调小 λ
+  仍见不通过标记，防验证器被顺手放宽）。
 """
 
 from __future__ import annotations
@@ -228,7 +230,7 @@ def _patched_service_deps(facts: dict, params: dict):
 
 
 class TestRegistrationAndFrozenThresholds:
-    """R14：lambdaRatio 注册结构沿用 [0.1,5.0] 默认 1.0；R15 冻结值守卫."""
+    """R14（λ 终裁后）：IPDT [0.1,7.0] 默认 7.0；SOPDT/FOPDT 不变；R15 冻结值守卫."""
 
     def test_new_methods_registered_with_applicable_model(self) -> None:
         by_code = {m["code"]: m for m in TUNING_METHODS_INFO}
@@ -239,23 +241,33 @@ class TestRegistrationAndFrozenThresholds:
             assert by_code[code]["applicableModel"] == "FOPDT"
 
     def test_lambda_ratio_structure_reused(self) -> None:
-        """R14：新方法 lambdaRatio 与 IMC 同结构（[0.1,5.0] 默认 1.0，λ=ratio×θ）."""
+        """λ 终裁（2026-10-12）：IPDT_PI [0.1,7.0] 默认 7.0；SOPDT_IMC 维持 IMC 同构.
+
+        仅 IPDT 扩上限+调默认（SOPDT/FOPDT 不变——DEC 清单 λ 终裁行原文）。
+        """
         by_code = {m["code"]: m for m in TUNING_METHODS_INFO}
         ref = {p["name"]: p for p in by_code["IMC"]["params"]}["lambdaRatio"]
-        for code in ("IPDT_PI", "SOPDT_IMC"):
-            new = {p["name"]: p for p in by_code[code]["params"]}
-            assert set(new) == {"lambdaRatio"}
-            lr = new["lambdaRatio"]
-            assert lr["default"] == ref["default"] == 1.0
-            assert lr["min"] == ref["min"] == 0.1
-            assert lr["max"] == ref["max"] == 5.0
-            assert "λ = lambdaRatio × θ" in lr["description"]
+        # IPDT_PI：λ 停点终裁落地（[0.1,7.0] 默认 7.0）
+        ipdt = {p["name"]: p for p in by_code["IPDT_PI"]["params"]}["lambdaRatio"]
+        assert (ipdt["min"], ipdt["max"], ipdt["default"]) == (0.1, 7.0, 7.0)
+        assert "λ = lambdaRatio × θ" in ipdt["description"]
+        # SOPDT_IMC：与 IMC 同结构不变（[0.1,5.0] 默认 1.0）
+        sopdt = {p["name"]: p for p in by_code["SOPDT_IMC"]["params"]}["lambdaRatio"]
+        assert sopdt["default"] == ref["default"] == 1.0
+        assert sopdt["min"] == ref["min"] == 0.1
+        assert sopdt["max"] == ref["max"] == 5.0
+        # FOPDT 五法 lambdaRatio 亦不变（IMC/LAMBDA）
+        assert (ref["min"], ref["max"], ref["default"]) == (0.1, 5.0, 1.0)
 
     def test_validate_tuning_params_accepts_and_rejects(self) -> None:
-        assert validate_tuning_params("IPDT_PI", {"lambdaRatio": 2.0}) == []
-        assert validate_tuning_params("SOPDT_IMC", {"lambdaRatio": 0.1}) == []
-        assert validate_tuning_params("IPDT_PI", {"lambdaRatio": 6.0}) != []
+        # IPDT：新范围 [0.1,7.0]（7.0 闭区间端点接受；6.5 边界抽验接受）
+        assert validate_tuning_params("IPDT_PI", {"lambdaRatio": 7.0}) == []
+        assert validate_tuning_params("IPDT_PI", {"lambdaRatio": 6.5}) == []
+        assert validate_tuning_params("IPDT_PI", {"lambdaRatio": 7.5}) != []
         assert validate_tuning_params("IPDT_PI", {"lambdaRatio": 0.05}) != []
+        # SOPDT/FOPDT 维持 [0.1,5.0]
+        assert validate_tuning_params("SOPDT_IMC", {"lambdaRatio": 0.1}) == []
+        assert validate_tuning_params("SOPDT_IMC", {"lambdaRatio": 6.0}) != []
         assert validate_tuning_params("IPDT_PI", {"tauCRatio": 1.0}) != []
 
     def test_r15_frozen_thresholds_verbatim(self) -> None:
@@ -467,11 +479,75 @@ class TestOracleD3IpdtClosedLoopIndicators:
         peak = self._independent_positional_pi_sim(0.1, 10.0, kc, ti, dt=0.1)
         assert (peak - 1.0) * 100 == pytest.approx(ind["overshoot"]["worstPct"], abs=2.0)
 
-    def test_lambda_5_overshoot_still_above_frozen_threshold(self) -> None:
-        """停点事实锚定：λ 上限 5.0 时超调 ≈20.8%——仍不满足 R15 ≤20%.
+    def test_lambda_7_default_wide_ci_all_four_pass(self) -> None:
+        """λ 终裁落地主断言：λ=7.0（新默认）宽 CI（K±5%/θ±10%）四项全过.
 
-        GM≈4.9/PM≈56/OP 无饱和均过；超调差 ~0.8pct。冻结值不得调整，
-        该事实按 S1 模式停点呈报主协调（交接文档停点登记节）。
+        实测锚点（64 集合最坏成员）：GM≈5.6/PM≈59.3°/超调≈19.12%（余量
+        0.88pct）/OP 零饱和——与 DEC 清单 λ 终裁行引用的前任补测数据一致。
+        """
+        pid = tune_ipdt_pi(0.1, 10.0, 7.0)
+        ci = {"K": [0.095, 0.105], "theta": [9.0, 11.0]}
+        s = build_trustworthy_set("IPDT", dict(_IPDT_PARAMS), ci)
+        assert s["memberCount"] == 64
+        r = verify_robustness_on_set("IPDT", s["members"], pid, op_limits=_WIDE_OP_LIMITS)
+        ind = r["indicators"]
+        assert ind["gainMargin"]["pass"] and ind["gainMargin"]["worst"] > 5.0
+        assert ind["phaseMargin"]["pass"] and ind["phaseMargin"]["worst"] > 55.0
+        assert ind["opLimits"]["pass"] and ind["opLimits"]["worstSaturationSteps"] == 0
+        assert ind["overshoot"]["pass"]
+        assert 18.5 < ind["overshoot"]["worstPct"] < 20.0
+        assert r["overallPass"]
+
+    @pytest.mark.parametrize(
+        ("K", "theta"),
+        [
+            (0.1, 5.0),
+            (0.1, 20.0),
+            (0.05, 10.0),
+            (0.2, 10.0),
+            (-0.1, 10.0),  # 负增益：Kc 变号，闭环指标与正增益镜像一致
+        ],
+    )
+    def test_lambda_7_wide_ci_variants_all_pass(self, K, theta) -> None:
+        """λ=7.0 宽 CI θ/K 变体+负增益：四项全过（IPDT 规则尺度不变性）."""
+        pid = tune_ipdt_pi(K, theta, 7.0)
+        ci = {
+            "K": [K * 0.95, K * 1.05] if K > 0 else [K * 1.05, K * 0.95],
+            "theta": [theta * 0.9, theta * 1.1],
+        }
+        s = build_trustworthy_set("IPDT", {"K": K, "theta": theta}, ci)
+        assert s["memberCount"] == 64
+        r = verify_robustness_on_set("IPDT", s["members"], pid, op_limits=_WIDE_OP_LIMITS)
+        assert r["overallPass"], r["indicators"]
+        assert r["indicators"]["overshoot"]["worstPct"] < 20.0
+
+    def test_lambda_7_narrow_ci_recheck_pass(self) -> None:
+        """窄 CI（K±2%/θ±5%）复核：λ=7.0 四项全过且裕度优于宽 CI."""
+        pid = tune_ipdt_pi(0.1, 10.0, 7.0)
+        ci = {"K": [0.098, 0.102], "theta": [9.5, 10.5]}
+        s = build_trustworthy_set("IPDT", dict(_IPDT_PARAMS), ci)
+        r = verify_robustness_on_set("IPDT", s["members"], pid, op_limits=_WIDE_OP_LIMITS)
+        assert r["overallPass"], r["indicators"]
+        assert r["indicators"]["overshoot"]["worstPct"] < 20.0
+
+    def test_lambda_65_boundary_spot_check_pass(self) -> None:
+        """λ=6.5 边界抽验（宽 CI）：超调 19.62% 仍达标（7.0 与 6.0 之间档）."""
+        pid = tune_ipdt_pi(0.1, 10.0, 6.5)
+        ci = {"K": [0.095, 0.105], "theta": [9.0, 11.0]}
+        s = build_trustworthy_set("IPDT", dict(_IPDT_PARAMS), ci)
+        r = verify_robustness_on_set("IPDT", s["members"], pid, op_limits=_WIDE_OP_LIMITS)
+        ind = r["indicators"]
+        assert ind["gainMargin"]["pass"] and ind["phaseMargin"]["pass"]
+        assert ind["overshoot"]["pass"]
+        assert 19.0 < ind["overshoot"]["worstPct"] < 20.0
+        assert r["overallPass"]
+
+    def test_lambda_5_overshoot_still_above_frozen_threshold(self) -> None:
+        """诚实标注回归（λ 终裁后）：λ=5.0 超调 ≈20.8%——仍不满足 R15 ≤20%.
+
+        GM≈4.9/PM≈56/OP 无饱和均过；唯超调差 ~0.8pct 如实标记不通过。
+        验证器"如实标记"行为保持是 λ 终裁落地条件（调小 λ 仍见标注），
+        本例锚定该行为不被顺手放宽。
         """
         pid = tune_ipdt_pi(0.1, 10.0, 5.0)
         r = verify_robustness_on_set("IPDT", [dict(_IPDT_PARAMS)], pid, op_limits=_WIDE_OP_LIMITS)
@@ -483,7 +559,11 @@ class TestOracleD3IpdtClosedLoopIndicators:
         assert not r["overallPass"]
 
     def test_lambda_1_default_margin_fail(self) -> None:
-        """R14 默认 1.0 档：PM≈21°<30°（GM 1.71<2.0）——如实标记不通过."""
+        """诚实标注回归：λ=1.0（激进档，非默认）PM≈21°<30°（GM 1.71<2.0）——如实标记.
+
+        λ 终裁后默认为 7.0；用户显式调小 λ 时验证器仍如实标记不通过
+        （不因默认达标而放宽任意 λ 档的判定）。
+        """
         pid = tune_ipdt_pi(0.1, 10.0, 1.0)
         r = verify_robustness_on_set("IPDT", [dict(_IPDT_PARAMS)], pid, op_limits=_WIDE_OP_LIMITS)
         assert not r["indicators"]["phaseMargin"]["pass"]
@@ -992,6 +1072,22 @@ class TestSourceBindingAndSave:
         assert src["simulationEngineVersion"] == "SIM_ENGINE_v2.0"
 
     @pytest.mark.asyncio
+    async def test_ipdt_default_lambda_is_7(self) -> None:
+        """λ 终裁落地：algorithmParams 缺省时 IPDT 默认 λ=7.0（服务级 fallback）.
+
+        与注册表 default、tune_ipdt_pi 签名默认三处单源一致。
+        """
+        ctx = _auth_ctx("IPDT", _IPDT_PARAMS, final_verification=_FV_PASSED)
+        result = await tune_pid("IPDT", dict(_IPDT_PARAMS), "IPDT_PI", None, source_context=ctx)
+        expected = tune_ipdt_pi(0.1, 10.0, 7.0)
+        assert result["recommendedPid"] == {
+            "kp": expected.kp,
+            "ti": expected.ti,
+            "td": expected.td,
+        }
+        assert "λ = 7.0 × θ" in result["notes"]
+
+    @pytest.mark.asyncio
     async def test_save_ipdt_scheme_binds_source(self) -> None:
         """IPDT 方案保存：来源/模型版本冻结；仿真证据来自真实内核仿真."""
         pid = tune_ipdt_pi(0.1, 10.0, 2.0)
@@ -1125,7 +1221,7 @@ class TestRobustnessEndpointWiring:
                     "modelType": "IPDT",
                     "modelParams": dict(_IPDT_PARAMS),
                     "algorithm": "IPDT_PI",
-                    "algorithmParams": {"lambdaRatio": 6.0},
+                    "algorithmParams": {"lambdaRatio": 7.5},
                 },
             )
         assert resp.status_code == 422

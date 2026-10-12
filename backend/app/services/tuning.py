@@ -1781,12 +1781,14 @@ async def tune_pid(
         notes = f"SIMC 整定：τc = {tau_c_ratio} × θ"
     elif algorithm == "IPDT_PI":
         # P3-07 R12：IPDT 专用 PI 规则（Skogestad IMC 积分规则族）
-        _lambda_ratio = float(params.get("lambdaRatio", 1.0))
+        # λ 停点终裁（2026-10-12）：默认 7.0 与注册表 default 单源一致
+        _lambda_ratio = float(params.get("lambdaRatio", 7.0))
         pid = tune_ipdt_pi(K, theta, lambda_ratio=_lambda_ratio)
         notes = (
             f"IPDT-PI 整定（R12 Skogestad IMC 积分规则族）：λ = {_lambda_ratio} × θ，"
-            f"Ti = 2λ+θ，Kc = (2λ+θ)/(K·(λ+θ)²)；建议 λ 比例 ≥2.0 以满足 "
-            "R15 冻结鲁棒指标（GM≥2.0/PM≥30°/超调≤20%）"
+            f"Ti = 2λ+θ，Kc = (2λ+θ)/(K·(λ+θ)²)；默认 λ=7.0 在宽 CI 可信集合"
+            "（K±5%/θ±10%）下满足 R15 冻结鲁棒指标（GM≥2.0/PM≥30°/超调≤20%），"
+            "调小 λ 超调可能超限，验证器将如实标记不通过"
         )
     elif algorithm == "SOPDT_IMC":
         # P3-07 R13：SOPDT 专用 IMC-PID 解析（一阶 Padé，非降阶）
