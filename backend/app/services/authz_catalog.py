@@ -36,7 +36,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -727,10 +727,15 @@ def validate_role_matrix(
 
 
 async def get_current_revision(db: AsyncSession) -> int:
-    """当前策略 revision（无账本行=0：尚未播种的空库）。"""
-    result = await db.execute(select(func.max(SysAuthzPolicy.revision)))
-    rev = result.scalar_one_or_none()
-    return int(rev) if rev is not None else 0
+    """当前策略 revision（P4-03 起读 policy_publication_guard 行）.
+
+    guard 行缺失（迁移未应用环境）回退账本 max；无账本行=0（尚未播种的空库）。
+    guard revision 涵盖授权域（角色矩阵/scope/回退）与域外策略变更者
+    （节点归属/tag 改绑/用户状态/令牌撤销，见 authz_scope）。
+    """
+    from app.services.authz_scope import read_guard_revision
+
+    return await read_guard_revision(db)
 
 
 async def get_role_grants(db: AsyncSession, role: str) -> dict[str, list[str]]:
@@ -871,7 +876,11 @@ async def update_role_grants(
     """
     merged = validate_role_matrix(role, page_codes, action_codes)
 
-    current = await get_current_revision(db)
+    # P4-03 提交栅栏：先取 guard 排他锁（固定锁序 guard→主体→对象），
+    # 持锁校验 expectedRevision——并发双写恰一方过锁，另一方 409
+    from app.services.authz_scope import lock_guard_for_update, set_guard_revision
+
+    current = await lock_guard_for_update(db)
     if expected_revision != current:
         raise _revision_conflict(current)
 
@@ -898,6 +907,7 @@ async def update_role_grants(
             before={"revision": current, **before},
             after=after,
         )
+        await set_guard_revision(db, current + 1)
         await db.commit()
     except IntegrityError as exc:  # 并发兜底：revision 主键冲突=另一方已提交
         await db.rollback()
@@ -962,7 +972,10 @@ async def update_user_scope(
                 status_code=400,
             )
 
-    current = await get_current_revision(db)
+    # P4-03 提交栅栏：guard 排他锁（scope 变更直接改变数据范围，必须入栅栏）
+    from app.services.authz_scope import lock_guard_for_update, set_guard_revision
+
+    current = await lock_guard_for_update(db)
     if expected_revision != current:
         raise _revision_conflict(current)
 
@@ -990,6 +1003,7 @@ async def update_user_scope(
             before={"revision": current, **(before or {})},
             after={"scopeType": scope_type, "nodeId": node_id, "username": user.username},
         )
+        await set_guard_revision(db, current + 1)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -1061,7 +1075,10 @@ async def rollback_revision(
             status_code=400,
         )
 
-    current = await get_current_revision(db)
+    # P4-03 提交栅栏：guard 排他锁（回退=发布逆操作，同入栅栏）
+    from app.services.authz_scope import lock_guard_for_update, set_guard_revision
+
+    current = await lock_guard_for_update(db)
     if expected_revision != current:
         raise _revision_conflict(current)
 
@@ -1097,6 +1114,7 @@ async def rollback_revision(
                 after=after,
                 rollback_of=revision,
             )
+            await set_guard_revision(db, current + 1)
             await db.commit()
         except IntegrityError as exc:
             await db.rollback()
@@ -1158,6 +1176,7 @@ async def rollback_revision(
             after=after,
             rollback_of=revision,
         )
+        await set_guard_revision(db, current + 1)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()

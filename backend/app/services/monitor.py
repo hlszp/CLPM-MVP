@@ -687,6 +687,7 @@ async def _filter_loop_ids_by_control_mode(
 async def list_loop_monitor(
     db: AsyncSession,
     plant_node_id: str | None = None,
+    scope_node_ids: list[str] | None = None,
     view: str = "list",
     keyword: str | None = None,
     loop_type: str | None = None,
@@ -750,6 +751,9 @@ async def list_loop_monitor(
     conditions = []
     # 与统计卡片口径统一：仅统计/展示 is_active=True 的回路（WS-D 阶段5）
     conditions.append(LoopLedger.is_active.is_(True))
+    # P4-03：数据范围与筛选取交集（None=ALL 不过滤；NODE_SUBTREE=范围节点集）
+    if scope_node_ids is not None:
+        conditions.append(LoopLedger.unit_id.in_(scope_node_ids))
     if plant_node_id:
         # 递归获取所有子孙节点 ID，包含自身
         all_node_ids = await _get_descendant_node_ids(db, plant_node_id)

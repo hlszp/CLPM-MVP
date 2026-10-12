@@ -150,6 +150,20 @@ def _perm_matches(granted: str, required: str) -> bool:
     return granted.endswith(":*") and required.startswith(granted[:-1])
 
 
+async def get_scope_ctx(
+    user: SysUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """当前用户数据范围上下文（P4-03：ALL/NODE_SUBTREE 贯穿查询/推送/缓存）.
+
+    单测环境（CLPM_TEST_MODE=1）内嵌短路返回 ALL 默认（见
+    services.authz_scope.resolve_scope），不触碰 mock DB。
+    """
+    from app.services.authz_scope import resolve_scope
+
+    return await resolve_scope(db, user.id, user.role)
+
+
 def has_perms(role: str, *codes: str) -> bool:
     """Return True if ``role``'s granted codes cover all of ``codes``."""
     granted = ROLE_PERMISSIONS.get(role, [])
@@ -211,6 +225,7 @@ def require_perms(*codes: str) -> Callable[..., Awaitable[SysUser]]:
 
 __all__ = [
     "get_current_user",
+    "get_scope_ctx",
     "has_perms",
     "oauth2_scheme",
     "require_perms",

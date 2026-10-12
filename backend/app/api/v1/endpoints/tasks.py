@@ -1643,6 +1643,7 @@ def _build_task_result_item(snapshot: KpiSnapshotCustom, loop_tag_name: str | No
 async def download_task_artifact_endpoint(
     task_id: str,
     user: SysUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """下载任务产生的文件产物（如异步导出 PDF）。
 
@@ -1675,6 +1676,22 @@ async def download_task_artifact_endpoint(
             message="无权下载该任务产物",
             status_code=403,
         )
+
+    # P4-03：原包/任务产物下载继承回路 scope（非 ALL 范围须任务全部目标
+    # 回路在范围内——通用拒绝，不泄露对象详情）
+    import json as _json
+
+    from app.services.authz_scope import ensure_loops_in_scope, resolve_scope
+
+    _scope = await resolve_scope(db, user.id, user.role)
+    _raw_loop_ids = data.get("loop_ids")
+    _loop_ids = (
+        [x for x in _json.loads(_raw_loop_ids) if isinstance(x, str)]
+        if isinstance(_raw_loop_ids, str)
+        else []
+    )
+    if _loop_ids:
+        await ensure_loops_in_scope(db, _scope, _loop_ids, action="下载任务产物")
 
     status = data.get("status", "")
     if status in {"PENDING", "RUNNING"}:

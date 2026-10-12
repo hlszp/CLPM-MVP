@@ -216,6 +216,8 @@ async def _do_identify(
     created_by: str,
     identify_strategy: str = "HISTORY_ONLY",
     created_by_id: str = "",
+    subject_role: str = "",
+    policy_revision: int = 0,
 ) -> dict[str, Any]:
     """执行历史数据辨识的 async 逻辑.
 
@@ -416,6 +418,38 @@ async def _do_identify(
                 db_record.confidence_reason = result.get("reason", "辨识失败")
                 db_record.completed_at = _now_naive()
 
+            # P4-03 提交栅栏：结果/模型发布前 guard 共享锁复核主体（失权 →
+            # 仅 REVOKED 审计，不发布辨识结果与模型版本）
+            from app.services.authz_task_fence import (
+                SubjectRevokedError,
+                TaskSubject,
+                audit_revoked,
+                validate_for_commit,
+            )
+
+            _subject = TaskSubject(
+                subject_user_id=created_by_id,
+                subject_role=subject_role,
+                action="tuning:identify",
+                policy_revision=policy_revision,
+                loop_ids=[str(loop_id)],
+                is_system=not created_by_id,
+            )
+            if not _subject.is_system_identity:
+                try:
+                    await validate_for_commit(db, _subject, str(loop_id))
+                except SubjectRevokedError as exc:
+                    await db.rollback()  # 丢弃待发布结果（不发布）
+                    audit_revoked(db, _subject, str(loop_id), exc.reason)
+                    await db.commit()
+                    await update_progress(
+                        task_id,
+                        status="FAILED",
+                        message=f"主体失权，辨识结果未发布（REVOKED）: {exc.reason}",
+                        error="ERR_SUBJECT_REVOKED",
+                    )
+                    return {"recordId": record_id, "success": False, "revoked": True}
+
             await db.commit()
 
             await update_progress(
@@ -464,6 +498,8 @@ def identify_model_task(
     created_by: str = "system",
     identify_strategy: str = "HISTORY_ONLY",
     created_by_id: str = "",
+    subject_role: str = "",
+    policy_revision: int = 0,
 ) -> dict[str, Any]:
     """异步历史数据模型辨识任务.
 
@@ -492,6 +528,8 @@ def identify_model_task(
             created_by=created_by,
             identify_strategy=identify_strategy,
             created_by_id=created_by_id,
+            subject_role=subject_role,
+            policy_revision=policy_revision,
         )
     )
 
@@ -517,6 +555,8 @@ async def _do_tune_and_simulate(
     risk_confirmed: bool = False,
     step_validation_passed: bool = False,
     created_by_id: str = "",
+    subject_role: str = "",
+    policy_revision: int = 0,
 ) -> dict[str, Any]:
     """执行整定 + 仿真的 async 逻辑.
 
@@ -727,6 +767,45 @@ async def _do_tune_and_simulate(
                     db_record.risk_assessment = primary_tune_result.get("risk")
                 db_record.status = "SIMULATED"
                 db_record.completed_at = _now_naive()
+
+                # P4-03 提交栅栏：整定方案发布前 guard 共享锁复核主体（失权 →
+                # 仅 REVOKED 审计，不发布推荐 PID/仿真结果）
+                from app.services.authz_task_fence import (
+                    SubjectRevokedError,
+                    TaskSubject,
+                    audit_revoked,
+                    validate_for_commit,
+                )
+
+                _subject = TaskSubject(
+                    subject_user_id=created_by_id,
+                    subject_role=subject_role,
+                    action="tuning:tune",
+                    policy_revision=policy_revision,
+                    loop_ids=[str(loop_id)],
+                    is_system=not created_by_id,
+                )
+                if not _subject.is_system_identity:
+                    try:
+                        await validate_for_commit(db, _subject, str(loop_id))
+                    except SubjectRevokedError as exc:
+                        await db.rollback()  # 丢弃待发布方案
+                        audit_revoked(db, _subject, str(loop_id), exc.reason)
+                        await db.commit()
+                        await update_progress(
+                            task_id,
+                            status="FAILED",
+                            message=f"主体失权，整定方案未发布（REVOKED）: {exc.reason}",
+                            error="ERR_SUBJECT_REVOKED",
+                        )
+                        return {
+                            "recordId": record_id,
+                            "recommendedPid": {},
+                            "pidCandidates": [],
+                            "simulationResult": {},
+                            "revoked": True,
+                        }
+
                 await db.commit()
 
             return {
@@ -797,6 +876,8 @@ def tune_and_simulate_task(
     risk_confirmed: bool = False,
     step_validation_passed: bool = False,
     created_by_id: str = "",
+    subject_role: str = "",
+    policy_revision: int = 0,
 ) -> dict[str, Any]:
     """异步 PID 整定 + 多 PID 仿真对比任务.
 
@@ -836,6 +917,8 @@ def tune_and_simulate_task(
             risk_confirmed=risk_confirmed,
             step_validation_passed=step_validation_passed,
             created_by_id=created_by_id,
+            subject_role=subject_role,
+            policy_revision=policy_revision,
         )
     )
 

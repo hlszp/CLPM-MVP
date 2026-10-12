@@ -29,7 +29,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_perms
+from app.api.deps import get_scope_ctx, require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -61,6 +61,7 @@ from app.schemas.tuning_knowledge import (
     TuningKnowledgeListStats,
     TuningKnowledgeSimilarData,
 )
+from app.services.authz_scope import ScopeContext, ensure_loop_in_scope
 from app.services.kpi_snapshot import (
     iso_z,
     window_avg_summary,
@@ -181,6 +182,7 @@ async def identify_model_endpoint(
     body: ModelIdentifyRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:identify")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """模型辨识（阶跃实验路径，同步；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -188,6 +190,7 @@ async def identify_model_endpoint(
     """
     # P2: fitness 门禁（L3 以下阻断）
     await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
     data = await identify_model(
         db=db,
         loop_id=body.loopId,
@@ -212,6 +215,7 @@ async def identify_history_endpoint(
     body: ModelIdentifyHistoryRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:identify")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -242,6 +246,7 @@ async def identify_history_endpoint(
 
     # P2: fitness 门禁（L3 以下阻断；作用于 STEP_ONLY 同步分支和 AUTO/HISTORY_ONLY 异步分支前）
     await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
 
     # STEP_ONLY 策略走同步阶跃路径（向后兼容）
     if body.identifyStrategy == "STEP_ONLY":
@@ -267,6 +272,16 @@ async def identify_history_endpoint(
     # AUTO / HISTORY_ONLY → 异步任务
     # AUTO 策略由任务侧在历史辨识失败/数据不足时自动降级阶跃实验路径（P1-6）
     # V62-P1-013: 传递 created_by_id 桥接 TaskTracker
+    # P4-03：人工任务主体绑定（policyRevision 快照随任务传递）
+    from app.services.authz_task_fence import snapshot_task_subject
+
+    _subject = await snapshot_task_subject(
+        db,
+        user_id=str(user.id),
+        role=str(user.role),
+        action="tuning:identify",
+        loop_ids=[str(body.loopId)],
+    )
     task = identify_model_task.delay(
         loop_id=body.loopId,
         start_time=body.startTime,
@@ -276,6 +291,8 @@ async def identify_history_endpoint(
         created_by=user.username,
         identify_strategy=body.identifyStrategy,
         created_by_id=str(user.id),
+        subject_role=_subject.subject_role,
+        policy_revision=_subject.policy_revision,
     )
     # V62-P1-012: 使用 typed model 构造响应
     typed = IdentifyHistoryAsyncResponse(
@@ -291,11 +308,13 @@ async def identify_segments_endpoint(
     body: IdentifySegmentsRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:identify")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """可辨识片段预览（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
     对数据窗口执行激励检测，返回可辨识片段列表（不执行辨识）。
     """
+    await ensure_loop_in_scope(db, scope, body.loopId)
     data = await preview_identify_segments(
         db=db,
         loop_id=body.loopId,
@@ -315,6 +334,7 @@ async def tune_pid_endpoint(
     body: TuneRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:tune")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -322,6 +342,7 @@ async def tune_pid_endpoint(
     """
     # P2: fitness 门禁（L3 以下阻断）
     await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
     source_context = await authorize_tuning_model(
         db=db,
         requested_model_type=body.modelType,
@@ -365,6 +386,7 @@ async def tune_matrix_endpoint(
     body: TuneMatrixRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:tune")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -375,6 +397,7 @@ async def tune_matrix_endpoint(
     """
     # T4 修复：矩阵端点原漏装 fitness 门禁（/tune 有），补齐口径
     await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
     source_context = await authorize_tuning_model(
         db=db,
         requested_model_type=body.modelType,
@@ -424,6 +447,7 @@ async def robustness_verify_endpoint(
     body: RobustVerifyRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:tune")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """整定建议鲁棒性验证（P3-07 R15 冻结指标；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -433,6 +457,7 @@ async def robustness_verify_endpoint(
     未通过模型明确拒绝（O-D6/P-34）。
     """
     await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
     data = await verify_tuning_robustness(
         db,
         loop_id=body.loopId,
@@ -477,11 +502,13 @@ async def simulate_endpoint(
     body: SimulateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:simulate")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
     对比当前 PID 与推荐 PID 的阶跃响应（Phase 2 支持多 PID 候选对比）。
     """
+    await ensure_loop_in_scope(db, scope, body.loopId)
     source_context = await authorize_tuning_model(
         db=db,
         requested_model_type=body.modelType,
@@ -518,6 +545,7 @@ async def compare_pids_endpoint(
     body: CompareRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:simulate")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -533,6 +561,7 @@ async def compare_pids_endpoint(
             message="多 PID 对比至少需要 2 组候选 PID 参数",
             status_code=400,
         )
+    await ensure_loop_in_scope(db, scope, body.loopId)
 
     source_context = await authorize_tuning_model(
         db=db,
@@ -730,12 +759,14 @@ async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("tuning:task-create")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结）.
+    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结；P4-03 越界拒绝）.
 
     新协议：``modelSource`` 必填（缺省=旧协议显式拒绝）；来源/模型/参数/窗口/
     currentPid 快照全部由服务端权威派生（详见 ``create_tuning_task``）。
     """
+    await ensure_loop_in_scope(db, scope, str(body.loopId))
     # P3-B2 W4：新协议下客户端申报的来源元数据一律拒绝（服务端权威派生，
     # 不静默忽略——伪造来源身份在此显式拦截）
     _legacy_fields = (
