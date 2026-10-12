@@ -43,7 +43,8 @@ _START = datetime(2026, 7, 19, 0, 0, 0)
 _END = datetime(2026, 7, 21, 0, 0, 0)
 
 # (tag_suffix, [(score, status, ts_offset_hours), ...])
-# L7: 较新的 INCONCLUSIVE + 较旧的 SUCCESS(95) → latestOnly 优先非 INCONCLUSIVE → 95
+# L7: 较新的 INCONCLUSIVE + 较旧的 SUCCESS(95) → G3-R02（14 号文 §3）：业务窗口
+#     时序优先，status 不参与 → 最新代表为 INCONCLUSIVE（昨日 SUCCESS 不抢占）
 # L8: 两条 SUCCESS，新的 85 覆盖旧的 30 → 最新一条 85
 _LOOP_SPECS: list[tuple[str, list[tuple[float | None, str, int]]]] = [
     ("L1", [(95.0, "SUCCESS", 0)]),
@@ -104,18 +105,13 @@ def _reference_distribution(
     """逐行统计参考值：每回路取 latestOnly 口径的最新一条，再按等级计数。
 
     snapshots: [(loop_id, score, status, ts_start), ...]
-    latestOnly 口径：status != 'INCONCLUSIVE' 优先，其次 ts_start 最新。
+    latestOnly 口径（G3-R02，14 号文 §3）：按业务窗口时序 ts_start 最新，
+    status 不参与优先级（昨日 SUCCESS 不抢占今日 INCONCLUSIVE）。
     """
     latest: dict[str, tuple[float | None, str, datetime]] = {}
     for loop_id, score, status, ts_start in snapshots:
         current = latest.get(loop_id)
-        if current is None:
-            latest[loop_id] = (score, status, ts_start)
-            continue
-        _, cur_status, cur_ts = current
-        cur_key = (cur_status != "INCONCLUSIVE", cur_ts)
-        new_key = (status != "INCONCLUSIVE", ts_start)
-        if new_key > cur_key:
+        if current is None or ts_start >= current[2]:
             latest[loop_id] = (score, status, ts_start)
 
     dist = {"EXCELLENT": 0, "GOOD": 0, "FAIR": 0, "WARNING": 0, "POOR": 0, "INCONCLUSIVE": 0}
@@ -203,7 +199,10 @@ class TestGradeDistributionPg:
         )
 
         expected = _reference_distribution(seeded, thresholds)
-        assert distribution == expected
+        # 等级键 + total 逐项对账（distribution 另含 fitness/三性分布等增量键，
+        # 非 grade 域——本测试只对账等级聚合口径）
+        for key, value in expected.items():
+            assert distribution[key] == value, f"key={key}"
         # 数据确实落进了多个桶（防止"全 0 也通过"的假阳性）
         assert expected["total"] == len(_LOOP_SPECS)
         assert sum(1 for g, c in expected.items() if g != "total" and c > 0) >= 4
@@ -215,14 +214,11 @@ class TestGradeDistributionPg:
         thresholds = await _load_grading_thresholds(session)
         reference = _reference_distribution(seeded, thresholds)
 
-        # 每回路最新一条（latestOnly 口径）的 loop_id → grade 映射
+        # 每回路最新一条（latestOnly 口径，G3-R02：窗口时序优先）的 loop_id → grade 映射
         latest: dict[str, tuple[float | None, str, datetime]] = {}
         for loop_id, score, status, ts_start in seeded:
             current = latest.get(loop_id)
-            if current is None or (status != "INCONCLUSIVE", ts_start) > (
-                current[1] != "INCONCLUSIVE",
-                current[2],
-            ):
+            if current is None or ts_start >= current[2]:
                 latest[loop_id] = (score, status, ts_start)
         loop_grade = {
             lid: _python_grade(score, thresholds) for lid, (score, _, _) in latest.items()

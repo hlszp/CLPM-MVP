@@ -508,9 +508,15 @@ async def list_loop_snapshots_endpoint(
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
     status: str | None = Query(
         None,
-        description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）",
+        description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）。"
+        "latestOnly=true 时为最新代表结果后置筛选（回路最新代表处于该状态才入选，"
+        "不以旧窗口成功冒充）；latestOnly=false 时为行级历史搜索",
     ),
-    confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
+    confidenceLevel: str | None = Query(
+        None,
+        description="可信度等级（A/B/C/D/E）。latestOnly 语义同 status"
+        "（最新代表后置筛选 / 历史行级过滤）",
+    ),
     loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
     grade: str | None = Query(
         None,
@@ -632,6 +638,17 @@ async def list_loop_snapshots_endpoint(
             total = total + custom_total
 
     # 组装响应
+    # G3-R01（14 号文 §2）：先按 result_record_id 批量读 record payload（精确
+    # 记录身份，无时间匹配），每行的语义/链路状态来自该行自己的 record——
+    # 不从"当前最新结果"拼接，改当前配置后历史行显示不漂移
+    from app.services.performance import (
+        SEMANTIC_LINK_UNLINKED,
+        load_snapshot_record_payloads,
+        resolve_semantic_link,
+    )
+
+    record_payloads = await load_snapshot_record_payloads(db, [snap for snap, _ in rows])
+
     items: list[KpiSnapshotListItem] = []
     for snap, tag_name in rows:
         # 来源标注（整合方案 B3）：非字符串（测试 MagicMock 等）置 None
@@ -647,6 +664,16 @@ async def list_loop_snapshots_endpoint(
             _source_task_id = _source_task_id or (
                 str(snap.task_id) if getattr(snap, "task_id", None) else None
             )
+        # G3-R01：该行的语义链路（record 指针缺失/不可读 → UNLINKED 防御）
+        _record_id = (
+            str(snap.result_record_id)
+            if getattr(snap, "result_record_id", None) is not None
+            else None
+        )
+        if _record_id is None or _record_id not in record_payloads:
+            _metrics_semantic, _semantic_link = None, SEMANTIC_LINK_UNLINKED
+        else:
+            _metrics_semantic, _semantic_link = resolve_semantic_link(record_payloads[_record_id])
         from app.schemas.performance import DataLineageSchema
 
         data_lineage = None
@@ -712,6 +739,10 @@ async def list_loop_snapshots_endpoint(
                 # fitness_tags JSONB 形如 {"tags": [...]}（loop_fitness 同款归一）
                 fitnessLevel=(snap.fitness_level if isinstance(snap.fitness_level, str) else None),
                 fitnessTags=_fitness_tags_list(snap.fitness_tags),
+                # G3-R01：该行自己的 record 语义（原样透出）+ 链路状态
+                resultRecordId=_record_id,
+                metricsSemantic=_metrics_semantic,
+                semanticLinkStatus=_semantic_link,
             )
         )
 

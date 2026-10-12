@@ -492,6 +492,31 @@ class KpiSnapshotListItem(CamelModel):
     # P2 IA优化：适用性评估
     fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
     fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
+    # --- G3-R01（14 号文 §2）：该行语义从其 result_record 原样透出 ---
+    resultRecordId: str | None = Field(
+        None,
+        description="本行对应的不可变结果账本 record（calculation_result_record.id）",
+    )
+    metricsSemantic: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "该 record 自己的完整语义明细（record payload.metricsSemantic 原样，"
+            "键=指标 DB 列名 + __composite__ 综合评分条目；含正式/参考 F、"
+            "P 完整性、原因/分母/覆盖等）。__composite__ 与账本 payload 顶层 "
+            "composite 键为同一对象（写入时 _composite_semantic_entry 抽取），"
+            "读端统一走 __composite__，双方不各猜键名。"
+            "legacy 记录无该键（历史不可追溯，见 semanticLinkStatus）"
+        ),
+    )
+    semanticLinkStatus: str | None = Field(
+        None,
+        description=(
+            "语义链路状态：AVAILABLE=record 携带完整语义；"
+            "NOT_TRACEABLE=legacy 记录无语义（显式历史不可追溯）；"
+            "BROKEN=profile 为新档位但语义缺失/损坏（断链暴露，不静默回退 legacy）；"
+            "UNLINKED=快照行无账本 record 链接（P1-05 前历史行或账本写入失败）"
+        ),
+    )
 
 
 class KpiSnapshotListData(CamelModel):
