@@ -70,6 +70,8 @@ const { RangePicker } = DatePicker;
  * 导入/任务管理端点均 require_roles(ADMIN, IC_ENGINEER, PE_ENGINEER)）
  */
 const IMPORT_ROLES = new Set(['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER']);
+// v-permission 期望字符串/字符串数组（Set 会流入 hasPermission 调 .split 崩溃）
+const IMPORT_ROLES_LIST = ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'];
 
 const route = useRoute();
 const userStore = useUserStore();
@@ -1030,7 +1032,7 @@ onMounted(async () => {
               @confirm="handleStartImport"
             >
               <Button
-                v-permission="IMPORT_ROLES"
+                v-permission="IMPORT_ROLES_LIST"
                 type="primary"
                 size="small"
                 :loading="importing"
@@ -1048,7 +1050,7 @@ onMounted(async () => {
             <span class="font-medium">导入任务列表</span>
             <div class="flex gap-2">
               <Button
-                v-permission="IMPORT_ROLES"
+                v-permission="IMPORT_ROLES_LIST"
                 size="small"
                 danger
                 :disabled="selectedTaskIds.length === 0"
