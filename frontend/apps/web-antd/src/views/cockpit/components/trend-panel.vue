@@ -160,7 +160,7 @@ watch([trend, loading], () => {
     <div class="cockpit-panel__hd">
       绩效趋势
       <span class="sub">
-        综合评分 / 自动投用率 · {{ node ? `${node.name} 口径` : '全厂口径' }}（等级分布序列接口缺失，暂不堆叠）
+        综合评分 / 自动投用率 · {{ node ? `${node.name} 口径` : '全厂口径' }}（等级分布序列暂未提供）
       </span>
     </div>
     <div class="trend__bd">

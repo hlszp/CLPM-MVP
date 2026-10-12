@@ -42,8 +42,8 @@ export interface ScoreRankPlant {
 
 /** 排名选中态（排名区 ⇄ 趋势/雷达联动协议） */
 export interface RankSelection {
-  /** AREA=装置 / UNIT=单元 */
-  type: 'AREA' | 'UNIT';
+  /** AREA=装置 / UNIT=单元 / FACTORY=全厂默认（R2：六维雷达默认显示全厂） */
+  type: 'AREA' | 'FACTORY' | 'UNIT';
   /** 展示名 */
   name: string;
   nodeId: string;

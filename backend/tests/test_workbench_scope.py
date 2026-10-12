@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from app.services.workbench_overview import _plants_empty_reason
-from app.services.workbench_scope import FALLBACK_BASE, node_scope_id
+from app.services.workbench_scope import FALLBACK_BASE, node_scope_id, normalize_window
 
 
 class TestNodeScopeId:
@@ -30,3 +30,24 @@ class TestPlantsEmptyReason:
 
     def test_no_precalc_rows(self) -> None:
         assert _plants_empty_reason({"factories": [object()]}, None) == "NO_PRECALC_ROWS"
+
+
+class TestNormalizeWindow:
+    """R2 巡检项（2026-10-12）：window 参数大小写/空白容错。"""
+
+    def test_uppercase_normalized(self) -> None:
+        assert normalize_window("24H") == "24h"
+        assert normalize_window("7D") == "7d"
+
+    def test_whitespace_stripped(self) -> None:
+        assert normalize_window(" 30d ") == "30d"
+
+    def test_valid_passthrough(self) -> None:
+        assert normalize_window("24h") == "24h"
+
+    def test_unknown_value_passthrough_unchanged(self) -> None:
+        # 未识别值原样透传：下游查空（NOT_COMPUTED），不虚构窗口
+        assert normalize_window("90d") == "90d"
+
+    def test_non_string_defaults(self) -> None:
+        assert normalize_window(None) == "24h"

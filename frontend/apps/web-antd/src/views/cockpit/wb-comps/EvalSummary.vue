@@ -138,6 +138,8 @@ function riskColor(risk: WorkbenchApi.AssessmentSummary['risks'][number]): strin
           >
           <b v-else class="font-mono ckwb-text-3">—</b>
         </span>
+        <!-- R2 双口径标注：摘要评分为窗口加权均值，与下方趋势图"最新快照"时点不同 -->
+        <span class="text-[10px] ckwb-text-3">口径：窗口加权均值</span>
       </div>
     </div>
 

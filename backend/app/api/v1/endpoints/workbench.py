@@ -32,6 +32,7 @@ from app.core.event_bus import mark_read
 from app.models.module_plugin import ModulePlugin
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
+from app.services.workbench_scope import normalize_window
 
 logger = logging.getLogger(__name__)
 
@@ -120,7 +121,9 @@ async def get_overview(
     """
     from app.services.workbench_overview import build_overview
 
-    data = await build_overview(db, scope_type=scopeType, scope_id=scopeId, window=window)
+    data = await build_overview(
+        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window)
+    )
     return success(data=data)
 
 
@@ -151,7 +154,7 @@ async def get_assessment(
     from app.services.workbench_assessment import build_assessment
 
     data = await build_assessment(
-        db, scope_type=scopeType, scope_id=scopeId, window=window, view=view
+        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window), view=view
     )
     return success(data=data)
 
@@ -187,7 +190,11 @@ async def get_diagnosis(
     from app.services.workbench_diagnosis import build_diagnosis
 
     data = await build_diagnosis(
-        db, scope_type=scopeType, scope_id=scopeId, window=window, only_active=onlyActive
+        db,
+        scope_type=scopeType,
+        scope_id=scopeId,
+        window=normalize_window(window),
+        only_active=onlyActive,
     )
     return success(data=data)
 
@@ -217,7 +224,9 @@ async def get_tuning(
     """
     from app.services.workbench_tuning import build_tuning
 
-    data = await build_tuning(db, scope_type=scopeType, scope_id=scopeId, window=window)
+    data = await build_tuning(
+        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window)
+    )
     return success(data=data)
 
 
@@ -314,6 +323,10 @@ async def get_tuning_scatters(
     from app.services.workbench_tuning import build_tuning_scatters
 
     data = await build_tuning_scatters(
-        db, scope_type=scopeType, scope_id=scopeId, window=window, batch_id=batchId
+        db,
+        scope_type=scopeType,
+        scope_id=scopeId,
+        window=normalize_window(window),
+        batch_id=batchId,
     )
     return success(data=data)

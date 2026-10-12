@@ -268,9 +268,9 @@ function slopeWidth(delta: number): number {
         </div>
         <!-- 图例 -->
         <div class="flex flex-none flex-wrap items-center gap-x-3 gap-y-0.5 px-3 py-1 text-[10px] ckwb-text-2">
-          <span class="flex items-center gap-1">
+          <span class="flex items-center gap-1" title="趋势曲线末点 = 窗口内最新一个评分快照（与左侧摘要的窗口加权均值口径不同）">
             <span class="inline-block h-2 w-2 rounded-full bg-[#2563EB]"></span>
-            全厂综合评分（当前 {{ currentVal }}）
+            全厂综合评分（最新快照 {{ currentVal }}）
           </span>
           <span class="flex items-center gap-1">
             <span class="inline-block h-2 w-2 rounded-full bg-[#B9C6D6]"></span>
