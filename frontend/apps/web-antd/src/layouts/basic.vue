@@ -19,6 +19,7 @@ import { useAccessStore, useUserStore } from '@vben/stores';
 import { Alert, Button, Popover } from 'ant-design-vue';
 
 import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';
+import { bindAuthzLiveRouter, useAuthzLive } from '#/composables/use-authz-live';
 import { applySiteLogoToPreferences } from '#/composables/use-site-branding';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
@@ -101,6 +102,10 @@ const authStore = useAuthStore();
 const accessStore = useAccessStore();
 const { destroyWatermark, updateWatermark } = useWatermark();
 const { isDark } = usePreferences();
+
+// P4-04 在线生效：布局级轮询挂载（≤30s 比对 policyRevision；失权撤离/清理）
+bindAuthzLiveRouter(router);
+useAuthzLive();
 
 // ===== P2-05：全局实时数据状态指示 =====
 const wsStatus = ref(realtimeWs.status);

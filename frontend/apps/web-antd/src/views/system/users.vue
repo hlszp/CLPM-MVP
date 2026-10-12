@@ -12,6 +12,8 @@
 import type { TableColumnsType, TablePaginationConfig } from 'ant-design-vue';
 
 import type { ClpmRole } from '#/api/auth';
+import type { AuthorizationApi } from '#/api/authorization';
+import type { PlantNodeApi } from '#/api/plant-node';
 import type { SystemApi } from '#/api/system';
 
 import { computed, h, onMounted, reactive, ref } from 'vue';
@@ -28,6 +30,8 @@ import {
   Menu,
   message,
   Modal,
+  Radio,
+  RadioGroup,
   Select,
   Space,
   Table,
@@ -36,6 +40,12 @@ import {
 } from 'ant-design-vue';
 
 import { CLPM_ROLES, ROLE_LABELS } from '#/api/auth';
+import {
+  getAuthorizationRolesApi,
+  getAuthorizationUsersApi,
+  updateUserScopeApi,
+} from '#/api/authorization';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
 import {
   createUserApi,
   deleteUserApi,
@@ -47,6 +57,7 @@ import {
   ClpmDangerConfirmModal,
   ClpmDataCanvas,
   ClpmPageToolbar,
+  ClpmPlantNodeTreeSelect,
   ClpmStandardActions,
   ClpmToolbarButton,
 } from '#/components/clpm';
@@ -133,6 +144,13 @@ const columns: TableColumnsType = [
     width: 140,
   },
   {
+    // P4-04：用户数据范围（ALL/NODE_SUBTREE，DB 持久 sys_user_scope）
+    title: '数据范围',
+    dataIndex: 'scope',
+    key: 'scope',
+    width: 170,
+  },
+  {
     title: '邮箱',
     dataIndex: 'email',
     key: 'email',
@@ -164,7 +182,7 @@ const columns: TableColumnsType = [
     key: 'createdAt',
     width: 170,
   },
-  { title: '操作', key: 'action', width: 220, fixed: 'right' },
+  { title: '操作', key: 'action', width: 290, fixed: 'right' },
 ];
 
 // 新增/编辑 Modal
@@ -187,6 +205,108 @@ const resetTarget = ref<null | SystemApi.User>(null);
 const resetForm = reactive({
   newPassword: '',
 });
+
+// ===== P4-04：用户数据范围（scope）编辑 =====
+/** userId → scope 信息（来自 /system/authorization/users，无行=ALL） */
+const userScopes = ref(new Map<string, AuthorizationApi.UserScopeInfo>());
+/** nodeId → 节点名（scope 列展示用） */
+const nodeNameMap = ref(new Map<string, string>());
+
+const scopeModalVisible = ref(false);
+const scopeModalLoading = ref(false);
+const scopeTarget = ref<null | SystemApi.User>(null);
+/** 打开弹窗时拉取的策略 revision（expectedRevision 乐观锁） */
+const scopeExpectedRevision = ref(0);
+const scopeForm = reactive({
+  scopeType: 'ALL' as 'ALL' | 'NODE_SUBTREE',
+  nodeId: null as null | string,
+  reason: '',
+});
+
+/** 拉取用户 scope 列表 + 装置树名称映射（scope 列展示数据源） */
+async function loadScopeContext(): Promise<void> {
+  try {
+    const [scopes, tree] = await Promise.all([
+      getAuthorizationUsersApi(),
+      getPlantNodeTreeApi(),
+    ]);
+    const map = new Map<string, AuthorizationApi.UserScopeInfo>();
+    for (const s of scopes) map.set(s.userId, s);
+    userScopes.value = map;
+    const names = new Map<string, string>();
+    const walk = (nodes: PlantNodeApi.PlantNode[]) => {
+      for (const n of nodes) {
+        names.set(n.id, n.name);
+        if (n.children?.length) walk(n.children);
+      }
+    };
+    walk(tree);
+    nodeNameMap.value = names;
+  } catch {
+    // 错误已由拦截器处理；scope 列降级显示原始值
+  }
+}
+
+function scopeLabel(user: SystemApi.User): string {
+  const info = userScopes.value.get(user.id);
+  if (!info || info.scopeType === 'ALL') return '全厂（ALL）';
+  const name = info.nodeId ? (nodeNameMap.value.get(info.nodeId) ?? info.nodeId) : '';
+  return `节点子树 · ${name || info.nodeId || '?'}`;
+}
+
+function handleOpenScope(record: SystemApi.User): void {
+  scopeTarget.value = record;
+  const info = userScopes.value.get(record.id);
+  scopeForm.scopeType = info?.scopeType ?? 'ALL';
+  scopeForm.nodeId = info?.nodeId ?? null;
+  scopeForm.reason = '';
+  scopeModalVisible.value = true;
+  // 拉当前策略 revision 作乐观锁基线（打开时取，保存时携带）
+  getAuthorizationRolesApi()
+    .then((r) => {
+      scopeExpectedRevision.value = r.revision;
+    })
+    .catch(() => {
+      // 拉取失败保持 0；保存将带旧值触发 409 后自动刷新
+    });
+}
+
+async function handleSubmitScope(): Promise<void> {
+  const target = scopeTarget.value;
+  if (!target) return;
+  if (scopeForm.scopeType === 'NODE_SUBTREE' && !scopeForm.nodeId) {
+    message.warning('节点子树范围必须选择装置节点');
+    return;
+  }
+  if (!scopeForm.reason.trim()) {
+    message.warning('请填写变更原因（审计必填）');
+    return;
+  }
+  scopeModalLoading.value = true;
+  try {
+    await updateUserScopeApi(target.id, {
+      expectedRevision: scopeExpectedRevision.value,
+      scopeType: scopeForm.scopeType,
+      nodeId: scopeForm.scopeType === 'NODE_SUBTREE' ? scopeForm.nodeId : null,
+      reason: scopeForm.reason.trim(),
+    });
+    message.success(
+      '数据范围已保存并即时生效；对应用户的在线会话将在下次交互或 30 秒内刷新',
+    );
+    scopeModalVisible.value = false;
+    await loadScopeContext();
+  } catch (error: any) {
+    const bizCode = error?.response?.data?.code;
+    if (bizCode === 'ERR_AUTHZ_REVISION_CONFLICT') {
+      message.warning('策略已被其他管理员变更，请重新打开弹窗再试');
+      scopeModalVisible.value = false;
+      await loadScopeContext();
+    }
+    // 其他错误（节点不存在/ALL 带 nodeId/网络）由拦截器全局提示
+  } finally {
+    scopeModalLoading.value = false;
+  }
+}
 
 /** 加载用户列表 */
 async function loadList() {
@@ -455,6 +575,7 @@ function handleGeneratePassword() {
 
 onMounted(() => {
   loadList();
+  loadScopeContext();
 });
 
 /** 工具栏刷新：重新加载用户列表 */
@@ -646,7 +767,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         }"
         :row-key="(record: SystemApi.User) => record.id"
         :row-selection="rowSelection"
-        :scroll="{ x: 1300 }"
+        :scroll="{ x: 1420 }"
         :size="tableSize"
         @change="handleTableChange"
       >
@@ -655,6 +776,27 @@ const { toolbarItems } = usePageToolbar(() => ({
             <Tag :color="roleColor(record.role as ClpmRole)">
               {{ roleLabel(record.role as ClpmRole) }}
             </Tag>
+          </template>
+          <template v-else-if="column.key === 'scope'">
+            <Tooltip
+              :title="
+                (userScopes.get((record as SystemApi.User).id)?.scopeType ?? 'ALL') ===
+                'ALL'
+                  ? '可访问全厂范围数据'
+                  : `仅可访问所选装置节点子树内的数据（P4-03 贯穿执行）`
+              "
+            >
+              <Tag
+                :color="
+                  (userScopes.get((record as SystemApi.User).id)?.scopeType ?? 'ALL') ===
+                  'ALL'
+                    ? 'green'
+                    : 'blue'
+                "
+              >
+                {{ scopeLabel(record as SystemApi.User) }}
+              </Tag>
+            </Tooltip>
           </template>
           <template v-else-if="column.key === 'isActive'">
             <Tag :color="record.isActive ? 'green' : 'default'">
@@ -675,6 +817,13 @@ const { toolbarItems } = usePageToolbar(() => ({
                 @click="handleOpenEdit(record as SystemApi.User)"
               >
                 编辑
+              </Button>
+              <Button
+                type="link"
+                size="small"
+                @click="handleOpenScope(record as SystemApi.User)"
+              >
+                数据范围
               </Button>
               <Button
                 type="link"
@@ -817,6 +966,55 @@ const { toolbarItems } = usePageToolbar(() => ({
               </Tooltip>
             </Space>
           </Space>
+        </FormItem>
+      </Form>
+    </Modal>
+
+    <!-- P4-04：数据范围编辑 Modal（ALL / NODE_SUBTREE + 装置节点） -->
+    <Modal
+      v-model:open="scopeModalVisible"
+      :title="`数据范围 - ${scopeTarget?.displayName || ''}`"
+      :confirm-loading="scopeModalLoading"
+      width="520px"
+      @ok="handleSubmitScope"
+    >
+      <Form :model="scopeForm" layout="vertical" class="pt-4">
+        <FormItem label="用户名">
+          <span class="font-medium">{{ scopeTarget?.username }}</span>
+        </FormItem>
+        <FormItem label="数据范围">
+          <RadioGroup v-model:value="scopeForm.scopeType">
+            <Radio value="ALL">全厂（ALL）</Radio>
+            <Radio value="NODE_SUBTREE">节点子树（NODE_SUBTREE）</Radio>
+          </RadioGroup>
+          <template #extra>
+            <span class="text-xs opacity-60">
+              节点子树仅可访问所选装置节点及其下级数据（列表/详情/聚合/导出/任务/实时推送贯穿执行）
+            </span>
+          </template>
+        </FormItem>
+        <FormItem
+          v-if="scopeForm.scopeType === 'NODE_SUBTREE'"
+          label="装置节点（必选）"
+          :rules="[{ required: true, message: '请选择装置节点' }]"
+        >
+          <ClpmPlantNodeTreeSelect
+            v-model:value="scopeForm.nodeId"
+            placeholder="选择装置节点（工厂/装置/单元）"
+            width="100%"
+          />
+        </FormItem>
+        <FormItem
+          label="变更原因（必填，写入审计）"
+          :rules="[{ required: true, message: '请输入变更原因' }]"
+        >
+          <Input.TextArea
+            v-model:value="scopeForm.reason"
+            :rows="3"
+            :maxlength="500"
+            placeholder="例如：按装置运维分工，将工程师 A 限定至 2# 装置"
+            show-count
+          />
         </FormItem>
       </Form>
     </Modal>
