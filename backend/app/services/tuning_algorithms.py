@@ -714,12 +714,14 @@ def tune_simc(K: float, tau: float, theta: float, tau_c_ratio: float = 1.0) -> P
 # ---------------------------------------------------------------------------
 
 
-def tune_ipdt_pi(K: float, theta: float, lambda_ratio: float = 1.0) -> PIDParams:
+def tune_ipdt_pi(K: float, theta: float, lambda_ratio: float = 7.0) -> PIDParams:
     """IPDT 专用 PI 规则（P3-07 R12 冻结：Skogestad IMC 积分规则族）.
 
     模型 G(s) = K·e^{-θs}/s（积分过程），PI 控制器 C = Kc(1 + 1/(Ti·s))：
 
-        λ = lambdaRatio × θ          （R14：沿用 lambdaRatio 注册结构）
+        λ = lambdaRatio × θ          （R14：沿用 lambdaRatio 注册结构；
+                                      默认 7.0 = λ 停点终裁 2026-10-12，
+                                      与注册表 default 单源一致）
         Ti = 2λ + θ
         Kc = (2λ + θ) / (K·(λ + θ)²)
 
@@ -739,9 +741,11 @@ def tune_ipdt_pi(K: float, theta: float, lambda_ratio: float = 1.0) -> PIDParams
     控制方向：K 为负（反作用过程增益）时 Kc 随分母 K 变号，负反馈结构
     保持（P3-07 任务书 2.7 承接 B1 物理解释链）。
 
-    λ_ratio=1.0（R14 默认）时裕度口径：解析扫描得 PM≈21°——低于 R15
-    冻结 PM≥30°，鲁棒验证将如实判不通过（R15 纪律：冻结值不得失败后
-    调整；达到四项指标需 lambdaRatio≳1.5，注册 description 引导 ≥2.0）。
+    λ_ratio=7.0（λ 停点终裁后的 R14 默认，2026-10-12）时裕度口径：宽 CI
+    可信集合（K±5%/θ±10%）GM≈5.6/PM≈59°/超调≈19.1%——R15 四项全过。
+    调小 λ 时验证器如实判定（R15 纪律：冻结值不得失败后调整）：λ_ratio=1.0
+    时 PM≈21°<30°、GM≈1.7<2.0 不达标；λ_ratio≤6.0 时宽 CI 超调 >20%
+    （6.0 档 20.23%），均如实标记不通过。
     """
     if K == 0:
         raise ValueError("IPDT-PI 整定要求非零积分增益 K（K=0 无控制意义）")
@@ -1786,12 +1790,17 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
     },
     {
         # P3-07 R12/R14：IPDT 专用 PI 规则（Skogestad IMC 积分规则族）
+        # λ 停点终裁（2026-10-12，DEC 清单 λ 终裁行）：R14 范围 [0.1,5.0]→[0.1,7.0]
+        # + IPDT 默认 λ=7.0（仅 IPDT；SOPDT/FOPDT 不变）。依据：λ=7.0 在宽 CI
+        # （K±5%/θ±10%，64 集合）下四项冻结指标全过（超调 19.12%，余量 0.88pct）
+        # ——积分+时滞过程超调随 λ 缓慢下降，λ≤6.0 在宽 CI 下超调 >20% 如实标记。
         "code": "IPDT_PI",
         "name": "IPDT-PI（积分过程专用）",
         "description": (
             "积分过程 G(s)=K·e^(-θs)/s 专用 PI 规则（Skogestad IMC 积分规则族）："
             "Ti=2λ+θ，Kc=(2λ+θ)/(K·(λ+θ)²)。鲁棒裕度（R15 冻结指标）随 λ 增大而"
-            "改善，建议 lambdaRatio≥2.0 以满足 GM≥2.0/PM≥30°/超调≤20%"
+            "改善；默认 λ=7.0 在宽 CI 可信集合（K±5%/θ±10%）下四项全过"
+            "（超调 19.12%）；调小 λ（如 ≤6.0）超调将超 20%，验证器如实标记不通过"
         ),
         "applicableModel": "IPDT",
         "params": [
@@ -1801,9 +1810,9 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
                 "type": "float",
                 "unit": "",
                 "description": "λ = lambdaRatio × θ（闭环时间常数相对纯滞后的倍数）",
-                "default": 1.0,
+                "default": 7.0,
                 "min": 0.1,
-                "max": 5.0,
+                "max": 7.0,
                 "kind": "business",
                 "risk": "MEDIUM",
                 "riskNote": "λ 越大越保守、越小越激进",
