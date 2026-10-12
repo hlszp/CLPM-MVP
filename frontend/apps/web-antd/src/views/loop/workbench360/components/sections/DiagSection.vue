@@ -742,7 +742,11 @@ function onGoTuning() {
             <span class="dot"></span
             >{{ detail.primaryCategoryLabel ?? detail.primaryCategory }}
           </span>
-          <span v-else class="tag t-ok"><span class="dot"></span>未见异常</span>
+          <!-- R06 同款（P3-D6 2026-10-12）：主分类 NULL 不兜底"未见异常"——
+               按科学结论显示（judgementStatus；历史 run → 历史覆盖未验证） -->
+          <span v-else class="tag t-gray"
+            ><span class="dot"></span>{{ rowJudgementLabel(detail) }}</span
+          >
           <span
             v-if="detail.severity"
             class="tag"
