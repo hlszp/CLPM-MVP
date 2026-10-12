@@ -129,6 +129,40 @@ const fastReferenceNote = computed(() =>
     : `快速性参考分 ${fastReferenceScore.value}% · 动态证据不足（静稳规则），不参与定级`,
 );
 
+// ===== R1（2026-10-12 审核修复批）：R 折扣归因提示 =====
+// P3-08c 契约 details（effective_auto_rate）携带 unknownSeconds/
+// denominatorSeconds/possibleRange 时，综合分低值不再渲染成"确定为
+// 0 分"——显式标注 R 为已证实下界、未知占比与可能区间（P=基础分×R/100，
+// 未知不补时是折扣主因）。诚实化：行未携带语义字段则不出提示、不造数。
+const R_DISCOUNT_UNKNOWN_PCT_MIN = 30; // 未知占比低于 30% 不加噪
+const rDiscountNote = computed(() => {
+  const details =
+    props.record.metricsSemantic?.effective_auto_rate?.details ?? null;
+  if (!details) return '';
+  const { unknownSeconds, denominatorSeconds, possibleRange } =
+    details as Record<string, unknown>;
+  const ear = props.record.effectiveAutoRate;
+  if (
+    typeof unknownSeconds !== 'number' ||
+    typeof denominatorSeconds !== 'number' ||
+    denominatorSeconds <= 0 ||
+    unknownSeconds <= 0 ||
+    ear === null ||
+    ear === undefined
+  ) {
+    return '';
+  }
+  const unknownPct = (unknownSeconds / denominatorSeconds) * 100;
+  if (unknownPct < R_DISCOUNT_UNKNOWN_PCT_MIN) return '';
+  const rangeText =
+    Array.isArray(possibleRange) &&
+    typeof possibleRange[0] === 'number' &&
+    typeof possibleRange[1] === 'number'
+      ? `，可能区间 ${possibleRange[0]}%~${possibleRange[1]}%`
+      : '';
+  return `有效自控率 ${ear.toFixed(2)}% 为已证实下界（未知占比 ${unknownPct.toFixed(0)}%${rangeText}），综合分含数据不足折扣`;
+});
+
 // ===== G3-R01：语义链路状态（legacy 不可追溯 vs 新 profile 断链分开） =====
 const SEMANTIC_LINK_LABELS: Record<string, { text: string; tone: string }> = {
   AVAILABLE: { text: '完整语义可追溯', tone: 'success' },
@@ -317,6 +351,10 @@ onBeforeUnmount(() => {
         >
           {{ formatNumber(record.score) }}
         </span>
+        <!-- R1：R 折扣归因（rDiscountNote 为空则原样渲染，零行为变化） -->
+        <div v-if="rDiscountNote" class="mt-1 text-xs text-gray-400">
+          {{ rDiscountNote }}
+        </div>
       </DescriptionsItem>
       <DescriptionsItem>
         <template #label>
