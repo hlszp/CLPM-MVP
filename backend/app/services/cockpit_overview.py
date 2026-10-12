@@ -9,6 +9,14 @@
 预计算表（GLOBAL scope_id=0）与 unit_kpi_summary 聚合，闭环漏斗读现有业务表
 （diagnosis_run / tuning_record / handling_order / alert_event）。
 
+数据范围（P5 批 α 聚合收窄，P4-03 验收登记立卡项）：build_overview 支持
+``unit_ids`` 范围节点集（None=ALL 全厂口径；NODE_SUBTREE 下传范围闭包集）。
+收窄口径：各统计块（回路数/环比/等级分布/待办/预警/漏斗/积压）一律按
+loop_ledger.unit_id ∈ 范围集过滤（unit_id 为 NULL 的回路仅 ALL 可见，与
+ScopeContext.node_in_scope 语义一致）；GLOBAL 预计算行仅 ALL 消费，收窄时
+score/autoRate 改由范围内 unit_kpi_summary 窗口加权均值给出。缓存 key 含
+授权节点集 hash + policyRevision——跨范围不共用聚合缓存。
+
 部分失败容错：每块独立 try/except，失败返回空/None 并 log.warning，不阻断其余块。
 窗口起点用参数化 naive UTC（datetime.now(UTC).replace(tzinfo=None)，
 PG 会话时区 +8，勿裸用 now()）。
@@ -143,6 +151,18 @@ def _rate_to_pct(val: Any) -> float | None:
     return round(v * 100, 2) if v <= 1.5 else round(v, 2)
 
 
+def _unit_ids_hash(unit_ids: list[str] | None) -> str:
+    """范围节点集合 hash（聚合缓存 key 隔离——不同数据范围不共用缓存）。
+
+    与 workbench_overview._unit_ids_hash 同构（P4-03 先例）：空/None → "all"。
+    """
+    import hashlib
+
+    if not unit_ids:
+        return "all"
+    return hashlib.sha1("\n".join(sorted(unit_ids)).encode()).hexdigest()[:12]
+
+
 def _default_kpi() -> dict[str, Any]:
     return {
         "score": None,
@@ -189,12 +209,13 @@ async def _query_global_summary_row(db: AsyncSession, window: str) -> WorkbenchW
 
 
 async def _query_window_weighted_avg(
-    db: AsyncSession, start: datetime, end: datetime
+    db: AsyncSession, start: datetime, end: datetime, unit_ids: list[str] | None = None
 ) -> dict[str, float | None]:
     """窗口内全厂加权均值（unit_kpi_summary，仅 UNIT 节点避免父子重复累加）。
 
     口径同 dashboard board/trend：按 evaluated_loops 加权，每个字段用独立的
     「非 NULL 分母」——SUM(evaluated_loops) FILTER (WHERE field IS NOT NULL)。
+    P5 批 α：unit_ids 非空时仅聚合范围内节点（数据范围收窄）。
     """
     score_num = func.sum(UnitKpiSummary.avg_score * UnitKpiSummary.evaluated_loops)
     score_den = func.sum(UnitKpiSummary.evaluated_loops).filter(
@@ -213,6 +234,8 @@ async def _query_window_weighted_avg(
             UnitKpiSummary.snapshot_time <= end,
         )
     )
+    if unit_ids is not None:
+        stmt = stmt.where(UnitKpiSummary.node_id.in_(unit_ids))
     row = (await db.execute(stmt)).one()
 
     def _avg(num: Any, den: Any) -> float | None:
@@ -225,14 +248,20 @@ async def _query_window_weighted_avg(
     return {"score": _avg(row[0], row[1]), "auto_rate": _avg(row[2], row[3])}
 
 
-def _active_loop_ids():
-    """活跃回路 id 子查询（2026-10-10 停用裁决：停用回路不进驾驶舱统计）。"""
-    return select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+def _active_loop_ids(unit_ids: list[str] | None = None):
+    """活跃回路 id 子查询（2026-10-10 停用裁决：停用回路不进驾驶舱统计）。
+
+    P5 批 α：unit_ids 非空时按 loop_ledger.unit_id 收窄（NULL unit 仅 ALL 可见）。
+    """
+    stmt = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
+    if unit_ids is not None:
+        stmt = stmt.where(LoopLedger.unit_id.in_(unit_ids))
+    return stmt
 
 
-async def _query_todo_counts(db: AsyncSession) -> dict[str, int]:
+async def _query_todo_counts(db: AsyncSession, unit_ids: list[str] | None = None) -> dict[str, int]:
     """处置待办：未闭合活动态计数 + sla_stage='BREACH' 且未闭合超期计数。"""
-    active_loops = _active_loop_ids()
+    active_loops = _active_loop_ids(unit_ids)
     pending = await db.execute(
         select(func.count())
         .select_from(HandlingOrder)
@@ -249,9 +278,11 @@ async def _query_todo_counts(db: AsyncSession) -> dict[str, int]:
     return {"pending": int(pending.scalar() or 0), "overdue": int(overdue.scalar() or 0)}
 
 
-async def _query_alert_counts(db: AsyncSession, since: datetime) -> dict[str, int]:
+async def _query_alert_counts(
+    db: AsyncSession, since: datetime, unit_ids: list[str] | None = None
+) -> dict[str, int]:
     """预警事件：时间窗内 ACTIVE 计数 + 时间窗内未确认（acknowledged_at IS NULL）计数。"""
-    active_loops = _active_loop_ids()
+    active_loops = _active_loop_ids(unit_ids)
     active = await db.execute(
         select(func.count())
         .select_from(AlertEvent)
@@ -267,7 +298,9 @@ async def _query_alert_counts(db: AsyncSession, since: datetime) -> dict[str, in
     return {"active": int(active.scalar() or 0), "unconfirmed": int(unconfirmed.scalar() or 0)}
 
 
-async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime) -> dict[str, int]:
+async def _query_funnel_counts(
+    db: AsyncSession, start: datetime, end: datetime, unit_ids: list[str] | None = None
+) -> dict[str, int]:
     """闭环治理漏斗四级计数（时间窗内，口径见各段注释）。
 
     - discovered: diagnosis_run status='SUCCESS' AND primary_category 非 NULL
@@ -279,7 +312,7 @@ async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime)
       （loop_action_item 无 CLOSED 态，处置闭环以工单 CLOSED 为准，
       与 governance-summary closedInWindow 同口径）
     """
-    active_loops = _active_loop_ids()
+    active_loops = _active_loop_ids(unit_ids)
     discovered = await db.execute(
         select(func.count(func.distinct(DiagnosisRun.loop_id))).where(
             DiagnosisRun.status == "SUCCESS",
@@ -327,12 +360,12 @@ async def _query_funnel_counts(db: AsyncSession, start: datetime, end: datetime)
     }
 
 
-async def _query_backlog(db: AsyncSession) -> dict[str, int]:
+async def _query_backlog(db: AsyncSession, unit_ids: list[str] | None = None) -> dict[str, int]:
     """处置积压：handling_order 当前 PENDING/EXECUTING/VERIFYING 各态计数。"""
     result = await db.execute(
         select(HandlingOrder.status, func.count())
         .where(HandlingOrder.status.in_(TODO_ACTIVE_STATUSES))
-        .where(HandlingOrder.loop_id.in_(_active_loop_ids()))
+        .where(HandlingOrder.loop_id.in_(_active_loop_ids(unit_ids)))
         .group_by(HandlingOrder.status)
     )
     counts = {row[0]: int(row[1]) for row in result.all()}
@@ -374,26 +407,38 @@ async def _query_loop_counts_per_unit(db: AsyncSession) -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 
-async def build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any]:
+async def build_overview(
+    db: AsyncSession, window: str = "24h", unit_ids: list[str] | None = None
+) -> dict[str, Any]:
     """组装驾驶舱总览（KPI 指标带 + 闭环治理漏斗）。部分失败容错。
+
+    P5 批 α（聚合收窄，P4-03 验收登记立卡项）：unit_ids=数据范围节点集
+    （None=ALL 全厂口径）。NODE_SUBTREE 放开配置后范围用户不再暴露域外数字。
 
     2026-10-03：60s TTL 短缓存（agg_cache）——驾驶舱 5min 刷新周期下
     多用户/手动刷新命中缓存，生产 1209 回路聚合不再重复执行。
     2026-10-08 性能批：TTL 60→240s——生产实测冷算 4~9s（grade_distribution
     窗口函数×2 + 漏斗段），240s 对齐页面 5min 刷新周期后冷算频率降 4 倍，
     数据延迟上限 4min 对总览无感知影响。
+    P5 批 α：缓存 key 含授权节点集 hash + policyRevision——跨范围不共用
+    聚合缓存（"全厂缓存不越界"），策略 revision 推进自然换 key、旧 key 按
+    TTL 过期，无需清理。
     """
-    from app.services.agg_cache import cached_agg
+    from app.services.agg_cache import cached_agg, policy_revision_suffix
 
+    rev = await policy_revision_suffix(db)
+    key = f"cockpit-overview:{window}:{_unit_ids_hash(unit_ids)}:{rev}"
     return await cached_agg(
-        f"cockpit-overview:{window}",
-        lambda: _build_overview(db, window),
+        key,
+        lambda: _build_overview(db, window, unit_ids=unit_ids),
         ttl=240.0,
     )
 
 
-async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, Any]:
-    """实际聚合（由 build_overview 的短缓存包装）。"""
+async def _build_overview(
+    db: AsyncSession, window: str = "24h", unit_ids: list[str] | None = None
+) -> dict[str, Any]:
+    """实际聚合（由 build_overview 的短缓存包装）；unit_ids=范围节点集。"""
     hours = WINDOW_HOURS.get(window, 24)
     now = datetime.now(UTC).replace(tzinfo=None)
     start = now - timedelta(hours=hours)
@@ -402,53 +447,66 @@ async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, An
     kpi = _default_kpi()
     funnel = _default_funnel()
 
-    # --- 回路总数：loop_ledger 活跃回路实时计数 ---
+    # --- 回路总数：loop_ledger 活跃回路实时计数（范围收窄同口径） ---
     # 语义是"配置回路总数"（与回路配置页对齐），不依赖 KPI 评分链路是否
     # 有数据；预计算行的 loop_count 是"窗口内参评回路数"，两者语义不同，
     # 此前混用导致总数与实际配置对不上（2026-09-04 修复）。
     try:
-        active_loops = await db.scalar(
+        loop_total_stmt = (
             select(func.count()).select_from(LoopLedger).where(LoopLedger.is_active.is_(True))
         )
+        if unit_ids is not None:
+            loop_total_stmt = loop_total_stmt.where(LoopLedger.unit_id.in_(unit_ids))
+        active_loops = await db.scalar(loop_total_stmt)
         kpi["loopTotal"] = int(active_loops or 0)
     except Exception:  # noqa: BLE001
         logger.warning("驾驶舱回路总数查询失败", exc_info=True)
 
-    # --- 全厂窗口 KPI 行：score / autoRate ---
-    try:
-        row = await _query_global_summary_row(db, window)
-        if row is not None:
-            # INCONCLUSIVE = 窗口内无参评数据（precalc 写入 0 占位）：
-            # 显示 None（前端 "—"）而非误导性的 0.0
-            if row.status == "INCONCLUSIVE":
-                kpi["score"] = None
-                kpi["autoRate"] = None
-            else:
-                kpi["score"] = _to_float(row.score)
-                kpi["autoRate"] = _rate_to_pct(row.auto_mode_rate)
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱 KPI 窗口行查询失败", exc_info=True)
-
     # --- 环比：当前窗口 vs 上一等长窗口（unit_kpi_summary 加权均值） ---
+    # 收窄模式下 cur_avg 兼作 score/autoRate 来源（GLOBAL 预计算行不适用）。
+    cur_avg: dict[str, float | None] | None = None
     try:
-        cur_avg = await _query_window_weighted_avg(db, start, now)
-        prev_avg = await _query_window_weighted_avg(db, prev_start, start)
+        cur_avg = await _query_window_weighted_avg(db, start, now, unit_ids)
+        prev_avg = await _query_window_weighted_avg(db, prev_start, start, unit_ids)
         kpi["scoreDelta"] = _delta(cur_avg["score"], prev_avg["score"])
         kpi["autoRateDelta"] = _delta(cur_avg["auto_rate"], prev_avg["auto_rate"])
     except Exception:  # noqa: BLE001
         logger.warning("驾驶舱 KPI 环比计算失败", exc_info=True)
 
+    # --- 全厂窗口 KPI 行：score / autoRate（仅 ALL；GLOBAL 行是全厂预计算） ---
+    if unit_ids is None:
+        try:
+            row = await _query_global_summary_row(db, window)
+            if row is not None:
+                # INCONCLUSIVE = 窗口内无参评数据（precalc 写入 0 占位）：
+                # 显示 None（前端 "—"）而非误导性的 0.0
+                if row.status == "INCONCLUSIVE":
+                    kpi["score"] = None
+                    kpi["autoRate"] = None
+                else:
+                    kpi["score"] = _to_float(row.score)
+                    kpi["autoRate"] = _rate_to_pct(row.auto_mode_rate)
+        except Exception:  # noqa: BLE001
+            logger.warning("驾驶舱 KPI 窗口行查询失败", exc_info=True)
+    elif cur_avg is not None:
+        # 收窄口径：范围内 unit_kpi_summary 当前窗口加权均值（0-100 标度，
+        # 与 delta 同源同标度）；无数据 → None（前端 "—"）。
+        kpi["score"] = cur_avg["score"]
+        kpi["autoRate"] = cur_avg["auto_rate"]
+
     # --- 等级分布 + 劣化回路数（复用 grade-distribution service 口径） ---
     try:
         from app.services.performance import get_grade_distribution
 
-        dist = await get_grade_distribution(db, start=start, end=now)
+        dist = await get_grade_distribution(db, start=start, end=now, plant_node_ids=unit_ids)
         kpi["gradeDistribution"] = {k: int(dist.get(k, 0) or 0) for k in GRADE_KEYS}
         kpi["degradedCount"] = (
             kpi["gradeDistribution"]["WARNING"] + kpi["gradeDistribution"]["POOR"]
         )
         try:
-            prev_dist = await get_grade_distribution(db, start=prev_start, end=start)
+            prev_dist = await get_grade_distribution(
+                db, start=prev_start, end=start, plant_node_ids=unit_ids
+            )
             prev_degraded = int(prev_dist.get("WARNING", 0) or 0) + int(
                 prev_dist.get("POOR", 0) or 0
             )
@@ -460,7 +518,7 @@ async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, An
 
     # --- 处置待办 ---
     try:
-        todo = await _query_todo_counts(db)
+        todo = await _query_todo_counts(db, unit_ids)
         kpi["todoPending"] = todo["pending"]
         kpi["todoOverdue"] = todo["overdue"]
     except Exception:  # noqa: BLE001
@@ -468,7 +526,7 @@ async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, An
 
     # --- 预警事件 ---
     try:
-        alerts = await _query_alert_counts(db, start)
+        alerts = await _query_alert_counts(db, start, unit_ids)
         kpi["alertActive"] = alerts["active"]
         kpi["alertUnconfirmed"] = alerts["unconfirmed"]
     except Exception:  # noqa: BLE001
@@ -476,12 +534,12 @@ async def _build_overview(db: AsyncSession, window: str = "24h") -> dict[str, An
 
     # --- 闭环治理漏斗 ---
     try:
-        counts = await _query_funnel_counts(db, start, now)
+        counts = await _query_funnel_counts(db, start, now, unit_ids)
         funnel.update(counts)
     except Exception:  # noqa: BLE001
         logger.warning("驾驶舱漏斗计数查询失败", exc_info=True)
     try:
-        funnel["backlog"] = await _query_backlog(db)
+        funnel["backlog"] = await _query_backlog(db, unit_ids)
     except Exception:  # noqa: BLE001
         logger.warning("驾驶舱漏斗积压查询失败", exc_info=True)
 

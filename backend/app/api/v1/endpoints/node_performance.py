@@ -289,10 +289,16 @@ async def get_nodes_overview_endpoint(
     ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """全厂总览：所有启用 KPI 评估的节点最新快照汇总（所有角色）。"""
+    """全厂总览：所有启用 KPI 评估的节点最新快照汇总（所有角色）。
+
+    P5 批 α（聚合收窄）：NODE_SUBTREE 范围按授权节点集收窄——仅统计
+    范围内节点，域外节点不再出现在总览/状态分布中。
+    """
     start, end = _parse_time_window(time_window=timeWindow)
-    data = await get_nodes_overview(db, start, end)
+    unit_ids = None if scope.is_all else sorted(scope.allowed_node_ids)
+    data = await get_nodes_overview(db, start, end, unit_ids=unit_ids)
     return success(data=data)
 
 
