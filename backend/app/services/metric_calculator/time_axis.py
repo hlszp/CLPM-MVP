@@ -47,7 +47,11 @@ logger = logging.getLogger(__name__)
 #: tqpv1→tqpv2（P3-09c，08bc 交接授权）：stability 带内率分母改契约全窗
 #: 口径（窗口减已知被剔除暂态；此前=合法点时长）——L1/L2 缓存全量自然失效
 #: 一次，旧缓存不与新口径混算。
-TIME_QUALITY_POLICY_VERSION = "tqpv2"
+#: tqpv2→tqpv3（R1 2026-10-12 审核修复批）：held_too_long 阈值按角色分层
+#: （快角色 pv/op 维持 max(3×步长,60s)；慢角色 mode/sp/pid_* 下限 7200s，
+#: sys_config data.held_too_long_*_seconds 可配）——known/unknown 游程随之
+#: 变化，L1/L2 缓存全量自然失效，旧缓存块不与新分层混算。
+TIME_QUALITY_POLICY_VERSION = "tqpv3"
 
 #: 契约覆盖的网格周期（秒）
 SUPPORTED_GRID_PERIODS: frozenset[float] = frozenset({1.0, 2.0, 5.0, 10.0})

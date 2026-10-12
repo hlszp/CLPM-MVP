@@ -142,4 +142,55 @@ describe('G3-R01 loop-performance-detail-content 语义消费', () => {
     expect(text).toContain('语义断链');
     expect(text).not.toContain('历史不可追溯');
   });
+
+  // R1（2026-10-12 审核修复批）：R 折扣归因——综合分低值不得渲染成
+  // "确定为 0 分"；契约 details 携带未知占比时显式标注已证实下界。
+  it('R=0 且未知占比高：综合分旁标注已证实下界与数据不足折扣', () => {
+    const row = baseRow();
+    row.score = 0;
+    row.effectiveAutoRate = 0;
+    row.metricsSemantic!.effective_auto_rate = {
+      value: 0,
+      confidenceLevel: 'A',
+      assessmentState: 'COMPLETE',
+      details: {
+        numeratorSeconds: 0,
+        denominatorSeconds: 3600,
+        unknownSeconds: 3564,
+        knownSeconds: 36,
+        coverageRatio: 0.01,
+        possibleRange: [0, 99],
+        denominatorBasis: 'FULL_REQUEST_WINDOW',
+      },
+    };
+    const wrapper = mount(LoopPerformanceDetailContent, {
+      props: { record: row, withHistory: false },
+    });
+    const text = textOf(wrapper);
+    expect(text).toContain('已证实下界');
+    expect(text).toContain('未知占比 99%');
+    expect(text).toContain('可能区间 0%~99%');
+    expect(text).toContain('综合分含数据不足折扣');
+  });
+
+  it('未知占比可忽略（30% 以下）：不渲染 R 折扣注记（不加噪）', () => {
+    const row = baseRow();
+    row.score = 88;
+    row.metricsSemantic!.effective_auto_rate = {
+      value: 95,
+      confidenceLevel: 'A',
+      assessmentState: 'COMPLETE',
+      details: {
+        numeratorSeconds: 3400,
+        denominatorSeconds: 3600,
+        unknownSeconds: 180,
+        knownSeconds: 3420,
+        possibleRange: [94.4, 99.4],
+      },
+    };
+    const wrapper = mount(LoopPerformanceDetailContent, {
+      props: { record: row, withHistory: false },
+    });
+    expect(wrapper.text()).not.toContain('数据不足折扣');
+  });
 });
