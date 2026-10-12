@@ -29,7 +29,7 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms, require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -44,6 +44,7 @@ from app.schemas.tuning import (
     ModelIdentifyHistoryRequest,
     ModelIdentifyRequest,
     ModelIdentifyResult,
+    RobustVerifyRequest,
     SimulateRequest,
     SimulationResult,
     TaskProgress,
@@ -77,6 +78,7 @@ from app.services.tuning import (
     preview_identify_segments,
     run_simulation,
     tune_pid,
+    verify_tuning_robustness,
 )
 from app.services.tuning_batch import (
     get_tuning_batch_detail,
@@ -92,6 +94,14 @@ from app.services.waveform import get_waveform
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/tuning", tags=["tuning"])
+
+# P1-04/AUTH-06：历史辨识高级参数（thetaEstimate/candidateModelTypes）的
+# 后端字段级守卫白名单，与前端 composables/use-clpm-roles.ts 的
+# ADVANCED_PARAM_ROLES（ADMIN/EXPERT）同口径——前端隐藏不构成后端约束，
+# IC/PE 直接 POST 携带高级参数时在端点层显式拒绝（403），不静默忽略：
+# 忽略会让调用方误以为自定义 θ/候选阶次已生效，结果不可解释也不可复现。
+_TUNING_ADVANCED_PARAM_ROLES = ("ADMIN", "EXPERT")
+_TUNING_ADVANCED_PARAM_FIELDS = ("candidateModelTypes", "thetaEstimate")
 
 
 # ---------------------------------------------------------------------------
@@ -158,11 +168,19 @@ async def get_methods_endpoint(
 # ---------------------------------------------------------------------------
 
 
+# P4-02 尾批（动作码接入）：tuning.py 全部写端点原 require_roles("ADMIN",
+# "IC_ENGINEER", "EXPERT", "PE_ENGINEER") == 四角色白名单，与目录码种子逐一
+# 核对为**等价替换**（tuning:identify/tune/simulate/task-create/task-manage
+# 种子均 A/I/P/E == 原白名单；种子核对见 tests/test_p4_02t_authz_tail.py）——
+# require_perms 纯码接管，DB 矩阵可收紧；SPONSOR 零写红线由 require_perms
+# 结构性拒绝（不依赖矩阵纪律）。fitness L0/L1 门禁仍在服务层独立执行（AND）。
+
+
 @router.post("/identify", response_model=ApiResponse[ModelIdentifyResult])
 async def identify_model_endpoint(
     body: ModelIdentifyRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:identify")),
 ) -> dict:
     """模型辨识（阶跃实验路径，同步；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -193,7 +211,7 @@ async def identify_model_endpoint(
 async def identify_history_endpoint(
     body: ModelIdentifyHistoryRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:identify")),
 ) -> dict:
     """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -206,6 +224,21 @@ async def identify_history_endpoint(
     - AUTO/HISTORY_ONLY → ``IdentifyHistoryAsyncResponse``（异步任务提交）
     """
     from app.tasks.tuning import identify_model_task
+
+    # P1-04/AUTH-06：高级参数字段级守卫——非 ADMIN/EXPERT 携带
+    # thetaEstimate/candidateModelTypes 时拒绝（与前端 ADVANCED_PARAM_ROLES
+    # 隐藏策略一致；SPONSOR 无权 POST 本端点，由 require_perms 先行拦截）。
+    if user.role not in _TUNING_ADVANCED_PARAM_ROLES and (
+        body.candidateModelTypes is not None or body.thetaEstimate is not None
+    ):
+        raise BizError(
+            code="ERR_PERMISSION_DENIED",
+            message=(
+                f"高级参数（{'/'.join(_TUNING_ADVANCED_PARAM_FIELDS)}）"
+                "仅 ADMIN/EXPERT 可用，请移除后使用默认值提交"
+            ),
+            status_code=403,
+        )
 
     # P2: fitness 门禁（L3 以下阻断；作用于 STEP_ONLY 同步分支和 AUTO/HISTORY_ONLY 异步分支前）
     await _ensure_tuning_fitness(db, body.loopId)
@@ -257,7 +290,7 @@ async def identify_history_endpoint(
 async def identify_segments_endpoint(
     body: IdentifySegmentsRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:identify")),
 ) -> dict:
     """可辨识片段预览（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -281,7 +314,7 @@ async def identify_segments_endpoint(
 async def tune_pid_endpoint(
     body: TuneRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:tune")),
 ) -> dict:
     """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -331,13 +364,14 @@ async def tune_pid_endpoint(
 async def tune_matrix_endpoint(
     body: TuneMatrixRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:tune")),
 ) -> dict:
     """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
 
-    IMC/LAMBDA/ZN/COHEN_COON/SIMC 5 算法一次全算；单算法失败不阻断，
-    该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计日志——
-    审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
+    适用算法一次全算（P3-07 起注册表驱动：FOPDT=IMC/LAMBDA/ZN/
+    COHEN_COON/SIMC 五法；IPDT=IPDT_PI；SOPDT=SOPDT_IMC）；单算法失败
+    不阻断，该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计
+    日志——审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
     """
     # T4 修复：矩阵端点原漏装 fitness 门禁（/tune 有），补齐口径
     await _ensure_tuning_fitness(db, body.loopId)
@@ -350,8 +384,20 @@ async def tune_matrix_endpoint(
         model_source=body.modelSource,
         risk_confirmed=body.riskConfirmed,
     )
+    # P3-07：矩阵算法清单注册表驱动——按模型结构取适用方法
+    # （FOPDT=五法；IPDT=IPDT_PI；SOPDT=SOPDT_IMC）
+    from app.services.tuning_algorithms import TUNING_METHODS_INFO as _METHODS
+
+    _model_u = str(source_context.model_type).upper()
+    algorithms = tuple(m["code"] for m in _METHODS if m.get("applicableModel") == _model_u) or (
+        "IMC",
+        "LAMBDA",
+        "ZN",
+        "COHEN_COON",
+        "SIMC",
+    )
     rows: list[dict[str, Any]] = []
-    for algo in ("IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"):
+    for algo in algorithms:
         try:
             result = await tune_pid(
                 model_type=source_context.model_type,
@@ -371,6 +417,56 @@ async def tune_matrix_endpoint(
     return success(data={"rows": rows})
 
 
+# 路径命名对齐 test_security_dcs_pid_no_write 计算类白名单（含 "tune"，
+# 与 /tune、/tune/matrix 同族；REWORK D1-① 修复，原 /robustness/verify）
+@router.post("/tune/robustness", response_model=ApiResponse[dict])
+async def robustness_verify_endpoint(
+    body: RobustVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:tune")),
+) -> dict:
+    """整定建议鲁棒性验证（P3-07 R15 冻结指标；ADMIN/IC_ENGINEER/EXPERT）。
+
+    在可信模型集合（终验通过模型 ± 参数 95% CI 采样，≤64 成员）上验证
+    同一建议：GM≥2.0 / PM≥30° / 超调≤20% / OP 实际限幅；含噪声/负载
+    扰动响应证据与 DCS 表示转换。未知 DCS 表示、未核实 OP 限位、终验
+    未通过模型明确拒绝（O-D6/P-34）。
+    """
+    await _ensure_tuning_fitness(db, body.loopId)
+    data = await verify_tuning_robustness(
+        db,
+        loop_id=body.loopId,
+        model_type=body.modelType,
+        model_params=body.modelParams.model_dump(exclude_none=True),
+        algorithm=body.algorithm,
+        algorithm_params=body.algorithmParams,
+        recommended_pid=body.recommendedPid.model_dump() if body.recommendedPid else None,
+        sim_duration=body.simDuration,
+        sim_step=body.simStep,
+        setpoint_step=body.setpointStep,
+        noise_std=body.noiseStd,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="TUNE_ROBUSTNESS_VERIFY",
+        target_type="Loop",
+        target_id=str(body.loopId),
+        after_value=(
+            f"algorithm={body.algorithm}, modelType={data.get('modelType')}, "
+            f"overallPass={str(data.get('overallPass')).lower()}, "
+            f"setMembers={data.get('setBasis', {}).get('memberCount')}"
+        ),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
+    return success(data=data)
+
+
 # ---------------------------------------------------------------------------
 # 闭环仿真
 # ---------------------------------------------------------------------------
@@ -380,7 +476,7 @@ async def tune_matrix_endpoint(
 async def simulate_endpoint(
     body: SimulateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:simulate")),
 ) -> dict:
     """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -411,6 +507,8 @@ async def simulate_endpoint(
         setpoint_step=body.setpointStep,
         disturbance_type=body.disturbanceType,
         pid_candidates=pid_candidates_dicts,
+        disturbance_amplitude=body.disturbanceAmplitude,
+        disturbance_time=body.disturbanceTime,
     )
     return success(data=data)
 
@@ -419,7 +517,7 @@ async def simulate_endpoint(
 async def compare_pids_endpoint(
     body: CompareRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:simulate")),
 ) -> dict:
     """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
@@ -457,6 +555,9 @@ async def compare_pids_endpoint(
         sim_duration=body.simDuration,
         sim_step=body.simStep,
         setpoint_step=body.setpointStep,
+        disturbance_type=body.disturbanceType,
+        disturbance_amplitude=body.disturbanceAmplitude,
+        disturbance_time=body.disturbanceTime,
     )
     return success(data=data)
 
@@ -494,9 +595,9 @@ async def verification_data_endpoint(
     pointTime: str = Query(..., description="对比时点 ISO 8601（naive UTC 或带时区）"),
     windowHours: int = Query(..., description="窗口小时数：1/2/4/8/24/72/168"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("tuning:view")),
 ) -> dict:
-    """效果验证前后窗曲线数据（全部登录用户只读；实时拉取不落库）。
+    """效果验证前后窗曲线数据（五角色只读——tuning:view 种子即五角色，零行为变化；实时拉取不落库）。
 
     前窗 [pointTime−window, pointTime] 与后窗 [pointTime, pointTime+window]
     各拉一次 SP/PV/OP 波形 + 窗口 KPI 均值摘要（2026-10-04 B2：由"窗口内
@@ -608,39 +709,59 @@ async def get_task_status_endpoint(
 @router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
 async def cancel_task_endpoint(
     task_id: str,
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:task-manage")),
 ) -> dict:
     """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
 
     task_id 为 Celery 任务 ID。仅 PENDING/RUNNING 状态可取消。
     V62-P1-013: 同步 tuning_progress 和 TaskTracker 状态为 CANCELLED。
+    P3-04：委托 ``cancel_tuning_task``——记录侧同步落定 RUNNING→INCONCLUSIVE
+    （原因"用户主动取消"），取消语义端到端明确。
     """
-    from celery.result import AsyncResult
+    from app.services.tuning import cancel_tuning_task
 
-    from app.services.tuning_progress import update_progress
-    from app.tasks.celery_app import celery_app
-
-    result = AsyncResult(task_id, app=celery_app)
-    if result.state in ("PENDING", "RUNNING", "STARTED"):
-        result.revoke(terminate=True, signal="SIGTERM")
-        # V62-P1-013: 同步 tuning_progress → TaskTracker
-        await update_progress(
-            task_id,
-            status="CANCELLED",
-            message="用户主动取消",
-        )
-        return success(data={"taskId": task_id, "status": "CANCELLED"})
-    # 已终态（SUCCESS/FAILED/REVOKED）不可取消
-    return success(data={"taskId": task_id, "status": result.state})
+    data = await cancel_tuning_task(task_id, db=db)
+    return success(data=data)
 
 
 @router.post("/tasks", status_code=201, response_model=ApiResponse[dict])
 async def create_task_endpoint(
     body: CreateTuningTaskRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "EXPERT", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("tuning:task-create")),
 ) -> dict:
-    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT）。"""
+    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结）.
+
+    新协议：``modelSource`` 必填（缺省=旧协议显式拒绝）；来源/模型/参数/窗口/
+    currentPid 快照全部由服务端权威派生（详见 ``create_tuning_task``）。
+    """
+    # P3-B2 W4：新协议下客户端申报的来源元数据一律拒绝（服务端权威派生，
+    # 不静默忽略——伪造来源身份在此显式拦截）
+    _legacy_fields = (
+        "currentPid",
+        "fittingScore",
+        "identifyMethod",
+        "dataSource",
+        "confidenceLevel",
+        "confidenceReason",
+        "excitationScore",
+        "residualTestPassed",
+        "pidCandidates",
+        "candidateResults",
+        "rollbackPid",
+    )
+    if body.modelSource is not None:
+        provided = [f for f in _legacy_fields if getattr(body, f, None) is not None]
+        if provided:
+            raise BizError(
+                code="ERR_TUNING_PROVENANCE_CONFLICT",
+                message=(
+                    "最终方案保存链的来源元数据由服务端从来源记录权威派生，"
+                    f"不接受客户端申报：{', '.join(provided)}（请移除后重试）"
+                ),
+                status_code=400,
+            )
     data = await create_tuning_task(
         db=db,
         loop_id=body.loopId,
@@ -648,22 +769,12 @@ async def create_task_endpoint(
         model_params=body.modelParams.model_dump(exclude_none=True),
         algorithm=body.algorithm,
         recommended_pid=body.recommendedPid.model_dump(),
-        current_pid=body.currentPid.model_dump() if body.currentPid else None,
-        fitting_score=body.fittingScore,
+        model_source=body.modelSource,
+        source_record_id=body.sourceRecordId,
+        risk_confirmed=body.riskConfirmed,
         simulation_result=body.simulationResult,
         status=body.status,
         created_by=user.username,
-        # Phase 2.2 元数据
-        identify_method=body.identifyMethod,
-        data_source=body.dataSource,
-        confidence_level=body.confidenceLevel,
-        confidence_reason=body.confidenceReason,
-        excitation_score=body.excitationScore,
-        residual_test_passed=body.residualTestPassed,
-        pid_candidates=body.pidCandidates,
-        candidate_results=body.candidateResults,
-        # V62-P3-007：人工实施清单（回退方案缺省=实施前参数，service 层兜底）
-        rollback_pid=body.rollbackPid.model_dump() if body.rollbackPid else None,
         risk_assessment=body.riskAssessment,
     )
     # 审计日志（S1-B7）

@@ -14,7 +14,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -33,7 +33,7 @@ router = APIRouter(prefix="/cockpit", tags=["cockpit"])
 async def get_cockpit_overview(
     window: str = Query("24h", pattern="^(24h|7d|30d)$", description="时间窗口：24h/7d/30d"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """驾驶舱总览：KPI 指标带（评分/自控率/回路数/劣化/待办/预警）+ 闭环治理漏斗。
 
@@ -47,7 +47,7 @@ async def get_cockpit_overview(
 @router.get("/backend-access-roles", response_model=ApiResponse[dict])
 async def get_backend_access_roles(
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """ "管理后台"入口允许角色清单（sys_config 键 cockpit.backend_access_roles）。
 
@@ -60,7 +60,7 @@ async def get_backend_access_roles(
 @router.get("/node-tree", response_model=ApiResponse[list[dict]])
 async def get_node_tree(
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("portal:view")),
 ) -> dict:
     """工厂→装置→单元三层树 + 各节点回路计数。
 

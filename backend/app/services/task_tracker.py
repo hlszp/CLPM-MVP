@@ -411,12 +411,37 @@ async def get_task(task_id: str) -> dict[str, str] | None:
     return data
 
 
+async def get_task_status(task_id: str) -> str | None:
+    """轻量读取任务当前状态（P3-02 协作取消检查用；不存在返回 None）。
+
+    相比 get_task 只取 status 字段，供批任务回间/进度上报点高频调用。
+    """
+    status = await redis_client.hget(_task_key(task_id), "status")
+    return status
+
+
 async def set_celery_task_ids(task_id: str, celery_task_ids: list[str]) -> None:
     """Persist child/callback IDs so status sync and cancellation cover the whole canvas."""
     await redis_client.hset(
         _task_key(task_id),
         mapping={"celery_task_ids": json.dumps(celery_task_ids)},
     )
+
+
+async def set_terminal_stats(task_id: str, stats: dict[str, Any]) -> None:
+    """落盘批任务对象终结统计（P3-02，08§4.2 互斥口径）。
+
+    独立字段 ``terminal_stats``（JSON），不与 status/progress 混写：
+    统计是审计账，任务状态可能随后被 CAS 终态覆盖（如取消），统计仍保留。
+    读端（D6）与验收对账消费；写失败不阻塞任务收尾。
+    """
+    try:
+        await redis_client.hset(
+            _task_key(task_id),
+            mapping={"terminal_stats": json.dumps(stats, ensure_ascii=False)},
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("任务终结统计落盘失败（忽略）: task_id=%s", task_id, exc_info=True)
 
 
 #: 日序号 key 的 TTL（2 天，序号只需在当日有效）
@@ -832,11 +857,14 @@ __all__ = [
     "delete_task_auxiliary_keys",
     "get_notifications",
     "get_task",
+    "get_task_status",
     "mark_notification_read",
     "record_backfill_progress_once",
     "release_backfill_batch",
     "release_backfill_dispatch",
     "reserve_backfill_dispatch",
+    "set_celery_task_ids",
+    "set_terminal_stats",
     "task_to_response",
     "update_status",
 ]

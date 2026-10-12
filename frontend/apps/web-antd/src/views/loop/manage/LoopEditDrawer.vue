@@ -856,6 +856,15 @@ async function doSaveTagMapping() {
     emit('saved');
   } catch (error) {
     console.error('操作失败:', error);
+    // ENG-01（P1-04）：保存失败必须阻断向导推进——re-throw 使 wizardNext
+    // 步骤 2 的 try/catch 守卫真实生效，父组件 confirmSave 的 catch 同样
+    // 已承接（确认弹窗保持打开）。用户可见错误提示：API 失败已由全局
+    // errorMessageResponseInterceptor 弹出后端 message（本端点未设
+    // skipErrorMessage）；非 HTTP 层异常（无 response）本地兜底提示，避免双 toast。
+    if (!(error as any)?.response) {
+      message.error('Tag 关联保存失败，请重试');
+    }
+    throw error;
   } finally {
     tagSaving.value = false;
   }

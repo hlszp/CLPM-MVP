@@ -67,11 +67,13 @@ const SOURCE_COLOR: Record<MonitorApi.AttentionSource, string> = {
   HANDLING: 'processing',
 };
 
+// IA-04：VERIFYING 补齐（与 attention.vue ATTENTION_STATUS_* 同口径）
 const STATUS_LABEL: Record<MonitorApi.AttentionStatus, string> = {
   OPEN: '待处理',
   ACKNOWLEDGED: '已确认',
   SUPPRESSED: '已抑制',
   IN_PROGRESS: '处理中',
+  VERIFYING: '验证中',
 };
 
 const STATUS_COLOR: Record<MonitorApi.AttentionStatus, string> = {
@@ -79,6 +81,7 @@ const STATUS_COLOR: Record<MonitorApi.AttentionStatus, string> = {
   ACKNOWLEDGED: 'warning',
   SUPPRESSED: 'default',
   IN_PROGRESS: 'processing',
+  VERIFYING: 'cyan',
 };
 
 const priorityColor = (priority: string) =>

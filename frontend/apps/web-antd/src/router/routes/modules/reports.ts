@@ -21,7 +21,11 @@ const routes: RouteRecordRaw[] = [
   {
     name: 'Reports',
     path: '/reports',
-    redirect: '/reports/performance',
+    // P1-04/AUTH-04：不写死 redirect——框架 accessible.ts 对无显式 redirect
+    // 的父路由自动落到权限过滤后 children[0]（首个有权子页）。原静态
+    // redirect:'/reports/performance' 会让 EXPERT（对 performance 无权）
+    // 进父路径必落无权子页；改为动态首子页后 EXPERT 落 /reports/data-quality，
+    // 其余角色首子页仍为 performance，未扩大任何角色数据权限。
     meta: {
       // 父路由 authority 取子路由并集，避免 IC/PE/SPONSOR 看不到菜单
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
@@ -36,6 +40,7 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/performance',
         component: () => import('#/views/reports/performance.vue'),
         meta: {
+          permCode: 'page:reports.performance',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:gauge',
           title: '绩效报告',
@@ -47,7 +52,14 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/data-quality',
         component: () => import('#/views/reports/data-quality.vue'),
         meta: {
-          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          permCode: 'page:reports.data-quality',
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           icon: 'lucide:heart-pulse',
           title: '数据质量',
           module: 'reports',
@@ -58,7 +70,14 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/alert-statistics',
         component: () => import('#/views/reports/alert-statistics.vue'),
         meta: {
-          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          permCode: 'page:reports.alert-statistics',
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           icon: 'lucide:bell-ring',
           title: '预警统计',
           module: 'reports',
@@ -69,6 +88,7 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/diagnosis',
         component: () => import('#/views/reports/diagnosis.vue'),
         meta: {
+          permCode: 'page:reports.diagnosis',
           authority: [
             'ADMIN',
             'EXPERT',
@@ -86,7 +106,14 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/handling',
         component: () => import('#/views/reports/handling.vue'),
         meta: {
-          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          permCode: 'page:reports.handling',
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           icon: 'lucide:clipboard-check',
           title: '处置报告',
           module: 'reports',
@@ -97,6 +124,7 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/benefit',
         component: () => import('#/views/reports/benefit.vue'),
         meta: {
+          permCode: 'page:reports.benefit',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:trending-up',
           title: '收益报告',
@@ -108,6 +136,7 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/subscription',
         component: () => import('#/views/reports/subscription.vue'),
         meta: {
+          permCode: 'page:reports.subscription',
           authority: ['ADMIN'],
           icon: 'lucide:bell-dot',
           title: '订阅配置',
@@ -120,7 +149,14 @@ const routes: RouteRecordRaw[] = [
         path: '/reports/overview',
         redirect: '/reports/performance',
         meta: {
-          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          permCode: 'page:reports.performance',
+          authority: [
+            'ADMIN',
+            'EXPERT',
+            'IC_ENGINEER',
+            'PE_ENGINEER',
+            'SPONSOR',
+          ],
           hideInMenu: true,
           title: '管理总览（已下线）',
         },

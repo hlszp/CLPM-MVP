@@ -3,7 +3,9 @@
 聚合五类关注来源为统一关注队列（A2 新口径，2026-08-23）：
 - ALERT：ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件
 - DEGRADATION：dayTrend=WORSENED 且 scoreDelta<=-2
-- DATA_QUALITY：可信度 D/E
+- DATA_QUALITY：真实数据质量证据（快照适用性 L0/L1 或 DATA_INSUFFICIENT 标签）；
+  R11（2026-10-12 P3-08d/D6）：可信度 D/E 单独不再直接生成数据质量异常——
+  新评估保留兼容 confidence 字段，其 D/E 是评估证据等级而非数据质量结论
 - FITNESS_ABNORMAL：适用性等级 L0/L1/L2（P2 IA优化）
 - HANDLING：处置工单（REOPENED/执行超期/验证超期/待执行超期，A2 新增）
 
@@ -840,7 +842,8 @@ async def _aggregate_degradation_and_data_quality(
     """聚合评分恶化（DEGRADATION）和数据质量（DATA_QUALITY）。
 
     DEGRADATION：dayTrend=WORSENED 且 scoreDelta<=-2
-    DATA_QUALITY：完整性 WARNING/CRITICAL 或 可信度 D/E
+    DATA_QUALITY：真实数据质量证据（快照适用性 L0/L1 或 DATA_INSUFFICIENT
+    标签）；可信度 D/E 仅作补充理由，单独不触发（R11，2026-10-12）。
     每回路每来源最多一项。
 
     优化：Loop 与 PlantNode 一次 JOIN 带出名称；KPI/可信度 3 次查询顺序执行
@@ -892,15 +895,29 @@ async def _aggregate_degradation_and_data_quality(
                 KpiSnapshotHourly.score,
                 KpiSnapshotHourly.ts_end,
                 KpiSnapshotHourly.confidence_level,
+                KpiSnapshotHourly.fitness_level,
+                KpiSnapshotHourly.fitness_tags,
             )
             .where(KpiSnapshotHourly.loop_id.in_(active_loop_ids))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
         rows = (await db.execute(s_stmt)).all()
+
+        def _tags(v):
+            if isinstance(v, dict):
+                tags = v.get("tags")
+                return list(tags) if isinstance(tags, list) else []
+            return []
+
         return {
             str(r.loop_id): SimpleNamespace(
-                id=r.id, score=r.score, ts_end=r.ts_end, confidence_level=r.confidence_level
+                id=r.id,
+                score=r.score,
+                ts_end=r.ts_end,
+                confidence_level=r.confidence_level,
+                fitness_level=r.fitness_level,
+                fitness_tags=_tags(r.fitness_tags),
             )
             for r in rows
         }
@@ -1000,18 +1017,31 @@ async def _aggregate_degradation_and_data_quality(
                     )
                 )
 
-        # --- DATA_QUALITY ---
+        # --- DATA_QUALITY（R11，2026-10-12 P3-08d/D6）---
+        # 可信度 D/E 是评估证据等级，不再单独生成"数据质量异常"；只有
+        # 存在真实数据质量证据（快照适用性 L0/L1 或 DATA_INSUFFICIENT 标签）
+        # 才产出本来源，confidence D/E 作为补充理由并列展示。
         dq_reasons: list[str] = []
         dq_priority = "LOW"
         dq_time: datetime | None = None
         confidence = confidence_map.get(lid)
 
-        if confidence and confidence.confidence_level in ("D", "E"):
+        fitness_evidence = snap is not None and (
+            snap.fitness_level in ("L0", "L1") or "DATA_INSUFFICIENT" in (snap.fitness_tags or [])
+        )
+        if fitness_evidence:
+            if snap.fitness_level in ("L0", "L1"):
+                dq_reasons.append(f"适用性等级 {snap.fitness_level}（数据不足）")
+            if "DATA_INSUFFICIENT" in (snap.fitness_tags or []):
+                dq_reasons.append("快照标记 DATA_INSUFFICIENT")
+            if snap.ts_end is not None:
+                dq_time = snap.ts_end
             dq_priority = _upgrade_priority(dq_priority, "MEDIUM")
-            dq_reasons.append(f"可信度等级 {confidence.confidence_level}")
-            conf_time = confidence.eval_time
-            if dq_time is None or (conf_time and conf_time > dq_time):
-                dq_time = conf_time
+            if confidence and confidence.confidence_level in ("D", "E"):
+                dq_reasons.append(f"可信度等级 {confidence.confidence_level}（补充）")
+                conf_time = confidence.eval_time
+                if dq_time is None or (conf_time and conf_time > dq_time):
+                    dq_time = conf_time
 
         if dq_reasons and dq_time:
             items.append(

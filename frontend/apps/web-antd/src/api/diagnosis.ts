@@ -131,6 +131,10 @@ export namespace DiagnosisApi {
     /** 2026-10-05 指标透明化：数据门禁（数据质量列）与算子精简指标（列组展开） */
     dataGate?: GateInfo | null;
     operatorMetrics?: null | Record<string, OperatorMetric>;
+    /** P3-D6（2026-10-12，08§4.2 reader-first）：诊断科学结论元信息
+     *  （judgementStatus 五值 / causeStatus 三值 / coverage 覆盖分母三等式；
+     *  NULL=历史 run 无科学结论元信息，读端按 LEGACY_UNVERIFIABLE 口径显示） */
+    assessment?: null | Record<string, any>;
   }
 
   /** 诊断完整详情（结果面板） */
@@ -160,6 +164,9 @@ export namespace DiagnosisApi {
     durationMs?: null | number;
     /** 置信度显式定义（分类级 + 算子级 + 融合规则） */
     confidenceDefinitions?: ConfidenceDefinitions;
+    /** P3-D6（2026-10-12，D1 落包）：诊断原始输入不可变快照 ID
+     *  （KIND_DIAGNOSIS_RAW；NULL=历史 run 不可完整复现） */
+    datasetSnapshotId?: null | string;
   }
 
   /** 算子注册表项（GET /operators，AI 工具目录同源） */
@@ -234,6 +241,8 @@ export namespace DiagnosisApi {
     triggerTypeLabel?: null | string;
     primaryCategory?: Category | null;
     primaryCategoryLabel?: null | string;
+    /** P3-D6：科学结论元信息（NULL=历史 run → LEGACY_UNVERIFIABLE 口径） */
+    assessment?: null | Record<string, any>;
     primaryConfidence?: null | number;
     severity?: null | Severity;
     status?: null | RunStatus;
@@ -335,6 +344,8 @@ export namespace DiagnosisApi {
     runId: string;
     diagnosedAt: string;
     primaryCategory: Category | null;
+    /** P3-D6（2026-10-12）：科学结论元信息（NULL=历史 run → LEGACY_UNVERIFIABLE） */
+    assessment?: null | Record<string, any>;
     secondaryCategories: CategoryJudgement[];
     severity: null | Severity;
     confidence: null | number;
@@ -842,10 +853,24 @@ export namespace DiagnosisConfigApi {
     updatedBy: null | string;
   }
 
+  /**
+   * 字段级元数据（P2-01 CFG-02：区分注册表只读说明与真实可调字段）。
+   * algorithmType/calcMethod/params 标 readOnly=true / consumedByLiveEngine=false
+   * （可存但 v2 活执行引擎不消费）；threshold/isEnabled/diagName 真实可调。
+   */
+  export interface FieldMeta {
+    label?: null | string;
+    readOnly?: boolean | null;
+    consumedByLiveEngine?: boolean | null;
+    note?: null | string;
+  }
+
   /** 批量响应 */
   export interface BatchResponse {
     items: ConfigItem[];
     updatedCount?: null | number;
+    /** P2-01 CFG-02：字段级元数据（可选追加，旧客户端可忽略） */
+    methodMeta?: null | Record<string, FieldMeta>;
   }
 
   /** 更新项（批量 PUT） */

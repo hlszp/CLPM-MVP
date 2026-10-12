@@ -36,7 +36,10 @@ const routes: RouteRecordRaw[] = [
   {
     name: 'Handling',
     path: '/handling',
-    redirect: (to) => ({ path: '/handling/suggestions', query: { ...to.query } }),
+    redirect: (to) => ({
+      path: '/handling/suggestions',
+      query: { ...to.query },
+    }),
     meta: {
       authority: HANDLING_AUTHORITY,
       icon: 'lucide:clipboard-check',
@@ -50,6 +53,7 @@ const routes: RouteRecordRaw[] = [
         path: '/handling/suggestions',
         component: () => import('#/views/handling/workbench.vue'),
         meta: {
+          permCode: 'page:handling.suggestions',
           authority: HANDLING_AUTHORITY,
           icon: 'lucide:lightbulb',
           order: 1,
@@ -62,6 +66,7 @@ const routes: RouteRecordRaw[] = [
         path: '/handling/tasks',
         component: () => import('#/views/handling/workbench.vue'),
         meta: {
+          permCode: 'page:handling.tasks',
           authority: HANDLING_AUTHORITY,
           icon: 'lucide:list-todo',
           order: 2,
@@ -74,6 +79,7 @@ const routes: RouteRecordRaw[] = [
         path: '/handling/orders',
         component: () => import('#/views/handling/workbench.vue'),
         meta: {
+          permCode: 'page:handling.orders',
           authority: HANDLING_AUTHORITY,
           icon: 'lucide:clipboard-list',
           order: 3,
@@ -86,6 +92,7 @@ const routes: RouteRecordRaw[] = [
         path: '/handling/archive',
         component: () => import('#/views/handling/archive.vue'),
         meta: {
+          permCode: 'page:handling.archive',
           authority: HANDLING_AUTHORITY,
           icon: 'lucide:archive',
           order: 4,
@@ -104,11 +111,12 @@ const routes: RouteRecordRaw[] = [
             tab === 'orders'
               ? '/handling/orders'
               : (tab === 'tasks'
-                  ? '/handling/tasks'
-                  : '/handling/suggestions');
+                ? '/handling/tasks'
+                : '/handling/suggestions');
           return { path, query };
         },
         meta: {
+          permCode: 'page:handling.workbench',
           authority: HANDLING_AUTHORITY,
           hideInMenu: true,
           title: '处置工作台',
@@ -120,6 +128,7 @@ const routes: RouteRecordRaw[] = [
         path: '/handling/statistics',
         redirect: '/reports/handling',
         meta: {
+          permCode: 'page:handling.statistics',
           authority: HANDLING_AUTHORITY,
           hideInMenu: true,
           title: '处置报告',

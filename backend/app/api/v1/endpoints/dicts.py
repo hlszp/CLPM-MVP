@@ -15,7 +15,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -34,7 +34,7 @@ router = APIRouter(prefix="/dicts", tags=["dict"])
 
 @router.get("/types", response_model=ApiResponse[list])
 async def list_dict_types(
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """已注册字典类型（前端管理页下拉用）。"""
     data = [{"dictType": t, "title": title} for t, title in DICT_TYPE_TITLES.items()]
@@ -47,7 +47,7 @@ async def list_dict_items_endpoint(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN")),
+    _: SysUser = Depends(require_perms("system:view")),
 ) -> dict:
     """字典项分页管理列表（含 isReferenced 引用标记，仅 ADMIN）。"""
     data = await list_dict_items_paged(db=db, dict_type=dictType, page=page, page_size=pageSize)
@@ -59,7 +59,7 @@ async def get_dict_items_endpoint(
     dict_type: str,
     enabledOnly: bool = Query(True, description="仅启用项（下拉框默认）"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """读取字典项 [(code, label)]（登录可读，前端下拉框用）。"""
     items = await get_dict_items(db, dict_type, enabled_only=enabledOnly)
@@ -71,7 +71,7 @@ async def get_dict_items_endpoint(
 async def create_dict_item_endpoint(
     body: DictItemCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:dict-manage")),
 ) -> dict:
     """新建字典项（仅 ADMIN）。"""
     data = await create_dict_item(
@@ -91,7 +91,7 @@ async def update_dict_item_endpoint(
     item_id: str,
     body: DictItemUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:dict-manage")),
 ) -> dict:
     """更新字典项（label/排序/启停，仅 ADMIN）。"""
     data = await update_dict_item(
@@ -109,7 +109,7 @@ async def update_dict_item_endpoint(
 async def delete_dict_item_endpoint(
     item_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("system:dict-manage")),
 ) -> dict:
     """删除字典项（仅 ADMIN；被业务数据引用时拒绝）。"""
     data = await delete_dict_item(db=db, item_id=item_id, operator=user.username)

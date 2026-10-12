@@ -17,7 +17,7 @@ from fastapi import APIRouter, Depends, Query
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.audit import AuditLogListData
@@ -40,6 +40,7 @@ async def list_audit_logs_endpoint(
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:audit-view")),
 ) -> dict:
     """分页查询审计日志（仅 ADMIN）。审计日志不可删除。"""
     data = await list_audit_logs(
@@ -62,6 +63,7 @@ async def export_audit_logs_endpoint(
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:audit-view")),
 ) -> PlainTextResponse:
     """审计日志全量导出（CSV，UTF-8 BOM；仅 ADMIN）。
 

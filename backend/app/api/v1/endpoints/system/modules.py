@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.modules import (
@@ -68,6 +68,7 @@ async def update_modules(
     body: UpdateModulesRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:module-manage")),
 ) -> dict:
     """更新模块启用状态（ADMIN）。
 

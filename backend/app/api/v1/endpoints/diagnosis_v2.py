@@ -33,7 +33,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.diagnosis_run import DiagnosisRun
@@ -54,7 +54,10 @@ from app.services.task_tracker import create_task
 router = APIRouter(prefix="/diagnosis", tags=["diagnosis"])
 
 #: 允许发起诊断的角色（2026-10-04 工作台规整 D1：对齐回路工作台剖面四角色，
-#: EXPERT 加入；SPONSOR 仍只读）
+#: EXPERT 加入；SPONSOR 仍只读）。
+#: P4-02 尾批：本四角色白名单 == diagnosis:trigger/review/task-manage 码种子
+#: （A/I/P/E），端点已等价替换为 require_perms 纯码（DB 矩阵可收紧）；
+#: 常量保留作为历史口径锚（tests/test_p4_02t_authz_tail.py 钉种子等价）。
 _DIAGNOSIS_TRIGGER_ROLES = (
     "IC_ENGINEER",
     "PE_ENGINEER",
@@ -161,6 +164,9 @@ def _compact_operator_metrics(operator_results: dict[str, Any] | None) -> dict[s
             "detected": bool(r.get("detected")),
             "confidence": r.get("confidence"),
             "skipReason": r.get("skipReason"),
+            # D2（08§4.1）：八态随精简视图透出（reader-first）
+            "assessmentState": r.get("assessmentState"),
+            "reasonCode": r.get("reasonCode"),
             "features": r.get("features") or {},
         }
     return out
@@ -200,6 +206,10 @@ def _run_to_summary(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
         # 2026-10-05 指标透明化：数据质量列（门禁）+ 算子指标列组展开数据源
         "dataGate": row.data_gate,
         "operatorMetrics": _compact_operator_metrics(row.operator_results),
+        # D2（08§4.2 reader-first）：诊断科学结论元信息（judgementStatus 五值 /
+        # causeStatus 三值 / 覆盖分母三等式）。NULL=历史 run 无科学结论元信息，
+        # 读端按 LEGACY_UNVERIFIABLE 口径处理（前端显示归 D6，此处只落字段）
+        "assessment": row.assessment_meta,
     }
 
 
@@ -218,6 +228,10 @@ def _run_to_detail(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
             "metricSummary": row.metric_summary,
             "thresholdVersion": row.threshold_version,
             "algorithmVersion": row.algorithm_version,
+            # D1（08§3.1）：不可变输入包引用（NULL=该 run 不可完整复现）
+            "datasetSnapshotId": (
+                str(row.dataset_snapshot_id) if row.dataset_snapshot_id else None
+            ),
             "startedAt": row.started_at.isoformat() if row.started_at else None,
             "finishedAt": row.finished_at.isoformat() if row.finished_at else None,
             "durationMs": row.duration_ms,
@@ -232,7 +246,7 @@ def _run_to_detail(row: DiagnosisRun, loop_tag: str | None) -> dict[str, Any]:
 async def trigger_diagnosis(
     body: TriggerDiagnosisBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+    user: SysUser = Depends(require_perms("diagnosis:trigger")),
 ) -> dict:
     """发起诊断：即时校验 → TaskTracker 建单 → Celery 异步执行。"""
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
@@ -373,7 +387,7 @@ async def trigger_diagnosis(
 @router.get("/runs", response_model=ApiResponse[dict])
 async def list_diagnosis_runs(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     loopId: str | None = Query(None),
     category: str | None = Query(None),
     severity: str | None = Query(None),
@@ -437,7 +451,7 @@ async def review_diagnosis_run(
     run_id: str,
     body: ReviewRunBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+    user: SysUser = Depends(require_perms("diagnosis:review")),
 ) -> dict:
     """人工复核诊断结论（§9.3 复核闭环）。
 
@@ -501,7 +515,7 @@ def _action_to_item(row: LoopActionItem) -> dict[str, Any]:
 async def list_run_actions(
     run_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """处置建议列表（§9.4）。首次拉取为空时自动按诊断/复核结论生成系统建议。"""
     run = (
@@ -550,7 +564,7 @@ async def create_run_action(
     run_id: str,
     body: CreateActionBody,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+    user: SysUser = Depends(require_perms("diagnosis:review")),
 ) -> dict:
     """人工新增处置措施（建议人=当前登录用户，建议时间=服务器当前时间）。"""
     run = (
@@ -599,7 +613,7 @@ async def update_run_action(
     action_id: str,
     body: UpdateActionBody,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+    _: SysUser = Depends(require_perms("diagnosis:review")),
 ) -> dict:
     """修改人工新增的处置措施（仅 MANUAL 可改；SYSTEM 建议不可编辑）。"""
     row = await _get_action_or_404(db, action_id)
@@ -619,7 +633,7 @@ async def update_run_action(
 async def delete_run_action(
     action_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+    _: SysUser = Depends(require_perms("diagnosis:review")),
 ) -> dict:
     """删除处置建议（系统建议与人工新增均可删）。"""
     await _get_action_or_404(db, action_id)
@@ -644,7 +658,7 @@ _ACTION_OPEN_STATUSES = ("PENDING", "ACCEPTED")
 async def batch_delete_runs(
     body: BatchDeleteRunsBody,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles(*_DIAGNOSIS_TRIGGER_ROLES)),
+    _: SysUser = Depends(require_perms("diagnosis:task-manage")),
 ) -> dict:
     """批量删除诊断记录（2026-10-05 用户需求：诊断记录页批量清理）.
 
@@ -705,7 +719,7 @@ async def batch_delete_runs(
 @router.get("/runs/latest", response_model=ApiResponse[dict])
 async def get_latest_runs_per_loop(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
     loopId: str | None = Query(None, description="回路 ID（单回路最新诊断，工作台/整定上下文用）"),
 ) -> dict:
@@ -759,6 +773,7 @@ async def get_latest_runs_per_loop(
                COALESCE(r.finished_at, r.created_at) AS last_diagnosed_at,
                r.time_window_start, r.time_window_end,
                r.metric_summary,
+               r.assessment_meta,
                k.score AS latest_score,
                k.fitness_level, k.tune_level, k.fitness_tags,
                sugg.action_content, sugg.action_count,
@@ -846,6 +861,11 @@ async def get_latest_runs_per_loop(
                 "primaryCategoryLabel": _CATEGORY_LABELS.get(r.primary_category or "", None)
                 if r.run_id
                 else None,
+                # P3-D6（2026-10-12，08§4.2 reader-first）：科学结论元信息随
+                # 最新 run 带出（NULL=历史 run，读端按 LEGACY_UNVERIFIABLE 处理）。
+                # REWORK D-A：外层 SELECT 已显式含 r.assessment_meta，此处直接
+                # 属性访问——缺列时 AttributeError 显式失败，不再静默 null
+                "assessment": r.assessment_meta if r.run_id else None,
                 "primaryConfidence": float(r.primary_confidence)
                 if r.primary_confidence is not None
                 else None,
@@ -869,7 +889,7 @@ async def get_latest_runs_per_loop(
 @router.get("/runs/loop-archive", response_model=ApiResponse[dict])
 async def get_loop_archive(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     loopId: str = Query(..., description="回路 ID"),
     window: str = Query("90d", description="时间窗 30d/90d/all（all 截断 90d）"),
 ) -> dict:
@@ -885,7 +905,7 @@ async def get_loop_archive(
 async def compare_diagnosis_runs(
     run_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     mode: str = Query("adjacent", description="adjacent 相邻对比 / verify 验证对比"),
 ) -> dict:
     """复诊对比（16 号文 F2，D3 双模式）。
@@ -899,7 +919,7 @@ async def compare_diagnosis_runs(
 @router.get("/coverage", response_model=ApiResponse[dict])
 async def get_diagnosis_coverage(
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(get_current_user),
+    user: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """诊断覆盖台账与新鲜度（16 号文 F3，D6 工作台概览区折叠块数据源）。
 
@@ -912,7 +932,7 @@ async def get_diagnosis_coverage(
 @router.get("/category-cohort", response_model=ApiResponse[dict])
 async def get_category_cohort(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     category: str = Query(..., description="原因分类代码（8 类）"),
     plantNodeId: str | None = Query(None, description="装置节点 ID（递归含子单元，可选）"),
 ) -> dict:
@@ -926,7 +946,7 @@ async def get_category_cohort(
 @router.get("/precheck", response_model=ApiResponse[dict])
 async def get_diagnosis_precheck(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤200 个）"),
     window: str = Query("24h", description="预检窗口 24h/7d/30d"),
 ) -> dict:
@@ -944,7 +964,9 @@ async def get_diagnosis_precheck(
 @router.get("/review-feedback", response_model=ApiResponse[dict])
 async def get_review_feedback(
     db: AsyncSession = Depends(get_db),
+    # P4-02 尾批：ADMIN 角色锚保留（原白名单 {ADMIN}）+ diagnosis:view 读码双门
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """复核反馈统计与阈值调优提示（16 号文 F6；仅 ADMIN，与诊断配置页口径一致）。
 
@@ -959,7 +981,7 @@ async def get_review_feedback(
 async def get_diagnosis_run(
     run_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
 ) -> dict:
     """单次诊断完整详情。"""
     row = (
@@ -976,7 +998,7 @@ async def get_diagnosis_run(
 
 
 @router.get("/operators", response_model=ApiResponse[list[dict]])
-async def get_operators(_: SysUser = Depends(get_current_user)) -> dict:
+async def get_operators(_: SysUser = Depends(require_perms("diagnosis:view"))) -> dict:
     """算子注册表元数据（前端算子说明 + AI 工具目录）。"""
     return success(list_operators())
 
@@ -984,7 +1006,7 @@ async def get_operators(_: SysUser = Depends(get_current_user)) -> dict:
 @router.get("/export", response_class=PlainTextResponse)
 async def export_diagnosis_runs(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("diagnosis:view")),
     loopId: str | None = Query(None),
     category: str | None = Query(None),
     severity: str | None = Query(None),

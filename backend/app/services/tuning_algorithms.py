@@ -1,13 +1,19 @@
-"""PID 整定算法实现（关键算法设计说明 v1.0 §6）.
+"""PID 整定算法实现（关键算法设计说明 v1.0 §6 + P3-07 扩展）.
 
 模块结构：
 - ``identify_fopdt``: FOPDT 模型辨识（两点法 + 面积法）
 - ``identify_sopdt``: SOPDT 模型辨识（非线性最小二乘）
 - ``identify_ipdt``: IPDT 模型辨识
-- ``tune_imc`` / ``tune_lambda`` / ``tune_zn`` / ``tune_cohen_coon`` / ``tune_simc``: PID 整定
-- ``simulate_closed_loop``: 闭环仿真（RK4 + 增量式 PID）
+- ``tune_imc`` / ``tune_lambda`` / ``tune_zn`` / ``tune_cohen_coon`` / ``tune_simc``:
+  FOPDT PID 整定（§6.3~§6.7）
+- ``tune_ipdt_pi`` / ``tune_sopdt_imc``: IPDT/SOPDT 专用整定（P3-07 R12/R13）
+- ``simulate_closed_loop``: 闭环仿真（RK4 + 增量式 PID；P3-04 显式分派 +
+  P3-07 测量噪声/OP 实际限位）
+- ``closed_loop_gain_phase_margins`` / ``build_trustworthy_set`` /
+  ``verify_robustness_on_set``: R15 冻结指标鲁棒验证内核（P3-07）
 
-所有算法严格对齐关键算法设计说明 v1.0 的数学公式与计算步骤。
+FOPDT 五法严格对齐关键算法设计说明 v1.0 的数学公式；IPDT/SOPDT 专用
+方法对齐 P3-06/07 oracle 冻结草案 §5（R12/R13/R14/R15 冻结值）。
 """
 
 from __future__ import annotations
@@ -92,7 +98,10 @@ def identify_fopdt(
 
     Args:
         pv_values: 阶跃响应 PV 数据
-        timestamps: 时间戳数组（秒）
+        timestamps: 时间戳数组（秒）。**原点契约（P3-03）**：t=0 为 MV 阶跃时刻
+            （生产链 ``tuning.identify_model`` 已按此传参）；阶跃前稳定基线
+            保留为负时间。θ 一律从阶跃时刻起算，前基线时长不改 θ；
+            AREA 法面积只在 t≥0（真实阶跃后响应）上积分。
         mv_step: 阶跃输入幅值 ΔMV
         method: 辨识方法 TWO_POINT/AREA（默认 TWO_POINT）
 
@@ -119,13 +128,20 @@ def identify_fopdt(
     if not math.isfinite(K) or K == 0:
         return _fopdt_failure("过程增益无效（K=0 或非有限值），PV 无有效阶跃响应")
 
+    # P3-03 辨识原点：只处理真实阶跃后响应（t≥0 视图）。
+    # 两点法/面积法的 θ 均以阶跃时刻为原点，窗口前基线（负时间）不进 θ；
+    # 拟合优度只在阶跃后响应段上计算（前基线平坦段不虚增 R²）。
+    pv_post, ts_post = _post_step_view(pv, ts)
+    if pv_post is None or len(pv_post) < 10:
+        return _fopdt_failure("阶跃时刻（t=0）后无有效响应数据（需 ≥10 点）")
+
     # 两点法
-    result_two_point = _fopdt_two_point(pv, ts, pv_initial, pv_final, delta_pv)
+    result_two_point = _fopdt_two_point(pv_post, ts_post, pv_initial, pv_final, delta_pv)
 
     # 面积法
-    result_area = _fopdt_area_method(pv, ts, pv_initial, pv_final, delta_pv, mv_step)
+    result_area = _fopdt_area_method(pv_post, ts_post, pv_initial, pv_final, delta_pv, mv_step)
 
-    # 选择方法（支持 TWO_POINT / AREA，未知方法默认 TWO_POINT）
+    # 选择方法（支持 TWO_POINT / AREA，未知方法默认两点法）
     if method == "AREA":
         params = result_area
     else:  # TWO_POINT 或未知方法默认两点法
@@ -135,7 +151,8 @@ def identify_fopdt(
         return _fopdt_failure(params["reason"] or "辨识失败")
 
     fitted_pv = _fopdt_simulate_curve(K, params["tau"], params["theta"], ts, pv_initial, mv_step)
-    fitting_score = _calc_r2(pv, fitted_pv)
+    # 拟合优度只在阶跃后响应段评价（前基线平坦段两者都平坦，计入会虚增 R²）
+    fitting_score = _calc_r2(pv_post, fitted_pv[ts >= 0.0])
 
     return {
         "K": round(K, 6),
@@ -145,6 +162,25 @@ def identify_fopdt(
         "fitted_pv": fitted_pv.tolist(),
         "reason": None,
     }
+
+
+def _post_step_view(
+    pv: np.ndarray, ts: np.ndarray, step_time: float = 0.0
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """阶跃后视图：t ≥ step_time 的同步切片（辨识原点契约，P3-03）.
+
+    Args:
+        pv: PV 序列
+        ts: 相对时间戳（原点=MV 阶跃时刻；前基线为负时间）
+        step_time: 阶跃时刻（默认 0.0，与生产链传参一致）
+
+    Returns:
+        (pv_post, ts_post)；无 t ≥ step_time 的采样时返回 (None, None)。
+    """
+    mask = ts >= step_time
+    if not bool(mask.any()):
+        return None, None
+    return pv[mask], ts[mask]
 
 
 def _fopdt_failure(reason: str) -> dict[str, Any]:
@@ -213,13 +249,16 @@ def _fopdt_area_method(
     mv_step: float,
     pv_final_points: int = 10,
 ) -> dict[str, float | None]:
-    """面积法：积分响应曲线下面积。
+    """面积法：积分响应曲线下面积（P3-03：入参为**阶跃后视图** t≥0）.
 
     归一化面积 A1* 是一阶加纯滞后过程的平均驻留时间，即 A1* = τ + θ，
     因此 τ = A1* − θ（θ 取响应开始时间），避免滞后双重计入。
+    θ 从阶跃时刻（ts[0]=0，原点契约）起算，不回看窗口前基线。
     失败时返回 {"tau": None, "theta": None, "reason": ...}。
 
     Args:
+        pv: 阶跃后 PV 序列（t≥0；由 ``identify_fopdt`` 的 ``_post_step_view`` 切出）
+        ts: 阶跃后相对时间戳（首点≈0，原点=MV 阶跃时刻）
         pv_final_points: 计算稳态终值使用的末尾采样点数（均值），减少漂移影响。
     """
     # 使用最后 N 个点的均值作为 pv_final，减少漂移影响
@@ -448,6 +487,10 @@ def identify_ipdt(
     """IPDT 模型辨识 G(s) = K * exp(-theta*s) / s.
 
     积分过程：PV 随时间线性增长，斜率 = K * ΔMV。
+
+    **原点契约（P3-03）**：t=0 为 MV 阶跃时刻，阶跃前基线为负时间；
+    θ 从阶跃时刻起算（前基线时长不改 θ），斜率拟合与拟合优度只在
+    真实阶跃后响应（t≥0）上进行。
     """
     n = len(pv_values)
     if n < 10 or mv_step == 0:
@@ -457,13 +500,26 @@ def identify_ipdt(
     ts = np.array(timestamps, dtype=float)
     pv_initial = pv[0]
 
-    # 找响应开始点 → theta
-    response_start_idx = _find_response_start(pv, pv_initial)
-    theta = float(ts[response_start_idx]) - float(ts[0]) if response_start_idx > 0 else 0.0
+    # P3-03 辨识原点：只处理真实阶跃后响应
+    pv_post, ts_post = _post_step_view(pv, ts)
+    if pv_post is None or len(pv_post) < 10:
+        return {
+            "K": None,
+            "theta": None,
+            "fitting_score": 0.0,
+            "fitted_pv": [],
+            "reason": "阶跃时刻（t=0）后无有效响应数据（需 ≥10 点）",
+        }
 
-    # 线性拟合响应段斜率 → K
-    response_ts = ts[response_start_idx:] - ts[response_start_idx]
-    response_pv = pv[response_start_idx:]
+    # 找响应开始点 → theta（从阶跃时刻起算，不回看前基线）
+    response_start_idx = _find_response_start(pv_post, pv_initial)
+    theta = (
+        float(ts_post[response_start_idx]) - float(ts_post[0]) if response_start_idx > 0 else 0.0
+    )
+
+    # 线性拟合响应段斜率 → K（只在阶跃后响应段）
+    response_ts = ts_post[response_start_idx:] - ts_post[response_start_idx]
+    response_pv = pv_post[response_start_idx:]
     if len(response_ts) > 2:
         # 线性回归: pv = slope * t + intercept
         slope = float(np.polyfit(response_ts, response_pv, 1)[0])
@@ -471,7 +527,7 @@ def identify_ipdt(
     else:
         K = 1.0
 
-    # 仿真拟合曲线
+    # 仿真拟合曲线（全窗输出供绘图；前基线段为平坦 pv_initial）
     fitted_pv = np.full_like(ts, pv_initial, dtype=float)
     for i, t in enumerate(ts):
         if t < theta:
@@ -479,7 +535,8 @@ def identify_ipdt(
         else:
             fitted_pv[i] = pv_initial + K * mv_step * (t - theta)
 
-    fitting_score = _calc_r2(pv, fitted_pv)
+    # 拟合优度只在阶跃后响应段评价（前基线平坦段计入会虚增 R²）
+    fitting_score = _calc_r2(pv_post, fitted_pv[ts >= 0.0])
 
     return {
         "K": round(K, 6),
@@ -653,6 +710,457 @@ def tune_simc(K: float, tau: float, theta: float, tau_c_ratio: float = 1.0) -> P
 
 
 # ---------------------------------------------------------------------------
+# IPDT / SOPDT 专用整定规则（P3-07，oracle 冻结草案 §5 R12/R13/R14）
+# ---------------------------------------------------------------------------
+
+
+def tune_ipdt_pi(K: float, theta: float, lambda_ratio: float = 7.0) -> PIDParams:
+    """IPDT 专用 PI 规则（P3-07 R12 冻结：Skogestad IMC 积分规则族）.
+
+    模型 G(s) = K·e^{-θs}/s（积分过程），PI 控制器 C = Kc(1 + 1/(Ti·s))：
+
+        λ = lambdaRatio × θ          （R14：沿用 lambdaRatio 注册结构；
+                                      默认 7.0 = λ 停点终裁 2026-10-12，
+                                      与注册表 default 单源一致）
+        Ti = 2λ + θ
+        Kc = (2λ + θ) / (K·(λ + θ)²)
+
+    独立解析推导佐证（登记，P3-07 实施时复核）——极点配置推导：
+
+    1. 无时滞特征方程 Ti·s² + Kc·K·(Ti·s + 1) = 0 展开为
+       s² + (KcK)·s + (KcK/Ti) = 0，即 ωn² = KcK/Ti、2ζωn = KcK；
+    2. 设计目标（Skogestad 积分过程语义）：闭环自然频率 ωn = 1/(λ+θ)
+       ——时滞使可达带宽上限为 1/(λ+θ)（λ 是超出 θ 的附加整定余量），
+       并取 Ti = 2λ + θ；
+    3. 代入 ωn² = KcK/Ti ⇒ Kc·K = ωn²·Ti = (2λ+θ)/(λ+θ)² ——与冻结
+       公式一字不差；此时阻尼 ζ = (2λ+θ)/(2(λ+θ)) ∈ (1/2, 1)，恒稳定
+       且不过振荡（解析可证）；
+    4. 含时滞的稳定裕度按 R15 冻结指标在可信模型集合上数值验证
+       （verify_robustness_on_set），不在本公式内隐含承诺。
+
+    控制方向：K 为负（反作用过程增益）时 Kc 随分母 K 变号，负反馈结构
+    保持（P3-07 任务书 2.7 承接 B1 物理解释链）。
+
+    λ_ratio=7.0（λ 停点终裁后的 R14 默认，2026-10-12）时裕度口径：宽 CI
+    可信集合（K±5%/θ±10%）GM≈5.6/PM≈59°/超调≈19.1%——R15 四项全过。
+    调小 λ 时验证器如实判定（R15 纪律：冻结值不得失败后调整）：λ_ratio=1.0
+    时 PM≈21°<30°、GM≈1.7<2.0 不达标；λ_ratio≤6.0 时宽 CI 超调 >20%
+    （6.0 档 20.23%），均如实标记不通过。
+    """
+    if K == 0:
+        raise ValueError("IPDT-PI 整定要求非零积分增益 K（K=0 无控制意义）")
+    if not math.isfinite(K) or not math.isfinite(theta) or theta < 0:
+        raise ValueError(f"IPDT-PI 整定参数非法：K={K}, theta={theta}")
+    lam = lambda_ratio * theta if theta > 0 else 0.1
+    if lam <= 0:
+        lam = 0.1
+
+    ti = 2.0 * lam + theta
+    kc = ti / (K * (lam + theta) ** 2)
+    return PIDParams(kp=round(kc, 6), ti=round(ti, 4), td=0.0)
+
+
+def tune_sopdt_imc(
+    K: float, T1: float, T2: float, theta: float, lambda_ratio: float = 1.0
+) -> PIDParams:
+    """SOPDT 专用 IMC-PID 解析整定（P3-07 R13 冻结方向 A）.
+
+    模型 G(s) = K·e^{-θs}/((T1·s+1)(T2·s+1))，一阶 Padé 近似迟延
+    e^{-θs} ≈ (1-θs/2)/(1+θs/2)，IMC 综合 + 与既有 FOPDT IMC
+    （``tune_imc``）完全同构的 PID 匹配步骤：
+
+        C = (T1·s+1)(T2·s+1)(1+θs/2) / (K·(λ+θ/2)·s)   [丢弃 θ²s²/4 项]
+
+    与理想 PID C = Kc·(Ti·Td·s² + Ti·s + 1)/(Ti·s) 系数匹配：
+
+        Ti  = T1 + T2 + θ/2
+        Kc  = (T1 + T2 + θ/2) / (K·(λ + θ/2))
+        Td  = (T1·T2 + θ·(T1+T2)/2) / (T1 + T2 + θ/2)
+
+    独立推导佐证（FOPDT 极限核对）：T2→0 时
+    Kc → (T1+θ/2)/(K(λ+θ/2))、Ti → T1+θ/2、Td → T1·θ/(2·T1+θ)，
+    与 ``tune_imc``（§6.3，数值内核级）逐项一致——二阶公式是一阶公式
+    的自然推广而非另造口径。θ=0 时退化为 Kc=(T1+T2)/(Kλ)、Ti=T1+T2、
+    Td=T1·T2/(T1+T2)（经典二阶 IMC-PID，无近似误差）。
+
+    本方法为 SOPDT 专用解析式（非降阶），无近似误差声明义务
+    （R13 方向 A；half-rule 降阶+误差声明属未选方向 B）。
+    """
+    if K == 0:
+        raise ValueError("SOPDT-IMC 整定要求非零过程增益 K（K=0 无控制意义）")
+    if not all(math.isfinite(v) for v in (K, T1, T2, theta)) or theta < 0:
+        raise ValueError(f"SOPDT-IMC 整定参数非法：K={K}, T1={T1}, T2={T2}, theta={theta}")
+    # T1/T2 ≤0 箝位 1.0（与 _PlantCore/P1-3 既有契约同口径）
+    if T1 <= 0:
+        T1 = 1.0
+    if T2 <= 0:
+        T2 = 1.0
+
+    lam = lambda_ratio * theta if theta > 0 else 0.1
+    if lam <= 0:
+        lam = 0.1
+
+    ti = T1 + T2 + theta / 2.0
+    kc = ti / (K * (lam + theta / 2.0))
+    td = (T1 * T2 + theta * (T1 + T2) / 2.0) / ti
+    return PIDParams(kp=round(kc, 6), ti=round(ti, 4), td=round(td, 4))
+
+
+# ---------------------------------------------------------------------------
+# 仿真动力学分派与工作量预算（P3-04）
+# ---------------------------------------------------------------------------
+
+#: 仿真引擎版本（P3-04：显式模型分派 + 扰动真实施加 + 预算 + 候选去重；
+#: v1.0 = 旧行为：非 SOPDT 一律按 FOPDT 仿真、disturbance_type 形参被静默忽略）
+SIMULATION_ENGINE_VERSION = "SIM_ENGINE_v2.0"
+
+#: 闭环仿真支持的模型类型（显式分派；未知类型明确拒绝，禁止 FOPDT 冒充）
+SUPPORTED_SIMULATION_MODELS: tuple[str, ...] = ("FOPDT", "SOPDT", "IPDT")
+
+#: 候选去重相对容差（oracle 冻结草案 B-12：参数相对差 <1% 视为重复候选，
+#: 候选清单保留全部原始条目 + 去重标记，重复项不重复仿真）
+SIM_CANDIDATE_DEDUP_REL_TOL = 0.01
+
+
+class SimulationError(ValueError):
+    """仿真内核错误基类（参数/约束非法，明确失败而非静默降级）。"""
+
+
+class SimulationNotSupportedError(SimulationError):
+    """模型类型或参数不被仿真内核支持。
+
+    P3-04 红线：IPDT 必须按真实积分动力学仿真或明确拒绝，
+    未知模型类型/缺失关键参数禁止按 FOPDT 默认参数冒充。
+    """
+
+
+class SimulationBudgetError(SimulationError):
+    """仿真工作量超出预算（明确拒绝，不静默截断）。
+
+    Attributes:
+        requested: 各预算维度的请求值（含实际子步需求/总积分步数估算）。
+        limits: 命中的预算上限（SimWorkBudget.describe() 形）。
+    """
+
+    def __init__(self, message: str, *, requested: dict[str, Any], limits: dict[str, Any]):
+        super().__init__(message)
+        self.requested = requested
+        self.limits = limits
+
+
+@dataclass(frozen=True)
+class SimWorkBudget:
+    """仿真工作量预算（输入时间/步长/候选/子步四维 + 总积分步数）。"""
+
+    max_duration_seconds: float
+    max_steps: int
+    max_candidates: int
+    max_substeps_per_step: int
+    max_total_integration_steps: int
+
+    def describe(self) -> dict[str, Any]:
+        return {
+            "maxDurationSeconds": self.max_duration_seconds,
+            "maxSteps": self.max_steps,
+            "maxCandidates": self.max_candidates,
+            "maxSubstepsPerStep": self.max_substeps_per_step,
+            "maxTotalIntegrationSteps": self.max_total_integration_steps,
+        }
+
+
+#: 内核绝对上限（任何调用方传入的预算不可逾越的结构性护栏）
+SIM_BUDGET_KERNEL = SimWorkBudget(
+    max_duration_seconds=7200.0,
+    max_steps=200_000,
+    max_candidates=32,
+    max_substeps_per_step=1_000,
+    max_total_integration_steps=20_000_000,
+)
+
+#: 同步 API 预算（/tuning/simulate、/tuning/compare）：边界外明确拒绝并
+#: 引导改用异步任务，保证预算边界不阻塞普通 API
+SIM_BUDGET_SYNC = SimWorkBudget(
+    max_duration_seconds=7200.0,
+    max_steps=20_000,
+    max_candidates=16,
+    max_substeps_per_step=256,
+    max_total_integration_steps=400_000,
+)
+
+#: 异步任务预算（tune_and_simulate_task）：比同步宽一档，
+#: 墙钟由既有 Celery time_limit=120s / soft_time_limit=100s 兜底（复用现有设施）
+SIM_BUDGET_ASYNC = SimWorkBudget(
+    max_duration_seconds=7200.0,
+    max_steps=100_000,
+    max_candidates=24,
+    max_substeps_per_step=512,
+    max_total_integration_steps=4_000_000,
+)
+
+
+@dataclass(frozen=True)
+class DisturbanceSpec:
+    """仿真期负载扰动（施加于对象输入通道，与 OP 同单位）。
+
+    P3-04：扰动真实进入仿真（旧实现 disturbance_type 形参被静默忽略）。
+    step 型扰动在 ``time_seconds`` 时刻向对象输入叠加恒定幅值
+    （u_total = delayed_op + d(t)，作用于传输时滞之后的对象动态入口）。
+    """
+
+    kind: str  # 目前仅 "STEP"
+    amplitude: float
+    time_seconds: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": self.kind.lower(),
+            "amplitude": self.amplitude,
+            "timeSeconds": self.time_seconds,
+        }
+
+
+@dataclass(frozen=True)
+class NoiseSpec:
+    """测量噪声（施加于控制器看到的 PV 测量值，P3-07 O-D2/C20-ID）.
+
+    噪声只进反馈通道：控制器对 pv_meas = pv + N(0, σ) 计算，对象动力学
+    仍积分真实 PV（无噪声）——测量噪声真实进入反馈使控制器 OP 变化。
+    固定种子（确定性，可复现/可审计）。
+    """
+
+    std: float
+    seed: int = 42
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": "gaussian", "std": self.std, "seed": self.seed}
+
+
+def _resolve_noise(noise_std: float | None, rng_seed: int) -> NoiseSpec | None:
+    """解析测量噪声输入；None/0 → 无噪声，非法值明确拒绝。"""
+    if noise_std is None:
+        return None
+    std = float(noise_std)
+    if not math.isfinite(std) or std < 0:
+        raise SimulationError(f"测量噪声标准差必须为非负有限数，当前 {std}")
+    if std == 0:
+        return None
+    return NoiseSpec(std=std, seed=rng_seed)
+
+
+def _resolve_disturbance(
+    disturbance_type: str | None,
+    amplitude: float | None,
+    time_seconds: float | None,
+    sim_duration: float,
+) -> DisturbanceSpec | None:
+    """解析扰动输入；none→None，step→显式规格，未知类型/非法值明确拒绝。"""
+    kind = str(disturbance_type or "none").strip().lower()
+    if kind == "none":
+        return None
+    if kind != "step":
+        raise SimulationNotSupportedError(
+            f"不支持的扰动类型: {disturbance_type!r}（支持 none/step）"
+        )
+    amp = 0.5 if amplitude is None else float(amplitude)
+    if not math.isfinite(amp) or amp <= 0:
+        raise SimulationError(f"扰动幅值必须为正数，当前 {amp}")
+    t = 0.4 * sim_duration if time_seconds is None else float(time_seconds)
+    if not (math.isfinite(t) and 0.0 < t < sim_duration):
+        raise SimulationError(f"扰动施加时间必须位于 (0, {sim_duration}s) 内，当前 {t}s")
+    return DisturbanceSpec(kind="STEP", amplitude=amp, time_seconds=t)
+
+
+def _relative_pid_difference(a: PIDParams, b: PIDParams) -> float:
+    """两组 PID 参数的最大相对差（kp/ti/td 逐项，同号同值→0）。"""
+
+    def _rel(x: float, y: float) -> float:
+        if x == y:
+            return 0.0
+        denom = max(abs(x), abs(y))
+        return abs(x - y) / denom if denom > 0 else 0.0
+
+    return max(_rel(a.kp, b.kp), _rel(a.ti, b.ti), _rel(a.td, b.td))
+
+
+class _PlantCore:
+    """被控对象显式分派内核（FOPDT/SOPDT/IPDT 共用，不建第二仿真器）。
+
+    - FOPDT: G(s) = K·e^{-θs}/(τs+1)，状态 [x]
+    - SOPDT 标准形（T1/T2 成对）: G(s) = K·e^{-θs}/((T1·s+1)(T2·s+1))，状态 [x1,x2]
+      （PV=x2）；旧 τ/ξ 形 G(s) = K·e^{-θs}/(τ²s²+2τξs+1) 兼容（PV=x1）
+    - IPDT: G(s) = K·e^{-θs}/s **真实积分动力学**，状态 [x]，
+      dx/dt = K·u（恒定输入 → 线性趋势；RK4 对恒输入积分器精确）
+    - 未知模型类型 / IPDT 缺 K → SimulationNotSupportedError（禁止默认参数冒充）
+    """
+
+    __slots__ = ("kind", "K", "tau", "xi", "t1", "t2", "theta", "tau_sq", "fastest_tc")
+
+    def __init__(self, model_type: str, model_params: dict[str, Any]):
+        kind = str(model_type or "").strip().upper()
+        if kind not in SUPPORTED_SIMULATION_MODELS:
+            raise SimulationNotSupportedError(
+                f"不支持的模型类型 {model_type!r}（仿真仅支持 "
+                f"{'/'.join(SUPPORTED_SIMULATION_MODELS)}，明确拒绝而非按 FOPDT 冒充）"
+            )
+        params = model_params or {}
+        self.kind = kind
+
+        if kind == "IPDT":
+            k_raw = params.get("K")
+            if not isinstance(k_raw, int | float) or not math.isfinite(float(k_raw)):
+                raise SimulationNotSupportedError(
+                    "IPDT 模型缺少有限积分增益 K（禁止默认值冒充积分动力学）"
+                )
+            self.K = float(k_raw)
+            self.theta = max(0.0, float(params.get("theta", 0.0) or 0.0))
+            self.tau = 0.0
+            self.xi = 0.0
+            self.t1 = 0.0
+            self.t2 = 0.0
+            self.tau_sq = 0.0
+            self.fastest_tc: float | None = None  # 积分器无时间常数，RK4 精确
+            return
+
+        # FOPDT / SOPDT：沿用既有参数回退（兼容历史调用形状）
+        self.K = float(params.get("K", 1.0))
+        self.tau = float(params.get("tau", 30.0))
+        self.theta = float(params.get("theta", 5.0))
+        if self.tau <= 0:
+            self.tau = 1.0
+        if self.theta < 0:
+            self.theta = 0.0
+        self.xi = float(params.get("xi", 1.0)) if kind == "SOPDT" else 0.0
+        if self.xi < 0:
+            self.xi = 0.0
+        self.t1 = 0.0
+        self.t2 = 0.0
+        t1_raw = params.get("T1") if kind == "SOPDT" else None
+        t2_raw = params.get("T2") if kind == "SOPDT" else None
+        if t1_raw is not None and t2_raw is not None:
+            # T1/T2 ≤ 0 箝位为 1.0（P1-3 既有契约，与 tau ≤ 0 → 1.0 同口径）
+            self.t1 = float(t1_raw)
+            self.t2 = float(t2_raw)
+            if self.t1 <= 0:
+                self.t1 = 1.0
+            if self.t2 <= 0:
+                self.t2 = 1.0
+        self.tau_sq = self.tau * self.tau if kind == "SOPDT" else 1.0
+        if kind == "SOPDT" and t1_raw is not None and t2_raw is not None:
+            self.fastest_tc = min(self.t1, self.t2)
+        else:
+            self.fastest_tc = self.tau
+
+    @property
+    def dispatch_kind(self) -> str:
+        """分派标识（SOPDT 细分标准形/旧形，供上下文记录）。"""
+        if self.kind == "SOPDT":
+            return "SOPDT_T1T2" if (self.t1 > 0 and self.t2 > 0) else "SOPDT_LEGACY"
+        return self.kind
+
+    def substeps_for(self, sim_step: float) -> int:
+        """积分步长过大时自动细分子步（子步长 ≤ 最快时间常数/4）。
+
+        IPDT 无时间常数（RK4 对恒输入积分器精确）→ 1 子步。
+        """
+        if self.fastest_tc is None:
+            return 1
+        n_sub = max(1, math.ceil(4.0 * sim_step / self.fastest_tc))
+        if n_sub > 1:
+            logger.warning(
+                "仿真步长 sim_step=%.4f 超过最快时间常数/4=%.4f，RK4 自动细分为 %d 子步",
+                sim_step,
+                self.fastest_tc / 4.0,
+                n_sub,
+            )
+        return n_sub
+
+    def derivs(self, state: list[float], u: float) -> list[float]:
+        """状态导数（u 为对象输入 = OP(经时滞) + 扰动）。"""
+        if self.kind == "IPDT":
+            return [self.K * u]
+        if self.kind == "SOPDT":
+            if self.t1 > 0 and self.t2 > 0:
+                d1 = (self.K * u - state[0]) / self.t1
+                d2 = (state[0] - state[1]) / self.t2
+                return [d1, d2]
+            d1 = state[1]
+            d2 = (-state[0] - 2.0 * self.tau * self.xi * state[1] + self.K * u) / self.tau_sq
+            return [d1, d2]
+        # FOPDT
+        return [(-state[0] + self.K * u) / self.tau]
+
+    def rk4_step(self, state: list[float], u: float, h: float) -> list[float]:
+        """RK4 单步（保持既有各分量运算次序）。"""
+        k1 = self.derivs(state, u)
+        k2 = self.derivs([s + 0.5 * h * d for s, d in zip(state, k1, strict=True)], u)
+        k3 = self.derivs([s + 0.5 * h * d for s, d in zip(state, k2, strict=True)], u)
+        k4 = self.derivs([s + h * d for s, d in zip(state, k3, strict=True)], u)
+        return [
+            s + h / 6.0 * (a + 2.0 * b + 2.0 * c + d)
+            for s, a, b, c, d in zip(state, k1, k2, k3, k4, strict=True)
+        ]
+
+    def initial_state(self) -> list[float]:
+        """零初始状态（FOPDT/IPDT 单态，SOPDT 双态）。"""
+        if self.kind == "SOPDT":
+            return [0.0, 0.0]
+        return [0.0]
+
+    def pv_of(self, state: list[float]) -> float:
+        if self.kind == "SOPDT":
+            return state[1] if (self.t1 > 0 and self.t2 > 0) else state[0]
+        return state[0]
+
+
+def _check_simulation_budget(
+    *,
+    budget: SimWorkBudget,
+    sim_duration: float,
+    n_steps: int,
+    n_sub: int,
+    n_responses: int,
+    n_candidates_requested: int,
+) -> int:
+    """工作量预算核验：超限明确拒绝（requested/limits 随异常携带）。
+
+    Returns:
+        总积分步数估算 = n_steps × n_sub × n_responses。
+    """
+    requested: dict[str, Any] = {
+        "durationSeconds": float(sim_duration),
+        "steps": int(n_steps),
+        "substepsPerStep": int(n_sub),
+        "responses": int(n_responses),
+        "candidatesRequested": int(n_candidates_requested),
+    }
+    total = int(n_steps) * int(n_sub) * int(n_responses)
+    requested["totalIntegrationSteps"] = total
+    violations: list[str] = []
+    if sim_duration > budget.max_duration_seconds:
+        violations.append(f"仿真时长 {sim_duration}s 超出上限 {budget.max_duration_seconds}s")
+    if n_steps > budget.max_steps:
+        violations.append(f"仿真步数 {n_steps} 超出上限 {budget.max_steps}")
+    if n_candidates_requested > budget.max_candidates:
+        violations.append(f"候选 PID 数 {n_candidates_requested} 超出上限 {budget.max_candidates}")
+    if n_sub > budget.max_substeps_per_step:
+        violations.append(
+            f"单步 RK 子步需求 {n_sub} 超出上限 {budget.max_substeps_per_step}"
+            "（步长相对对象最快时间常数过小，请增大步长）"
+        )
+    if total > budget.max_total_integration_steps:
+        violations.append(f"总积分步数估算 {total} 超出上限 {budget.max_total_integration_steps}")
+    if violations:
+        raise SimulationBudgetError(
+            "仿真工作量超出预算："
+            + "；".join(violations)
+            + "。请降低时长/增大步长/减少候选，或改用异步整定任务（预算更宽）",
+            requested=requested,
+            limits=budget.describe(),
+        )
+    return total
+
+
+# ---------------------------------------------------------------------------
 # 闭环仿真（§6.8）
 # ---------------------------------------------------------------------------
 
@@ -665,46 +1173,127 @@ def simulate_closed_loop(
     sim_duration: float = 600.0,
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
-    disturbance_type: str = "step",
+    disturbance_type: str = "none",
     pid_candidates: list[tuple[str, PIDParams]] | None = None,
+    *,
+    disturbance_amplitude: float | None = None,
+    disturbance_time: float | None = None,
+    budget: SimWorkBudget | None = None,
+    noise_std: float | None = None,
+    noise_seed: int = 42,
+    op_limits: tuple[float, float] | None = None,
 ) -> dict[str, Any]:
-    """闭环仿真。
+    """闭环仿真（P3-04：模型显式分派 + 扰动真实施加 + 预算 + 候选去重）。
 
-    使用增量式 PID + FOPDT/SOPDT 被控对象 + 四阶 Runge-Kutta 积分。
+    使用增量式 PID + FOPDT/SOPDT/IPDT 被控对象 + 四阶 Runge-Kutta 积分。
 
     Args:
+        disturbance_type: 扰动类型 none/step。**P3-04 行为变更**：默认 "none"
+            （旧行为 "step" 形参被静默忽略=等效无扰动，默认曲线值不变）；
+            显式传 "step" 时负载阶跃扰动真实施加于对象输入。
+        disturbance_amplitude: step 扰动幅值（OP 同单位，须 >0；缺省 0.5）。
+        disturbance_time: step 扰动施加时刻（秒，须在 (0, sim_duration) 内；
+            缺省 0.4×sim_duration）。
         pid_candidates: Phase 2 新增 — 多组候选 PID（label + PIDParams），
             额外仿真每组并返回 candidateResponses（向后兼容，None 时不含）。
+            P3-04：参数相对差 <1%（B-12）的候选去重标记，不重复仿真。
+        budget: 工作量预算（None=内核绝对上限；同步 API 传 SIM_BUDGET_SYNC、
+            异步任务传 SIM_BUDGET_ASYNC）。超限抛 SimulationBudgetError，
+            明确拒绝不静默截断。
+        noise_std: 测量噪声标准差（P3-07 O-D2/C20-ID：噪声只进反馈通道，
+            控制器 OP 随噪声实际变化；None/0=无噪声，曲线与 P3-04 一致）。
+        noise_seed: 测量噪声随机种子（固定默认 42，确定性可复现）。
+        op_limits: OP 实际限位 (lower, upper)（P3-07 P-34：工程实际限幅
+            替代内核缺省 ±100；None=沿用缺省 ±100，既有行为不变）。
 
     Returns:
         包含 timestamps/currentResponse/recommendedResponse/currentMetrics/
-        recommendedMetrics/improvement 六个键的字典；
-        pid_candidates 非空时额外含 candidateResponses。
+        recommendedMetrics/improvement/simulationContext 七个键的字典；
+        pid_candidates 非空时额外含 candidateResponses（每项带 deduplicated/
+        duplicateOf 去重标记）。P3-07 加性：simulationContext 含
+        measurementNoise/opLimits/saturationSteps。
+
+    Raises:
+        SimulationNotSupportedError: 未知模型类型 / IPDT 缺积分增益 K /
+            未知扰动类型（明确拒绝，禁止按 FOPDT 冒充）。
+        SimulationBudgetError: 工作量超出预算。
     """
-    # 生成时间序列
+    sim_duration = float(sim_duration)
+    sim_step = float(sim_step)
+    if sim_step <= 0:
+        raise SimulationError(f"仿真步长必须为正数，当前 {sim_step}")
+    if sim_duration <= 0:
+        raise SimulationError(f"仿真时长必须为正数，当前 {sim_duration}")
     n_steps = int(sim_duration / sim_step)
+    if n_steps < 2:
+        raise SimulationError(
+            f"仿真时长须至少覆盖 2 个步长（duration={sim_duration}, step={sim_step}）"
+        )
+
+    # 模型显式分派（未知类型在此明确拒绝）
+    plant = _PlantCore(model_type, model_params)
+    # 扰动解析（未知类型/非法值在此明确拒绝）
+    disturbance = _resolve_disturbance(
+        disturbance_type, disturbance_amplitude, disturbance_time, sim_duration
+    )
+    # 测量噪声解析（P3-07：非法值明确拒绝）
+    noise = _resolve_noise(noise_std, noise_seed)
+    n_sub = plant.substeps_for(sim_step)
+
+    # 候选去重（B-12：<1% 相对差视为重复，保留全部原始条目+标记）
+    requested_candidates = list(pid_candidates or [])
+    duplicate_of: dict[str, str] = {}
+    unique_candidates: list[tuple[str, PIDParams]] = []
+    for label, pid in requested_candidates:
+        representative = next(
+            (
+                kept_label
+                for kept_label, kept_pid in unique_candidates
+                if _relative_pid_difference(pid, kept_pid) < SIM_CANDIDATE_DEDUP_REL_TOL
+            ),
+            None,
+        )
+        if representative is None:
+            unique_candidates.append((label, pid))
+        else:
+            duplicate_of[label] = representative
+
+    eff_budget = budget or SIM_BUDGET_KERNEL
+    n_responses = 2 + len(unique_candidates)
+    total_work = _check_simulation_budget(
+        budget=eff_budget,
+        sim_duration=sim_duration,
+        n_steps=n_steps,
+        n_sub=n_sub,
+        n_responses=n_responses,
+        n_candidates_requested=len(requested_candidates),
+    )
+
+    # 生成时间序列
     timestamps = [i * sim_step for i in range(n_steps + 1)]
 
     # 仿真当前 PID
-    current_response = _simulate_pid_response(
-        model_type,
-        model_params,
+    current_response, current_saturation = _simulate_pid_response(
+        plant,
         current_pid,
         n_steps,
         sim_step,
         setpoint_step,
-        disturbance_type,
+        disturbance,
+        noise=noise,
+        op_limits=op_limits,
     )
 
     # 仿真推荐 PID
-    recommended_response = _simulate_pid_response(
-        model_type,
-        model_params,
+    recommended_response, recommended_saturation = _simulate_pid_response(
+        plant,
         recommended_pid,
         n_steps,
         sim_step,
         setpoint_step,
-        disturbance_type,
+        disturbance,
+        noise=noise,
+        op_limits=op_limits,
     )
 
     # 提取性能指标
@@ -723,51 +1312,215 @@ def simulate_closed_loop(
         "improvement": improvement,
     }
 
-    # Phase 2：多组候选 PID 仿真对比
+    # Phase 2：多组候选 PID 仿真对比（P3-04：去重候选复用代表响应）
     if pid_candidates:
+        # 已仿真响应按 label 索引（重复项引用代表项的响应副本）
+        unique_responses: dict[str, dict[str, list[float]]] = {}
         candidate_responses: list[dict[str, Any]] = []
-        for label, pid in pid_candidates:
-            resp = _simulate_pid_response(
-                model_type,
-                model_params,
+        for label, pid in unique_candidates:
+            resp, _cand_saturation = _simulate_pid_response(
+                plant,
                 pid,
                 n_steps,
                 sim_step,
                 setpoint_step,
-                disturbance_type,
+                disturbance,
+                noise=noise,
+                op_limits=op_limits,
             )
+            unique_responses[label] = resp
             metrics = _extract_metrics(resp, setpoint_step, sim_step)
             candidate_responses.append(
                 {
                     "label": label,
                     "response": resp,
                     "metrics": _metrics_to_dict(metrics),
+                    "deduplicated": False,
                 }
             )
+        for label, rep_label in duplicate_of.items():
+            rep_resp = unique_responses[rep_label]
+            candidate_responses.append(
+                {
+                    "label": label,
+                    "response": {k: list(v) for k, v in rep_resp.items()},
+                    "metrics": None,  # 延后按代表项指标填充
+                    "deduplicated": True,
+                    "duplicateOf": rep_label,
+                }
+            )
+        if duplicate_of:
+            rep_metrics = {
+                c["label"]: c["metrics"] for c in candidate_responses if not c["deduplicated"]
+            }
+            for entry in candidate_responses:
+                if entry["deduplicated"]:
+                    entry["metrics"] = rep_metrics[entry["duplicateOf"]]
+        # 保持原始请求顺序输出（保留全部原始候选 + 去重标记）
+        order = {label: i for i, (label, _pid) in enumerate(requested_candidates)}
+        candidate_responses.sort(key=lambda c: order.get(c["label"], len(order)))
         result["candidateResponses"] = candidate_responses
+
+    # P3-04：仿真上下文（模型分派/扰动/去重/预算随结果携带，异步链可追溯）
+    op_lo_ctx, op_hi_ctx = op_limits if op_limits is not None else (-100.0, 100.0)
+    result["simulationContext"] = {
+        "engineVersion": SIMULATION_ENGINE_VERSION,
+        "modelType": plant.kind,
+        "modelDispatch": plant.dispatch_kind,
+        "modelParams": dict(model_params or {}),
+        "simDuration": sim_duration,
+        "simStep": sim_step,
+        "setpointStep": float(setpoint_step),
+        "disturbance": disturbance.to_dict() if disturbance is not None else None,
+        # P3-07 加性：测量噪声与 OP 实际限位随上下文携带（None=未启用/缺省）
+        "measurementNoise": noise.to_dict() if noise is not None else None,
+        # P3-07：限幅触发计数（opLimits 给出实际限位时 = 所需 OP 超出
+        # 实际限位的步数；None=内核缺省 ±100 场景，仅诊断用途）
+        "saturationSteps": {
+            "current": current_saturation,
+            "recommended": recommended_saturation,
+        },
+        "opLimits": {"lower": op_lo_ctx, "upper": op_hi_ctx} if op_limits is not None else None,
+        "candidates": {
+            "requested": len(requested_candidates),
+            "simulated": len(unique_candidates),
+            "duplicates": dict(duplicate_of),
+        },
+        "budget": {
+            "steps": n_steps,
+            "substepsPerStep": n_sub,
+            "responses": n_responses,
+            "totalIntegrationSteps": total_work,
+            "limits": eff_budget.describe(),
+        },
+    }
 
     return result
 
 
-def _simulate_pid_response(
+def simulate_plant_open_loop(
     model_type: str,
     model_params: dict[str, Any],
+    op_level: float,
+    sim_duration: float,
+    sim_step: float = 1.0,
+    disturbance_type: str = "none",
+    *,
+    disturbance_amplitude: float | None = None,
+    disturbance_time: float | None = None,
+    budget: SimWorkBudget | None = None,
+) -> dict[str, Any]:
+    """开环对象响应（恒定 OP + 可选负载扰动）——P3-04 C20 积分动力学核验入口。
+
+    与闭环仿真共用同一 ``_PlantCore`` 分派（不建第二仿真器）：
+    u_total(t) = op_level + d(t)，恒定 OP 经时滞队列后进入对象动力学。
+
+    IPDT 恒定输入 → 线性趋势（dx/dt = K·u，RK4 对恒输入积分器精确）。
+
+    Returns:
+        {"timestamps": [...], "op": [...], "pv": [...]}（op 为含扰动的对象输入）。
+
+    Raises:
+        SimulationNotSupportedError / SimulationError / SimulationBudgetError：同闭环。
+    """
+    sim_duration = float(sim_duration)
+    sim_step = float(sim_step)
+    op_level = float(op_level)
+    if sim_step <= 0:
+        raise SimulationError(f"仿真步长必须为正数，当前 {sim_step}")
+    if sim_duration <= 0:
+        raise SimulationError(f"仿真时长必须为正数，当前 {sim_duration}")
+    n_steps = int(sim_duration / sim_step)
+    if n_steps < 1:
+        raise SimulationError(
+            f"仿真时长须至少覆盖 1 个步长（duration={sim_duration}, step={sim_step}）"
+        )
+    plant = _PlantCore(model_type, model_params)
+    disturbance = _resolve_disturbance(
+        disturbance_type, disturbance_amplitude, disturbance_time, sim_duration
+    )
+    n_sub = plant.substeps_for(sim_step)
+    eff_budget = budget or SIM_BUDGET_KERNEL
+    _check_simulation_budget(
+        budget=eff_budget,
+        sim_duration=sim_duration,
+        n_steps=n_steps,
+        n_sub=n_sub,
+        n_responses=1,
+        n_candidates_requested=0,
+    )
+
+    theta_steps = max(0, int(round(plant.theta / sim_step)))
+    # 恒定 OP 从 t=0 注入（与闭环同一时滞队列语义：t<θ 时对象输入=0，
+    # θ 之后对象输入=op_level；PV 零初始）
+    op_delay_queue: list[float] = [0.0] * (theta_steps + 1)
+    state = plant.initial_state()
+    pv = [0.0] * (n_steps + 1)
+    op_out = [0.0] * (n_steps + 1)
+    h = sim_step / n_sub
+
+    for k in range(1, n_steps + 1):
+        t = k * sim_step
+        # 与闭环同一时滞队列语义：先入队再读队首
+        op_delay_queue.append(op_level)
+        if len(op_delay_queue) > theta_steps + 1:
+            op_delay_queue.pop(0)
+        delayed_op = op_delay_queue[0]
+        d_k = (
+            disturbance.amplitude
+            if (disturbance is not None and t >= disturbance.time_seconds)
+            else 0.0
+        )
+        u_total = delayed_op + d_k
+        for _ in range(n_sub):
+            state = plant.rk4_step(state, u_total, h)
+        pv[k] = plant.pv_of(state)
+        op_out[k] = u_total
+
+    return {
+        "timestamps": [i * sim_step for i in range(n_steps + 1)],
+        "op": op_out,
+        "pv": pv,
+        "simulationContext": {
+            "engineVersion": SIMULATION_ENGINE_VERSION,
+            "modelType": plant.kind,
+            "modelDispatch": plant.dispatch_kind,
+            "openLoop": True,
+        },
+    }
+
+
+def _simulate_pid_response(
+    plant: _PlantCore,
     pid: PIDParams,
     n_steps: int,
     sim_step: float,
     setpoint_step: float,
-    disturbance_type: str,
-) -> dict[str, list[float]]:
-    """仿真单组 PID 的阶跃响应。
+    disturbance: DisturbanceSpec | None,
+    noise: NoiseSpec | None = None,
+    op_limits: tuple[float, float] | None = None,
+) -> tuple[dict[str, list[float]], int]:
+    """仿真单组 PID 的阶跃响应（P3-04：对象动力学由 _PlantCore 显式分派）。
 
-    model_params 契约：
-    - FOPDT: {K, tau, theta}
-    - SOPDT: 优先标准形 {K, T1, T2, theta}（T1/T2 成对出现才生效，
-      与两条辨识路径输出一致）；否则回退旧 τ/ξ 形 {K, tau, xi, theta}
+    plant 契约（_PlantCore）：FOPDT/SOPDT_T1T2/SOPDT_LEGACY/IPDT；
+    IPDT 为真实积分动力学（dx/dt = K·u），非 FOPDT 冒充。
+    disturbance 非 None 时负载扰动真实进入对象输入。
+    noise 非 None 时（P3-07 O-D2）测量噪声进入控制器反馈通道：
+    控制器消费 pv_meas = pv + N(0, σ)，对象积分无噪声真值。
+    op_limits 非 None 时（P3-07 P-34）OP 限幅用工程实际限位替代
+    内核缺省 ±100；限幅触发被计数（saturationSteps，供 OP 限幅指标
+    非空虚化判定：触发限幅 = 所需 OP 超出实际限位）。
+
+    SOPDT model_params 契约：优先标准形 {K, T1, T2, theta}（T1/T2 成对出现才生效，
+    与两条辨识路径输出一致）；否则回退旧 τ/ξ 形 {K, tau, xi, theta}。
     """
     pv = [0.0] * (n_steps + 1)
     op = [0.0] * (n_steps + 1)
     sp = [0.0] * (n_steps + 1)
+
+    op_lo, op_hi = op_limits if op_limits is not None else (-100.0, 100.0)
+    noise_rng = np.random.default_rng(noise.seed) if noise is not None else None
+    saturation_steps = 0
 
     # 设定值阶跃
     for i in range(n_steps + 1):
@@ -779,93 +1532,28 @@ def _simulate_pid_response(
     y_prev = 0.0
     y_prev2 = 0.0
 
-    # 被控对象参数
-    K = float(model_params.get("K", 1.0))
-    tau = float(model_params.get("tau", 30.0))
-    theta = float(model_params.get("theta", 5.0))
-
-    if tau <= 0:
-        tau = 1.0
-    if theta < 0:
-        theta = 0.0
-
-    is_sopdt = model_type == "SOPDT"
-
-    # SOPDT 参数契约（P1-3 修复）：优先标准形 {K, T1, T2, theta}
-    #   G(s) = K·e^(-θs) / ((T1·s+1)(T2·s+1))
-    # 两条辨识路径（阶跃 identify_sopdt / 历史 tuning_identification）均输出该形；
-    # 兼容旧 τ/ξ 形 G(s) = K·e^(-θs) / (τ²s²+2τξs+1)。
-    # T1/T2 需成对出现才生效，否则回退 τ/ξ 形。
-    t1_raw = model_params.get("T1") if is_sopdt else None
-    t2_raw = model_params.get("T2") if is_sopdt else None
-    use_t1_t2 = t1_raw is not None and t2_raw is not None
-    sopdt_t1 = 0.0
-    sopdt_t2 = 0.0
-    if use_t1_t2:
-        sopdt_t1 = float(t1_raw)
-        sopdt_t2 = float(t2_raw)
-        if sopdt_t1 <= 0:
-            sopdt_t1 = 1.0
-        if sopdt_t2 <= 0:
-            sopdt_t2 = 1.0
-
-    # SOPDT 旧形参数：阻尼比 xi（默认 1.0 即临界阻尼）
-    xi = float(model_params.get("xi", 1.0))
-    if xi < 0:
-        xi = 0.0
-    # SOPDT 旧形辅助常量（在循环外计算）
-    tau_sq = tau * tau if is_sopdt else 1.0
-
-    # 死区步数
-    theta_steps = max(0, int(round(theta / sim_step)))
-    # 延迟队列
+    # 死区步数与延迟队列
+    theta_steps = max(0, int(round(plant.theta / sim_step)))
     op_delay_queue: list[float] = [0.0] * (theta_steps + 1)
 
-    # 被控对象状态
-    # τ/ξ 旧形：x1=输出，x2=输出导数
-    # T1/T2 标准形：x1=第一惯性环节输出，x2=第二惯性环节输出（即 PV）
-    x1 = 0.0
-    x2 = 0.0
-    x = 0.0  # FOPDT 状态变量
+    # 被控对象状态（FOPDT/IPDT 用 [x]，SOPDT 用 [x1, x2]）
+    state = plant.initial_state()
 
-    # 导数函数在循环外定义（避免 B023 闭包警告）
-    def _deriv_sopdt(state1: float, state2: float, u: float) -> tuple[float, float]:
-        """SOPDT 旧形状态空间导数: x1' = x2, x2' = (-x1 - 2τξ*x2 + K*u) / τ²."""
-        d1 = state2
-        d2 = (-state1 - 2.0 * tau * xi * state2 + K * u) / tau_sq
-        return d1, d2
-
-    def _deriv_sopdt_t1t2(state1: float, state2: float, u: float) -> tuple[float, float]:
-        """SOPDT 标准形导数（双一阶惯性串联）: x1' = (K*u - x1)/T1, x2' = (x1 - x2)/T2."""
-        d1 = (K * u - state1) / sopdt_t1
-        d2 = (state1 - state2) / sopdt_t2
-        return d1, d2
-
-    def _deriv_fopdt(state: float, u: float) -> float:
-        """FOPDT 导数: dx/dt = (-x + K*u) / tau."""
-        return (-state + K * u) / tau
-
-    # SOPDT 按参数形选择状态方程（标准形优先）
-    _deriv_sopdt_active = _deriv_sopdt_t1t2 if use_t1_t2 else _deriv_sopdt
-
-    # 积分步长过大时自动细分子步，保证 RK4 精度（子步长 ≤ 最快时间常数/4）
-    fastest_tc = min(sopdt_t1, sopdt_t2) if use_t1_t2 else tau
-    n_sub = max(1, math.ceil(4.0 * sim_step / fastest_tc))
+    # 子步长（步长过大时细分，子步长 ≤ 最快时间常数/4；IPDT 恒 1 子步）
+    n_sub = plant.substeps_for(sim_step)
     h = sim_step / n_sub
-    if n_sub > 1:
-        logger.warning(
-            "仿真步长 sim_step=%.4f 超过最快时间常数/4=%.4f，RK4 自动细分为 %d 子步",
-            sim_step,
-            fastest_tc / 4.0,
-            n_sub,
-        )
 
     for k in range(1, n_steps + 1):
+        # 控制器看到的 PV 测量值（P3-07：测量噪声只进反馈通道）
+        pv_meas = pv[k - 1]
+        if noise_rng is not None:
+            pv_meas = pv_meas + float(noise_rng.normal(0.0, noise.std))
+
         # 误差
-        e = sp[k] - pv[k - 1]
+        e = sp[k] - pv_meas
 
         # 增量式 PID：比例/积分对误差，微分对测量值 PV（消除 SP 阶跃 derivative kick）
-        d2_pv = pv[k - 1] - 2.0 * y_prev + y_prev2
+        d2_pv = pv_meas - 2.0 * y_prev + y_prev2
         if pid.ti > 0:
             delta_u = pid.kp * ((e - e_prev) + sim_step / pid.ti * e - pid.td / sim_step * d2_pv)
         else:
@@ -873,8 +1561,11 @@ def _simulate_pid_response(
 
         op[k] = op[k - 1] + delta_u
 
-        # 输出限幅
-        op[k] = max(-100.0, min(100.0, op[k]))
+        # 输出限幅（P3-07：op_limits 给出工程实际限位；限幅触发被计数）
+        op_clamped = max(op_lo, min(op_hi, op[k]))
+        if op_clamped != op[k]:
+            saturation_steps += 1
+        op[k] = op_clamped
 
         # 延迟队列
         op_delay_queue.append(op[k])
@@ -882,39 +1573,29 @@ def _simulate_pid_response(
             op_delay_queue.pop(0)
         delayed_op = op_delay_queue[0] if op_delay_queue else op[k]
 
-        if is_sopdt:
-            # SOPDT 标准形: G(s) = K·e^(-θs) / ((T1·s+1)(T2·s+1))（优先）
-            # SOPDT 旧形:   G(s) = K·e^(-θs) / (τ²s² + 2τξs + 1)（兼容）
-            # RK4 积分（必要时细分子步）
-            for _ in range(n_sub):
-                k1_1, k1_2 = _deriv_sopdt_active(x1, x2, delayed_op)
-                k2_1, k2_2 = _deriv_sopdt_active(
-                    x1 + 0.5 * h * k1_1, x2 + 0.5 * h * k1_2, delayed_op
-                )
-                k3_1, k3_2 = _deriv_sopdt_active(
-                    x1 + 0.5 * h * k2_1, x2 + 0.5 * h * k2_2, delayed_op
-                )
-                k4_1, k4_2 = _deriv_sopdt_active(x1 + h * k3_1, x2 + h * k3_2, delayed_op)
-                x1 = x1 + h / 6.0 * (k1_1 + 2 * k2_1 + 2 * k3_1 + k4_1)
-                x2 = x2 + h / 6.0 * (k1_2 + 2 * k2_2 + 2 * k3_2 + k4_2)
-            pv[k] = x2 if use_t1_t2 else x1
-        else:
-            # FOPDT: dx/dt = (-x + K*u) / tau
-            # RK4 积分（必要时细分子步）
-            for _ in range(n_sub):
-                k1 = _deriv_fopdt(x, delayed_op)
-                k2 = _deriv_fopdt(x + 0.5 * h * k1, delayed_op)
-                k3 = _deriv_fopdt(x + 0.5 * h * k2, delayed_op)
-                k4 = _deriv_fopdt(x + h * k3, delayed_op)
-                x = x + h / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
-            pv[k] = x
+        # P3-04：扰动真实进入对象输入（负载扰动叠加于 OP 时滞之后）
+        t = k * sim_step
+        d_k = (
+            disturbance.amplitude
+            if (disturbance is not None and t >= disturbance.time_seconds)
+            else 0.0
+        )
+        u_total = delayed_op + d_k
 
-        # 更新误差与 PV 历史
+        # RK4 积分（必要时细分子步；模型动力学由 plant 显式分派）
+        for _ in range(n_sub):
+            state = plant.rk4_step(state, u_total, h)
+        pv[k] = plant.pv_of(state)
+
+        # 更新误差与 PV 历史（测量值历史，与微分通道一致）
         e_prev = e
         y_prev2 = y_prev
-        y_prev = pv[k - 1]
+        y_prev = pv_meas
 
-    return {"pv": pv, "op": op, "sp": sp}
+    # P3-07：响应字典只含列表值（API schema dict[str, list[float]] 契约
+    # 不变）；限幅触发计数作为第二返回值（供 OP 限幅指标非空虚化判定：
+    # 触发限幅 = 所需 OP 超出实际限位）
+    return {"pv": pv, "op": op, "sp": sp}, saturation_steps
 
 
 def _extract_metrics(
@@ -999,7 +1680,7 @@ def _metrics_to_dict(m: SimulationMetrics) -> dict[str, float | None]:
 
 
 # ---------------------------------------------------------------------------
-# 整定方法信息
+# 整定方法信息（P2-01 TUN-05：算法参数注册表，schema/服务端校验单源）
 # ---------------------------------------------------------------------------
 
 
@@ -1010,7 +1691,19 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
         "description": "基于内模控制原理的 PID 整定，平衡性能与鲁棒性",
         "applicableModel": "FOPDT",
         "params": [
-            {"name": "lambdaRatio", "label": "λ 比例系数", "default": 1.0, "min": 0.1, "max": 5.0},
+            {
+                "name": "lambdaRatio",
+                "label": "λ 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "λ = lambdaRatio × θ（闭环时间常数相对纯滞后的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "λ 越大越保守、越小越激进",
+            },
         ],
     },
     {
@@ -1019,7 +1712,19 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
         "description": "基于期望闭环时间常数的整定方法，适合一阶自调节过程",
         "applicableModel": "FOPDT",
         "params": [
-            {"name": "lambdaRatio", "label": "λ 比例系数", "default": 1.0, "min": 0.1, "max": 5.0},
+            {
+                "name": "lambdaRatio",
+                "label": "λ 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "λ = lambdaRatio × τ（闭环时间常数相对过程时间常数的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "λ 越大越保守、越小越激进",
+            },
         ],
     },
     {
@@ -1031,8 +1736,14 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
             {
                 "name": "controllerType",
                 "label": "控制器类型",
+                "type": "enum",
+                "unit": "",
+                "description": "P/PI/PID 结构选择（公式系数按结构分派）",
                 "default": "PID",
                 "options": ["P", "PI", "PID"],
+                "kind": "business",
+                "risk": "HIGH",
+                "riskNote": "控制器结构决定 P/I/D 三项的有无与系数",
             },
         ],
     },
@@ -1045,8 +1756,14 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
             {
                 "name": "controllerType",
                 "label": "控制器类型",
+                "type": "enum",
+                "unit": "",
+                "description": "P/PI/PID 结构选择（公式系数按结构分派）",
                 "default": "PID",
                 "options": ["P", "PI", "PID"],
+                "kind": "business",
+                "risk": "HIGH",
+                "riskNote": "控制器结构决定 P/I/D 三项的有无与系数",
             },
         ],
     },
@@ -1056,10 +1773,523 @@ TUNING_METHODS_INFO: list[dict[str, Any]] = [
         "description": "Skogestad 简化整定规则，工程实用性强",
         "applicableModel": "FOPDT",
         "params": [
-            {"name": "tauCRatio", "label": "τc 比例系数", "default": 1.0, "min": 0.1, "max": 5.0},
+            {
+                "name": "tauCRatio",
+                "label": "τc 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "τc = tauCRatio × θ（期望闭环时间常数相对纯滞后的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "τc 越大越保守、越小越激进",
+            },
+        ],
+    },
+    {
+        # P3-07 R12/R14：IPDT 专用 PI 规则（Skogestad IMC 积分规则族）
+        # λ 停点终裁（2026-10-12，DEC 清单 λ 终裁行）：R14 范围 [0.1,5.0]→[0.1,7.0]
+        # + IPDT 默认 λ=7.0（仅 IPDT；SOPDT/FOPDT 不变）。依据：λ=7.0 在宽 CI
+        # （K±5%/θ±10%，64 集合）下四项冻结指标全过（超调 19.12%，余量 0.88pct）
+        # ——积分+时滞过程超调随 λ 缓慢下降，λ≤6.0 在宽 CI 下超调 >20% 如实标记。
+        "code": "IPDT_PI",
+        "name": "IPDT-PI（积分过程专用）",
+        "description": (
+            "积分过程 G(s)=K·e^(-θs)/s 专用 PI 规则（Skogestad IMC 积分规则族）："
+            "Ti=2λ+θ，Kc=(2λ+θ)/(K·(λ+θ)²)。鲁棒裕度（R15 冻结指标）随 λ 增大而"
+            "改善；默认 λ=7.0 在宽 CI 可信集合（K±5%/θ±10%）下四项全过"
+            "（超调 19.12%）；调小 λ（如 ≤6.0）超调将超 20%，验证器如实标记不通过"
+        ),
+        "applicableModel": "IPDT",
+        "params": [
+            {
+                "name": "lambdaRatio",
+                "label": "λ 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "λ = lambdaRatio × θ（闭环时间常数相对纯滞后的倍数）",
+                "default": 7.0,
+                "min": 0.1,
+                "max": 7.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "λ 越大越保守、越小越激进",
+            },
+        ],
+    },
+    {
+        # P3-07 R13/R14：SOPDT 专用 IMC-PID 解析（一阶 Padé；非降阶）
+        "code": "SOPDT_IMC",
+        "name": "SOPDT-IMC（二阶专用解析）",
+        "description": (
+            "二阶加迟延 G(s)=K·e^(-θs)/((T1·s+1)(T2·s+1)) 专用 IMC-PID 解析整定"
+            "（一阶 Padé；非降阶、无近似误差声明义务）：Ti=T1+T2+θ/2，"
+            "Kc=(T1+T2+θ/2)/(K·(λ+θ/2))，Td=(T1·T2+θ·(T1+T2)/2)/(T1+T2+θ/2)"
+        ),
+        "applicableModel": "SOPDT",
+        "params": [
+            {
+                "name": "lambdaRatio",
+                "label": "λ 比例系数",
+                "type": "float",
+                "unit": "",
+                "description": "λ = lambdaRatio × θ（闭环时间常数相对纯滞后的倍数）",
+                "default": 1.0,
+                "min": 0.1,
+                "max": 5.0,
+                "kind": "business",
+                "risk": "MEDIUM",
+                "riskNote": "λ 越大越保守、越小越激进",
+            },
         ],
     },
 ]
+
+
+def get_method_info(algorithm: str | None) -> list[dict[str, Any]]:
+    """按算法代码取注册信息（algorithm=None 返回全部，用于矩阵联合校验）."""
+    if algorithm is None:
+        return TUNING_METHODS_INFO
+    return [m for m in TUNING_METHODS_INFO if m["code"] == algorithm]
+
+
+def validate_tuning_params(
+    algorithm: str | None,
+    params: dict[str, Any],
+) -> list[str]:
+    """按 TUNING_METHODS_INFO 注册表校验整定算法参数（P2-01 TUN-05）.
+
+    返回错误文案列表（空列表 = 通过）：
+    - 未知键：键不在指定算法（algorithm=None 时为任一算法）的注册参数内
+    - 类型：float 参数必须为有限数值（布尔/字符串拒绝）；enum 参数必须为字符串
+    - 范围：min/max 闭区间
+    - 非法枚举：enum 值不在 options 内（如非法 controllerType）
+
+    Args:
+        algorithm: 算法代码（IMC/LAMBDA/ZN/COHEN_COON/SIMC）；None = 联合模式
+            （/tune/matrix 共用一份参数跨 5 算法，键在任一算法注册即合法，
+            值须满足其所属算法的约束）
+        params: 待校验参数字典
+    """
+    methods = get_method_info(algorithm)
+    if not methods:
+        return [f"不支持的整定算法: {algorithm}"]
+    # 键 → 定义合并（联合模式下同名键取并集内最先定义；当前注册同名键约束一致）
+    registry: dict[str, dict[str, Any]] = {}
+    for m in methods:
+        for p in m.get("params", []):
+            registry.setdefault(p["name"], p)
+
+    errors: list[str] = []
+    for key, value in params.items():
+        p = registry.get(key)
+        if p is None:
+            errors.append(
+                f"未知算法参数键: {key}（算法 {algorithm or '全算法矩阵'} 注册键: "
+                f"{sorted(registry)}）"
+            )
+            continue
+        ptype = p.get("type", "float")
+        if ptype == "enum":
+            options = p.get("options", [])
+            if not isinstance(value, str):
+                errors.append(
+                    f"参数 {key} 应为字符串枚举（{options}），收到 {type(value).__name__}"
+                )
+            elif value not in options:
+                errors.append(f"参数 {key}={value} 非法，合法值: {options}")
+            continue
+        # 数值型
+        if isinstance(value, bool):
+            errors.append(f"参数 {key} 应为数值，收到布尔值")
+            continue
+        if not isinstance(value, (int, float)):
+            errors.append(f"参数 {key} 应为数值，收到 {type(value).__name__}")
+            continue
+        if not math.isfinite(value):
+            errors.append(f"参数 {key}={value} 不是有限数（NaN/Inf 拒绝）")
+            continue
+        if "min" in p and value < p["min"]:
+            errors.append(f"参数 {key}={value} 低于下限 {p['min']}")
+        if "max" in p and value > p["max"]:
+            errors.append(f"参数 {key}={value} 超过上限 {p['max']}")
+    return errors
+
+
+# ---------------------------------------------------------------------------
+# 鲁棒性验证内核（P3-07，oracle 冻结草案 §5 R15/P-32/B-11）
+# ---------------------------------------------------------------------------
+
+#: R15 冻结值（2026-10-11 用户裁决"全部按推荐"生效；04§4.2 纪律：
+#: **冻结后不得失败后调整**——实现/测试不得因结果不达标改动以下数值）
+ROBUSTNESS_GAIN_MARGIN_MIN = 2.0
+ROBUSTNESS_PHASE_MARGIN_MIN_DEG = 30.0
+ROBUSTNESS_OVERSHOOT_MAX_PCT = 20.0
+#: P-32/B-11：可信模型集合规模 ≤64 采样；单成员仿真时长 ≤600s
+ROBUST_SET_MAX_MEMBERS = 64
+ROBUST_SET_MAX_SIM_DURATION = 600.0
+
+#: 各模型结构参与可信集合的参数键（与 _model_params_match 必需参数表同口径）
+_ROBUST_SET_PARAM_KEYS: dict[str, tuple[str, ...]] = {
+    "FOPDT": ("K", "tau", "theta"),
+    "IPDT": ("K", "theta"),
+    "SOPDT": ("K", "T1", "T2", "theta"),
+}
+
+
+def closed_loop_gain_phase_margins(
+    model_type: str,
+    model_params: dict[str, Any],
+    pid: PIDParams,
+    *,
+    n_points: int = 2000,
+) -> dict[str, Any]:
+    """开环传递函数 L(jω)=C(jω)·G(jω) 的增益/相位裕度（解析频响扫描）.
+
+    被测回路与闭环仿真完全同构：C 为理想并联 PID（与增量式实现一致的
+    传函形式），G 为 FOPDT/SOPDT(T1,T2)/IPDT 解析频响（时滞取精确
+    e^{-jωθ}，无 Padé 近似——Padé 只用于整定公式推导，裕度评估不用）。
+
+    独立性：本函数为 P3-07 鲁棒指标的**被测实现**；oracle 测试以手算
+    解析锚点核对（如纯 P 控积分过程 GM=π/(2·KcKθ)、PM=90°−KcKθ·180/π），
+    禁止用本函数自产期望值。
+
+    Returns:
+        {gainCrossoverRad, phaseMarginDeg, phaseCrossoverRad, gainMargin,
+         status}——未找到穿越点时对应值为 None（PM 无穿越=明确状态，
+        消费方按不通过处理，不伪补）。
+    """
+    plant = _PlantCore(model_type, model_params)
+    K = plant.K
+    theta = plant.theta
+    # 时间尺度参考（决定频率扫描窗）
+    if plant.kind == "SOPDT":
+        t_ref = max(theta, plant.t1 if plant.t1 > 0 else plant.tau, plant.t2, 1.0)
+    else:
+        t_ref = max(theta, plant.tau, 1.0)
+    omega = np.logspace(-4.0, 3.0, int(n_points)) / t_ref
+
+    # 控制器频响（理想并联 PID；ti=0 表示无积分项）
+    with np.errstate(divide="ignore", invalid="ignore"):
+        c_real = np.full_like(omega, 1.0)
+        c_imag = omega * pid.td - (1.0 / (omega * pid.ti) if pid.ti > 0 else 0.0)
+        c_mag = np.hypot(c_real, c_imag)
+        c_phase = np.arctan2(c_imag, c_real)
+
+    # 对象频响幅值与相位（连续相位分量和，避免 atan2 卷绕）
+    if plant.kind == "FOPDT":
+        g_mag = np.abs(K) / np.hypot(omega * plant.tau, 1.0)
+        g_phase = -np.arctan(omega * plant.tau)
+    elif plant.kind == "IPDT":
+        g_mag = np.abs(K) / omega
+        g_phase = np.full_like(omega, -np.pi / 2.0)
+    else:  # SOPDT
+        if plant.t1 > 0 and plant.t2 > 0:
+            g_mag = np.abs(K) / (np.hypot(omega * plant.t1, 1.0) * np.hypot(omega * plant.t2, 1.0))
+            g_phase = -np.arctan(omega * plant.t1) - np.arctan(omega * plant.t2)
+        else:  # 旧 τ/ξ 形
+            denom = np.abs(1.0 - (plant.tau_sq * omega**2) + 2j * plant.tau * plant.xi * omega)
+            g_mag = np.abs(K) / denom
+            g_phase = -np.arctan2(2.0 * plant.tau * plant.xi * omega, 1.0 - plant.tau_sq * omega**2)
+
+    # 幅值取 |kp|（负 kp / 负 K 的符号进相位 ±π——见下行），保证 |L| ≥ 0
+    l_mag = abs(pid.kp) * c_mag * g_mag
+    l_phase_rad = c_phase + g_phase - omega * theta + (np.pi if pid.kp * K < 0 else 0.0)
+    l_phase_deg = np.degrees(l_phase_rad)
+
+    def _first_desc_cross(x: np.ndarray, level: float) -> float | None:
+        """x 从上方首次下穿 level 的位置（线性插值；无穿越返回 None）."""
+        for i in range(1, len(x)):
+            if x[i - 1] >= level > x[i]:
+                frac = (x[i - 1] - level) / (x[i - 1] - x[i])
+                return float(
+                    np.log(omega[i - 1]) + frac * (np.log(omega[i]) - np.log(omega[i - 1]))
+                )
+        return None
+
+    def _value_at_logw(log_w: float, arr: np.ndarray) -> float:
+        return float(np.interp(log_w, np.log(omega), arr))
+
+    # 增益穿越（|L| 下穿 1）→ 相位裕度
+    log_wc = _first_desc_cross(l_mag, 1.0)
+    phase_margin = (180.0 + _value_at_logw(log_wc, l_phase_deg)) if log_wc is not None else None
+
+    # 相位穿越（相位下穿 −180°）→ 增益裕度
+    log_w180 = _first_desc_cross(l_phase_deg, -180.0)
+    if log_w180 is not None:
+        mag180 = _value_at_logw(log_w180, l_mag)
+        gain_margin = float(1.0 / mag180) if mag180 > 0 else None
+    else:
+        gain_margin = None  # 相位不穿越 −180°（如无时滞/强超前）→ 无穷裕度
+
+    return {
+        "gainCrossoverRad": float(np.exp(log_wc)) if log_wc is not None else None,
+        "phaseMarginDeg": None if phase_margin is None else round(float(phase_margin), 4),
+        "phaseCrossoverRad": float(np.exp(log_w180)) if log_w180 is not None else None,
+        "gainMargin": None if gain_margin is None else round(float(gain_margin), 4),
+        "status": "OK",
+    }
+
+
+def build_trustworthy_set(
+    model_type: str,
+    nominal_params: dict[str, Any],
+    ci_bounds: dict[str, Any] | None,
+    max_members: int = ROBUST_SET_MAX_MEMBERS,
+) -> dict[str, Any]:
+    """可信模型集合（P-32：终验通过模型 ± 参数 95% CI 采样，≤64 成员）.
+
+    采样策略（确定性，可复现）：全部 2^k 角点（最坏情形承载）+ 名义模型
+    + 固定种子（42）内部填充至 max_members。CI 缺失/非法/跨越符号的
+    维度按固定（degenerate）处理并记录——不虚构宽度。
+
+    Returns:
+        {"members": [param dict...], "freeKeys": [...], "fixedKeys": [...],
+         "bounds": {key: [lo, hi]}, "memberCount": N}
+    """
+    keys = _ROBUST_SET_PARAM_KEYS.get(str(model_type).upper())
+    if not keys:
+        raise SimulationNotSupportedError(
+            f"可信模型集合不支持模型类型 {model_type!r}（支持 {'/'.join(_ROBUST_SET_PARAM_KEYS)}）"
+        )
+    bounds: dict[str, tuple[float, float]] = {}
+    fixed: list[str] = []
+    nominal: dict[str, float] = {}
+    for key in keys:
+        raw = nominal_params.get(key)
+        if not isinstance(raw, int | float) or not math.isfinite(float(raw)):
+            raise SimulationError(f"名义模型参数 {key} 缺失或非有限数值")
+        nom = float(raw)
+        nominal[key] = nom
+        ci = (ci_bounds or {}).get(key)
+        lo = hi = None
+        if isinstance(ci, list | tuple) and len(ci) == 2:
+            try:
+                lo, hi = float(ci[0]), float(ci[1])
+            except (TypeError, ValueError):
+                lo = hi = None
+        valid = (
+            lo is not None
+            and hi is not None
+            and math.isfinite(lo)
+            and math.isfinite(hi)
+            and hi >= lo
+            and lo * hi > 0  # 区间不跨零（K 同号；时间参数恒正）
+            and lo * nom > 0  # 与名义值同号（控制方向不翻转）
+        )
+        if not valid:
+            fixed.append(key)
+            continue
+        if key != "K":
+            lo = max(lo, 1e-6)
+            hi = max(hi, 1e-6)
+        bounds[key] = (lo, hi)
+
+    free = [k for k in keys if k in bounds]
+    members: list[dict[str, float]] = []
+    seen: set[tuple[float, ...]] = set()
+
+    def _add(member: dict[str, float]) -> None:
+        sig = tuple(round(member[k], 9) for k in keys)
+        if sig not in seen and len(members) < max_members:
+            seen.add(sig)
+            members.append(dict(member))
+
+    # 角点（最坏情形承载）
+    if free:
+        import itertools
+
+        for combo in itertools.product(*(bounds[k] for k in free)):
+            member = dict(nominal)
+            for k, v in zip(free, combo, strict=True):
+                member[k] = float(v)
+            _add(member)
+    # 名义模型
+    _add(dict(nominal))
+    # 固定种子内部填充（超方体均匀采样）
+    if free and len(members) < max_members:
+        rng = np.random.default_rng(42)
+        while len(members) < max_members:
+            member = dict(nominal)
+            for k in free:
+                lo, hi = bounds[k]
+                member[k] = float(rng.uniform(lo, hi))
+            _add(member)
+
+    return {
+        "members": members,
+        "freeKeys": free,
+        "fixedKeys": fixed,
+        "bounds": {k: [bounds[k][0], bounds[k][1]] for k in free},
+        "memberCount": len(members),
+    }
+
+
+def verify_robustness_on_set(
+    model_type: str,
+    members: list[dict[str, Any]],
+    pid: PIDParams,
+    *,
+    op_limits: tuple[float, float] | None,
+    sim_duration: float = 600.0,
+    sim_step: float = 1.0,
+    setpoint_step: float = 1.0,
+) -> dict[str, Any]:
+    """同一建议在可信模型集合上的 R15 冻结指标验证（O-D5）.
+
+    每成员：① 解析频响扫描裕度（GM/PM）；② 正确模型结构闭环仿真
+    （复用 P3-04 _PlantCore 分派内核，不建第二仿真器）取超调与 OP 轨迹
+    （OP 限幅=实际限位下零饱和触发——触发限幅即所需 OP 超出实际限位，
+    指标非空虚化）。任一成员发散或超限 → 该建议整体标记不通过
+    （行为断言，07§4 验收原文）。
+
+    B-11 预算：成员数 ≤64、时长 ≤600s、总积分步 ≤400 万（与
+    SIM_BUDGET_ASYNC 总量同档）；超限明确拒绝。
+    """
+    if len(members) > ROBUST_SET_MAX_MEMBERS:
+        raise SimulationBudgetError(
+            f"可信模型集合成员数 {len(members)} 超出冻结上限 {ROBUST_SET_MAX_MEMBERS}",
+            requested={"members": len(members)},
+            limits={"members": ROBUST_SET_MAX_MEMBERS},
+        )
+    if sim_duration > ROBUST_SET_MAX_SIM_DURATION:
+        raise SimulationBudgetError(
+            f"集合仿真时长 {sim_duration}s 超出冻结上限 {ROBUST_SET_MAX_SIM_DURATION}s",
+            requested={"simDuration": sim_duration},
+            limits={"simDuration": ROBUST_SET_MAX_SIM_DURATION},
+        )
+    sim_step_requested = float(sim_step)
+    # 指标保真度（实施裁量）：时滞队列离散化在 dt>θ/20 时会显著失真
+    # （实测 θ=10/dt=1.0 的 IPDT 超调比 dt=0.2 高 ~3pct），将步长细化到
+    # min(θ)/20（预算护栏仍在，超限明确拒绝）；细化事实随报告记录。
+    min_theta = min(
+        (
+            float(m.get("theta") or 0.0)
+            for m in members
+            if isinstance(m, dict) and m.get("theta") is not None
+        ),
+        default=0.0,
+    )
+    sim_step = sim_step_requested
+    if min_theta > 0 and sim_step > min_theta / 20.0:
+        sim_step = max(min_theta / 20.0, 1e-3)
+    n_steps = int(sim_duration / sim_step)
+    if n_steps < 2:
+        raise SimulationError(f"仿真时长须至少覆盖 2 个步长（duration={sim_duration}）")
+
+    total_work = 0
+    member_results: list[dict[str, Any]] = []
+    for idx, params in enumerate(members):
+        entry: dict[str, Any] = {"index": idx, "params": dict(params)}
+        try:
+            plant = _PlantCore(model_type, params)
+            n_sub = plant.substeps_for(sim_step)
+            total_work += n_steps * n_sub
+            margins = closed_loop_gain_phase_margins(model_type, params, pid)
+            entry["margins"] = margins
+            resp, _sat_steps = _simulate_pid_response(
+                plant, pid, n_steps, sim_step, setpoint_step, None, None, op_limits
+            )
+            pv = resp["pv"]
+            op = resp["op"]
+            diverged = (
+                any(not math.isfinite(v) for v in (pv[-1], op[-1]))
+                or abs(pv[-1]) > 1e6
+                or abs(op[-1]) > 1e6
+            )
+            entry["diverged"] = diverged
+            if diverged:
+                entry["overshootPct"] = None
+                entry["saturationSteps"] = None
+            else:
+                entry["overshootPct"] = _extract_metrics(resp, setpoint_step, sim_step).overshoot
+                entry["saturationSteps"] = int(_sat_steps)
+                entry["opRange"] = [min(op[1:]), max(op[1:])] if len(op) > 1 else None
+        except SimulationError as exc:
+            entry["error"] = str(exc)
+            entry["diverged"] = True
+        member_results.append(entry)
+
+    if total_work > SIM_BUDGET_ASYNC.max_total_integration_steps:
+        raise SimulationBudgetError(
+            f"集合仿真总积分步数 {total_work} 超出上限 "
+            f"{SIM_BUDGET_ASYNC.max_total_integration_steps}（请增大步长或收窄集合）",
+            requested={"totalIntegrationSteps": total_work},
+            limits={"totalIntegrationSteps": SIM_BUDGET_ASYNC.max_total_integration_steps},
+        )
+
+    valid = [m for m in member_results if not m.get("error")]
+    worst_gm = None
+    worst_pm = None
+    worst_os = None
+    worst_sat: int | None = None
+    for m in valid:
+        if m.get("diverged"):
+            continue
+        gm = (m.get("margins") or {}).get("gainMargin")
+        pm = (m.get("margins") or {}).get("phaseMarginDeg")
+        os_ = m.get("overshootPct")
+        sat = m.get("saturationSteps")
+        if gm is not None:
+            worst_gm = gm if worst_gm is None else min(worst_gm, gm)
+        if pm is not None:
+            worst_pm = pm if worst_pm is None else min(worst_pm, pm)
+        if os_ is not None:
+            worst_os = os_ if worst_os is None else max(worst_os, os_)
+        if sat is not None:
+            worst_sat = sat if worst_sat is None else max(worst_sat, sat)
+
+    n_diverged = sum(1 for m in member_results if m.get("diverged") or m.get("error"))
+    n_no_crossing = sum(
+        1
+        for m in valid
+        if not m.get("diverged") and (m.get("margins") or {}).get("phaseMarginDeg") is None
+    )
+    indicators = {
+        "gainMargin": {
+            "worst": worst_gm,
+            "threshold": ROBUSTNESS_GAIN_MARGIN_MIN,
+            "pass": bool(worst_gm is not None and worst_gm >= ROBUSTNESS_GAIN_MARGIN_MIN),
+        },
+        "phaseMargin": {
+            "worst": worst_pm,
+            "threshold": ROBUSTNESS_PHASE_MARGIN_MIN_DEG,
+            "pass": bool(worst_pm is not None and worst_pm >= ROBUSTNESS_PHASE_MARGIN_MIN_DEG),
+        },
+        "overshoot": {
+            "worstPct": worst_os,
+            "thresholdPct": ROBUSTNESS_OVERSHOOT_MAX_PCT,
+            "pass": bool(worst_os is not None and worst_os <= ROBUSTNESS_OVERSHOOT_MAX_PCT),
+        },
+        "opLimits": {
+            "worstSaturationSteps": worst_sat,
+            "limits": {"lower": op_limits[0], "upper": op_limits[1]} if op_limits else None,
+            "pass": bool(
+                op_limits is not None
+                and n_diverged == 0
+                and (worst_sat is not None and worst_sat == 0)
+            ),
+        },
+    }
+    overall = all(v["pass"] for v in indicators.values()) and n_diverged == 0
+    return {
+        "frozenThresholds": {
+            "gainMarginMin": ROBUSTNESS_GAIN_MARGIN_MIN,
+            "phaseMarginMinDeg": ROBUSTNESS_PHASE_MARGIN_MIN_DEG,
+            "overshootMaxPct": ROBUSTNESS_OVERSHOOT_MAX_PCT,
+            "maxSetMembers": ROBUST_SET_MAX_MEMBERS,
+        },
+        "memberCount": len(member_results),
+        "simStepRequested": sim_step_requested,
+        "simStepEffective": sim_step,
+        "divergedMembers": n_diverged,
+        "membersWithoutGainCrossover": n_no_crossing,
+        "indicators": indicators,
+        "overallPass": bool(overall),
+        "members": member_results,
+    }
 
 
 __all__ = [
@@ -1077,6 +2307,17 @@ __all__ = [
     "tune_zn",
     "tune_cohen_coon",
     "tune_simc",
+    "tune_ipdt_pi",
+    "tune_sopdt_imc",
     "simulate_closed_loop",
     "TUNING_METHODS_INFO",
+    "get_method_info",
+    "validate_tuning_params",
+    "ROBUSTNESS_GAIN_MARGIN_MIN",
+    "ROBUSTNESS_PHASE_MARGIN_MIN_DEG",
+    "ROBUSTNESS_OVERSHOOT_MAX_PCT",
+    "ROBUST_SET_MAX_MEMBERS",
+    "closed_loop_gain_phase_margins",
+    "build_trustworthy_set",
+    "verify_robustness_on_set",
 ]

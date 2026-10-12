@@ -222,59 +222,45 @@ class TestUpdateConfig:
 
 
 class TestGenerateReport:
-    """POST /api/v1/reports/generate tests."""
+    """POST /api/v1/reports/generate tests.
 
-    def test_generate_report_success(self, client, mock_db, fake_redis) -> None:
-        """ADMIN can trigger report generation, returns taskId."""
-        # Mock the Celery task's .delay() method
+    IA-12（2026-10-10 诚实化）：占位生成实现已停用——无真实文件不得 COMPLETED，
+    手动触发端点显式拒绝（503 ERR_REPORT_GENERATION_NOT_AVAILABLE），
+    不再产出"占位路径 + COMPLETED"的假完成记录。
+    """
+
+    def test_generate_report_rejected_not_available(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 触发生成也明确拒绝（占位实现停用，UI 维持预配置提示不变）。"""
+        # Celery 任务不应被派发（占位链路整体收口）
         with patch("app.tasks.report_generator.generate_report_task") as mock_task:
-            mock_task.delay = MagicMock(return_value=MagicMock(id="celery-task-id"))
             with mock_current_user(TEST_USERS["admin"]):
                 resp = client.post(
                     "/api/v1/reports/generate",
                     headers={"Authorization": "Bearer fake-token"},
                     json={"reportPeriod": "DAILY"},
                 )
-        assert resp.status_code == 200
+        assert resp.status_code == 503
         body = resp.json()
-        assert body["code"] == "0"
-        assert "taskId" in body["data"]
-        assert body["data"]["taskType"] == "REPORT_GENERATE"
-        assert body["data"]["status"] == "PROCESSING"
-        assert body["data"]["checkUrl"] is not None
-        mock_db.add.assert_called()  # audit log written
-        mock_db.commit.assert_called()
+        assert body["code"] == "ERR_REPORT_GENERATION_NOT_AVAILABLE"
+        assert "未开放" in body["message"]
+        mock_task.delay.assert_not_called()
+        mock_db.add.assert_not_called()  # 不再写审计/任务档案
 
-    def test_generate_report_with_config_id(self, client, mock_db, fake_redis) -> None:
-        """Trigger generation with a valid config_id."""
-        config = _make_report_config()
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(config))
-        with patch("app.tasks.report_generator.generate_report_task") as mock_task:
-            mock_task.delay = MagicMock(return_value=MagicMock(id="celery-task-id"))
-            with mock_current_user(TEST_USERS["admin"]):
-                resp = client.post(
-                    "/api/v1/reports/generate",
-                    headers={"Authorization": "Bearer fake-token"},
-                    json={"configId": config.id},
-                )
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["data"]["taskType"] == "REPORT_GENERATE"
-
-    def test_generate_report_config_not_found(self, client, mock_db, fake_redis) -> None:
-        """Non-existent config_id returns ERR_REPORT_CONFIG_NOT_FOUND (404)."""
-        mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+    def test_generate_report_with_config_id_also_rejected(
+        self, client, mock_db, fake_redis
+    ) -> None:
+        """带 config_id 同样拒绝（生成能力整体停用，与配置存在与否无关）。"""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.post(
                 "/api/v1/reports/generate",
                 headers={"Authorization": "Bearer fake-token"},
-                json={"configId": "nonexistent"},
+                json={"configId": "00000000-0000-0000-0000-000000000b01"},
             )
-        assert resp.status_code == 404
-        assert resp.json()["code"] == "ERR_REPORT_CONFIG_NOT_FOUND"
+        assert resp.status_code == 503
+        assert resp.json()["code"] == "ERR_REPORT_GENERATION_NOT_AVAILABLE"
 
     def test_generate_report_ic_engineer_forbidden(self, client, mock_db, fake_redis) -> None:
-        """IC_ENGINEER cannot trigger report generation (403)."""
+        """IC_ENGINEER cannot trigger report generation (403, 角色门禁先于拒绝语义)."""
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.post(
                 "/api/v1/reports/generate",

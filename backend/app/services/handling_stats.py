@@ -9,6 +9,8 @@
 - P2-1（方案 §5.1）：响应向后兼容只增字段——sla（按时闭环率 + WARN/BREACH）/
   suggestionFunnel（建议五态漏斗）/ verifyResult（整改有效率）/
   staffWorkload（直读 mv_staff_workload，全量口径）。
+- P3-05（DEC-06 统计与数据验证分开）：verifyResult 新增 effectiveByEvidence
+  （三分类分别统计）与 dataVerifiedEffective（不含无数据人工闭环）。
 """
 
 from __future__ import annotations
@@ -488,6 +490,11 @@ async def build_handling_statistics(
     # ------------------------------------------------------------------
 
     # --- SLA 达成率 + 整改有效率（同窗同装置过滤的工单口径） ---
+    # P3-05（DEC-06 统计与数据验证分开）：verifyResult 块新增证据等级拆分——
+    # effective/dataVerifiedEffective 不含 MANUAL_CONFIRMATION（无数据人工
+    # 验收不进数据验证通过数）；UNKNOWN=历史行（closure_evidence 为 NULL，
+    # 三分类落地前验证的存量，不回填不伪判）。原有 effective/ineffective/
+    # effectiveRate 字段口径不变（全部验证结论），向后兼容只增字段。
     sla_row = (
         await db.execute(
             text(
@@ -501,7 +508,19 @@ async def build_handling_statistics(
                                    AND ho.sla_deadline_at IS NOT NULL
                                    AND ho.verified_at <= ho.sla_deadline_at) AS sla_on_time,
                   COUNT(*) FILTER (WHERE ho.verify_result = 'EFFECTIVE') AS effective_count,
-                  COUNT(*) FILTER (WHERE ho.verify_result = 'INEFFECTIVE') AS ineffective_count
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'INEFFECTIVE') AS ineffective_count,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'EFFECTIVE'
+                                   AND ho.closure_evidence = 'MANUAL_CONFIRMATION')
+                    AS effective_manual_count,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'EFFECTIVE'
+                                   AND ho.closure_evidence = 'DATA_VERIFIED')
+                    AS effective_data_count,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'EFFECTIVE'
+                                   AND ho.closure_evidence = 'COMPARABLE_CONDITION_VERIFIED')
+                    AS effective_comparable_count,
+                  COUNT(*) FILTER (WHERE ho.verify_result = 'EFFECTIVE'
+                                   AND ho.closure_evidence IS NULL)
+                    AS effective_legacy_count
                 FROM handling_order ho
                 {ho_join}
                 WHERE {" AND ".join(ho_where)}
@@ -523,6 +542,16 @@ async def build_handling_statistics(
         "effectiveRate": _rate(
             sla_row.effective_count,
             sla_row.effective_count + sla_row.ineffective_count,
+        ),
+        # P3-05/DEC-06：证据等级拆分（分别统计；无数据人工闭环不进数据验证数）
+        "effectiveByEvidence": {
+            "MANUAL_CONFIRMATION": int(sla_row.effective_manual_count),
+            "DATA_VERIFIED": int(sla_row.effective_data_count),
+            "COMPARABLE_CONDITION_VERIFIED": int(sla_row.effective_comparable_count),
+            "UNKNOWN": int(sla_row.effective_legacy_count),
+        },
+        "dataVerifiedEffective": (
+            int(sla_row.effective_data_count) + int(sla_row.effective_comparable_count)
         ),
     }
 

@@ -719,7 +719,25 @@ function cellTooltip(def: MetricDef, row: any): string {
   const v = row[def.field] as null | number;
   const value = formatCell(def, v);
   const ts = row.tsEnd || row.tsStart || '';
-  return `${def.title}: ${value} · 可信度 ${row.confidenceLevel ?? '—'} · 窗口 ${formatLocalTime(ts, 'MM-DD HH:mm')}`;
+  const parts = [
+    `${def.title}: ${value}`,
+    `可信度 ${row.confidenceLevel ?? '—'}`,
+    `窗口 ${formatLocalTime(ts, 'MM-DD HH:mm')}`,
+  ];
+  // R03-3（P3-D6b，G3-R01 接通）：构成与版本——行携带语义且正式 F 缺席
+  // （G3-R01 正式优先互斥：正式值在场不重复标参考）时标注"参考"构成；
+  // latest 行带算法版本；窗口均值行（window-agg）带样本数说明口径。
+  const fastFormal = row.metricsSemantic?.fast_rate?.value;
+  const fastRef = row.metricsSemantic?.fast_rate?.details?.referenceScore;
+  if (typeof fastRef === 'number' && typeof fastFormal !== 'number') {
+    parts.push('构成：含快速率参考分（静稳，动态证据不足）');
+  }
+  if (row.algorithmVersion) {
+    parts.push(`算法版本 ${row.algorithmVersion}`);
+  } else if (typeof row.sampleCount === 'number') {
+    parts.push(`窗口均值（${row.sampleCount} 个小时快照样本，AVG 跳过 NULL）`);
+  }
+  return parts.join(' · ');
 }
 
 async function openCellDrawer(field: string, row: any) {

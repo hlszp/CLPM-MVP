@@ -33,7 +33,7 @@ from fastapi import APIRouter, Depends, File, Query, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import require_perms
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.models.sys_user import SysUser
@@ -132,7 +132,7 @@ router = APIRouter(prefix="/dcs", tags=["dcs"])
 @router.get("/vendors", response_model=ApiResponse[list[DcsVendorItem]])
 async def list_vendors_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部 DCS 品牌（所有认证用户可读）。"""
     data = await svc_list_vendors(db)
@@ -143,7 +143,7 @@ async def list_vendors_endpoint(
 async def create_vendor_endpoint(
     body: DcsVendorCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """创建 DCS 品牌（仅 ADMIN）。code 唯一。"""
     data = await svc_create_vendor(
@@ -161,7 +161,7 @@ async def create_vendor_endpoint(
 @router.get("/vendors/export")
 async def export_vendors_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> StreamingResponse:
     """导出全部 DCS 品牌为 Excel 文件（.xlsx）。"""
     content = await svc_export_vendors(db)
@@ -178,7 +178,7 @@ async def export_vendors_endpoint(
 async def import_vendors_endpoint(
     file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """批量导入 DCS 品牌（Excel .xlsx）。
 
@@ -195,7 +195,7 @@ async def update_vendor_endpoint(
     vendor_id: str,
     body: DcsVendorUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """更新 DCS 品牌（仅 ADMIN，code 不可改）。"""
     data = await svc_update_vendor(
@@ -215,7 +215,7 @@ async def update_vendor_endpoint(
 async def delete_vendor_endpoint(
     vendor_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """删除 DCS 品牌（仅 ADMIN，有关联型号时禁止删除）。"""
     await svc_delete_vendor(db=db, vendor_id=vendor_id, operator=user.username)
@@ -231,7 +231,7 @@ async def delete_vendor_endpoint(
 async def list_models_endpoint(
     vendor_id: str | None = Query(None, description="按品牌筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部 DCS 型号（所有认证用户可读，可按品牌筛选）。"""
     data = await svc_list_models(db=db, vendor_id=vendor_id)
@@ -242,7 +242,7 @@ async def list_models_endpoint(
 async def create_model_endpoint(
     body: DcsModelCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """创建 DCS 型号（仅 ADMIN）。code 全局唯一。"""
     data = await svc_create_model(
@@ -260,7 +260,7 @@ async def create_model_endpoint(
 @router.get("/models/export")
 async def export_models_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> StreamingResponse:
     """导出全部 DCS 型号为 Excel 文件（.xlsx）。"""
     content = await svc_export_models(db)
@@ -277,7 +277,7 @@ async def export_models_endpoint(
 async def import_models_endpoint(
     file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """批量导入 DCS 型号（Excel .xlsx）。
 
@@ -295,7 +295,7 @@ async def update_model_endpoint(
     model_id: str,
     body: DcsModelUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """更新 DCS 型号（仅 ADMIN，code/vendor_id 不可改）。"""
     data = await svc_update_model(
@@ -314,7 +314,7 @@ async def update_model_endpoint(
 async def delete_model_endpoint(
     model_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """删除 DCS 型号（仅 ADMIN，级联删除映射，loop_ledger.dcs_model_id SET NULL）。"""
     await svc_delete_model(db=db, model_id=model_id, operator=user.username)
@@ -329,7 +329,7 @@ async def delete_model_endpoint(
 @router.get("/mode-definitions", response_model=ApiResponse[list[ModeDefinitionItem]])
 async def list_mode_definitions_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部标准 MODE 定义（所有认证用户可读）。"""
     data = await svc_list_mode_definitions(db)
@@ -341,7 +341,7 @@ async def update_mode_definition_endpoint(
     standard_mode: int,
     body: ModeDefinitionUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """更新标准 MODE 定义（仅 ADMIN，standard_mode 不可改）。
 
@@ -369,7 +369,7 @@ async def update_mode_definition_endpoint(
 async def list_mode_mappings_endpoint(
     dcs_model_id: str | None = Query(None, description="按型号筛选（含本系统默认）"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取 MODE 映射列表（所有认证用户可读，可按型号筛选）。"""
     data = await svc_list_mappings(db=db, dcs_model_id=dcs_model_id)
@@ -380,7 +380,7 @@ async def list_mode_mappings_endpoint(
 async def upsert_mode_mapping_endpoint(
     body: DcsModeMappingCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """创建或更新 MODE 映射（仅 ADMIN，按 dcs_model_id+standard_mode 幂等）。
 
@@ -401,7 +401,7 @@ async def upsert_mode_mapping_endpoint(
 async def delete_mode_mapping_endpoint(
     mapping_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """删除 MODE 映射（仅 ADMIN）。"""
     await svc_delete_mapping(db=db, mapping_id=mapping_id, operator=user.username)
@@ -416,7 +416,7 @@ async def delete_mode_mapping_endpoint(
 @router.get("/mode-matrix", response_model=ApiResponse[ModeMatrixView])
 async def get_mode_matrix_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取 MODE 映射矩阵视图（行=标准 MODE，列=各型号，第一列为本系统默认）。
 
@@ -435,7 +435,7 @@ async def get_mode_matrix_endpoint(
 @router.get("/pid-structures", response_model=ApiResponse[list[DcsPidStructureItem]])
 async def list_pid_structures_endpoint(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取全部 PID 结构模板（含型号信息，所有认证用户可读）。"""
     data = await svc_list_pid_structures(db)
@@ -449,7 +449,7 @@ async def list_pid_structures_endpoint(
 async def get_pid_structure_endpoint(
     model_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(get_current_user),
+    _: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """获取某型号的 PID 结构模板；未配置返回 data=null。"""
     data = await svc_get_pid_structure(db, model_id)
@@ -464,7 +464,7 @@ async def upsert_pid_structure_endpoint(
     model_id: str,
     body: DcsPidStructureUpsert,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """创建或更新某型号的 PID 结构模板（仅 ADMIN，按 model_id 幂等）。
 
@@ -480,6 +480,7 @@ async def upsert_pid_structure_endpoint(
         d_filter_unit=body.d_filter_unit,
         d_filter_multiplier=body.d_filter_multiplier,
         description=body.description,
+        representation_status=body.representation_status,
         operator=user.username,
     )
     return success(data=data, message="保存成功")
@@ -489,7 +490,7 @@ async def upsert_pid_structure_endpoint(
 async def delete_pid_structure_endpoint(
     model_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("dcs:manage")),
 ) -> dict:
     """删除某型号的 PID 结构模板（仅 ADMIN）。"""
     await svc_delete_pid_structure(db=db, model_id=model_id, operator=user.username)

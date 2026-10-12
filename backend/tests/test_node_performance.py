@@ -187,6 +187,34 @@ def _make_loop_row(
     return row
 
 
+def _roster_patch(loop_ids, snaps=None, excluded=0, failed=None, semantics=None, weights=None):
+    """P3-08d：_load_roster_inputs 打桩（默认全 scorable 名册）。"""
+    from types import SimpleNamespace
+
+    loop_ids = sorted(loop_ids)
+    if snaps is None:
+        snaps = {
+            lid: SimpleNamespace(
+                status="SUCCESS",
+                score=Decimal("80"),
+                fast_rate=Decimal("90"),
+                result_record_id=None,
+            )
+            for lid in loop_ids
+        }
+    return patch(
+        "app.services.node_performance._load_roster_inputs",
+        return_value=(
+            loop_ids,
+            excluded,
+            snaps,
+            set(failed or []),
+            semantics or {},
+            weights or {lid: Decimal("1.0") for lid in loop_ids},
+        ),
+    )
+
+
 class TestAggregateNodeSnapshot:
     """加权聚合回路级快照。"""
 
@@ -207,17 +235,54 @@ class TestAggregateNodeSnapshot:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_aggregate_returns_none_when_no_snapshots(self):
-        """有回路但无 SUCCESS 快照时返回 None。"""
+    async def test_no_snapshots_but_roster_produces_empty_result(self):
+        """C26-EA2（P3-08d）：有参评名册但无完整 P → 仍产出节点结果。
+
+        原行为"无 SUCCESS 快照返回 None"改为：score/metrics 全 None +
+        名册状态账（missing=2）+ scorableLoopRatio=0% + unit_status=EMPTY。
+        """
         db = AsyncMock()
         # _fetch_and_aggregate_loops 调 result.all() 返回空列表 → None
         mock_result = MagicMock()
         mock_result.all.return_value = []
         db.execute = AsyncMock(return_value=mock_result)
 
-        with patch(
-            "app.services.node_performance.collect_descendant_loop_ids",
-            return_value=["loop-001", "loop-002"],
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001", "loop-002"],
+            ),
+            _roster_patch(["loop-001", "loop-002"], snaps={}),
+        ):
+            result = await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime.now(UTC).replace(tzinfo=None),
+                datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+            )
+        assert result is not None
+        assert result["score"] is None
+        assert result["unit_status"] == "EMPTY"
+        roster = result["assessment_stats"]["roster"]
+        assert roster["eligibleLoopCount"] == 2
+        assert roster["scorableLoopCount"] == 0
+        assert roster["scorableLoopRatio"] == 0.0
+        assert roster["states"]["missing"] == 2
+
+    @pytest.mark.asyncio
+    async def test_aggregate_returns_none_when_no_eligible_loops(self):
+        """P3-08d：有名下回路但无参评名册（E=0）时返回 None（无参评不产快照）。"""
+        db = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.all.return_value = []
+        db.execute = AsyncMock(return_value=mock_result)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001"],
+            ),
+            _roster_patch([], snaps={}),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -272,6 +337,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["loop-001", "loop-002", "loop-003"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -329,6 +395,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["loop-001", "loop-002", "loop-003"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -390,6 +457,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["s1", "s2", "cascade-main", "cascade-sub"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -449,6 +517,7 @@ class TestAggregateNodeSnapshot:
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
             ),
+            _roster_patch(["sub-b", "sub-d"]),
         ):
             result = await aggregate_node_snapshot(
                 db,
@@ -462,6 +531,190 @@ class TestAggregateNodeSnapshot:
         assert result["loop_count"] == 1
         # 取 confidence=B 的 SUB（score=60），而非 score 更高但 confidence=D 的 SUB
         assert result["score"] == Decimal("60.00")
+
+
+# ---------------------------------------------------------------------------
+# C05 反例（2026-10-10 P1-02 CAL-04/CAL-05）：每指标独立有效分母 + 半开窗
+# ---------------------------------------------------------------------------
+
+
+async def _aggregate_with_rows(rows):
+    """共用聚合测试脚手架：mock 主聚合返回 rows，excluded/inconclusive 计 0。"""
+    db = AsyncMock()
+    main_result = MagicMock()
+    main_result.all.return_value = rows
+    scalar_result = MagicMock()
+    scalar_result.scalar.return_value = 0
+
+    async def _execute(stmt, *a, **kw):
+        return main_result if stmt.is_select else scalar_result
+
+    db.execute = AsyncMock(side_effect=_execute)
+
+    with (
+        patch(
+            "app.services.node_performance.collect_descendant_loop_ids",
+            return_value=[str(r.loop_id) for r in rows],
+        ),
+        patch(
+            "app.services.node_performance.query_realtime_auto_rate",
+            return_value=None,
+        ),
+        _roster_patch([str(r.loop_id) for r in rows]),
+    ):
+        return await aggregate_node_snapshot(
+            db,
+            "node-001",
+            datetime.now(UTC).replace(tzinfo=None),
+            datetime.now(UTC).replace(tzinfo=None) + timedelta(hours=1),
+        )
+
+
+class TestCal04ValidDenominator:
+    """C05：每指标独立有效分母 sum(w·v)/sum(w for valid)。"""
+
+    @pytest.mark.asyncio
+    async def test_等权100与NULL结果100且覆盖率1对2(self):
+        """CAL-04 反例：等权 100 + NULL → 100（原实现除以全量分母得 50 伪降）。
+
+        覆盖率 1/2 由 metric_denominators 显式报告（validCount=1/totalWeight=2）。
+        """
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=Decimal("100")),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=None),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] == Decimal("100.00")
+        score_den = result["metric_denominators"]["score"]
+        assert score_den["validCount"] == 1
+        assert score_den["validWeight"] == 1.0
+        assert score_den["totalWeight"] == 2.0  # 覆盖率 1/2
+
+    @pytest.mark.asyncio
+    async def test_真实0分是有效值进分母(self):
+        """CAL-04 反例：等权 100 + 0 → 50（0 是真实 0 分，非缺值，正常进分母）。"""
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=Decimal("100")),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=Decimal("0")),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] == Decimal("50.00")
+        score_den = result["metric_denominators"]["score"]
+        assert score_den["validCount"] == 2
+        assert score_den["totalWeight"] == 2.0
+
+    @pytest.mark.asyncio
+    async def test_全NULL返回None(self):
+        """CAL-04 反例：全部 NULL → 该指标 null（无有效分母不虚构 0）。"""
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=None),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=None),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] is None
+        # 全 NULL 定级 INCONCLUSIVE，不按 0 分定 POOR/CRITICAL
+        assert result["status"] == "INCONCLUSIVE"
+
+    @pytest.mark.asyncio
+    async def test_零权重行不影响结果(self):
+        """CAL-04 反例：零权重行（有值或缺值）对分子分母均无贡献。"""
+        rows = [
+            _make_loop_row("l1", weight=Decimal("1.0"), score=Decimal("100")),
+            _make_loop_row("l2", weight=Decimal("1.0"), score=None),
+            # 零权重 + 有值：不把 40 拉进来
+            _make_loop_row("l3", weight=Decimal("0"), score=Decimal("40")),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        assert result["score"] == Decimal("100.00")
+
+    @pytest.mark.asyncio
+    async def test_每指标分母独立(self):
+        """CAL-04：指标间互不影响——score 全 NULL 不拖累其他指标的有效值。"""
+        r1 = _make_loop_row("l1", weight=Decimal("1.0"), score=None)
+        r2 = _make_loop_row("l2", weight=Decimal("1.0"), score=None)
+        # 两回路 accuracy 有值
+        r1.accuracy_rate = Decimal("80")
+        r2.accuracy_rate = Decimal("90")
+        result = await _aggregate_with_rows([r1, r2])
+        assert result is not None
+        assert result["score"] is None
+        assert result["accuracy_rate"] == Decimal("85.00")
+
+    @pytest.mark.asyncio
+    async def test_复杂组去重后NULL代表不影响分母(self):
+        """C05：复杂回路 MAIN 去重及 exclude 有效——SUB 的 NULL 不进任何分母。"""
+        rows = [
+            _make_loop_row(
+                "main",
+                weight=Decimal("1.0"),
+                score=Decimal("90"),
+                complex_group_id="grp-1",
+                complex_role="MAIN",
+            ),
+            _make_loop_row(
+                "sub",
+                weight=Decimal("1.0"),
+                score=None,
+                complex_group_id="grp-1",
+                complex_role="SUB",
+            ),
+        ]
+        result = await _aggregate_with_rows(rows)
+        assert result is not None
+        # 去重后仅 MAIN 代表，SUB 被排除
+        assert result["loop_count"] == 1
+        assert result["score"] == Decimal("90.00")
+        score_den = result["metric_denominators"]["score"]
+        assert score_den["validCount"] == 1
+        assert score_den["totalWeight"] == 1.0
+
+
+class TestCal05HalfOpenWindow:
+    """C05/C06：聚合窗半开 [start, end)——恰好窗口结束的快照仅归下一窗。"""
+
+    @pytest.mark.asyncio
+    async def test_主聚合上边界为半开(self):
+        """CAL-05 反例：上边界 < ts_end（原 <= 会把下一窗起点快照计入本窗）。"""
+        db = AsyncMock()
+        captured_stmts: list = []
+        rows = [_make_loop_row("loop-001", weight=Decimal("1.0"))]
+        main_result = MagicMock()
+        main_result.all.return_value = rows
+        scalar_result = MagicMock()
+        scalar_result.scalar.return_value = 0
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            return main_result if len(captured_stmts) == 1 else scalar_result
+
+        db.execute = AsyncMock(side_effect=_capture)
+
+        with (
+            patch(
+                "app.services.node_performance.collect_descendant_loop_ids",
+                return_value=["loop-001"],
+            ),
+            patch(
+                "app.services.node_performance.query_realtime_auto_rate",
+                return_value=None,
+            ),
+            _roster_patch(["loop-001"]),
+        ):
+            await aggregate_node_snapshot(
+                db,
+                "node-001",
+                datetime(2026, 6, 24, 8, 0, 0),
+                datetime(2026, 6, 24, 9, 0, 0),
+            )
+
+        main_sql = str(captured_stmts[0].compile(compile_kwargs={"literal_binds": True}))
+        # 主聚合 SQL（第一次 db.execute）上边界为严格小于
+        assert "ts_start <" in main_sql
+        assert "ts_start <=" not in main_sql
 
 
 # ---------------------------------------------------------------------------
@@ -612,6 +865,112 @@ class TestQueryServices:
         )
         assert result["totalNodes"] == 0
         assert result["nodes"] == []
+
+
+class TestP103DisplayHalfOpenWindow:
+    """P1-03（2026-10-10）：展示查询窗口与 CAL-05 聚合口径对齐——半开 [start, end)。
+
+    覆盖 get_node_trend / get_node_ranking / get_nodes_overview /
+    get_node_monitor_history(hour) 四处展示 SQL，ts_start == end 的快照
+    属下一窗（原 <= 会把下一窗起点计入本窗）。
+    """
+
+    @staticmethod
+    def _compile(stmt) -> str:
+        return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    @pytest.mark.asyncio
+    async def test_节点趋势上边界为半开(self):
+        from app.services.node_performance import get_node_trend
+
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            result = MagicMock()
+            result.scalars.return_value.all.return_value = []
+            result.scalar_one_or_none.return_value = None
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_node_trend(
+            db, "node-001", datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0)
+        )
+        trend_sql = self._compile(captured_stmts[0])
+        assert "ts_start <" in trend_sql
+        assert "ts_start <=" not in trend_sql
+
+    @pytest.mark.asyncio
+    async def test_节点排名上边界为半开(self):
+        from app.services.node_performance import get_node_ranking
+
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            result = MagicMock()
+            result.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_node_ranking(db, datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0))
+        rank_sql = self._compile(captured_stmts[0])
+        assert "ts_start <" in rank_sql
+        assert "ts_start <=" not in rank_sql
+
+    @pytest.mark.asyncio
+    async def test_全厂总览上边界为半开(self):
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        node = MagicMock()
+        node.id = "node-001"
+        node.name = "HDS"
+        node.type = "UNIT"
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            if len(captured_stmts) == 1:
+                return node_result
+            result = MagicMock()
+            result.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_nodes_overview(db, datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0))
+        overview_sql = self._compile(captured_stmts[1])
+        assert "ts_start <" in overview_sql
+        assert "ts_start <=" not in overview_sql
+
+    @pytest.mark.asyncio
+    async def test_监控历史hour维度上边界为半开(self):
+        from app.services.node_performance import get_node_monitor_data
+
+        db = AsyncMock()
+        captured_stmts: list = []
+
+        async def _capture(stmt, *args, **kwargs):
+            captured_stmts.append(stmt)
+            result = MagicMock()
+            result.scalar_one_or_none.return_value = None
+            result.scalars.return_value.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        await get_node_monitor_data(
+            db,
+            "node-001",
+            "hour",
+            datetime(2026, 6, 24, 8, 0, 0),
+            datetime(2026, 6, 24, 9, 0, 0),
+        )
+        monitor_sql = self._compile(captured_stmts[1])
+        assert "ts_start <" in monitor_sql
+        assert "ts_start <=" not in monitor_sql
 
 
 # ---------------------------------------------------------------------------

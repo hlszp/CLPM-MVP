@@ -31,6 +31,8 @@ import {
 import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
+import { JUDGEMENT_LABELS, judgementOf } from '#/views/diagnosis/components/assessment-labels';
+
 dayjs.extend(utc);
 
 import {
@@ -350,7 +352,10 @@ function metricSkipTitle(
   record: DiagnosisApi.RunListItem,
   opName: string,
 ): string {
-  return record.operatorMetrics?.[opName]?.skipReason ?? '输入缺失/数据不足，算子跳过';
+  return (
+    record.operatorMetrics?.[opName]?.skipReason ??
+    '输入缺失/数据不足，算子跳过'
+  );
 }
 
 /** 数据质量列合并显示：等级 · 有效率 · 缺口率（悬浮完整门禁信息） */
@@ -416,13 +421,14 @@ function catColor(record: DiagnosisApi.RunListItem) {
     : '#6c757d';
 }
 
-/** 主分类空值语义（2026-10-05 用户裁决）：NULL = 门禁通过但全部算子未命中
- * （分类引擎 NO_SYMPTOM → 落库 NULL），明确显示"正常"；
- * FAILED 留痕 run 无结论产出，显示 — */
+/** 主分类空值语义（P3-D6 08-B，2026-10-12）：NULL 不再统一显示"正常"——
+ * 按科学结论 judgementStatus 区分：有效阴性（范围内正常）/不可判定（证据
+ * 不足）/未评估/历史覆盖未验证；FAILED 留痕 run 无结论产出，显示 — */
 function primaryText(record: DiagnosisApi.RunListItem) {
   if (record.primaryCategory)
     return record.primaryCategoryLabel ?? record.primaryCategory;
-  return record.status === 'FAILED' ? '—' : '正常';
+  if (record.status === 'FAILED') return '—';
+  return JUDGEMENT_LABELS[judgementOf(record.assessment)];
 }
 
 /** 置信度空值语义：结论=正常时引擎不给数值 → "不适用"；FAILED → — */
@@ -553,14 +559,16 @@ onMounted(() => {
     >
       <template #actions>
         <Button
-          v-permission="['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER']"
+          v-permission="['diagnosis:task-manage']"
           danger
           size="small"
           :disabled="selectedRowKeys.length === 0"
           :loading="batchDeleteLoading && batchDeleteVisible"
           @click="batchDeleteVisible = true"
         >
-          批量删除{{ selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : '' }}
+          批量删除{{
+            selectedRowKeys.length > 0 ? `（${selectedRowKeys.length}）` : ''
+          }}
         </Button>
         <ClpmToolbarButton
           :loading="exporting"
@@ -681,7 +689,7 @@ onMounted(() => {
               >
                 {{ record.primaryCategoryLabel }}
               </span>
-              <!-- 空值语义显式化：未见异常（NO_SYMPTOM 落库 NULL）/ 失败无产出 -->
+              <!-- 空值语义显式化（P3-D6）：按科学结论显示，不再兜底"未见异常" -->
               <span v-else class="text-neutral-400">
                 {{ primaryText(record as DiagnosisApi.RunListItem) }}
               </span>
@@ -714,7 +722,8 @@ onMounted(() => {
                 :title="gateTitle(record.dataGate as DiagnosisApi.GateInfo)"
                 :style="{
                   color:
-                    record.dataGate.confidenceLevel === 'E' || !record.dataGate.passed
+                    record.dataGate.confidenceLevel === 'E' ||
+                    !record.dataGate.passed
                       ? '#cf1322'
                       : undefined,
                 }"
@@ -749,7 +758,11 @@ onMounted(() => {
               </span>
             </template>
             <template v-else-if="column.key === 'action'">
-              <Button size="small" type="link" @click.stop="openMetrics(record as DiagnosisApi.RunListItem)">
+              <Button
+                size="small"
+                type="link"
+                @click.stop="openMetrics(record as DiagnosisApi.RunListItem)"
+              >
                 指标
               </Button>
             </template>
@@ -791,11 +804,7 @@ onMounted(() => {
       <div class="detail-drawer-resize" @mousedown="startDrawerResize"></div>
       <!-- 16 号文 F1 入口 2：头部工具区"诊断档案"（当前行回路） -->
       <template #extra>
-        <Button
-          v-if="currentRow?.loopId"
-          size="small"
-          @click="openArchive"
-        >
+        <Button v-if="currentRow?.loopId" size="small" @click="openArchive">
           诊断档案
         </Button>
       </template>

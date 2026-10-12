@@ -92,7 +92,7 @@ class TestSaturationRate:
         calc = SaturationRateCalculator()
         with (
             patch(
-                "app.services.metric_calculator.saturation.get_algorithm_params",
+                "app.services.algorithm_config.get_algorithm_params",
                 return_value={"saturation_epsilon": 2.0},
             ),
         ):
@@ -113,7 +113,7 @@ class TestSaturationRate:
         calc = SaturationRateCalculator()
         with (
             patch(
-                "app.services.metric_calculator.saturation.get_algorithm_params",
+                "app.services.algorithm_config.get_algorithm_params",
                 return_value={"saturation_epsilon": 2.0},
             ),
         ):

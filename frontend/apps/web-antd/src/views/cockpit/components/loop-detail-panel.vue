@@ -33,6 +33,7 @@ import {
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
 import { useCockpitStore } from '#/store/cockpit';
+import { categoryOrJudgementLabel } from '#/views/diagnosis/components/assessment-labels';
 
 import {
   type GradeInfo,
@@ -331,8 +332,13 @@ async function loadLoopDetail(loopId: string) {
     const order: HandlingApi.OrderItem | undefined = orderRes?.items?.[0];
     if (diag?.runId || order) {
       closure.value = {
+        // P3-D6 R05/R06（2026-10-12）：主分类 NULL 不兜底"已诊断"——按科学
+        // 结论显示（有效阴性/不可判定/未评估/历史覆盖未验证）
         diagnosisLabel: diag?.runId
-          ? (diag.primaryCategoryLabel ?? '已诊断')
+          ? categoryOrJudgementLabel(
+              diag.primaryCategoryLabel,
+              diag.assessment as never,
+            )
           : null,
         diagnosisAt: diag?.lastDiagnosedAt ?? null,
         orderNo: order?.orderNo ?? null,

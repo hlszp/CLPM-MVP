@@ -22,6 +22,10 @@ import dayjs from 'dayjs';
 
 import { getDiagnosisPrecheckApi, getDiagnosisRunDetailApi } from '#/api/diagnosis';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
+import {
+  JUDGEMENT_LABELS,
+  judgementOf,
+} from '#/views/diagnosis/components/assessment-labels';
 import DiagnosisDetailModal from '#/views/diagnosis/components/diagnosis-detail-modal.vue';
 import DiagnosisResultPanel from '#/views/diagnosis/components/diagnosis-result-panel.vue';
 import LoopArchiveDrawer from '#/views/diagnosis/components/loop-archive-drawer.vue';
@@ -323,6 +327,15 @@ function toRunRefItem(
   };
 }
 
+/** 科学结论标签（R04/R06，P3-D6）：主分类 NULL 时按 judgementStatus 显示 */
+const latestJudgementLabel = computed(() =>
+  judgementOf((latest.value as null | { assessment?: DiagnosisApi.RunListItem['assessment'] })?.assessment),
+);
+
+function rowJudgementLabel(row: { assessment?: DiagnosisApi.RunListItem['assessment'] }): string {
+  return JUDGEMENT_LABELS[judgementOf(row.assessment)];
+}
+
 function openReview() {
   if (detail.value) reviewItem.value = toRunRefItem(detail.value);
   else if (latest.value?.runId) reviewItem.value = toRunRefItem(latest.value);
@@ -506,7 +519,11 @@ function onGoTuning() {
               <span class="dot"></span
               >{{ latest.primaryCategoryLabel ?? latest.primaryCategory }}
             </span>
-            <span v-else class="tag t-gray"><span class="dot"></span>未见异常</span>
+            <!-- R04/R06（P3-D6）：主分类 NULL 不显示"未见异常"——按科学结论
+                 （judgementStatus；历史 run → 历史覆盖未验证） -->
+            <span v-else class="tag t-gray"
+              ><span class="dot"></span>{{ latestJudgementLabel }}</span
+            >
             <span
               v-if="latest.severity"
               class="tag"
@@ -634,7 +651,7 @@ function onGoTuning() {
               >
                 {{ row.primaryCategoryLabel ?? row.primaryCategory }}
               </span>
-              <span v-else class="dim">—</span>
+              <span v-else class="dim">{{ rowJudgementLabel(row) }}</span>
             </td>
             <td>
               <span
@@ -725,7 +742,11 @@ function onGoTuning() {
             <span class="dot"></span
             >{{ detail.primaryCategoryLabel ?? detail.primaryCategory }}
           </span>
-          <span v-else class="tag t-ok"><span class="dot"></span>未见异常</span>
+          <!-- R06 同款（P3-D6 2026-10-12）：主分类 NULL 不兜底"未见异常"——
+               按科学结论显示（judgementStatus；历史 run → 历史覆盖未验证） -->
+          <span v-else class="tag t-gray"
+            ><span class="dot"></span>{{ rowJudgementLabel(detail) }}</span
+          >
           <span
             v-if="detail.severity"
             class="tag"

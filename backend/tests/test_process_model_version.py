@@ -77,12 +77,24 @@ def test_orm_has_38_tables() -> None:
     history_point_conflict / point_state_anchor，2026-09-06 迁移
     r1p0int00001）= 62 + workbench_loop_latest（驾驶舱 P1 回路最新态
     预计算，2026-10-07 迁移 c9bf79b6868a）= 63
-    + loop_health_flag（运维健康标记，2026-10-10 迁移 d0724685907c）= 64。
+    + loop_health_flag（运维健康标记，2026-10-10 迁移 d0724685907c）= 64
+    + 结果账本两表（calculation_result_record /
+    calculation_result_legacy_map，P1-05 迁移 p105resledger01，2026-10-12）= 66
+    + 分层配置发布两表（config_override / config_publication，
+    P2-02 迁移 p202cfgpub01，2026-10-12）= 68
+    + 不可变输入包元数据（calculation_dataset_snapshot，
+    P2-03 迁移 p203dssnap01，2026-10-12）= 69
+    + 工程模板两表（engineering_template / engineering_template_version，
+    P2-04 迁移 p204engtpl01，2026-10-12）= 71
+    + 评估发布代际登记（assessment_release_registry，
+    P3-08a 迁移 p308arele01，2026-10-12）= 72
+    + 授权目录四表（sys_permission / sys_role_permission / sys_user_scope /
+    sys_authz_policy，P4-01 迁移 p401authz01，2026-10-11）= 76。
 
     注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
     整体下线时移除，表计数曾从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 64
+    assert len(Base.metadata.tables) == 76
 
 
 def test_partial_unique_index_current_exists() -> None:

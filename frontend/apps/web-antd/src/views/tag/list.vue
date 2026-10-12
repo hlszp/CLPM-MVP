@@ -252,7 +252,9 @@ const measureTypeAll = ref<DictApi.DictItemOption[]>([]);
 const measureTypeEnabled = ref<DictApi.DictItemOption[]>([]);
 
 const measureTypeLabelMap = computed<Record<string, string>>(() =>
-  Object.fromEntries(measureTypeAll.value.map((i) => [i.itemCode, i.itemLabel])),
+  Object.fromEntries(
+    measureTypeAll.value.map((i) => [i.itemCode, i.itemLabel]),
+  ),
 );
 
 const measureTypeOptions = computed(() => [
@@ -659,13 +661,29 @@ function handleImportBeforeUpload(file: File): boolean {
             h('p', null, summary),
             h(
               'ul',
-              { style: { 'max-height': '220px', overflow: 'auto', 'padding-left': '20px' } },
-              result.errors.slice(0, 20).map((e) =>
-                h('li', null, `第 ${e.row} 行${e.tagName ? `（${e.tagName}）` : ''}：${e.message}`),
-              ),
+              {
+                style: {
+                  'max-height': '220px',
+                  overflow: 'auto',
+                  'padding-left': '20px',
+                },
+              },
+              result.errors
+                .slice(0, 20)
+                .map((e) =>
+                  h(
+                    'li',
+                    null,
+                    `第 ${e.row} 行${e.tagName ? `（${e.tagName}）` : ''}：${e.message}`,
+                  ),
+                ),
             ),
             result.errors.length > 20
-              ? h('p', { style: { color: '#888' } }, `… 其余 ${result.errors.length - 20} 条错误省略`)
+              ? h(
+                  'p',
+                  { style: { color: '#888' } },
+                  `… 其余 ${result.errors.length - 20} 条错误省略`,
+                )
               : null,
           ]),
         });
@@ -726,8 +744,7 @@ function handleRealtimeMessage(msg: {
   // tagCode 即 tag_registry.tag_name（含角色后缀，如 41FIC20021_PIDA.PV）
   const item = tagList.value.find((t) => t.tagName === msg.tagCode);
   if (!item) return;
-  const value =
-    msg.valueValid === false ? null : parseFiniteNumber(msg.value);
+  const value = msg.valueValid === false ? null : parseFiniteNumber(msg.value);
   if (value === null) {
     item.currentValue = null;
     item.quality = mapRealtimeQuality(msg.quality);
@@ -902,7 +919,7 @@ const { toolbarItems } = usePageToolbar(() => ({
       <!-- 工具栏（图标化，对齐回路配置页风格）— 左侧=新建/批量操作；右侧=导入/导出 -->
       <div class="mb-3 flex flex-wrap items-center gap-2">
         <ClpmToolbarButton
-          v-permission="['ADMIN', 'IC_ENGINEER']"
+          v-permission="['tag:manage']"
           icon="create"
           label="新建测点"
           @click="handleAdd"
@@ -939,7 +956,7 @@ const { toolbarItems } = usePageToolbar(() => ({
         <span class="ml-auto"></span>
         <Upload v-bind="uploadProps">
           <ClpmToolbarButton
-            v-permission="['ADMIN', 'IC_ENGINEER']"
+            v-permission="['tag:manage']"
             icon="import"
             label="导入"
             :loading="importing"
@@ -992,7 +1009,9 @@ const { toolbarItems } = usePageToolbar(() => ({
               :style="CATEGORY_TAG_STYLE"
               class="m-0 border-0"
             >
-              {{ measureTypeLabelMap[record.measureType] ?? record.measureType }}
+              {{
+                measureTypeLabelMap[record.measureType] ?? record.measureType
+              }}
             </Tag>
             <span v-else class="text-gray-400">—</span>
           </template>
@@ -1096,7 +1115,7 @@ const { toolbarItems } = usePageToolbar(() => ({
               </Button>
               <div class="tag-row-actions">
                 <Button
-                  v-permission="['ADMIN', 'IC_ENGINEER']"
+                  v-permission="['tag:manage']"
                   type="link"
                   size="small"
                   @click="handleEdit(record as TagApi.TagItem)"
@@ -1230,7 +1249,10 @@ const { toolbarItems } = usePageToolbar(() => ({
             :style="CATEGORY_TAG_STYLE"
             class="m-0 border-0"
           >
-            {{ measureTypeLabelMap[detailData.measureType] ?? detailData.measureType }}
+            {{
+              measureTypeLabelMap[detailData.measureType] ??
+              detailData.measureType
+            }}
           </Tag>
           <span v-else class="text-gray-400">—</span>
         </DescriptionsItem>
@@ -1279,7 +1301,6 @@ const { toolbarItems } = usePageToolbar(() => ({
         </DescriptionsItem>
       </Descriptions>
     </Drawer>
-
   </Page>
 </template>
 

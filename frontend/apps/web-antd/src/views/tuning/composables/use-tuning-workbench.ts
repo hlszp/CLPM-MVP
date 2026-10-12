@@ -37,9 +37,27 @@ export interface IdentifyOutcome {
   confidenceLevel?: null | TuningApi.ConfidenceLevel;
   /** 服务端持久化的辨识记录 ID（阶跃路径 recordId / 历史路径 result.recordId）；人工修改后置空 */
   recordId?: null | string;
-  dataSource: 'HISTORY' | 'MANUAL' | 'STEP_EXPERIMENT';
+  /** fallback_step=AUTO 策略历史辨识失败后阶跃兜底（服务端记录同为阶跃证据） */
+  dataSource: 'fallback_step' | 'HISTORY' | 'MANUAL' | 'STEP_EXPERIMENT';
   identifyMethod?: null | string;
   reason?: null | string;
+}
+
+/**
+ * P3-B2 W4：由辨识结果推导推荐链 modelSource（单源，保存/矩阵/仿真共用）。
+ *
+ * fallback_step 记录本质是服务端已验证的阶跃辨识证据（identify_method=STEP_*、
+ * data_source=fallback_step，authorize_tuning_model 对 STEP_EXPERIMENT 来源
+ * 显式接受 fallback_step），按 STEP_EXPERIMENT 声明；此前硬编码 HISTORY 会
+ * 被 ERR_TUNING_SOURCE_INVALID 拒绝（来源声明与记录不一致）。
+ */
+function outcomeModelSource(
+  outcome: Pick<IdentifyOutcome, 'dataSource' | 'recordId'>,
+): TuningApi.ModelSource {
+  if (!outcome.recordId) return 'MANUAL';
+  return outcome.dataSource === 'HISTORY'
+    ? 'IDENTIFICATION_RECORD'
+    : 'STEP_EXPERIMENT';
 }
 
 /** 矩阵行（后端 TuneMatrixRow + 前端勾选/微调状态） */
@@ -350,7 +368,9 @@ export function useTuningWorkbench() {
           fittingScore: r.fittingScore ?? 0,
           confidenceLevel: r.confidenceLevel ?? null,
           recordId: (r as any).recordId ?? null,
-          dataSource: 'HISTORY',
+          // P3-B2 W4：透传服务端 dataSource（AUTO 兜底为 fallback_step，
+          // 此前硬编码 HISTORY 会导致保存/矩阵链来源声明与记录不一致被拒）
+          dataSource: (r as any).dataSource ?? 'HISTORY',
           identifyMethod: (r as any).identifyMethod ?? null,
           reason: r.reason ?? null,
         };
@@ -402,12 +422,8 @@ export function useTuningWorkbench() {
       currentPid: state.currentPid,
       loopId: state.loopId,
       sourceRecordId: o.recordId ?? undefined,
-      // 阶跃记录后端要求声明 STEP_EXPERIMENT 来源（authorize_tuning_model 门禁）
-      modelSource: o.recordId
-        ? (o.dataSource === 'STEP_EXPERIMENT'
-          ? 'STEP_EXPERIMENT'
-          : 'IDENTIFICATION_RECORD')
-        : 'MANUAL',
+      // 来源声明经 outcomeModelSource 单源推导（fallback_step 按 STEP_EXPERIMENT）
+      modelSource: outcomeModelSource(o),
       riskConfirmed,
     };
   }
@@ -543,11 +559,8 @@ export function useTuningWorkbench() {
           currentPid: state.currentPid ?? undefined,
           loopId: state.loopId,
           sourceRecordId: outcome.recordId ?? undefined,
-          modelSource: outcome.recordId
-            ? (outcome.dataSource === 'STEP_EXPERIMENT'
-              ? 'STEP_EXPERIMENT'
-              : 'IDENTIFICATION_RECORD')
-            : 'MANUAL',
+          // 来源声明经 outcomeModelSource 单源推导（fallback_step 按 STEP_EXPERIMENT）
+          modelSource: outcomeModelSource(outcome),
           riskConfirmed: rc,
         }),
       );
@@ -575,26 +588,26 @@ export function useTuningWorkbench() {
       const algoRow = state.matrixRows.find(
         (r) => r.algorithm === chosen.algorithm,
       );
-      const isManualModel = state.outcome.dataSource === 'MANUAL';
+      const outcome = state.outcome;
+      // P3-B2 W4（G2-INC-c）：保存链新协议——只交来源身份引用，来源/模型/
+      // 参数/窗口/currentPid 快照全部由服务端从来源记录与工程事实权威派生
+      // 并冻结（旧申报字段 dataSource/fittingScore/currentPid 等不再携带，
+      // 携带会被 ERR_TUNING_PROVENANCE_CONFLICT 拒绝）
       const res = await saveTuningTaskApi({
         loopId: state.loopId,
-        modelType: state.outcome.modelType,
-        modelParams: state.outcome.params,
+        modelType: outcome.modelType,
+        modelParams: outcome.params,
         algorithm: algoRow?.algorithm ?? 'IMC',
         recommendedPid: chosen.pid,
-        currentPid: state.currentPid ?? undefined,
-        // V62-P3-007 人工实施清单：回退方案=实施前参数（后端缺省同口径兜底）
-        rollbackPid: state.currentPid ?? undefined,
         riskAssessment: algoRow?.risk ?? undefined,
-        // 人工修改模型无拟合度可言；辨识来源元数据仅服务端辨识链结果携带
-        fittingScore: isManualModel ? undefined : state.outcome.fittingScore,
         simulationResult: state.simResult as unknown as Record<string, any>,
         status: 'SIMULATED',
-        identifyMethod: isManualModel
-          ? undefined
-          : (state.outcome.identifyMethod ?? undefined),
-        dataSource: isManualModel ? undefined : state.outcome.dataSource,
-        confidenceLevel: state.outcome.confidenceLevel ?? undefined,
+        // 来源声明经 outcomeModelSource 单源推导（fallback_step 按 STEP_EXPERIMENT）
+        modelSource: outcomeModelSource(outcome),
+        sourceRecordId: outcome.recordId ?? undefined,
+        // C 级/人工模型风险确认：矩阵/仿真链 withRiskConfirm 已在本会话内
+        // 通过同一门禁（未确认无法走到保存步），此处如实携带
+        riskConfirmed: true,
       });
       state.savedRecordId = res.id;
       return res.id;

@@ -9,7 +9,8 @@ import type { RankSelection } from '../utils/score-rank';
  *   好值率/有效率，0~100），数值=选中装置/单元参评回路的评估均值
  *   （节点快照 kpi_node_snapshot_hourly，evaluated_loops 加权口径）
  * - 数据：/performance/nodes/{nodeId}/snapshot（排名区选中节点 plant_node.id）
- * - 未选中 → 空态提示（不造数）；面板高度与同行绩效趋势一致（栅格行高）
+ * - R2（2026-10-12）：默认显示全厂（FACTORY 根节点快照）；排名区点击
+ *   装置/单元行切换，取消选中回退全厂。node=null（树加载失败）才空态
  * - 中心=综合评分 + 五档等级（复用 cockpit-radar）
  */
 import type { MetricApi } from '#/api/metric';
@@ -62,9 +63,10 @@ defineExpose({ reload: load });
 
 const grade = computed<GradeInfo | null>(() => resolveGrade(score.value));
 
-const typeZh = computed(() =>
-  props.node?.type === 'UNIT' ? '单元' : '装置',
-);
+const typeZh = computed(() => {
+  if (props.node?.type === 'UNIT') return '单元';
+  return props.node?.type === 'FACTORY' ? '全厂' : '装置';
+});
 </script>
 
 <template>
@@ -73,13 +75,13 @@ const typeZh = computed(() =>
       六维绩效
       <span class="sub">
         <template v-if="node">{{ node.name }} · 参评回路均值</template>
-        <template v-else>点击左侧排名选择装置/单元</template>
+        <template v-else>全厂/装置/单元 · 参评回路均值</template>
       </span>
     </div>
     <div class="radar__bd">
       <div v-if="loading" class="radar__state">加载中…</div>
       <div v-else-if="!node" class="radar__state">
-        从「综合评分」排名区点击装置或单元行<br />查看其六维绩效雷达
+        组织树加载失败，暂无六维绩效数据
       </div>
       <template v-else>
         <CockpitRadar :dims="dims" :grade="grade" :score="score" />
@@ -121,7 +123,7 @@ const typeZh = computed(() =>
 }
 
 .radar__ft b {
-  color: var(--ck-text-2);
   font-variant-numeric: tabular-nums;
+  color: var(--ck-text-2);
 }
 </style>

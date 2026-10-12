@@ -75,9 +75,14 @@ function fmtPct(v: null | number | undefined): string {
 
 <template>
   <div class="kpi-band">
-    <!-- ① 综合评分 -->
+    <!-- ① 综合评分（窗口均值口径；R2 双口径标注：与等级分布的最新快照口径区分） -->
     <div class="cockpit-panel kpi clickable" @click="emit('cardClick', 'score')">
-      <div class="kpi__label">全厂综合评分</div>
+      <div
+        class="kpi__label"
+        title="综合评分 = 当前时间窗内参评回路评分加权均值（窗口均值口径）；回路总数卡内的等级分布为各回路最新快照口径，两者统计时点不同"
+      >
+        全厂综合评分<span class="kpi__caliber">窗口均值</span>
+      </div>
       <div class="kpi__main">
         <span
           class="kpi__value"
@@ -111,13 +116,18 @@ function fmtPct(v: null | number | undefined): string {
       </div>
     </div>
 
-    <!-- ③ 回路总数（附等级分布微型条） -->
+    <!-- ③ 回路总数（附等级分布微型条，最新快照口径） -->
     <div class="cockpit-panel kpi">
-      <div class="kpi__label">回路总数</div>
+      <div
+        class="kpi__label"
+        title="五档等级分布按窗口内各回路最新一条评估快照判定（最新快照口径），与左一综合评分的窗口均值口径不同"
+      >
+        回路总数<span class="kpi__caliber">等级=最新快照</span>
+      </div>
       <div class="kpi__main">
         <span class="kpi__value">{{ loading ? '…' : (kpi?.loopTotal ?? '—') }}</span>
       </div>
-      <div class="kpi__dist" title="五档等级分布">
+      <div class="kpi__dist" title="五档等级分布（各回路最新快照口径）">
         <span
           v-for="seg in gradeSegments"
           :key="seg.key"
@@ -129,9 +139,14 @@ function fmtPct(v: null | number | undefined): string {
       </div>
     </div>
 
-    <!-- ④ 劣化回路数 -->
+    <!-- ④ 劣化回路数（最新快照口径） -->
     <div class="cockpit-panel kpi clickable" @click="emit('cardClick', 'degraded')">
-      <div class="kpi__label">劣化回路数</div>
+      <div
+        class="kpi__label"
+        title="劣化 = 窗口内最新快照等级为警告/不合格的回路数（最新快照口径）"
+      >
+        劣化回路数
+      </div>
       <div class="kpi__main">
         <span
           class="kpi__value"
@@ -202,6 +217,17 @@ function fmtPct(v: null | number | undefined): string {
 .kpi__label {
   font-size: 12px;
   color: var(--ck-text-2);
+}
+
+/* 口径徽标（R2 双口径标注）：与数值所在卡的统计时点说明 */
+.kpi__caliber {
+  padding: 0 5px;
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--ck-text-3);
+  border: 1px solid var(--ck-border);
+  border-radius: 8px;
 }
 
 .kpi__main {

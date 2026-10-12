@@ -95,15 +95,23 @@ const sparkPath = computed<null | string>(() => {
         SP <b>{{ fmt(loop.live.sp) }}</b>
       </span>
       <span v-if="loop.live.unit" class="lcard__unit">{{ loop.live.unit }}</span>
-      <span class="lcard__mode" :class="{ manual: loop.mode === 'MANUAL' }">
+      <span
+        class="lcard__mode"
+        :class="{ manual: loop.mode === 'MANUAL' }"
+        title="实时控制模式（MODE 信号当前值）；评分与「自控率」为评估窗口统计口径，两者时点不同不矛盾"
+      >
         {{ loop.modeZh }}
       </span>
     </div>
 
     <!-- 行3：最差维度标签 + 近 24h 评分火花线 -->
     <div class="lcard__bottom">
-      <span v-if="loop.worst" class="lcard__worst">{{ loop.worst }}</span>
-      <span v-else class="lcard__worst lcard__worst--ok">六维正常</span>
+      <span
+        v-if="loop.worst"
+        class="lcard__worst"
+        title="评估窗口六维指标中最差的一项（统计口径）；与行 2 实时模式标签口径不同"
+      >{{ loop.worst }}</span>
+      <span v-else class="lcard__worst lcard__worst--ok" title="评估窗口六维指标均 ≥60">六维正常</span>
       <svg
         v-if="sparkPath"
         class="lcard__spark"

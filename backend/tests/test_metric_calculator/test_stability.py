@@ -267,6 +267,57 @@ def _make_sp_step_bundle() -> MetricDataBundle:
     return make_bundle({"pv": pv, "sp": sp}, metric_code="stability_rate")
 
 
+class TestDeadSignalBoundaryC02:
+    """C02（04 验收基线 / 台账 CAL-02）：死信号判据看信号自身，三组分开.
+
+    - 第一组：SP 变化、PV=SP+常数偏置——error 恒定（std=0 且 mean≠0）但
+      PV 自身随 SP 移动，是活的跟踪回路，不得仅因 error 方差 0 判死信号；
+    - 第二组：PV 实际冻结（全程一字不变）且恒定偏离 SP——死信号，
+      INCONCLUSIVE；
+    - 第三组：正常恒定稳态（PV=SP 恒定）——σ=0 且均值=0，满分 100 保持。
+    """
+
+    @staticmethod
+    def _tracking_with_offset():
+        """SP 50→70 阶跃，PV 精确跟踪且带 +0.5 常数偏置（error 恒 0.5）."""
+        sp = [50.0] * 50 + [70.0] * 50
+        pv = [v + 0.5 for v in sp]
+        return make_bundle({"pv": pv, "sp": sp}, metric_code="stability_rate")
+
+    def test_pv_tracking_varying_sp_not_dead_signal(self):
+        """C02 第一组：PV=变化SP+常数 → 非死信号，产出有效分（σ=0 → S=100）."""
+        calc = StabilityRateCalculator()
+        result = calc.calculate(self._tracking_with_offset())
+        assert result.value is not None
+        assert result.details.get("reason") != "dead_signal_constant_offset"
+        # 稳态段 error 恒定 0.5（含 SP 阶跃剔除后）→ σ=0 → S = 100×osc_factor
+        assert result.value == 100.0
+
+    def test_pv_frozen_dead_signal_inconclusive(self):
+        """C02 第二组：PV 全程一字不变、恒定偏离 SP → INCONCLUSIVE(dead_signal)."""
+        n = 100
+        bundle = make_bundle(
+            {"pv": [50.5] * n, "sp": [50.0] * n},
+            metric_code="stability_rate",
+        )
+        calc = StabilityRateCalculator()
+        result = calc.calculate(bundle)
+        assert result.value is None
+        assert result.confidence_level == "E"
+        assert result.details["reason"] == "dead_signal_constant_offset"
+        assert result.details["pv_frozen"] is True
+
+    def test_constant_steady_state_full_score_kept(self):
+        """C02 第三组：PV=SP 恒定（σ=0 且 mean=0）→ 保持满分 100（零偏差语义）."""
+        n = 100
+        val = [50.0] * n
+        bundle = make_bundle({"pv": list(val), "sp": list(val)}, metric_code="stability_rate")
+        calc = StabilityRateCalculator()
+        calc.with_dependencies({"oscillation_rate": _make_osc_result(0.0)})
+        result = calc.calculate(bundle)
+        assert result.value == 100.0
+
+
 class TestSpStepExclusion:
     """SP 阶跃剔除（sp_step_exclusion_enabled，2026-08-27 起默认开启）。"""
 

@@ -51,6 +51,7 @@ async def create_candidate_version(
     data_window_start: datetime | None = None,
     data_window_end: datetime | None = None,
     data_hash: str | None = None,
+    dataset_snapshot_id: str | None = None,
     condition_summary: dict[str, Any] | None = None,
     metrics: dict[str, Any] | None = None,
     residual_test: dict[str, Any] | None = None,
@@ -92,6 +93,9 @@ async def create_candidate_version(
         data_window_start=data_window_start,
         data_window_end=data_window_end,
         data_hash=data_hash,
+        # P2-03：版本绑定实际输入包（data_hash 只是预处理后指纹；完整重放
+        # 走 datasetSnapshotId 原包）
+        dataset_snapshot_id=dataset_snapshot_id,
         condition_summary=condition_summary,
         metrics=metrics,
         residual_test=residual_test,

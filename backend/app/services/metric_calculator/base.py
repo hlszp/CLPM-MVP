@@ -39,6 +39,12 @@ logger = logging.getLogger(__name__)
 #: 指标 mask 有效点占比 < 0.20 → value=None（INCONCLUSIVE），沿用 E 级阈值。
 _INCONCLUSIVE_THRESHOLD: float = 0.20
 
+#: 评估三值状态枚举（P3-09a，契约 §1.2 / 10§3.1；与诊断算子 assessmentState
+#: 同名不同命名空间——O-3 契约，序列化键随 details.assessmentState 走评估侧）
+ASSESSMENT_COMPLETE = "COMPLETE"
+ASSESSMENT_PARTIAL = "PARTIAL"
+ASSESSMENT_UNASSESSABLE = "UNASSESSABLE"
+
 
 class MetricCalculatorBase(MetricCalculator):
     """指标计算器抽象基类，提供通用辅助方法.
@@ -51,6 +57,69 @@ class MetricCalculatorBase(MetricCalculator):
 
     # 子类可覆盖：算法版本号（默认与系统对齐）
     algorithm_version: str = ALGORITHM_VERSION
+
+    #: G2-INC-a：任务固定的五层有效参数（{(metric_code, control_type): params}）。
+    #: None=未固定（回填/未接入链路），算子回落既有配置链当前缓存——行为不变。
+    _pinned_params: dict[tuple[str, str], dict[str, Any]] | None = None
+
+    #: P3-09a：评估 profile 语义开关。None/LEGACY_V2=现行正式口径（golden
+    #: 基线，行为零变化）；CANDIDATE_V3_RC1（KPI_CALC_v3.0-rc1）=10 号文
+    #: §3 新语义（09a 静稳参考/证据状态、09b 判稳、09c 依赖有效性）。
+    #: kpi_calc 侧接线（release_context.assessmentProfile → with_assessment_profile）
+    #: 归 08 Owner 串行整合（10§4.5 共享文件纪律）；本层提供能力与独立验证。
+    _assessment_profile: str | None = None
+
+    def with_pinned_params(
+        self, pinned: dict[tuple[str, str], dict[str, Any]]
+    ) -> MetricCalculatorBase:
+        """注入任务边界固定的五层有效参数（链式调用；G2-INC-a）.
+
+        注入后 ``_effective_params`` 只消费固定值（dict 拷贝隔离，任务
+        运行期不读 ``_merged_cache``——发布 v2 不影响在跑任务）；固定表
+        未收录的指标按注册表默认值（该指标在 pin 时点未注册覆盖=默认态，
+        同样不读当前缓存）。
+        """
+        self._pinned_params = pinned
+        return self
+
+    def with_assessment_profile(self, profile_id: str | None) -> MetricCalculatorBase:
+        """注入评估 profile 语义开关（P3-09a，链式调用）.
+
+        None/LEGACY_V2 → legacy 行为（默认，零回归）；CANDIDAT_V3_RC1 →
+        10 号文 §3 新语义。由任务边界（release_context.assessmentProfile）
+        一次性固定，运行中不切换。
+        """
+        self._assessment_profile = profile_id
+        return self
+
+    @property
+    def new_semantics(self) -> bool:
+        """是否按新 profile（CANDIDATE_V3_RC1，KPI_CALC_v3.0-rc1）语义计算."""
+        from app.services.assessment_profile import AssessmentProfileId
+
+        return self._assessment_profile == AssessmentProfileId.CANDIDATE_V3_RC1
+
+    def _effective_params(self, metric_code: str, bundle: MetricDataBundle) -> dict[str, Any]:
+        """算子参数统一入口（G2-INC-a）：任务固定快照优先，否则配置链缓存.
+
+        Args:
+            metric_code: 参数所属指标代码（stiction 等跨指标读参传对方代码）
+            bundle: 指标数据包（control_type=响应类别 STABLE/SLOW/FAST/LOGIC）
+        """
+        from app.services.algorithm_config import (
+            _CONTROL_TYPES,
+            _DEFAULTS,
+            get_algorithm_params,
+        )
+
+        raw_ct = bundle.data_block.control_type
+        ct = raw_ct if raw_ct in _CONTROL_TYPES else "STABLE"
+        if self._pinned_params is not None:
+            params = self._pinned_params.get((metric_code, ct))
+            if params is not None:
+                return dict(params)
+            return dict(_DEFAULTS.get(metric_code, {}).get(ct, {}))
+        return get_algorithm_params(metric_code, ct)
 
     # ------------------------------------------------------------------
     # 信号提取辅助
@@ -249,6 +318,57 @@ class MetricCalculatorBase(MetricCalculator):
             metric_code=self.metric_code,
             value=None,
             confidence_level=ConfidenceLevel.E.value,
+            lineage=lineage,
+            details=detail,
+        )
+
+    def _make_unassessable(
+        self,
+        bundle: MetricDataBundle,
+        reason: str,
+        details: dict[str, Any] | None = None,
+    ) -> MetricResult:
+        """构造"不可评估"结果（P3-09a 新 profile 专用）.
+
+        与 :meth:`_make_inconclusive` 的区别（10§3.3"数据好与动态不可判定
+        分开"）：value=None 但 **confidence_level 保留回路级真实数据质量**
+        ——不可判定 ≠ 数据坏。C07-EA1：数据质量 A、F 参考 100、动态不可
+        判定、P 不完整可同时成立；不得把 NO_DYNAMIC_EVIDENCE 画成数据坏
+        或自动降 L0。
+
+        Args:
+            bundle: 指标数据包
+            reason: 不可评估原因（NO_DYNAMIC_EVIDENCE / never_settles /
+                identification_failed / insufficient_data / ...）
+            details: 额外详细信息（调用方补充 referenceScore 等参考字段）
+
+        Returns:
+            MetricResult：value=None，confidence_level=回路级（非 E），
+            details 含 assessmentState=UNASSESSABLE 与 dataQualityLevel。
+        """
+        vr = self._get_valid_rate(bundle)
+        lineage = self._build_lineage(bundle, vr)
+        loop_confidence = bundle.data_block.loop_confidence_level
+        detail = {
+            "reason": reason,
+            "assessmentState": ASSESSMENT_UNASSESSABLE,
+            "dataQualityLevel": loop_confidence,
+        }
+        if details:
+            detail.update(details)
+
+        logger.info(
+            "[%s] UNASSESSABLE: reason=%s, dataQualityLevel=%s, valid_rate=%.4f",
+            self.metric_code,
+            reason,
+            loop_confidence,
+            vr,
+        )
+
+        return MetricResult(
+            metric_code=self.metric_code,
+            value=None,
+            confidence_level=loop_confidence,
             lineage=lineage,
             details=detail,
         )

@@ -7,7 +7,11 @@
  * - 手动（自定义时段）写 kpi_snapshot_custom，G2（后端联合查询）落地前
  *   无按回路查询出口 → 显式缺数据提示，禁止演示数据（诚实化红线）。
  *
- * 最新快照 = 历史首页首行（tsStart DESC），一次请求同时供摘要卡/旅程条/列表。
+ * 最新快照 = 独立查询（IA-03，2026-10-10）：latestOnly=true 单行查询该回路
+ * 小时表最新业务窗标准评估（custom 不参与合并），历史翻页/来源筛选不再改变
+ * 头部事实——原实现取"当前页第一条非 MANUAL_CUSTOM 行"，翻页/切档即漂移。
+ * DEC-09 迟到规则：latestOnly 按业务窗（tsStart DESC）取最新，迟到补写的
+ * 旧窗行不冒充当前事实（同 loop_confidence_latest 投影守卫口径）。
  * 页面层（index.vue）创建实例并 provide（旅程条失分摘要、页头适用性徽章、
  * 评估剖面共用）；剖面组件经 useInjectedAssessHistory 消费，避免二次请求。
  */
@@ -15,7 +19,7 @@ import type { InjectionKey, Ref } from 'vue';
 
 import type { KpiSnapshotItem } from '#/api/metric';
 
-import { computed, inject, provide, ref, watch } from 'vue';
+import { inject, provide, ref, watch } from 'vue';
 
 import { getLoopSnapshotsApi } from '#/api/metric';
 
@@ -81,7 +85,10 @@ export function deriveLossSummary(snap: AssessRow | null): null | string {
 
 export interface AssessHistoryApi {
   error: Ref<null | string>;
+  /** 最新业务窗标准评估（独立查询，不受历史翻页/来源筛选影响；IA-03） */
   latest: Ref<AssessRow | null>;
+  /** 最新评估独立查询失败信息（null = 无失败；失败时 latest 置空不渲染旧事实） */
+  latestError: Ref<null | string>;
   loadHistory: (page?: number) => Promise<void>;
   loading: Ref<boolean>;
   page: Ref<number>;
@@ -105,12 +112,38 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
   const sourceFilter = ref<AssessSourceFilter>('all');
 
   /**
-   * 最新快照口径：整点来源优先（摘要/徽章/旅程条反映连续评估口径，
-   * 手动评估是用户验证性动作，不驱动摘要——首条非 MANUAL_CUSTOM 行）
+   * 最新业务窗标准评估（IA-03）：独立单行查询，不再从历史列表当前页推导。
+   * latestOnly=true 走小时表（SCHEDULED/MANUAL_STANDARD/BACKFILL），
+   * custom 手动评估不参与；按 tsStart DESC = 最新业务窗（DEC-09 迟到不冒充）。
    */
-  const latest = computed(
-    () => rows.value.find((r) => r.source !== 'MANUAL_CUSTOM') ?? null,
-  );
+  const latest = ref<AssessRow | null>(null);
+  const latestError = ref<null | string>(null);
+
+  async function loadLatest() {
+    const id = loopId.value;
+    if (!id) {
+      latest.value = null;
+      latestError.value = null;
+      return;
+    }
+    try {
+      const res = await getLoopSnapshotsApi({
+        latestOnly: true,
+        loopId: id,
+        page: 1,
+        pageSize: 1,
+        sortBy: 'tsStart',
+        sortOrder: 'desc',
+      });
+      latest.value = res.items?.[0] ?? null;
+      latestError.value = null;
+    } catch (error_) {
+      // 失败显式置空：不保留上一回路/上一窗旧值冒充当前事实
+      latest.value = null;
+      latestError.value =
+        error_ instanceof Error ? error_.message : '最新评估加载失败';
+    }
+  }
 
   /** 三档来源 → 请求参数（all=合并手动；hourly=整点三来源；manual=B4 custom 表） */
   const SOURCE_QUERY: Record<
@@ -129,6 +162,8 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
       total.value = 0;
       return;
     }
+    // 最新评估与历史列表同频刷新（任务完成后的 loadHistory(1) 刷新路径）
+    void loadLatest();
     loading.value = true;
     error.value = null;
     try {
@@ -154,10 +189,10 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
     }
   }
 
-  // 来源档切换 → 重拉首页
+  // 来源档切换 → 重拉首页（latest 独立查询不受影响——头部事实不随筛选漂移）
   watch(sourceFilter, () => loadHistory(1));
 
-  /** 选中回路变化即重载首页；任务完成后由剖面调 loadHistory(1) 刷新 */
+  /** 选中回路变化即重载首页（latest 随 loadHistory 同频刷新）；任务完成后由剖面调 loadHistory(1) 刷新 */
   watch(
     loopId,
     (id) => {
@@ -169,6 +204,7 @@ export function useAssessHistory(loopId: Ref<null | string>): AssessHistoryApi {
   const api: AssessHistoryApi = {
     error,
     latest,
+    latestError,
     loadHistory,
     loading,
     page,

@@ -22,7 +22,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.sys_user import SysUser
@@ -42,7 +42,12 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/algorithms", tags=["algorithms"])
 
-# 允许调用算法服务的角色
+# 允许调用算法服务的角色。
+# P4-02 尾批：本组为外部系统同步计算接口（前端零消费）。角色口径核对：
+# - tuning/calculate 白名单 {A,I,P,E} == tuning:tune 码种子 → 等价替换纯码；
+# - kpi/calculate 白名单 {ADMIN} ⊂ metric:task-run 种子 {A,I,P} → ADMIN 锚
+#   保留 + 码双门（五角色语义不扩大）；
+# - tasks/{task_id} 白名单 = 两常量并集 {A,I,P,E} → 锚保留 + metric:view 读码。
 _KPI_DIAG_ROLES = ("ADMIN",)
 _TUNING_ROLES = ("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")
 
@@ -139,7 +144,9 @@ def _validate_labels(labels: list[str]) -> None:
 async def calculate_kpi(
     body: KpiCalculateRequest,
     db: AsyncSession = Depends(get_db),
+    # P4-02 尾批：ADMIN 角色锚保留（metric:task-run 种子含 I/P，纯码会放大）
     user: SysUser = Depends(require_roles(*_KPI_DIAG_ROLES)),
+    _perm: SysUser = Depends(require_perms("metric:task-run")),
 ) -> dict:
     """同步 KPI 计算（单回路单指标，不走 Celery）.
 
@@ -375,7 +382,7 @@ async def analyze_diagnosis(
 async def calculate_tuning(
     body: TuningCalculateRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles(*_TUNING_ROLES)),
+    user: SysUser = Depends(require_perms("tuning:tune")),
 ) -> dict:
     """同步整定计算（PID 参数，不走 Celery）.
 
@@ -527,7 +534,9 @@ async def calculate_tuning(
 @router.get("/tasks/{task_id}", response_model=ApiResponse[AlgorithmTaskStatus])
 async def get_algorithm_task_status(
     task_id: str,
+    # P4-02 尾批：原白名单=两常量并集 {A,I,P,E}，锚保留 + metric:view 读码双门
     _: SysUser = Depends(require_roles(*_KPI_DIAG_ROLES, *_TUNING_ROLES)),
+    _perm: SysUser = Depends(require_perms("metric:view")),
 ) -> dict:
     """查询算法任务状态（Celery AsyncResult）.
 

@@ -47,6 +47,7 @@ from app.tasks.kpi_calc import (
     _compute_kpis_three_layer,
     _compute_loop_valid_rate_from_bundles,
     _do_calculate,
+    _do_calculate_node_kpi,
     _do_calculate_single_loop,
     _extract_kpi_values,
     _extract_lineage_info,
@@ -999,6 +1000,121 @@ class TestDoCalculate:
         # failed 仍被正确计数（熔断消息携带 summary，保留原断言的意图）
         assert "'failed': 1" in str(exc_info.value)
         assert "'success': 0" in str(exc_info.value)
+
+    @pytest.mark.asyncio
+    async def test_historical_window_cascades_original_window(self) -> None:
+        """CAL-05（2026-10-10）：历史窗口计算完成后级联节点聚合**传原窗**。
+
+        C06 反例：原实现 calculate_node_kpi_hourly.delay() 无参级联，节点聚合
+        固定落在"当前系统时间上一小时"——回算历史窗 W 后刷新的是无关当前窗。
+        """
+        loop = _make_loop()
+        mock_session = AsyncMock()
+        mock_session.execute = AsyncMock(
+            side_effect=[
+                _make_scalars_mock([loop]),
+                _make_scalars_mock([_make_metric_config()]),
+                _make_scalars_mock([]),  # loop_type_weight 查询
+            ]
+        )
+        mock_session.commit = AsyncMock()
+        mock_session.rollback = AsyncMock()
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.tasks.kpi_calc._calculate_loop_kpi",
+                new_callable=AsyncMock,
+            ) as mock_calc,
+            patch(
+                "app.tasks.kpi_calc._batch_load_loop_configs",
+                new_callable=AsyncMock,
+                return_value={},
+            ),
+            patch("app.tasks.kpi_calc.calculate_node_kpi_hourly") as mock_node_task,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
+
+            result = await _do_calculate(ts_start="2026-06-24T05:00:00")
+
+        assert result["ts_start"] == "2026-06-24T05:00:00"
+        assert result["ts_end"] == "2026-06-24T06:00:00"
+        # 级联节点聚合显式携带原窗（历史窗，而非当前系统时间上一小时）
+        mock_node_task.delay.assert_called_once_with(
+            ts_start="2026-06-24T05:00:00", ts_end="2026-06-24T06:00:00"
+        )
+
+
+# ===========================================================================
+# 5b. _do_calculate_node_kpi 窗口参数化测试（CAL-05）
+# ===========================================================================
+
+
+class TestDoCalculateNodeKpiWindow:
+    """CAL-05：节点级聚合任务窗口参数化（级联传原窗的接收端）。"""
+
+    @pytest.mark.asyncio
+    async def test_explicit_window_passed_to_batch(self) -> None:
+        """显式窗口透传给批量聚合（naive UTC 解析，含 Z 后缀形式）。"""
+        node = MagicMock()
+        node.id = "node-001"
+        mock_session = AsyncMock()
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+        mock_session.execute = AsyncMock(return_value=node_result)
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.services.node_performance.batch_calculate_and_save_node_snapshots",
+                new_callable=AsyncMock,
+                return_value={"total": 1, "success": 1, "skipped": 0, "failed": 0},
+            ) as mock_batch,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _do_calculate_node_kpi("2026-06-24T05:00:00Z", "2026-06-24T06:00:00Z")
+
+        assert result["success"] == 1
+        kwargs = mock_batch.call_args.kwargs
+        assert kwargs["ts_start"] == datetime(2026, 6, 24, 5, 0, 0)
+        assert kwargs["ts_end"] == datetime(2026, 6, 24, 6, 0, 0)
+
+    @pytest.mark.asyncio
+    async def test_default_window_is_last_complete_hour(self) -> None:
+        """缺省窗口保持既有口径：上一个完整小时（naive UTC）。"""
+        node = MagicMock()
+        node.id = "node-001"
+        mock_session = AsyncMock()
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+        mock_session.execute = AsyncMock(return_value=node_result)
+
+        with (
+            patch("app.core.db.AsyncSessionLocal") as mock_factory,
+            patch(
+                "app.services.node_performance.batch_calculate_and_save_node_snapshots",
+                new_callable=AsyncMock,
+                return_value={"total": 1, "success": 1, "skipped": 0, "failed": 0},
+            ) as mock_batch,
+        ):
+            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            before = datetime.now(UTC).replace(tzinfo=None)
+            await _do_calculate_node_kpi()
+            after = datetime.now(UTC).replace(tzinfo=None)
+
+        kwargs = mock_batch.call_args.kwargs
+        ts_start, ts_end = kwargs["ts_start"], kwargs["ts_end"]
+        assert ts_end - ts_start == timedelta(hours=1)
+        assert ts_end.minute == 0 and ts_end.second == 0
+        # 落在调用时刻的"上一个完整小时"（允许调用瞬间跨整点边界的竞态窗口）
+        assert before.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1) <= ts_start
+        assert ts_end <= after.replace(minute=0, second=0, microsecond=0)
 
 
 # ===========================================================================
@@ -2698,11 +2814,22 @@ class TestExtractMetricsDetail:
 
 
 class TestPersistSnapshotConfidenceLatest:
-    """_persist_snapshot 小时路径同步 UPSERT loop_confidence_latest."""
+    """_persist_snapshot 小时路径同步 UPSERT loop_confidence_latest。
+
+    P1-05 结果账本后 execute 序列（小时路径，账本 SELECT 未命中时）：
+    0) 账本 SELECT 1) 账本 INSERT 2) kpi_snapshot_hourly UPSERT
+    3) latest 迟到守卫 SELECT 4) loop_confidence_latest UPSERT
+    """
 
     @staticmethod
     def _confidence_stmt(db: AsyncMock, call_index: int):
         return db.execute.await_args_list[call_index].args[0]
+
+    @staticmethod
+    def _ledger_record_mock() -> MagicMock:
+        rec = MagicMock()
+        rec.id = "rec-ledger-1"
+        return rec
 
     @pytest.mark.asyncio
     async def test_hourly_path_upserts_confidence_latest(self) -> None:
@@ -2710,7 +2837,15 @@ class TestPersistSnapshotConfidenceLatest:
         from sqlalchemy.dialects import postgresql
 
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(None),  # 账本 SELECT：未命中
+                _make_scalar_one_or_none_mock(self._ledger_record_mock()),  # 账本 INSERT
+                _make_returning_id_result_mock("snap-1"),  # hourly UPSERT RETURNING
+                _make_scalar_one_or_none_mock(None),  # latest 守卫：无现存投影
+                _make_scalar_one_or_none_mock(None),  # latest UPSERT
+            ]
+        )
 
         ts_start = datetime(2026, 7, 4, 8, 0, 0, tzinfo=UTC)
         ts_end = datetime(2026, 7, 4, 9, 0, 0, tzinfo=UTC)
@@ -2730,10 +2865,8 @@ class TestPersistSnapshotConfidenceLatest:
         )
 
         assert result["status"] == "SUCCESS"
-        # 两次 execute：kpi_snapshot_hourly UPSERT + loop_confidence_latest UPSERT
-        assert db.execute.await_count == 2
 
-        stmt = self._confidence_stmt(db, 1)
+        stmt = self._confidence_stmt(db, 4)
         assert stmt.table.name == "loop_confidence_latest"
         compiled = str(stmt.compile(dialect=postgresql.dialect()))
         assert "ON CONFLICT (loop_id) DO UPDATE" in compiled
@@ -2747,6 +2880,7 @@ class TestPersistSnapshotConfidenceLatest:
         assert set_values["data_ts_start"] == ts_start
         assert set_values["data_ts_end"] == ts_end
         assert set_values["algorithm_version"] == ALGORITHM_VERSION
+        assert set_values["result_record_id"] == "rec-ledger-1"  # P1-05 投影指针
         assert "eval_time" in set_values
         assert "updated_at" in set_values
         # id / loop_id 不参与冲突更新
@@ -2757,7 +2891,22 @@ class TestPersistSnapshotConfidenceLatest:
     async def test_second_write_carries_latest_values(self) -> None:
         """两次写同回路：第二次 UPSERT 的 set_ 为最新值（冲突即覆盖为最新记录）。"""
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+        db.execute = AsyncMock(
+            side_effect=[
+                # 第一次写入：账本 SELECT/INSERT + hourly + 守卫(无现存) + latest
+                _make_scalar_one_or_none_mock(None),
+                _make_scalar_one_or_none_mock(self._ledger_record_mock()),
+                _make_returning_id_result_mock("snap-1"),
+                _make_scalar_one_or_none_mock(None),
+                _make_scalar_one_or_none_mock(None),
+                # 第二次写入（同窗重评）：账本 SELECT/INSERT + hourly + 守卫(同窗) + latest
+                _make_scalar_one_or_none_mock(None),
+                _make_scalar_one_or_none_mock(self._ledger_record_mock()),
+                _make_returning_id_result_mock("snap-1"),
+                _make_scalar_one_or_none_mock(datetime(2026, 7, 4, 9, 0, 0)),
+                _make_scalar_one_or_none_mock(None),
+            ]
+        )
 
         kwargs = {
             "db": db,
@@ -2775,9 +2924,8 @@ class TestPersistSnapshotConfidenceLatest:
         kwargs["metrics_detail"] = {"accuracy_rate": {"value": 95.0, "confidence": "A"}}
         await _persist_snapshot(**kwargs)
 
-        # 每次 2 条 execute（主快照 + 最新表），共 4 条；最后一次为最新值
-        assert db.execute.await_count == 4
-        stmt = self._confidence_stmt(db, 3)
+        # 最后一次（第二次写入的第 5 条 execute）为最新值
+        stmt = self._confidence_stmt(db, 9)
         assert stmt.table.name == "loop_confidence_latest"
         set_values = _extract_upsert_set_values(stmt)
         assert set_values["score"] == Decimal("95.00")
@@ -2787,9 +2935,16 @@ class TestPersistSnapshotConfidenceLatest:
     @pytest.mark.asyncio
     async def test_confidence_latest_failure_does_not_affect_snapshot(self) -> None:
         """loop_confidence_latest 写库失败仅记日志，主快照结果正常返回。"""
-        ok_result = _make_returning_id_result_mock("snap-1")
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[ok_result, RuntimeError("boom")])
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
+                _make_scalar_one_or_none_mock(self._ledger_record_mock()),  # 账本 INSERT
+                _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
+                _make_scalar_one_or_none_mock(None),  # latest 守卫
+                RuntimeError("boom"),  # latest UPSERT 失败
+            ]
+        )
 
         result = await _persist_snapshot(
             db=db,
@@ -2801,7 +2956,7 @@ class TestPersistSnapshotConfidenceLatest:
         )
 
         assert result["snapshotId"] == "snap-1"
-        assert db.execute.await_count == 2
+        assert db.execute.await_count == 5
 
     @pytest.mark.asyncio
     async def test_custom_path_skips_confidence_latest(self) -> None:
@@ -2809,6 +2964,7 @@ class TestPersistSnapshotConfidenceLatest:
         db = AsyncMock()
         # _save_custom_snapshot 走 select-then-add：select 返回 None → db.add 新对象
         db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.add = MagicMock()
 
         await _persist_snapshot(
             db=db,
@@ -2820,8 +2976,11 @@ class TestPersistSnapshotConfidenceLatest:
             metrics_detail={"accuracy_rate": {"value": 1.0, "confidence": "A"}},
         )
 
-        # 仅 _save_custom_snapshot 的一次 select，无 loop_confidence_latest UPSERT
-        assert db.execute.await_count == 1
+        # 账本 SELECT + INSERT + 冲突回读（mock 均返回 None）+ custom select 共 4 次，
+        # 且全程无 loop_confidence_latest 表语句
+        stmts = [c.args[0] for c in db.execute.await_args_list]
+        assert db.execute.await_count == 4
+        assert all("loop_confidence_latest" not in str(s) for s in stmts)
 
 
 class TestPersistSnapshotInconclusiveConfidenceE:
@@ -2830,8 +2989,18 @@ class TestPersistSnapshotInconclusiveConfidenceE:
     @pytest.mark.asyncio
     async def test_hourly_inconclusive_defaults_confidence_level_e(self) -> None:
         """小时路径 INCONCLUSIVE 未传等级 → 快照与最新表均落 'E'。"""
+        ledger_rec = MagicMock()
+        ledger_rec.id = "rec-ledger-e"
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
+                _make_scalar_one_or_none_mock(ledger_rec),  # 账本 INSERT
+                _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
+                _make_scalar_one_or_none_mock(None),  # latest 守卫
+                _make_scalar_one_or_none_mock(None),  # latest UPSERT
+            ]
+        )
 
         await _persist_snapshot(
             db=db,
@@ -2841,19 +3010,29 @@ class TestPersistSnapshotInconclusiveConfidenceE:
             status="INCONCLUSIVE",
         )
 
-        assert db.execute.await_count == 2
-        snapshot_stmt = db.execute.await_args_list[0].args[0]
+        assert db.execute.await_count == 5
+        snapshot_stmt = db.execute.await_args_list[2].args[0]
         assert snapshot_stmt.table.name == "kpi_snapshot_hourly"
         assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] == "E"
-        confidence_stmt = db.execute.await_args_list[1].args[0]
+        confidence_stmt = db.execute.await_args_list[4].args[0]
         assert confidence_stmt.table.name == "loop_confidence_latest"
         assert _extract_upsert_set_values(confidence_stmt)["confidence_level"] == "E"
 
     @pytest.mark.asyncio
     async def test_inconclusive_keeps_lineage_confidence_level(self) -> None:
         """INCONCLUSIVE 已传血缘等级 → 沿用传入值，不被兜底覆盖。"""
+        ledger_rec = MagicMock()
+        ledger_rec.id = "rec-ledger-d"
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
+                _make_scalar_one_or_none_mock(ledger_rec),  # 账本 INSERT
+                _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
+                _make_scalar_one_or_none_mock(None),  # latest 守卫
+                _make_scalar_one_or_none_mock(None),  # latest UPSERT
+            ]
+        )
 
         await _persist_snapshot(
             db=db,
@@ -2864,7 +3043,7 @@ class TestPersistSnapshotInconclusiveConfidenceE:
             confidence_level="D",
         )
 
-        snapshot_stmt = db.execute.await_args_list[0].args[0]
+        snapshot_stmt = db.execute.await_args_list[2].args[0]
         assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] == "D"
 
     @pytest.mark.asyncio
@@ -2891,8 +3070,18 @@ class TestPersistSnapshotInconclusiveConfidenceE:
     @pytest.mark.asyncio
     async def test_success_status_confidence_level_not_forced(self) -> None:
         """非 INCONCLUSIVE 状态不触发兜底：未传等级保持 None。"""
+        ledger_rec = MagicMock()
+        ledger_rec.id = "rec-ledger-s"
         db = AsyncMock()
-        db.execute = AsyncMock(return_value=_make_returning_id_result_mock("snap-1"))
+        db.execute = AsyncMock(
+            side_effect=[
+                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
+                _make_scalar_one_or_none_mock(ledger_rec),  # 账本 INSERT
+                _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
+                _make_scalar_one_or_none_mock(None),  # latest 守卫
+                _make_scalar_one_or_none_mock(None),  # latest UPSERT
+            ]
+        )
 
         await _persist_snapshot(
             db=db,
@@ -2903,7 +3092,7 @@ class TestPersistSnapshotInconclusiveConfidenceE:
             score=Decimal("50.00"),
         )
 
-        snapshot_stmt = db.execute.await_args_list[0].args[0]
+        snapshot_stmt = db.execute.await_args_list[2].args[0]
         assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] is None
 
     @pytest.mark.asyncio
@@ -3274,6 +3463,82 @@ class TestSaturationUnifiedCaliber:
         await run(4.0, 20.0, (6.0, 18.0), (12.5, 87.5))  # 非零基准量程：换算
         await run(0.0, 100.0, (20.0, 80.0), (20.0, 80.0))  # 常规量程：数值不变
         await run(None, None, (20.0, 80.0), (20.0, 80.0))  # 配置缺失：按 0~100 兜底
+
+
+class TestC08FitnessCounterBaseline:
+    """C08 验收基线（P2-01，04-验收与容量基线 §C08）——fitness counter 纯函数直测.
+
+    - OP 饱和：OP=[0,1,3,50,97,99,100]、限位 0~100、全自控：
+      2% 带 → 4/7（0,1,99,100）；4% 带 → 6/7（0,1,3,97,99,100）
+    - SP-PV 偏差：误差=[1,5,15]、量程 100、3 点：
+      10% 偏差 → 1/3（仅 15>10）；20% 偏差 → 0/3
+    """
+
+    @staticmethod
+    def _op_counters(op_band: float) -> dict:
+        """OP 饱和场景：SP=PV（偏差恒 0，不干扰饱和判定）."""
+        from app.services.loop_fitness import compute_time_ratio_counters
+
+        return compute_time_ratio_counters(
+            op_series=[0.0, 1.0, 3.0, 50.0, 97.0, 99.0, 100.0],
+            sp_series=[50.0] * 7,
+            pv_series=[50.0] * 7,
+            mode_series=[1] * 7,
+            op_range=(0.0, 100.0),
+            pv_range=(0.0, 100.0),
+            op_sat_band_pct=op_band,
+            sp_pv_dev_pct=0.0,  # 偏差阈值 0 也不影响（|SP-PV|=0 恒不大于）
+        )
+
+    @staticmethod
+    def _dev_counters(dev_pct: float) -> dict:
+        """SP-PV 偏差场景：误差 [1,5,15]、OP 居中（不触发饱和）."""
+        from app.services.loop_fitness import compute_time_ratio_counters
+
+        return compute_time_ratio_counters(
+            op_series=[50.0, 50.0, 50.0],
+            sp_series=[0.0, 0.0, 0.0],
+            pv_series=[1.0, 5.0, 15.0],
+            mode_series=[1] * 3,
+            op_range=(0.0, 100.0),
+            pv_range=(0.0, 100.0),
+            op_sat_band_pct=0.0,  # 严格贴限（OP=50 居中不饱和，不干扰偏差判定）
+            sp_pv_dev_pct=dev_pct,
+        )
+
+    def test_c08_op_band_2pct_saturates_4_of_7(self) -> None:
+        """2% 带：阈值 [2, 98] → 0/1/99/100 饱和 = 4/7."""
+        counters = self._op_counters(op_band=2.0)
+        assert counters["auto_valid_count"] == 7
+        assert counters["_op_sat_count"] == 4
+        assert counters["op_saturated_ratio"] == pytest.approx(4 / 7)
+
+    def test_c08_op_band_4pct_saturates_6_of_7(self) -> None:
+        """4% 带：阈值 [4, 96] → 0/1/3/97/99/100 饱和 = 6/7."""
+        counters = self._op_counters(op_band=4.0)
+        assert counters["_op_sat_count"] == 6
+        assert counters["op_saturated_ratio"] == pytest.approx(6 / 7)
+
+    def test_c08_dev_10pct_counts_1_of_3(self) -> None:
+        """PV-SP 误差 [1,5,15]、量程 100：10% 阈值 → 仅 15 命中 = 1/3."""
+        counters = self._dev_counters(dev_pct=10.0)
+        assert counters["auto_valid_count"] == 3
+        assert counters["_dev_count"] == 1
+        assert counters["sp_pv_deviation_ratio"] == pytest.approx(1 / 3)
+
+    def test_c08_dev_20pct_counts_0(self) -> None:
+        """PV-SP 误差 [1,5,15]、量程 100：20% 阈值 → 0 命中 = 0/3."""
+        counters = self._dev_counters(dev_pct=20.0)
+        assert counters["_dev_count"] == 0
+        assert counters["sp_pv_deviation_ratio"] == 0.0
+
+    def test_c08_op_and_dev_independent_dimensions(self) -> None:
+        """独立性：饱和判定与偏差判定互不串扰（OP 场景偏差恒 0、
+        偏差场景 OP 恒居中，两维各自按实际阈值计数）."""
+        op_counters = self._op_counters(op_band=2.0)
+        assert op_counters["_dev_count"] == 0
+        dev_counters = self._dev_counters(dev_pct=10.0)
+        assert dev_counters["_op_sat_count"] == 0
 
 
 class TestSaveSnapshotPhase1Columns:

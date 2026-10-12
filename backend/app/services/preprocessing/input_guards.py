@@ -7,8 +7,12 @@
 登记口径（逐项，不扩大）：
 - ``time_constant``：以统一采样周期做相关分析（I04 证据），且无内建
   均匀性自检 → 列入缺口敏感；
-- ``settling_time``：已内建 ``_check_uniform_sampling`` 分段支持 → 沿用
-  原支持，不入册；
+- ``settling_time``：CAL-09（P1-01）修正登记——原口径称"已内建
+  ``_check_uniform_sampling`` 分段支持"不实：该检查只是间隔比例检查
+  （偏离中位 ±20% 的间隔占比 ≤10% 即放行），少量大 gap 可整体混过，
+  此后压缩序列仍按连续等间隔进 AR 辨识（I04 同类错误：相隔 N 秒的
+  样本被当作相邻一步）。在真实分段支持（多段归并，P3-01）落地前，
+  列入缺口敏感由编排层守卫对非连续 mask 显式 INCONCLUSIVE；
 - 其余统计/比率类指标：沿用既有 masked 压缩口径（legacy 稀疏数据一贯
   行为，由 R14 可信度准入约束），不入册、不改动。
 
@@ -22,7 +26,7 @@ from typing import Any
 
 #: 缺口敏感动态指标（点布局非连续 mask → INCONCLUSIVE；legacy 不适用——
 #: legacy 行为完全保持）
-GAP_SENSITIVE_METRICS: frozenset[str] = frozenset({"time_constant"})
+GAP_SENSITIVE_METRICS: frozenset[str] = frozenset({"time_constant", "settling_time"})
 
 #: 守卫失败原因码（进入 MetricResult.details）
 GAP_GUARD_REASON = "GAP_SENSITIVE_MASK_DISCONTINUOUS"

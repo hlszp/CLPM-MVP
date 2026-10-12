@@ -543,13 +543,17 @@ class TestPhase2API:
     # ------------------------------------------------------------------
 
     def test_identify_history_returns_task_id(self, client):
-        """/identify/history 提交异步任务返回 taskId（AUTO 策略）。"""
+        """/identify/history 提交异步任务返回 taskId（AUTO 策略）。
+
+        P1-04/AUTH-06：candidateModelTypes 属高级参数，仅 ADMIN/EXPERT 可携带
+        （与前端 ADVANCED_PARAM_ROLES 一致），用例角色由 IC 改为 EXPERT。
+        """
         mock_task = MagicMock()
         mock_task.id = "celery-task-abc123"
 
         with (
             patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
-            mock_current_user(TEST_USERS["ic_engineer"]),
+            mock_current_user(TEST_USERS["expert"]),
         ):
             mock_celery_task.delay.return_value = mock_task
             resp = client.post(
@@ -571,7 +575,7 @@ class TestPhase2API:
         mock_celery_task.delay.assert_called_once()
         call_kwargs = mock_celery_task.delay.call_args.kwargs
         assert call_kwargs["loop_id"] == "loop-1"
-        assert call_kwargs["created_by"] == "ic_engineer"
+        assert call_kwargs["created_by"] == "expert"
 
     def test_identify_history_history_only_strategy(self, client):
         """/identify/history HISTORY_ONLY 策略也走异步任务。"""
@@ -597,12 +601,15 @@ class TestPhase2API:
         assert resp.json()["data"]["taskId"] == "celery-task-hist-001"
 
     def test_identify_history_accepts_ipdt_candidate(self, client):
-        """P2-008：历史辨识接受 IPDT 候选（差分辨识链已接入）."""
+        """P2-008：历史辨识接受 IPDT 候选（差分辨识链已接入）.
+
+        P1-04/AUTH-06：candidateModelTypes 为高级参数，角色 IC → EXPERT。
+        """
         mock_task = MagicMock()
         mock_task.id = "celery-task-ipdt-001"
         with (
             patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
-            mock_current_user(TEST_USERS["ic_engineer"]),
+            mock_current_user(TEST_USERS["expert"]),
         ):
             mock_celery_task.delay.return_value = mock_task
             resp = client.post(
@@ -621,13 +628,16 @@ class TestPhase2API:
         mock_celery_task.delay.assert_called_once()
 
     def test_identify_history_preserves_explicit_zero_theta(self, client):
-        """显式 thetaEstimate=0 必须原样传给异步任务."""
+        """显式 thetaEstimate=0 必须原样传给异步任务.
+
+        P1-04/AUTH-06：thetaEstimate 为高级参数，角色 IC → EXPERT。
+        """
         mock_task = MagicMock()
         mock_task.id = "celery-task-zero-theta"
 
         with (
             patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
-            mock_current_user(TEST_USERS["ic_engineer"]),
+            mock_current_user(TEST_USERS["expert"]),
         ):
             mock_celery_task.delay.return_value = mock_task
             resp = client.post(
@@ -664,6 +674,97 @@ class TestPhase2API:
 
         assert resp.status_code == 422
         mock_celery_task.delay.assert_not_called()
+
+
+class TestIdentifyHistoryAdvancedParamGuard:
+    """P1-04/AUTH-06：历史辨识高级参数字段级守卫。
+
+    前端 use-clpm-roles ADVANCED_PARAM_ROLES=ADMIN/EXPERT 只隐藏高级参数 UI，
+    不构成后端约束——IC/PE 直接 POST 携带 thetaEstimate/candidateModelTypes
+    必须被端点层拒绝（403，显式错误），不静默忽略（忽略会让调用方误以为
+    自定义 θ/候选阶次已生效，结果不可解释）。
+    """
+
+    _BASE_BODY = {
+        "loopId": "loop-1",
+        "startTime": "2026-07-28T00:00:00Z",
+        "endTime": "2026-07-28T01:00:00Z",
+        "identifyStrategy": "HISTORY_ONLY",
+    }
+
+    def test_ic_engineer_with_candidate_models_forbidden(self, client):
+        """IC 直接 POST 携带 candidateModelTypes → 403。"""
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={**self._BASE_BODY, "candidateModelTypes": ["FOPDT"]},
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
+        mock_celery_task.delay.assert_not_called()
+
+    def test_pe_engineer_with_theta_estimate_forbidden(self, client):
+        """PE 直接 POST 携带 thetaEstimate → 403。"""
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["pe_engineer"]),
+        ):
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={**self._BASE_BODY, "thetaEstimate": 5.0},
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
+        mock_celery_task.delay.assert_not_called()
+
+    def test_ic_engineer_without_advanced_params_allowed(self, client):
+        """IC 不携带高级参数（默认值提交）不受影响——提交链保持畅通。"""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-default-001"
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["ic_engineer"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={**self._BASE_BODY},
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["taskId"] == "celery-task-default-001"
+
+    def test_admin_with_advanced_params_allowed(self, client):
+        """ADMIN 携带高级参数正常提交（白名单口径与前端一致）。"""
+        mock_task = MagicMock()
+        mock_task.id = "celery-task-admin-adv"
+        with (
+            patch("app.tasks.tuning.identify_model_task") as mock_celery_task,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            mock_celery_task.delay.return_value = mock_task
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={
+                    **self._BASE_BODY,
+                    "candidateModelTypes": ["FOPDT"],
+                    "thetaEstimate": 5.0,
+                },
+            )
+        assert resp.status_code == 200
+        assert resp.json()["data"]["taskId"] == "celery-task-admin-adv"
+
+    def test_sponsor_submit_forbidden_by_role_whitelist(self, client):
+        """SPONSOR 无权 POST 本端点（require_roles 先行拦截，与高级参数守卫无关）。"""
+        with mock_current_user(TEST_USERS["sponsor"]):
+            resp = client.post(
+                "/api/v1/tuning/identify/history",
+                json={**self._BASE_BODY},
+            )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
 
     def test_identify_history_step_only_sync_path(self, client):
         """/identify/history STEP_ONLY 策略走同步阶跃路径（不经 Celery）。"""

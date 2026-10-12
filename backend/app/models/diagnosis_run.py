@@ -11,7 +11,16 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import uuid4
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, Numeric, String
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -37,6 +46,12 @@ class DiagnosisRun(Base, TimestampMixin):
     trigger_type: Mapped[str] = mapped_column(String(16), nullable=False, server_default="MANUAL")
     time_window_start: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     time_window_end: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # P2-03：不可变输入包引用（诊断宽表原始输入；NULL=该 run 不可完整复现）
+    dataset_snapshot_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_dataset_snapshot.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     operator_group: Mapped[str] = mapped_column(String(8), nullable=False, server_default="full")
 
     status: Mapped[str] = mapped_column(String(16), nullable=False, server_default="RUNNING")
@@ -55,6 +70,13 @@ class DiagnosisRun(Base, TimestampMixin):
     #: 诊断指标汇总（方案 A，2026-08-19）：诊断时间窗内 KPI 快照均值 + 算子特征，
     #: 统一 0~100 口径（坏值率/饱和率/振荡率/粘滞系数/稳定时间/行程指数 + 6 正向率）
     metric_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: P3-08a（D0 契约 O-1 定稿）：诊断科学结论元信息（08§4.2 结构：
+    #: schemaVersion/judgementStatus/causeStatus/profileId/profileVersion/scope/
+    #: coverage/supportKind/calibrationStatus/supportRuleVersion/evidenceGroups/
+    #: confidenceDefinitionsSnapshot/kpiSourceRecordIds）。写入方=诊断编排
+    #: （P3-01/D1 接线），本列只做载体；NULL=历史 run 无科学结论元信息
+    #: （读端按 LEGACY_UNVERIFIABLE 口径处理，不伪补）。
+    assessment_meta: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     threshold_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
@@ -72,6 +94,11 @@ class DiagnosisRun(Base, TimestampMixin):
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     __table_args__ = (
+        # P3-02 批次幂等键：同任务同回路只允许一条 run（重试/重投递不重复
+        # 已完成 run 与建议）；task_id 为 NULL 的历史/无任务行不受限（PG
+        # 唯一约束 NULL 互不相等）。重做失败回路时旧 FAILED 行先脱链
+        # （task_id=NULL，证据保留），见 tasks/diagnosis_v2.py checkpoint。
+        UniqueConstraint("task_id", "loop_id", name="uq_diagnosis_run_task_loop"),
         CheckConstraint(
             "status IN ('RUNNING', 'SUCCESS', 'PARTIAL', 'FAILED')",
             name="ck_diagnosis_run_status",

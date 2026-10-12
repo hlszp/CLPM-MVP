@@ -29,7 +29,6 @@ from typing import Any
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 
 logger = logging.getLogger(__name__)
@@ -124,7 +123,8 @@ class SettlingTimeCalculator(MetricCalculatorBase):
         errors = errors - np.mean(errors)
 
         # 整改 F2：衰减阈值从配置链读取（默认与常量一致）
-        params = get_algorithm_params("settling_time", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先，未固定才读配置链当前缓存
+        params = self._effective_params("settling_time", bundle)
         settling_threshold = float(params.get("settling_threshold", SETTLING_THRESHOLD))
 
         # 噪声底判据（2026-10-10 稳定回路误判整改）：偏差 σ 低于量程比例下限时
@@ -144,6 +144,22 @@ class SettlingTimeCalculator(MetricCalculatorBase):
                 noise_floor_ratio * 100.0,
                 u,
             )
+            # P3-09a 新 profile：静稳=当前平稳+动态证据不足——正式 T 仍为 null
+            # （不虚构 T=0 秒），currentlyStable=true + reasonCode=NO_DYNAMIC_
+            # EVIDENCE；confidence 保留回路级真实数据质量（不降 E）。
+            # legacy：value=0.0（golden 基线不变）。
+            if self.new_semantics:
+                return self._make_unassessable(
+                    bundle,
+                    "already_stable",
+                    {
+                        "currentlyStable": True,
+                        "dynamicEvidence": "NO_DYNAMIC_EVIDENCE",
+                        "std": round(std_error, 6),
+                        "noise_floor": round(noise_floor_ratio * u, 6),
+                        "sample_count": n,
+                    },
+                )
             return self._make_result(
                 bundle,
                 0.0,
@@ -156,10 +172,12 @@ class SettlingTimeCalculator(MetricCalculatorBase):
             )
 
         # ARMA 辨识 + Green 函数 → 实际稳态时间（含三语义状态）
+        # P3-09b：新 profile 用持续尾段判据（sustained_tail=True）
         settling = compute_settling_time_detailed(
             signal=errors,
             sample_interval_sec=sample_interval,
             threshold=settling_threshold,
+            sustained_tail=self.new_semantics,
         )
 
         logger.debug(
@@ -174,6 +192,87 @@ class SettlingTimeCalculator(MetricCalculatorBase):
             "threshold": settling_threshold,
             "sample_count": n,
         }
+        if self.new_semantics:
+            # P3-09a/b：真实观测与模型推演分开报告（observationSeconds ≠
+            # simulationHorizonSeconds，不把模型外推写成真实观测）
+            base_details.update(
+                {
+                    "observationSeconds": (
+                        round(settling.observation_seconds, 2)
+                        if settling.observation_seconds is not None
+                        else None
+                    ),
+                    "simulationHorizonSeconds": round(settling.simulation_horizon_seconds, 2),
+                }
+            )
+
+        # 新 profile：所有非 SETTLED 状态均 value=None + assessmentState=
+        # UNASSESSABLE + 回路级 confidence（数据质量与可判定性分开）
+        if self.new_semantics:
+            if settling.status is SettlingStatus.INSUFFICIENT_TAIL_SUPPORT:
+                return self._make_unassessable(
+                    bundle,
+                    "insufficient_tail_support",
+                    {
+                        "candidate_settling_time": (
+                            round(settling.candidate_seconds, 2)
+                            if settling.candidate_seconds is not None
+                            else None
+                        ),
+                        "tail_seconds": (
+                            round(settling.tail_seconds, 2)
+                            if settling.tail_seconds is not None
+                            else None
+                        ),
+                        "required_tail_seconds": (
+                            round(settling.required_tail_seconds, 2)
+                            if settling.required_tail_seconds is not None
+                            else None
+                        ),
+                        "pole_period_seconds": (
+                            round(settling.pole_period_seconds, 2)
+                            if settling.pole_period_seconds is not None
+                            else None
+                        ),
+                        **base_details,
+                    },
+                )
+            if settling.status is SettlingStatus.NEVER_SETTLES:
+                return self._make_unassessable(
+                    bundle,
+                    "never_settles",
+                    {
+                        # 模型衰减时间下界（Green 窗口）——不是实测 T
+                        "settling_lower_bound_seconds": round(settling.window_length_sec, 2),
+                        **base_details,
+                    },
+                )
+            if settling.status is SettlingStatus.IDENTIFICATION_FAILED:
+                return self._make_unassessable(bundle, "identification_failed", base_details)
+            if settling.status is SettlingStatus.ALREADY_STABLE:
+                return self._make_unassessable(
+                    bundle,
+                    "already_stable",
+                    {
+                        "currentlyStable": True,
+                        "dynamicEvidence": "NO_DYNAMIC_EVIDENCE",
+                        **base_details,
+                    },
+                )
+            # SETTLED：正常稳态时间（动态证据可用）
+            settling_time = float(settling.value)
+            return self._make_result(
+                bundle,
+                settling_time,
+                {
+                    "actual_settling_time": round(settling_time, 2),
+                    "reason": "settled",
+                    "assessmentState": "COMPLETE",
+                    **base_details,
+                },
+            )
+
+        # ---------------- legacy 分支（golden 基线，行为不变） ----------------
 
         # 窗口内不衰减（持续振荡/近单位根）：value=None，details 携带窗口长度
         # 作为 actual_t 下界，供快速率代入指数衰减公式（P0-1）

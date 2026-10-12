@@ -230,3 +230,69 @@ class TestB4DisturbanceOverride:
 
         assert result.details["source"] == "arma"
         assert result.value == round(100.0 / math.e, 2)
+
+
+class TestB4C07NonDefaultToleranceBoundary:
+    """C07（04 验收基线 / 台账 STD-02）：容差边界两侧连续.
+
+    默认 profile（ratio=1.0、tolerance=0.0）下阈值=T'，公式退化为冻结口径
+    e^−((T−T′)/T′)×100（见 TestB4FastRateFormula 全部既有锚点，零回归）。
+    非默认容差（如 tolerance=0.2 → 阈值=1.2×T'）下，修复前阈值右侧一步
+    从 100 跳到 e^−0.2×100≈81.87；修复后衰减指数锚定阈值：
+        F = 100·e^−((T−阈值)/T′)
+    边界连续、单调递减，分段结构（满分区+指数衰减）不变。
+    """
+
+    TOL = 0.2
+
+    def _calc_tol(self, actual: float, ideal: float) -> float | None:
+        ac.apply_runtime({"fast_rate": {"STABLE": {"settling_tolerance": self.TOL}}})
+        bundle = make_bundle({"pv": [50.0] * 10, "sp": [50.0] * 10}, metric_code="fast_rate")
+        calc = FastRateCalculator()
+        calc.with_dependencies(
+            {"settling_time": _settling(actual), "ideal_settling_time": _ideal(ideal)}
+        )
+        return calc.calculate(bundle).value
+
+    def test_boundary_below_and_above_continuous(self, reset_algo_config_cache):
+        """C07：阈值两侧——T=阈值→100；T=阈值+ε→≈100（连续，无 18 分跳变）."""
+        ideal = 100.0
+        threshold = ideal * (1.0 + self.TOL)  # = 120.0
+        below = self._calc_tol(threshold - 1.0, ideal)
+        at = self._calc_tol(threshold, ideal)
+        above = self._calc_tol(threshold + 0.01, ideal)
+
+        assert below == 100.0
+        assert at == 100.0
+        # 修复前 above = 100·e^−((120−100)/100) = 81.87（跳变 18.13 分）；
+        # 修复后 = 100·e^−0.0001 ≈ 99.99（连续）
+        assert above == pytest.approx(100.0 * math.exp(-0.0001), abs=0.01)
+        assert above > 99.9  # 显式排除旧跳变行为
+
+    def test_tolerance_decay_anchor_hand_computed(self, reset_algo_config_cache):
+        """C07：容差 0.2、T=150、T'=100 → F=100·e^−((150−120)/100)=e^−0.3×100≈74.08.
+
+        独立手算锚点（非实现输出反推）；旧公式（锚 T'）为 e^−0.5×100≈60.65，
+        显式排除，证明锚点已移到阈值。
+        """
+        value = self._calc_tol(150.0, 100.0)
+        expected = round(100.0 * math.exp(-0.3), 2)
+        assert expected == 74.08  # 手算核实锚点
+        assert value == expected
+        assert value != round(100.0 * math.exp(-0.5), 2)
+
+    def test_monotone_non_increasing_across_boundary(self, reset_algo_config_cache):
+        """C07：单调性——阈值附近按 T 递增序列分数单调不增，且相邻差不跳变."""
+        ideal = 100.0
+        series = [110.0, 119.0, 120.0, 120.1, 121.0, 130.0, 150.0, 200.0]
+        values = [self._calc_tol(t, ideal) for t in series]
+        for prev, cur in zip(values, values[1:], strict=False):
+            assert cur <= prev + 1e-9  # 单调不增
+        # 边界相邻（120 → 120.1）跌幅 ≈0.1 分（旧实现一步跌 18+ 分）
+        assert values[2] - values[3] < 0.5
+
+    def test_default_profile_t_half_ideal_full_score(self, reset_algo_config_cache):
+        """C07 默认 profile 扫描补全：T/T'=0.5 → 100（0/1/1.5/2 见既有用例）."""
+        ac.apply_runtime({})
+        result = _calc(30.0, 60.0)
+        assert result.value == 100.0

@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "CLPM-MVP",
+    "title": "CLPM",
     "description": "Control Loop Performance Monitoring backend API",
     "version": "7.1.0"
   },
@@ -1387,7 +1387,7 @@
           "loop"
         ],
         "summary": "Batch Config Loops Endpoint",
-        "description": "批量配置回路（仅 ADMIN）。\n\n两种模式（互斥）：\n- 更新模式：提供 updates 字段（isMonitored/isStatEnabled/importanceLevel/includeInEvaluation）\n- 删除模式：action=\"delete\"（硬删除：解绑 Tag 映射 + 级联清理关联数据，不可恢复）\n\n所有操作均记录审计日志。",
+        "description": "批量配置回路（仅 ADMIN）。\n\n三种模式：\n- 更新模式：提供 updates 字段（监控/统计/级别/参评 + P2-04 工程属性：\n  控制作用方向/OP 限位/DCS 型号/工程模板引用）\n- dry-run 预览：dryRun=true（P2-04）——只读预览逐回路差异、部分失败\n  状态与受影响清单，零写入（读取与发布能力分开）\n- 删除模式：action=\"delete\"（硬删除：解绑 Tag 映射 + 级联清理关联数据，不可恢复）\n\n所有写入操作均记录审计日志。",
         "operationId": "batch_config_loops_endpoint_api_v1_loops_batch_config_post",
         "requestBody": {
           "content": {
@@ -2240,6 +2240,54 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_LoopDeleteResult_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/loops/{loop_id}/engineering-facts": {
+      "get": {
+        "tags": [
+          "loop"
+        ],
+        "summary": "Get Loop Engineering Facts Endpoint",
+        "description": "回路工程事实 + 两种资格（只读；转换与算法消费归 P3-03）.\n\n- facts：控制作用方向（DIRECT/REVERSE/UNKNOWN 显式态）、实际 OP 上下限\n  （来源优先级 回路字段 > OP Tag 量程 > 默认 0/100）、PID 表示与时间单位\n  （未知 DCS 型号恒 status=UNKNOWN，不默认标准 kp/ti/td）、工程模板\n  引用（不可变版本 revisionRef）；\n- qualifications：历史片段辨识资格与 PID 应用资格**分别定义**\n  （07 号文 §3.3——前者不消费 L0/L1 门禁，后者为现行门禁的只读映射）。",
+        "operationId": "get_loop_engineering_facts_endpoint_api_v1_loops__loop_id__engineering_facts_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "loop_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Loop Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
                 }
               }
             }
@@ -5081,6 +5129,54 @@
             "OAuth2PasswordBearer": []
           }
         ]
+      }
+    },
+    "/api/v1/performance/loops/result-records/{record_id}": {
+      "get": {
+        "tags": [
+          "performance"
+        ],
+        "summary": "Get Result Record Endpoint",
+        "description": "结果账本记录详情（P1-05，所有角色可查看）.\n\n历史详情按不可变 recordId 读取；传入旧投影行 ID（kpi_snapshot_hourly /\nloop_confidence_latest / kpi_node_snapshot_hourly 的 id）时经迁移归档\n映射兼容解析。payload 含完整结果（节点记录另含 loopRecordIds 与\n各指标分母）；datasetSnapshotId 为空即\"该结果不可完整复现\"（P2-03 前\n的 P1 记录均如此，属显式事实而非缺数）。",
+        "operationId": "get_result_record_endpoint_api_v1_performance_loops_result_records__record_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "record_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Record Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/performance/loops/snapshots/{snapshot_id}": {
@@ -12568,7 +12664,7 @@
           "grading-config"
         ],
         "summary": "Get Grading Thresholds",
-        "description": "获取当前生效的 5 级性能定级阈值.\n\n若未配置过，返回国标默认阈值。\n\n设计依据：FDS v5.1 §5.2.4, GB/T 44693.2-2024 §6.3",
+        "description": "获取当前生效的 5 级性能定级阈值.\n\n若未配置过，返回国标默认阈值。\n\n设计依据：FDS v5.1 §5.2.4（GB/T 对齐声明按 DEC-02⑤a 移除）",
         "operationId": "get_grading_thresholds_api_v1_configs_grading_thresholds_get",
         "responses": {
           "200": {
@@ -12593,7 +12689,7 @@
           "grading-config"
         ],
         "summary": "Save Grading Thresholds",
-        "description": "更新 5 级性能定级阈值（仅 ADMIN，保存为新版本并立即生效）.\n\n校验规则：\n- 必须为 5 级（level 1-5）\n- 等级名称必须与国标定义一致（EXCELLENT/GOOD/FAIR/WARNING/POOR）\n- 各等级 minScore < maxScore\n- 等级区间连续：level N 的 minScore == level N+1 的 maxScore\n- level 1 的 maxScore 必须为 100\n- level 5 的 minScore 必须为 0\n\n设计依据：FDS v5.1 §5.2.4, GB/T 44693.2-2024 §6.3",
+        "description": "更新 5 级性能定级阈值（仅 ADMIN，保存为新版本并立即生效）.\n\n校验规则：\n- 必须为 5 级（level 1-5）\n- 等级名称必须与国标定义一致（EXCELLENT/GOOD/FAIR/WARNING/POOR）\n- 各等级 minScore < maxScore\n- 等级区间连续：level N 的 minScore == level N+1 的 maxScore\n- level 1 的 maxScore 必须为 100\n- level 5 的 minScore 必须为 0\n\n设计依据：FDS v5.1 §5.2.4（GB/T 对齐声明按 DEC-02⑤a 移除）",
         "operationId": "save_grading_thresholds_api_v1_configs_grading_thresholds_post",
         "requestBody": {
           "content": {
@@ -13763,7 +13859,7 @@
           "algorithm-config"
         ],
         "summary": "Save Metric Algorithm Params",
-        "description": "更新指定指标的算法参数（仅 ADMIN）.\n\n部分覆盖：仅更新传入的控制类型和参数键，未传的保持原值。\n保存后写审计日志并刷新进程内缓存（立即生效，无需重启）。",
+        "description": "更新指定指标的算法参数（仅 ADMIN；DEC-03 配置发布为 ADMIN 职责）.\n\n部分覆盖：仅更新传入的控制类型和参数键，未传的保持原值。\nP2-02 兼容通道语义：\n- ``expectedRevision`` 可选乐观锁（失配 409 + 最新版本）；\n- 同一事务内推进统一 revision（LEGACY_SYNC 发布账本）+ 审计\n  （before/after/原因/操作者/影响范围/回退版本全量）；\n- commit 后广播 CONFIG_REVISION_CHANNEL + 刷新本进程运行时缓存；\n- resetControlTypes 重置后 message 附更高层剩余覆盖解释。",
         "operationId": "save_metric_algorithm_params_api_v1_configs_algorithm_params__metric_code__put",
         "security": [
           {
@@ -13798,6 +13894,850 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ApiResponse_AlgorithmParamsMetricGroup_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configs/publish/revision": {
+      "get": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "Get Revision",
+        "description": "当前统一配置 revision（持久值，DB 真相源）+ 最近一次发布摘要.",
+        "operationId": "get_revision_api_v1_configs_publish_revision_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RevisionInfoResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/configs/publish/effective": {
+      "get": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "Get Effective Params",
+        "description": "解析统一作用域链的有效参数（逐参数 source/sourceId/sourceRevision + 遮盖关系）.\n\nTASK 层为任务内存覆盖不落库，查询接口不涉及（任务内经\n``pin_config_snapshot`` 固定）。",
+        "operationId": "get_effective_params_api_v1_configs_publish_effective_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "metricCode",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 50,
+              "title": "Metriccode"
+            }
+          },
+          {
+            "name": "controlType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Controltype"
+            }
+          },
+          {
+            "name": "templateKey",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Templatekey"
+            }
+          },
+          {
+            "name": "nodeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Nodeid"
+            }
+          },
+          {
+            "name": "loopId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Loopid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EffectiveParamsResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configs/publish/overrides": {
+      "get": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "List Overrides",
+        "description": "列出 TEMPLATE/NODE/LOOP 分层覆盖（DEFAULT 层经既有 algorithm-params 接口查看）.",
+        "operationId": "list_overrides_api_v1_configs_publish_overrides_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "layer",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Layer"
+            }
+          },
+          {
+            "name": "metricCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 50
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Metriccode"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "Publish Override Endpoint",
+        "description": "发布一层覆盖（整组替换语义；expectedRevision 乐观锁，冲突 409）.\n\nDEC-03：发布动作 ADMIN。IC/PE 草稿维护路径本批未开放（后续按\nADMIN=发布 / IC+PE=草稿 标注）。",
+        "operationId": "publish_override_endpoint_api_v1_configs_publish_overrides_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverridePublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublishResultResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configs/publish/overrides/preview": {
+      "post": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "Preview Override Endpoint",
+        "description": "发布预览（P2-04 dry-run）：校验/差异/受影响回路/合并视图，零写入.\n\n\"读取与发布能力分开\"（03 §5 P2-04）——预览对 ADMIN/IC/PE 只读开放；\n发布本体仍仅 ADMIN（DEC-03）。``expectedRevision`` 失配不抛 409，以\n``wouldConflict=true`` 报告（预览口径）。",
+        "operationId": "preview_override_endpoint_api_v1_configs_publish_overrides_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PreviewPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/configs/publish/overrides/{override_id}/reset": {
+      "post": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "Reset Override Endpoint",
+        "description": "重置一层覆盖（P2-01 遗留收口：重置低层后高层仍生效且可解释）.\n\n响应 resetExplanation 逐键说明被重置层的键中哪些仍被更高层覆盖\n（值/来源层/来源作用域/发布版本）。",
+        "operationId": "reset_override_endpoint_api_v1_configs_publish_overrides__override_id__reset_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "override_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Override Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OverrideResetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PublishResultResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configs/publish/publications": {
+      "get": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "List Publications",
+        "description": "发布账本（追加式，按 revision 倒序）.",
+        "operationId": "list_publications_api_v1_configs_publish_publications_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/configs/publish/publications/{revision}/rollback": {
+      "post": {
+        "tags": [
+          "config-publish"
+        ],
+        "summary": "Rollback Publication Endpoint",
+        "description": "回退指定发布：将其 before 状态重新应用为新 revision（不删历史）.\n\nDEC-03：回退动作 ADMIN。方案 §6\"配置回退生成新 revision\"——rollback(R)\n是 R 的逆操作重放，R 之后其他作用域的发布不受影响。",
+        "operationId": "rollback_publication_endpoint_api_v1_configs_publish_publications__revision__rollback_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Revision"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__config__RollbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RollbackResultResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/engineering-templates": {
+      "get": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "List Templates Endpoint",
+        "description": "模板列表（含版本数与关联回路数——TEMPLATE→回路映射可查）.",
+        "operationId": "list_templates_endpoint_api_v1_engineering_templates_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "Create Template Endpoint",
+        "description": "创建工程模板（ADMIN；不发布版本）.",
+        "operationId": "create_template_endpoint_api_v1_engineering_templates_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TemplateCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/engineering-templates/{template_id}": {
+      "get": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "Get Template Endpoint",
+        "description": "模板详情 + 当前版本内容（无版本时 currentVersion=null）.",
+        "operationId": "get_template_endpoint_api_v1_engineering_templates__template_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/engineering-templates/{template_id}/versions": {
+      "get": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "List Versions Endpoint",
+        "description": "版本历史（追加式不可变账本，按版本倒序）.",
+        "operationId": "list_versions_endpoint_api_v1_engineering_templates__template_id__versions_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Template Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "Publish Version Endpoint",
+        "description": "发布不可变新版本（ADMIN；追加版本行 + 前进 current_version 指针）.\n\n接 P2-02 统一发布链：expectedRevision 乐观锁（冲突 409）、\nconfig_publication 账本（operation=TEMPLATE_VERSION）、SysAuditLog 审计。\n既有版本行零改动——已固定引用解析结果不变。",
+        "operationId": "publish_version_endpoint_api_v1_engineering_templates__template_id__versions_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Template Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateVersionPublishRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/engineering-templates/{template_id}/versions/{version}/rollback": {
+      "post": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "Rollback Version Endpoint",
+        "description": "current_version 指针回拨到既有版本（ADMIN；版本历史保持追加式）.",
+        "operationId": "rollback_version_endpoint_api_v1_engineering_templates__template_id__versions__version__rollback_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/TemplateVersionRollbackRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/engineering-templates/{template_id}/loops": {
+      "get": {
+        "tags": [
+          "engineering-template"
+        ],
+        "summary": "List Template Loops Endpoint",
+        "description": "模板关联回路清单（发布影响范围可查；pin/跟随状态见回路详情）.",
+        "operationId": "list_template_loops_endpoint_api_v1_engineering_templates__template_id__loops_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "template_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "title": "Template Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_dict_"
                 }
               }
             }
@@ -16874,6 +17814,334 @@
         ]
       }
     },
+    "/api/v1/system/authorization/catalog": {
+      "get": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Get Catalog",
+        "description": "页面码/动作码目录（无机械通配展开；码间依赖显式）。",
+        "operationId": "get_catalog_api_v1_system_authorization_catalog_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_CatalogResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/system/authorization/roles": {
+      "get": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Get Roles",
+        "description": "五角色当前授权矩阵。",
+        "operationId": "get_roles_api_v1_system_authorization_roles_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RolesResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/system/authorization/roles/{role}": {
+      "get": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Get Role Effective",
+        "description": "单角色矩阵 + 有效授权视图（依赖闭包展开 + 模块启用标注）。",
+        "operationId": "get_role_effective_api_v1_system_authorization_roles__role__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Role"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_EffectiveAccessResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Put Role",
+        "description": "更新角色授权矩阵（expectedRevision 409 + 完整校验链 + 审计）。",
+        "operationId": "put_role_api_v1_system_authorization_roles__role__put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "role",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Role"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RoleUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RoleUpdateResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/authorization/users": {
+      "get": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "List User Scopes",
+        "description": "全部用户 scope 列表（无 scope 行=未显式配置，消费侧按 ALL）。",
+        "operationId": "list_user_scopes_api_v1_system_authorization_users_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_list_UserScopeInfo__"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/system/authorization/users/{user_id}/scope": {
+      "put": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Put User Scope",
+        "description": "更新用户数据范围（ALL/NODE_SUBTREE + plant_node 绑定校验）。",
+        "operationId": "put_user_scope_api_v1_system_authorization_users__user_id__scope_put",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScopeUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_ScopeUpdateResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/system/authorization/revisions": {
+      "get": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Get Revisions",
+        "description": "策略版本账本（倒序；回退支撑视图）。",
+        "operationId": "get_revisions_api_v1_system_authorization_revisions_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_PolicyRevisionsResponse_"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/system/authorization/revisions/{revision}/rollback": {
+      "post": {
+        "tags": [
+          "system-authorization"
+        ],
+        "summary": "Post Rollback",
+        "description": "回退=发布逆操作（恢复目标版本 before 快照为新 revision；不删历史）。",
+        "operationId": "post_rollback_api_v1_system_authorization_revisions__revision__rollback_post",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "revision",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Revision"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/app__schemas__authz__RollbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse_RollbackResponse_"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/site/basic-info": {
       "get": {
         "tags": [
@@ -17616,7 +18884,7 @@
           "tuning"
         ],
         "summary": "Create Task Endpoint",
-        "description": "保存整定任务（ADMIN/IC_ENGINEER/EXPERT）。",
+        "description": "保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结）.\n\n新协议：``modelSource`` 必填（缺省=旧协议显式拒绝）；来源/模型/参数/窗口/\ncurrentPid 快照全部由服务端权威派生（详见 ``create_tuning_task``）。",
         "operationId": "create_task_endpoint_api_v1_tuning_tasks_post",
         "security": [
           {
@@ -20751,11 +22019,35 @@
             },
             "type": "array",
             "title": "Resetcontroltypes"
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "type": "object",
         "title": "AlgorithmParamsSaveRequest",
-        "description": "算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.\n\nAttributes:\n    items: 4 控制类型的参数覆盖项（可只传部分控制类型）\n    resetControlTypes: 需重置为算法默认的控制类型（整改 F6 重置默认；与 items 合并生效）"
+        "description": "算法参数保存请求（按指标 code，含 4 控制类型的部分覆盖）.\n\nAttributes:\n    items: 4 控制类型的参数覆盖项（可只传部分控制类型）\n    resetControlTypes: 需重置为算法默认的控制类型（整改 F6 重置默认；与 items 合并生效）\n    expectedRevision: 期望的统一配置 revision（P2-02 乐观锁，可选——\n        提供且与持久 revision 不一致时 409；旧前端不传保持原行为）\n    reason: 变更原因（P2-02 发布审计；未填时记默认文案）"
       },
       "AlgorithmParamsSchema": {
         "properties": {
@@ -21413,6 +22705,32 @@
         "type": "object",
         "title": "ApiResponse[CacheStatsResponse]"
       },
+      "ApiResponse_CatalogResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CatalogResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[CatalogResponse]"
+      },
       "ApiResponse_ConfidenceThresholdSchema_": {
         "properties": {
           "code": {
@@ -21724,6 +23042,58 @@
         },
         "type": "object",
         "title": "ApiResponse[DictItemInfo]"
+      },
+      "ApiResponse_EffectiveAccessResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveAccessResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[EffectiveAccessResponse]"
+      },
+      "ApiResponse_EffectiveParamsResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/EffectiveParamsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[EffectiveParamsResponse]"
       },
       "ApiResponse_EngineRuleItem_": {
         "properties": {
@@ -22739,6 +24109,58 @@
         "type": "object",
         "title": "ApiResponse[PlantNodeInfo]"
       },
+      "ApiResponse_PolicyRevisionsResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyRevisionsResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[PolicyRevisionsResponse]"
+      },
+      "ApiResponse_PublishResultResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublishResultResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[PublishResultResponse]"
+      },
       "ApiResponse_QueryPlanResponse_": {
         "properties": {
           "code": {
@@ -22998,6 +24420,162 @@
         },
         "type": "object",
         "title": "ApiResponse[ReportStageLockState]"
+      },
+      "ApiResponse_RevisionInfoResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RevisionInfoResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[RevisionInfoResponse]"
+      },
+      "ApiResponse_RoleUpdateResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RoleUpdateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[RoleUpdateResponse]"
+      },
+      "ApiResponse_RolesResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RolesResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[RolesResponse]"
+      },
+      "ApiResponse_RollbackResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RollbackResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[RollbackResponse]"
+      },
+      "ApiResponse_RollbackResultResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RollbackResultResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[RollbackResultResponse]"
+      },
+      "ApiResponse_ScopeUpdateResponse_": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScopeUpdateResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[ScopeUpdateResponse]"
       },
       "ApiResponse_SimulationResult_": {
         "properties": {
@@ -24271,6 +25849,36 @@
         "type": "object",
         "title": "ApiResponse[list[TuningMethodInfo]]"
       },
+      "ApiResponse_list_UserScopeInfo__": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "default": "0"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "success"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/UserScopeInfo"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "title": "ApiResponse[list[UserScopeInfo]]"
+      },
       "ApiResponse_list_dict__": {
         "properties": {
           "code": {
@@ -24906,6 +26514,126 @@
         ],
         "title": "CandidateResponse",
         "description": "候选 PID 响应（多 PID 对比）."
+      },
+      "CatalogItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind",
+            "description": "PAGE_GROUP / PAGE / ACTION"
+          },
+          "parentCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parentcode"
+          },
+          "requiresCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Requirescodes"
+          },
+          "moduleKey": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modulekey"
+          },
+          "isProtected": {
+            "type": "boolean",
+            "title": "Isprotected",
+            "default": false
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "title": "Sortorder",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "kind"
+        ],
+        "title": "CatalogItem"
+      },
+      "CatalogResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "pages": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogItem"
+            },
+            "type": "array",
+            "title": "Pages",
+            "description": "PAGE_GROUP + PAGE"
+          },
+          "actions": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogItem"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "protectedCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Protectedcodes"
+          },
+          "roles": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Roles"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "pages",
+          "actions",
+          "protectedCodes",
+          "roles",
+          "note"
+        ],
+        "title": "CatalogResponse"
       },
       "ChangePasswordRequest": {
         "properties": {
@@ -25665,6 +27393,41 @@
               }
             ],
             "title": "Riskassessment"
+          },
+          "modelSource": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "IDENTIFICATION_RECORD",
+                  "STEP_EXPERIMENT",
+                  "MANUAL"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modelsource",
+            "description": "模型来源 IDENTIFICATION_RECORD/STEP_EXPERIMENT/MANUAL；缺省=旧协议拒绝"
+          },
+          "sourceRecordId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourcerecordid",
+            "description": "来源辨识记录 ID（IDENTIFICATION_RECORD/STEP_EXPERIMENT 必填）"
+          },
+          "riskConfirmed": {
+            "type": "boolean",
+            "title": "Riskconfirmed",
+            "description": "C 级辨识结果/人工模型风险确认（与推荐链同门禁）",
+            "default": false
           }
         },
         "type": "object",
@@ -25676,7 +27439,7 @@
           "recommendedPid"
         ],
         "title": "CreateTuningTaskRequest",
-        "description": "创建整定任务（保存整定结果）。"
+        "description": "创建整定任务（保存整定结果）。\n\nP3-B2 W4（G2-INC-c，2026-10-11）——最终选定方案保存链服务端校验冻结：\n\n- 新协议（携带 ``modelSource``）：来源/模型/参数/窗口/currentPid 快照全部\n  由服务端从来源记录与工程事实权威派生；旧客户端申报字段\n  （dataSource/identifyMethod/confidence*/fittingScore/currentPid/rollbackPid/\n  pidCandidates/candidateResults/excitationScore/residualTestPassed）不得\n  携带，携带即 ``ERR_TUNING_PROVENANCE_CONFLICT`` 拒绝（不静默忽略）。\n- 旧协议（缺 ``modelSource`` 的裸模型 payload）：显式拒绝\n  ``ERR_TUNING_SOURCE_REQUIRED``——与 /tune /simulate /compare 推荐链\n  \"旧版裸模型请求已停止放行\"同口径（Owner 级定稿，依据记录于 P3-B2 交接）。\n- 字段只加不改：旧字段保留解析形状（仅整批调用方为仓内前端，随本批同步\n  升级为新协议）。"
       },
       "CustomTaskCreate": {
         "properties": {
@@ -27024,6 +28787,12 @@
             "type": "boolean",
             "title": "Dfiltermultiplier"
           },
+          "representationStatus": {
+            "type": "string",
+            "title": "Representationstatus",
+            "description": "PID 表示状态：KNOWN/UNKNOWN（UNKNOWN=显式未知，禁止默认标准表示）",
+            "default": "KNOWN"
+          },
           "description": {
             "anyOf": [
               {
@@ -27130,6 +28899,13 @@
             "title": "Dfiltermultiplier",
             "description": "微分滤波是否为乘法因子",
             "default": false
+          },
+          "representationStatus": {
+            "type": "string",
+            "pattern": "^(KNOWN|UNKNOWN)$",
+            "title": "Representationstatus",
+            "description": "PID 表示状态（P2-04）：UNKNOWN=该型号 PID 表示显式未知，p/i/d 字段仅占位无转换语义",
+            "default": "KNOWN"
           },
           "description": {
             "anyOf": [
@@ -27364,11 +29140,26 @@
               }
             ],
             "title": "Updatedcount"
+          },
+          "methodMeta": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Methodmeta"
           }
         },
         "type": "object",
         "title": "DiagnosisConfigBatchResponse",
-        "description": "批量获取/更新诊断配置响应.\n\nAttributes:\n    items: 诊断配置列表\n    updatedCount: 更新条数（仅批量更新响应返回）"
+        "description": "批量获取/更新诊断配置响应.\n\nAttributes:\n    items: 诊断配置列表\n    updatedCount: 更新条数（仅批量更新响应返回）\n    methodMeta: 字段级元数据（P2-01 CFG-02：区分注册表只读说明与真实\n        可调字段——algorithmType/calcMethod/params 活执行引擎不消费，\n        标注 readOnly；threshold/isEnabled 真实可调）。旧客户端可忽略。"
       },
       "DiagnosisConfigBatchUpdateRequest": {
         "properties": {
@@ -27889,6 +29680,161 @@
         "type": "object",
         "title": "DimensionMapsSaveRequest",
         "description": "保存请求：maps 为 {维度: {tag: level|null}}；resetAll=true 重置默认."
+      },
+      "EffectiveAccessResponse": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "pages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pages"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          },
+          "unavailableByModule": {
+            "additionalProperties": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Unavailablebymodule"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "pages",
+          "actions",
+          "unavailableByModule",
+          "note"
+        ],
+        "title": "EffectiveAccessResponse"
+      },
+      "EffectiveParameterItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "unit": {
+            "type": "string",
+            "title": "Unit",
+            "default": ""
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "TEMPLATE",
+              "NODE",
+              "LOOP",
+              "TASK"
+            ],
+            "title": "Source"
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceid"
+          },
+          "sourceRevision": {
+            "type": "string",
+            "title": "Sourcerevision",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "source"
+        ],
+        "title": "EffectiveParameterItem",
+        "description": "有效参数单项（key/value/unit/source/sourceId/sourceRevision）."
+      },
+      "EffectiveParamsResponse": {
+        "properties": {
+          "metricCode": {
+            "type": "string",
+            "title": "Metriccode"
+          },
+          "controlType": {
+            "type": "string",
+            "title": "Controltype"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "effective": {
+            "items": {
+              "$ref": "#/components/schemas/EffectiveParameterItem"
+            },
+            "type": "array",
+            "title": "Effective"
+          },
+          "shadowed": {
+            "items": {
+              "$ref": "#/components/schemas/ShadowedParameterItem"
+            },
+            "type": "array",
+            "title": "Shadowed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "metricCode",
+          "controlType",
+          "revision"
+        ],
+        "title": "EffectiveParamsResponse",
+        "description": "统一作用域链有效参数解析结果（有效值/来源/遮盖关系可查询）."
       },
       "EngineRuleItem": {
         "properties": {
@@ -30027,6 +31973,29 @@
         "title": "LogoUploadResponse",
         "description": "LOGO 上传响应."
       },
+      "LoopBatchChangeItem": {
+        "properties": {
+          "field": {
+            "type": "string",
+            "title": "Field",
+            "description": "字段名（snake_case，与 updates 键一致）"
+          },
+          "before": {
+            "title": "Before",
+            "description": "变更前值"
+          },
+          "after": {
+            "title": "After",
+            "description": "变更后值"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "title": "LoopBatchChangeItem",
+        "description": "dry-run 预览中单个字段的差异。"
+      },
       "LoopBatchConfigRequest": {
         "properties": {
           "loopIds": {
@@ -30062,6 +32031,12 @@
             ],
             "title": "Action",
             "description": "批量动作（delete=软删除）"
+          },
+          "dryRun": {
+            "type": "boolean",
+            "title": "Dryrun",
+            "description": "P2-04 dry-run 预览：只返回逐回路差异/部分失败状态/受影响清单，零写入",
+            "default": false
           }
         },
         "type": "object",
@@ -30069,14 +32044,14 @@
           "loopIds"
         ],
         "title": "LoopBatchConfigRequest",
-        "description": "POST /api/v1/loops/batch-config 请求体。\n\n两种模式（互斥）：\n- 更新模式：提供 updates 字段（isMonitored/isStatEnabled/importanceLevel/includeInEvaluation）\n- 删除模式：action=\"delete\"\n\n校验：\n- loopIds 不能为空\n- action=\"delete\" 时 updates 必须为 None\n- updates 非 None 时至少包含一个待更新字段"
+        "description": "POST /api/v1/loops/batch-config 请求体。\n\n两种模式（互斥）：\n- 更新模式：提供 updates 字段（监控/统计/级别/参评 + P2-04 工程属性）\n- 删除模式：action=\"delete\"\n\n校验：\n- loopIds 不能为空\n- action=\"delete\" 时 updates 必须为 None\n- updates 非 None 时至少包含一个待更新字段\n- dryRun=true 时与 action=\"delete\" 互斥（删除不提供预览）"
       },
       "LoopBatchConfigResult": {
         "properties": {
           "affected": {
             "type": "integer",
             "title": "Affected",
-            "description": "受影响的回路数量"
+            "description": "受影响的回路数量（dry-run=将更新数）"
           },
           "action": {
             "type": "string",
@@ -30106,6 +32081,27 @@
             ],
             "title": "Skipped",
             "description": "跳过的回路列表（仅 delete 动作，含 loopId/reason）"
+          },
+          "dryRun": {
+            "type": "boolean",
+            "title": "Dryrun",
+            "description": "本次是否为 dry-run 预览",
+            "default": false
+          },
+          "results": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/LoopBatchResultItem"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Results",
+            "description": "逐回路结果（update 动作；差异/失败状态可追溯）"
           }
         },
         "type": "object",
@@ -30172,6 +32168,59 @@
         "title": "LoopBatchGroupingResult",
         "description": "POST /api/v1/loops/batch-grouping 响应。"
       },
+      "LoopBatchResultItem": {
+        "properties": {
+          "loopId": {
+            "type": "string",
+            "title": "Loopid",
+            "description": "回路 ID"
+          },
+          "tagName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tagname",
+            "description": "回路位号"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "OK=将更新/已更新；UNCHANGED=无差异跳过；FAIL=回路级校验失败；NOT_FOUND=回路不存在"
+          },
+          "changes": {
+            "items": {
+              "$ref": "#/components/schemas/LoopBatchChangeItem"
+            },
+            "type": "array",
+            "title": "Changes",
+            "description": "字段级差异"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "失败原因（status=FAIL/NOT_FOUND 时）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loopId",
+          "status"
+        ],
+        "title": "LoopBatchResultItem",
+        "description": "dry-run 预览/执行结果中的单回路条目。"
+      },
       "LoopBatchUpdates": {
         "properties": {
           "isMonitored": {
@@ -30223,11 +32272,85 @@
             ],
             "title": "Includeinevaluation",
             "description": "是否参与评估"
+          },
+          "controlActionDirection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(DIRECT|REVERSE|UNKNOWN)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controlactiondirection",
+            "description": "控制作用方向：DIRECT/REVERSE/UNKNOWN（未知为显式态）"
+          },
+          "opOutputLowerLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opoutputlowerlimit",
+            "description": "OP 输出下限位"
+          },
+          "opOutputUpperLimit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Opoutputupperlimit",
+            "description": "OP 输出上限位"
+          },
+          "dcsModelId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dcsmodelid",
+            "description": "关联 DCS 型号 ID"
+          },
+          "engineeringTemplateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engineeringtemplateid",
+            "description": "关联工程模板 ID"
+          },
+          "engineeringTemplateVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engineeringtemplateversion",
+            "description": "固定引用的模板版本号（须同时指定模板）"
           }
         },
         "type": "object",
         "title": "LoopBatchUpdates",
-        "description": "批量更新字段（至少一个非 None）。\n\n- isMonitored: 是否监控（is_active=True 表示启用监控）\n- isStatEnabled: 是否纳入统计（当前复用 is_active 语义）\n- importanceLevel: 回路重要等级 1/2/3\n- includeInEvaluation: 是否参与评估\n\nP1 #10: isMonitored 与 isStatEnabled 共用 is_active 字段，\n同时传值会导致后者覆盖前者（静默数据错误），Schema 层强制互斥。"
+        "description": "批量更新字段（至少一个非 None）。\n\n- isMonitored: 是否监控（is_active=True 表示启用监控）\n- isStatEnabled: 是否纳入统计（当前复用 is_active 语义）\n- importanceLevel: 回路重要等级 1/2/3\n- includeInEvaluation: 是否参与评估\n- P2-04 工程属性：controlActionDirection / opOutputLowerLimit /\n  opOutputUpperLimit / dcsModelId / engineeringTemplateId /\n  engineeringTemplateVersion（批量语义：None=不更新该字段）\n\nP1 #10: isMonitored 与 isStatEnabled 共用 is_active 字段，\n同时传值会导致后者覆盖前者（静默数据错误），Schema 层强制互斥。"
       },
       "LoopCreate": {
         "properties": {
@@ -30441,6 +32564,44 @@
             ],
             "title": "Complexrole",
             "description": "复杂回路角色：MAIN(主回路,聚合代表) / SUB(副回路)；NULL=普通单回路"
+          },
+          "controlActionDirection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(DIRECT|REVERSE|UNKNOWN)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controlactiondirection",
+            "description": "控制作用方向：DIRECT(正作用)/REVERSE(反作用)/UNKNOWN(未知，显式态)"
+          },
+          "engineeringTemplateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engineeringtemplateid",
+            "description": "关联工程模板 ID；NULL=未关联（TEMPLATE 层对该回路不参与）"
+          },
+          "engineeringTemplateVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engineeringtemplateversion",
+            "description": "固定引用的模板版本号；NULL=跟随模板当前版本（发布新版不自动改 pin）"
           }
         },
         "additionalProperties": false,
@@ -31626,6 +33787,44 @@
             ],
             "title": "Complexrole",
             "description": "复杂回路角色：MAIN / SUB；NULL=普通单回路"
+          },
+          "controlActionDirection": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(DIRECT|REVERSE|UNKNOWN)$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controlactiondirection",
+            "description": "控制作用方向：DIRECT/REVERSE/UNKNOWN（未知为显式态）"
+          },
+          "engineeringTemplateId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engineeringtemplateid",
+            "description": "关联工程模板 ID；NULL=未关联"
+          },
+          "engineeringTemplateVersion": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Engineeringtemplateversion",
+            "description": "固定引用的模板版本号；NULL=跟随当前版本（PUT null 清除 pin）"
           }
         },
         "additionalProperties": false,
@@ -34361,6 +36560,132 @@
         "title": "OutlierThresholdViewItem",
         "description": "单控制类型阈值合并视图（GET 响应）.\n\nAttributes:\n    control_type: 控制类型（FC/PC/TC/LC/CC）\n    params: 合并后的生效参数（默认值叠加覆盖项，全部非空）\n    overridden: 各参数是否被覆盖（camelCase 参数名 → true=sys_config 覆盖，false=算法默认）"
       },
+      "OverridePublishRequest": {
+        "properties": {
+          "layer": {
+            "type": "string",
+            "enum": [
+              "TEMPLATE",
+              "NODE",
+              "LOOP"
+            ],
+            "title": "Layer"
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scopeid"
+          },
+          "metricCode": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Metriccode"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "controlType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "STABLE",
+                  "SLOW",
+                  "FAST",
+                  "LOGIC"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controltype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer",
+          "scopeId",
+          "metricCode",
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "OverridePublishRequest",
+        "description": "发布一层覆盖（ADMIN，DEC-03；整组替换语义 + expectedRevision 乐观锁）.\n\nAttributes:\n    layer: 覆盖层（TEMPLATE / NODE / LOOP）\n    scopeId: 作用域目标键（TEMPLATE=模板键 / NODE=plant_node.id / LOOP=loop_id）\n    metricCode: 指标代码（须在注册表内）\n    params: 该层覆盖的参数键值对（整组替换该层该作用域该指标的覆盖）\n    expectedRevision: 期望的当前统一配置 revision（冲突 409）\n    reason: 发布原因（必填，入审计）\n    controlType: 校验上下文控制类型（可选；缺省对全部 4 类校验组合约束）"
+      },
+      "OverrideResetRequest": {
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          },
+          "templateKey": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Templatekey"
+          },
+          "nodeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nodeid"
+          },
+          "loopId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loopid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "OverrideResetRequest",
+        "description": "重置一层覆盖（ADMIN；重置低层后高层仍生效，响应附可解释说明）.\n\nAttributes:\n    expectedRevision: 期望的当前统一配置 revision（冲突 409）\n    reason: 重置原因（必填，入审计）\n    templateKey / nodeId / loopId: 更高层作用域（用于组装\"重置后哪些键仍被\n        更高层覆盖\"的解释；不传则该层解释缺省）"
+      },
       "PIDParamsSchema": {
         "properties": {
           "Kp": {
@@ -34796,6 +37121,421 @@
         ],
         "title": "PlantNodeUpdate",
         "description": "PUT /api/v1/plant-nodes/{id} request body."
+      },
+      "PolicyRevisionInfo": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "operation": {
+            "type": "string",
+            "title": "Operation"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          },
+          "userId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Userid"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "operator": {
+            "type": "string",
+            "title": "Operator"
+          },
+          "beforeValue": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforevalue"
+          },
+          "afterValue": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "items": {},
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aftervalue"
+          },
+          "rollbackOf": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollbackof"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "operation",
+          "operator"
+        ],
+        "title": "PolicyRevisionInfo"
+      },
+      "PolicyRevisionsResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "revisions": {
+            "items": {
+              "$ref": "#/components/schemas/PolicyRevisionInfo"
+            },
+            "type": "array",
+            "title": "Revisions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "revisions"
+        ],
+        "title": "PolicyRevisionsResponse"
+      },
+      "PreviewPublishRequest": {
+        "properties": {
+          "layer": {
+            "type": "string",
+            "enum": [
+              "TEMPLATE",
+              "NODE",
+              "LOOP"
+            ],
+            "title": "Layer"
+          },
+          "scopeId": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Scopeid"
+          },
+          "metricCode": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Metriccode"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params"
+          },
+          "expectedRevision": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expectedrevision"
+          },
+          "controlType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "STABLE",
+                  "SLOW",
+                  "FAST",
+                  "LOGIC"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Controltype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "layer",
+          "scopeId",
+          "metricCode"
+        ],
+        "title": "PreviewPublishRequest",
+        "description": "发布预览（P2-04 dry-run，只读；expectedRevision 失配不 409 而是报告）.\n\nAttributes:\n    layer: 覆盖层（TEMPLATE / NODE / LOOP）\n    scopeId: 作用域目标键（TEMPLATE=模板键 / NODE=plant_node.id / LOOP=loop_id）\n    metricCode: 指标代码（须在注册表内）\n    params: 预览的参数键值对（与发布同形，整组替换语义）\n    expectedRevision: 可选——提供且与当前 revision 不一致时响应\n        wouldConflict=true（预览不抛 409）\n    controlType: 校验上下文控制类型（可选；缺省对全部 4 类求合并视图）"
+      },
+      "PublicationItem": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "PUBLISH",
+              "RESET",
+              "ROLLBACK",
+              "LEGACY_SYNC"
+            ],
+            "title": "Operation"
+          },
+          "layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer"
+          },
+          "scope": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Scope"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "operator": {
+            "type": "string",
+            "title": "Operator"
+          },
+          "beforeValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforevalue"
+          },
+          "afterValue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Aftervalue"
+          },
+          "affectedLoops": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affectedloops"
+          },
+          "rollbackRevision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollbackrevision"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "operation",
+          "reason",
+          "operator"
+        ],
+        "title": "PublicationItem",
+        "description": "发布账本行（config_publication）."
+      },
+      "PublishResultResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "rollbackRevision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollbackrevision"
+          },
+          "affectedLoops": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Affectedloops"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "layer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Layer"
+          },
+          "scopeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scopeid"
+          },
+          "metricCode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metriccode"
+          },
+          "resetExplanation": {
+            "items": {
+              "$ref": "#/components/schemas/ResetExplanationItem"
+            },
+            "type": "array",
+            "title": "Resetexplanation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "PublishResultResponse",
+        "description": "发布/重置结果（新 revision + before/after + 影响范围）."
       },
       "QueryPlanResponse": {
         "properties": {
@@ -36758,6 +39498,68 @@
         "title": "ReportStageLockUpdate",
         "description": "锁定阶段；传 stage=null 解除锁定。"
       },
+      "ResetExplanationItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "TEMPLATE",
+              "NODE",
+              "LOOP",
+              "TASK"
+            ],
+            "title": "Source"
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceid"
+          },
+          "sourceRevision": {
+            "type": "string",
+            "title": "Sourcerevision",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "source"
+        ],
+        "title": "ResetExplanationItem",
+        "description": "重置解释单项：被重置层的某键仍被更高层覆盖的来源说明."
+      },
       "ResetPasswordRequest": {
         "properties": {
           "newPassword": {
@@ -36806,6 +39608,214 @@
         "title": "ReviewRunBody",
         "description": "复核请求体（§9.3 复核闭环）。"
       },
+      "RevisionInfoResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "lastPublication": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PublicationItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision"
+        ],
+        "title": "RevisionInfoResponse",
+        "description": "当前统一配置 revision + 最近一次发布摘要."
+      },
+      "RoleGrants": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "pages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pages"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "pages",
+          "actions"
+        ],
+        "title": "RoleGrants"
+      },
+      "RoleUpdateRequest": {
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "title": "Expectedrevision",
+            "description": "乐观锁：调用方持有的当前 revision"
+          },
+          "pageCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pagecodes"
+          },
+          "actionCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actioncodes"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "description": "变更原因（审计必填）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "RoleUpdateRequest"
+      },
+      "RoleUpdateResponse": {
+        "properties": {
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "pages": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pages"
+          },
+          "actions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Actions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "role",
+          "revision",
+          "pages",
+          "actions"
+        ],
+        "title": "RoleUpdateResponse"
+      },
+      "RolesResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "roles": {
+            "items": {
+              "$ref": "#/components/schemas/RoleGrants"
+            },
+            "type": "array",
+            "title": "Roles"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "roles"
+        ],
+        "title": "RolesResponse"
+      },
+      "RollbackResponse": {
+        "properties": {
+          "operation": {
+            "type": "string",
+            "title": "Operation",
+            "default": "ROLLBACK"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "rollbackOf": {
+            "type": "integer",
+            "title": "Rollbackof"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "rollbackOf"
+        ],
+        "title": "RollbackResponse"
+      },
+      "RollbackResultResponse": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "rollbackRevision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rollbackrevision"
+          },
+          "rolledBackRevision": {
+            "type": "integer",
+            "title": "Rolledbackrevision"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "rolledBackRevision"
+        ],
+        "title": "RollbackResultResponse",
+        "description": "回退结果."
+      },
       "SceneInfo": {
         "properties": {
           "sceneId": {
@@ -36829,6 +39839,84 @@
         ],
         "title": "SceneInfo",
         "description": "场景元信息。"
+      },
+      "ScopeUpdateRequest": {
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "title": "Expectedrevision"
+          },
+          "scopeType": {
+            "type": "string",
+            "title": "Scopetype",
+            "description": "ALL / NODE_SUBTREE"
+          },
+          "nodeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nodeid",
+            "description": "NODE_SUBTREE 必填（plant_node id）"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "scopeType",
+          "reason"
+        ],
+        "title": "ScopeUpdateRequest"
+      },
+      "ScopeUpdateResponse": {
+        "properties": {
+          "userId": {
+            "type": "string",
+            "title": "Userid"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "scopeType": {
+            "type": "string",
+            "title": "Scopetype"
+          },
+          "nodeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nodeid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userId",
+          "username",
+          "revision",
+          "scopeType",
+          "nodeId"
+        ],
+        "title": "ScopeUpdateResponse"
       },
       "ScoreWeights": {
         "properties": {
@@ -36878,6 +39966,106 @@
         "type": "object",
         "title": "ScoreWeights",
         "description": "回路评分权重（6 大 KPI 权重，总和须为 100）。\n\n对齐 GB/T 44693.2-2024：\n- 好值率仅作为显示指标，不参与综合评分加权\n- 新增快速率（fast_rate）参与加权\n- 有效自控率作为乘数因子（单独显示）\n- 向后兼容：读取时忽略已有的 good_value_rate 字段"
+      },
+      "ShadowedParameterItem": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "TEMPLATE",
+              "NODE",
+              "LOOP",
+              "TASK"
+            ],
+            "title": "Source"
+          },
+          "sourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sourceid"
+          },
+          "shadowedBy": {
+            "type": "string",
+            "enum": [
+              "DEFAULT",
+              "TEMPLATE",
+              "NODE",
+              "LOOP",
+              "TASK"
+            ],
+            "title": "Shadowedby"
+          },
+          "shadowedBySourceId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shadowedbysourceid"
+          },
+          "shadowedByValue": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shadowedbyvalue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "source",
+          "shadowedBy"
+        ],
+        "title": "ShadowedParameterItem",
+        "description": "被遮盖参数单项（重置/覆盖解释：低层值 + 遮盖它的高层来源）."
       },
       "SimulateRequest": {
         "properties": {
@@ -39017,6 +42205,96 @@
         "title": "TaskType",
         "description": "任务类型.\n\nAttributes:\n    STANDARD: 标准评估任务（每小时定时，全量回路覆盖）\n    CUSTOM: 自定义评估任务（用户按需触发，选定回路/指标/时间范围）\n    BACKFILL: 历史重算任务（按时间窗批量重算，覆盖标准快照）\n    TUNING: 回路整定任务（辨识/整定/仿真异步任务，V62-P1-013 接入 TaskTracker）\n    REPORT: 报告导出任务（诊断建议书 PDF 等异步导出，P3-33 接入 TaskTracker）\n    DIAGNOSIS: 回路诊断任务（MVP v2 诊断模块手动批量触发）"
       },
+      "TemplateCreateRequest": {
+        "properties": {
+          "templateKey": {
+            "type": "string",
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Templatekey"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "pattern": "^(RESPONSE|CONTROL)$",
+            "title": "Category",
+            "default": "RESPONSE"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "templateKey",
+          "name"
+        ],
+        "title": "TemplateCreateRequest",
+        "description": "创建工程模板."
+      },
+      "TemplateVersionPublishRequest": {
+        "properties": {
+          "profile": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Profile"
+          },
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "TemplateVersionPublishRequest",
+        "description": "发布不可变新版本（追加式；expectedRevision 乐观锁）."
+      },
+      "TemplateVersionRollbackRequest": {
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "TemplateVersionRollbackRequest",
+        "description": "current_version 指针回拨到既有版本（生成新 revision，版本历史不删改）."
+      },
       "TimeWindowBody": {
         "properties": {
           "start": {
@@ -40777,6 +44055,14 @@
             "type": "array",
             "title": "Permissions"
           },
+          "pageCodes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Pagecodes",
+            "default": []
+          },
           "defaultHome": {
             "type": "string",
             "title": "Defaulthome",
@@ -40921,6 +44207,56 @@
         ],
         "title": "UserListData",
         "description": "Paginated user list response data."
+      },
+      "UserScopeInfo": {
+        "properties": {
+          "userId": {
+            "type": "string",
+            "title": "Userid"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "displayName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Displayname"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "scopeType": {
+            "type": "string",
+            "title": "Scopetype"
+          },
+          "nodeId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nodeid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userId",
+          "username",
+          "role",
+          "scopeType"
+        ],
+        "title": "UserScopeInfo"
       },
       "UserUpdateRequest": {
         "properties": {
@@ -41422,6 +44758,48 @@
         "type": "object",
         "title": "WeightTemplateSchema",
         "description": "权重模板（4 类控制类型的权重集合）.\n\n对齐 GB/T 44693.2-2024 国标默认权重：\n- STABLE: 稳定型（快速率权重低，稳定率权重高）\n- SLOW: 慢速型\n- FAST: 快速型（快速率权重高）\n- LOGIC: 逻辑型\n\n有效自控率（effective_auto_rate）为折扣因子 R，不参与权重和校验。\n\ncustomMetrics 为矩阵表格中的自定义指标行（仅登记，不参与综合评分）。"
+      },
+      "app__schemas__authz__RollbackRequest": {
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "RollbackRequest"
+      },
+      "app__schemas__config__RollbackRequest": {
+        "properties": {
+          "expectedRevision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expectedrevision"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expectedRevision",
+          "reason"
+        ],
+        "title": "RollbackRequest",
+        "description": "回退指定发布（ADMIN；生成新 revision，不删历史）."
       }
     },
     "securitySchemes": {

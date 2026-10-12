@@ -10,7 +10,7 @@
 import type { MetricApi } from '#/api/metric';
 import type { KpiSnapshotItem } from '#/api/metric';
 
-import { ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import {
   Badge,
@@ -18,10 +18,12 @@ import {
   DescriptionsItem,
   Table,
   Tag,
+  Tooltip,
 } from 'ant-design-vue';
 
 import { getLoopSnapshotsApi } from '#/api/metric';
-import { ClpmInfoTip } from '#/components/clpm';
+import { ClpmInfoTip, ClpmLoadErrorAlert } from '#/components/clpm';
+import { useLatestRequest } from '#/composables/use-latest-request';
 import {
   LOOP_TYPE_LABEL_MAP,
   useLoopPalettes,
@@ -33,6 +35,7 @@ import {
   CONFIDENCE_COLOR_MAP,
   CONFIDENCE_LABEL_MAP,
   CONTROL_TYPE_MAP,
+  describeRequestError,
   DETAIL_HISTORY_COLUMNS,
   formatFullTime,
   formatNumber,
@@ -70,44 +73,185 @@ function getGrade(score: null | number | undefined): null | number {
   return level === null ? null : Number(level);
 }
 
+// ===== R02-1（P3-D6b）：评估等级仅消费正式 P =====
+// 对齐 08d classify_roster_state 的 scorable 判定：快照状态非 SUCCESS、
+// score null（未计算）、或携带语义且 composite 非 COMPLETE（PARTIAL/
+// UNASSESSABLE = P 证据不足）时不可定级——F 参考分不进等级。
+const compositeState = computed(
+  () =>
+    props.record.metricsSemantic?.__composite__?.assessmentState ?? null,
+);
+
+/** 可定级的正式 P（不满足条件时 null → 等级显示 '—'） */
+const gradeScore = computed<null | number>(() => {
+  if (props.record.status !== 'SUCCESS') return null;
+  const score = props.record.score;
+  if (score === null || score === undefined) return null;
+  if (compositeState.value && compositeState.value !== 'COMPLETE') {
+    return null;
+  }
+  return score;
+});
+
+/** 等级不可用原因（'—' 单元格 Tooltip 说明，非 0 分） */
+const gradeUnavailableReason = computed(() => {
+  if (gradeScore.value !== null) return '';
+  if (props.record.status !== 'SUCCESS') {
+    return `快照状态 ${props.record.status}，无完整正式评分，不可定级（非 0 分）`;
+  }
+  if (props.record.score === null || props.record.score === undefined) {
+    return '该窗口评分未计算（null，非 0 分），不可定级';
+  }
+  if (compositeState.value && compositeState.value !== 'COMPLETE') {
+    return `综合评分 ${compositeState.value}（P 证据不足），不可定级`;
+  }
+  return '';
+});
+
+// ===== R02-2（P3-D6b，G3-R01 接通）：快速率正式/参考分行 =====
+// record 携带 metricsSemantic.fast_rate 语义时拆"正式 F / 参考分"两行
+// （参考行加徽标）；未携带（legacy 行）按原单值渲染。
+// G3-R01 正式优先互斥守卫（08d 口径）：正式值在场（含真实 0 分）时残留
+// referenceScore 不展示、不重复计参考——正式 0 是有效正式分。
+const fastFormalValue = computed<null | number>(() => {
+  const raw = props.record.metricsSemantic?.fast_rate?.value;
+  return typeof raw === 'number' ? raw : null;
+});
+const fastReferenceScore = computed<null | number>(() => {
+  if (fastFormalValue.value !== null) return null;
+  const raw = props.record.metricsSemantic?.fast_rate?.details?.referenceScore;
+  return typeof raw === 'number' ? raw : null;
+});
+/** 参考分行注记（R02-1：参考值不进等级，单独注记） */
+const fastReferenceNote = computed(() =>
+  fastReferenceScore.value === null
+    ? ''
+    : `快速性参考分 ${fastReferenceScore.value}% · 动态证据不足（静稳规则），不参与定级`,
+);
+
+// ===== R1（2026-10-12 审核修复批）：R 折扣归因提示 =====
+// P3-08c 契约 details（effective_auto_rate）携带 unknownSeconds/
+// denominatorSeconds/possibleRange 时，综合分低值不再渲染成"确定为
+// 0 分"——显式标注 R 为已证实下界、未知占比与可能区间（P=基础分×R/100，
+// 未知不补时是折扣主因）。诚实化：行未携带语义字段则不出提示、不造数。
+const R_DISCOUNT_UNKNOWN_PCT_MIN = 30; // 未知占比低于 30% 不加噪
+const rDiscountNote = computed(() => {
+  const details =
+    props.record.metricsSemantic?.effective_auto_rate?.details ?? null;
+  if (!details) return '';
+  const { unknownSeconds, denominatorSeconds, possibleRange } =
+    details as Record<string, unknown>;
+  const ear = props.record.effectiveAutoRate;
+  if (
+    typeof unknownSeconds !== 'number' ||
+    typeof denominatorSeconds !== 'number' ||
+    denominatorSeconds <= 0 ||
+    unknownSeconds <= 0 ||
+    ear === null ||
+    ear === undefined
+  ) {
+    return '';
+  }
+  const unknownPct = (unknownSeconds / denominatorSeconds) * 100;
+  if (unknownPct < R_DISCOUNT_UNKNOWN_PCT_MIN) return '';
+  const rangeText =
+    Array.isArray(possibleRange) &&
+    typeof possibleRange[0] === 'number' &&
+    typeof possibleRange[1] === 'number'
+      ? `，可能区间 ${possibleRange[0]}%~${possibleRange[1]}%`
+      : '';
+  return `有效自控率 ${ear.toFixed(2)}% 为已证实下界（未知占比 ${unknownPct.toFixed(0)}%${rangeText}），综合分含数据不足折扣`;
+});
+
+// ===== G3-R01：语义链路状态（legacy 不可追溯 vs 新 profile 断链分开） =====
+const SEMANTIC_LINK_LABELS: Record<string, { text: string; tone: string }> = {
+  AVAILABLE: { text: '完整语义可追溯', tone: 'success' },
+  NOT_TRACEABLE: {
+    text: '历史不可追溯（该记录无完整语义明细）',
+    tone: 'default',
+  },
+  UNLINKED: {
+    text: '历史不可追溯（快照行未关联结果账本）',
+    tone: 'default',
+  },
+  BROKEN: {
+    text: '语义断链：该记录为新评估档位但缺少语义明细（链路缺陷，请上报）',
+    tone: 'error',
+  },
+};
+const semanticLink = computed(() => {
+  const status = props.record.semanticLinkStatus ?? null;
+  if (status === null) return null;
+  return SEMANTIC_LINK_LABELS[status] ?? { text: status, tone: 'default' };
+});
+
 /** 评分颜色（原页面 scoreColor 判定链） */
 function scoreColor(val: null | number | undefined): string {
   return useScoreColor(val, props.gradingThresholds).color.value;
 }
 
-/** 历史快照子表（最近 10 条；原 loadDrawerHistory 逻辑搬移） */
+/** 历史快照子表（最近 10 条；原 loadDrawerHistory 逻辑搬移）
+ *  G3-R03（14 号文 §4）：区分 loading/成功空/成功有值/error——失败显式
+ *  原因+重试，不冒充空态；useLatestRequest 竞态守卫（切换回路/关闭
+ *  组件后迟到响应不写入）。 */
 const history = ref<KpiSnapshotItem[]>([]);
 const historyLoading = ref(false);
+/** 历史加载失败原因（null=最近一次成功；失败不清空已有数据冒充空态） */
+const historyError = ref<null | string>(null);
+
+const historyGuard = useLatestRequest<string>();
+
+const historyErrorText = computed(() =>
+  historyError.value ? `历史快照加载失败：${historyError.value}` : '',
+);
 
 async function loadHistory(loopId: string) {
+  historyGuard.bump(loopId);
   historyLoading.value = true;
-  try {
-    const result = await getLoopSnapshotsApi({
-      loopId,
-      latestOnly: false,
-      page: 1,
-      pageSize: 10,
-    });
-    history.value = result.items || [];
-  } catch {
-    history.value = [];
-  } finally {
-    historyLoading.value = false;
-  }
+  await historyGuard.run(async (_signal, capturedEpoch) => {
+    try {
+      const result = await getLoopSnapshotsApi({
+        loopId,
+        latestOnly: false,
+        page: 1,
+        pageSize: 10,
+      });
+      if (!historyGuard.guard(loopId, capturedEpoch)) return;
+      history.value = result.items || [];
+      historyError.value = null;
+    } catch (error) {
+      if (!historyGuard.guard(loopId, capturedEpoch)) return;
+      // G3-R03：失败保留既有数据并显式报错，不置空冒充"暂无数据"
+      historyError.value = describeRequestError(error);
+    } finally {
+      if (historyGuard.guard(loopId, capturedEpoch)) historyLoading.value = false;
+    }
+  });
+}
+
+function retryHistory() {
+  if (props.record?.loopId) loadHistory(props.record.loopId);
 }
 
 watch(
   () => [props.record?.loopId, props.withHistory] as const,
   ([loopId, withHistory]) => {
+    // 切换目标：失效在途响应（旧回路迟到数据不写入）并重置历史状态
+    historyGuard.bump(loopId ?? null);
+    history.value = [];
+    historyError.value = null;
+    historyLoading.value = false;
     if (withHistory && loopId) {
-      history.value = [];
       loadHistory(loopId);
-    } else {
-      history.value = [];
     }
   },
   { immediate: true },
 );
+
+// 组件关闭：递增代次使迟到响应 guard 全拒（不污染新实例）
+onBeforeUnmount(() => {
+  historyGuard.cancelAll();
+});
 </script>
 
 <template>
@@ -146,13 +290,23 @@ watch(
         <span v-else>—</span>
       </DescriptionsItem>
       <DescriptionsItem label="评估等级">
+        <!-- R02-1：等级仅消费正式 P（SUCCESS + score 非 null + composite
+             COMPLETE）；不满足时 '—' 并说明原因（非 0 分），F 参考不进等级 -->
         <Tag
-          v-if="getGrade(record.score)"
-          :color="GRADE_COLOR_MAP[getGrade(record.score)!]"
+          v-if="getGrade(gradeScore)"
+          :color="GRADE_COLOR_MAP[getGrade(gradeScore)!]"
         >
-          {{ GRADE_LABEL_MAP[getGrade(record.score)!] }}
+          {{ GRADE_LABEL_MAP[getGrade(gradeScore)!] }}
         </Tag>
-        <span v-else>—</span>
+        <Tooltip v-else :title="gradeUnavailableReason">
+          <span class="cursor-help text-gray-400">—</span>
+        </Tooltip>
+        <div
+          v-if="fastReferenceNote"
+          class="mt-1 text-xs text-gray-400"
+        >
+          {{ fastReferenceNote }}
+        </div>
       </DescriptionsItem>
       <DescriptionsItem label="PV 量程">
         {{
@@ -197,6 +351,10 @@ watch(
         >
           {{ formatNumber(record.score) }}
         </span>
+        <!-- R1：R 折扣归因（rDiscountNote 为空则原样渲染，零行为变化） -->
+        <div v-if="rDiscountNote" class="mt-1 text-xs text-gray-400">
+          {{ rDiscountNote }}
+        </div>
       </DescriptionsItem>
       <DescriptionsItem>
         <template #label>
@@ -218,7 +376,34 @@ watch(
             :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
           />
         </template>
-        {{ formatNumber(record.fastRate, '%') }}
+        <!-- R02-2：有语义（metricsSemantic.fast_rate.referenceScore 且无正式值）
+             时拆"正式 F / 参考分"两行，参考行加徽标；正式值（含 0 分）在场
+             优先单值渲染；未携带语义按原单值渲染 -->
+        <template v-if="fastReferenceScore !== null">
+          <div>
+            <span class="text-gray-500">正式 F：</span>
+            <span class="font-mono text-xs">{{
+              formatNumber(fastFormalValue, '%')
+            }}</span>
+          </div>
+          <div class="mt-1 flex items-center gap-1">
+            <Tag color="default" class="m-0">参考</Tag>
+            <span class="font-mono text-xs">
+              参考分 {{ formatNumber(fastReferenceScore, '%') }}
+            </span>
+            <span class="text-xs text-gray-400">
+              · 动态证据不足（静稳规则）
+            </span>
+          </div>
+        </template>
+        <template v-else>
+          {{
+            formatNumber(
+              fastFormalValue !== null ? fastFormalValue : record.fastRate,
+              '%',
+            )
+          }}
+        </template>
       </DescriptionsItem>
       <DescriptionsItem>
         <template #label>
@@ -315,11 +500,33 @@ watch(
       <DescriptionsItem label="算法版本">
         {{ record.algorithmVersion || '—' }}
       </DescriptionsItem>
+      <!-- G3-R01：语义链路状态（legacy 不可追溯 / 新 profile 断链分开显示） -->
+      <DescriptionsItem label="评估语义">
+        <Tag v-if="semanticLink" :color="semanticLink.tone" class="m-0">
+          {{ semanticLink.text }}
+        </Tag>
+        <span v-else class="text-gray-400">—</span>
+        <Tooltip
+          v-if="semanticLink"
+          :title="`语义明细来源：不可变结果账本 record ${
+            record.resultRecordId || '（未关联）'
+          }；legacy 记录无完整语义属历史口径，新档位记录缺语义为链路缺陷`"
+        >
+          <span class="ml-1 cursor-help text-xs text-gray-400">?</span>
+        </Tooltip>
+      </DescriptionsItem>
     </Descriptions>
 
     <!-- 历史快照子表（该回路最近 10 条评估记录；withHistory=false 时不渲染） -->
     <template v-if="withHistory !== false">
       <div class="mb-2 mt-4 text-sm font-medium">历史快照（最近 10 条）</div>
+      <!-- G3-R03：加载失败显式原因+重试，不冒充空态 -->
+      <ClpmLoadErrorAlert
+        v-if="historyError && !historyLoading"
+        :error="true"
+        :error-text="historyErrorText"
+        @retry="retryHistory"
+      />
       <Table
         :columns="DETAIL_HISTORY_COLUMNS"
         :data-source="history"
@@ -399,6 +606,15 @@ watch(
               }}
             </Tag>
           </template>
+        </template>
+        <!-- G3-R03：空态与错误态分开——HTTP 成功 0 条才显示"暂无记录" -->
+        <template #emptyText>
+          <span v-if="historyError" class="text-xs text-red-400">
+            历史快照加载失败，无法确认该回路是否有评估记录（请重试）
+          </span>
+          <span v-else class="text-xs text-gray-400">
+            该回路暂无历史评估记录
+          </span>
         </template>
       </Table>
     </template>

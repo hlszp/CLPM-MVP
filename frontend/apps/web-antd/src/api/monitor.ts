@@ -19,12 +19,13 @@ export namespace MonitorApi {
   /** 优先级 */
   export type AttentionPriority = 'HIGH' | 'LOW' | 'MEDIUM' | 'URGENT';
 
-  /** 统一状态 */
+  /** 统一状态（VERIFYING：HANDLING 来源工单验证中，2026-10-10 IA-04 补齐前端字典） */
   export type AttentionStatus =
     | 'ACKNOWLEDGED'
     | 'IN_PROGRESS'
     | 'OPEN'
-    | 'SUPPRESSED';
+    | 'SUPPRESSED'
+    | 'VERIFYING';
 
   /** 可信度等级 */
   export type ConfidenceLevel = 'A' | 'B' | 'C' | 'D' | 'E';

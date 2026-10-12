@@ -170,7 +170,7 @@ async def list_loops_endpoint(
 async def create_loop_endpoint(
     body: LoopCreate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:create")),
 ) -> dict:
     """创建回路。"""
     score_weights = None
@@ -197,6 +197,9 @@ async def create_loop_endpoint(
         ideal_settling_time=body.idealSettlingTime,
         complex_loop_group_id=body.complexLoopGroupId,
         complex_role=body.complexRole,
+        control_action_direction=body.controlActionDirection,
+        engineering_template_id=body.engineeringTemplateId,
+        engineering_template_version=body.engineeringTemplateVersion,
     )
     return success(data=data, message="创建成功")
 
@@ -213,15 +216,18 @@ async def create_loop_endpoint(
 async def batch_config_loops_endpoint(
     body: LoopBatchConfigRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("loop:batch-config")),
 ) -> dict:
     """批量配置回路（仅 ADMIN）。
 
-    两种模式（互斥）：
-    - 更新模式：提供 updates 字段（isMonitored/isStatEnabled/importanceLevel/includeInEvaluation）
+    三种模式：
+    - 更新模式：提供 updates 字段（监控/统计/级别/参评 + P2-04 工程属性：
+      控制作用方向/OP 限位/DCS 型号/工程模板引用）
+    - dry-run 预览：dryRun=true（P2-04）——只读预览逐回路差异、部分失败
+      状态与受影响清单，零写入（读取与发布能力分开）
     - 删除模式：action="delete"（硬删除：解绑 Tag 映射 + 级联清理关联数据，不可恢复）
 
-    所有操作均记录审计日志。
+    所有写入操作均记录审计日志。
     """
     if body.action == "delete":
         # P1 #9: batch_delete_loops 返回 {"deleted": int, "skipped": list}
@@ -233,34 +239,52 @@ async def batch_config_loops_endpoint(
         affected = del_result["deleted"]
         skipped = del_result["skipped"]
         action = "delete"
+        dry_run = False
+        results = None
     else:
-        # 更新模式
+        # 更新模式（dry_run 可选）
         updates_dict: dict = {}
         if body.updates is not None:
-            if body.updates.is_monitored is not None:
-                updates_dict["is_monitored"] = body.updates.is_monitored
-            if body.updates.is_stat_enabled is not None:
-                updates_dict["is_stat_enabled"] = body.updates.is_stat_enabled
-            if body.updates.importance_level is not None:
-                updates_dict["importance_level"] = body.updates.importance_level
-            if body.updates.include_in_evaluation is not None:
-                updates_dict["include_in_evaluation"] = body.updates.include_in_evaluation
-        affected = await batch_update_loops(
+            for field in (
+                "is_monitored",
+                "is_stat_enabled",
+                "importance_level",
+                "include_in_evaluation",
+                "control_action_direction",
+                "op_output_lower_limit",
+                "op_output_upper_limit",
+                "dcs_model_id",
+                "engineering_template_id",
+                "engineering_template_version",
+            ):
+                value = getattr(body.updates, field)
+                if value is not None:
+                    updates_dict[field] = value
+        batch_result = await batch_update_loops(
             db=db,
             loop_ids=body.loop_ids,
             updates=updates_dict,
             operator=user.username,
+            dry_run=body.dry_run,
         )
+        affected = batch_result["affected"]
+        results = batch_result["results"]
         action = "update"
         skipped = None
+        dry_run = batch_result["dryRun"]
 
     result = LoopBatchConfigResult(
         affected=affected,
         action=action,
         loop_ids=body.loop_ids,
         skipped=skipped,
+        dry_run=dry_run,
+        results=results,
     )
-    return success(data=result.model_dump(by_alias=True), message="批量操作成功")
+    return success(
+        data=result.model_dump(by_alias=True),
+        message="批量操作预览（零写入）" if dry_run else "批量操作成功",
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +296,7 @@ async def batch_config_loops_endpoint(
 async def batch_group_loops_endpoint(
     body: LoopBatchGroupingRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:batch-grouping")),
 ) -> dict:
     """批量建立复杂回路分组（仅 ADMIN / IC_ENGINEER）。
 
@@ -306,6 +330,7 @@ async def list_complex_groups_endpoint(
 @router.post("/health-flags/recompute", response_model=ApiResponse[dict])
 async def recompute_health_flags_endpoint(
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("loop:edit")),
 ) -> dict:
     """手动触发 SP 随动等健康标记判定（仅 ADMIN，2026-10-10 运维圈选）。
 
@@ -420,7 +445,7 @@ async def export_loops_endpoint(
     includeInEvaluation: bool | None = Query(None, description="按参评状态筛选"),
     loopType: str | None = Query(None, description="按回路类型筛选"),
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("loop:export")),
 ) -> StreamingResponse:
     """导出回路台账为 Excel 文件（.xlsx）。"""
     content = await export_loops(
@@ -446,7 +471,7 @@ async def export_loops_endpoint(
 async def import_loops_endpoint(
     file: UploadFile = File(..., description="Excel 文件 (.xlsx)"),
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:import")),
 ) -> dict:
     """批量导入回路台账（Excel .xlsx）。
 
@@ -474,12 +499,42 @@ async def get_loop_detail_endpoint(
     return success(data=data)
 
 
+# ---------------------------------------------------------------------------
+# Loop Engineering Facts & Qualifications (P2-04, 07 号文 §3.3)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/{loop_id}/engineering-facts", response_model=ApiResponse[dict])
+async def get_loop_engineering_facts_endpoint(
+    loop_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("loop:view")),
+) -> dict:
+    """回路工程事实 + 两种资格（只读；转换与算法消费归 P3-03）.
+
+    - facts：控制作用方向（DIRECT/REVERSE/UNKNOWN 显式态）、实际 OP 上下限
+      （来源优先级 回路字段 > OP Tag 量程 > 默认 0/100）、PID 表示与时间单位
+      （未知 DCS 型号恒 status=UNKNOWN，不默认标准 kp/ti/td）、工程模板
+      引用（不可变版本 revisionRef）；
+    - qualifications：历史片段辨识资格与 PID 应用资格**分别定义**
+      （07 号文 §3.3——前者不消费 L0/L1 门禁，后者为现行门禁的只读映射）。
+    """
+    from app.services.engineering_facts import (
+        get_loop_qualifications,
+        resolve_loop_engineering_facts,
+    )
+
+    facts = await resolve_loop_engineering_facts(db, loop_id)
+    qualifications = await get_loop_qualifications(db, loop_id)
+    return success(data={"facts": facts, "qualifications": qualifications})
+
+
 @router.put("/{loop_id}", response_model=ApiResponse[LoopUpdateResult])
 async def update_loop_endpoint(
     loop_id: str,
     body: LoopUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:edit")),
 ) -> dict:
     """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。"""
     score_weights = None
@@ -520,6 +575,12 @@ async def update_loop_endpoint(
         complex_role=complex_role,
         _complex_group_set="complexLoopGroupId" in body.model_fields_set,
         _complex_role_set="complexRole" in body.model_fields_set,
+        control_action_direction=body.controlActionDirection,
+        engineering_template_id=body.engineeringTemplateId,
+        engineering_template_version=body.engineeringTemplateVersion,
+        _control_action_direction_set="controlActionDirection" in body.model_fields_set,
+        _engineering_template_id_set="engineeringTemplateId" in body.model_fields_set,
+        _engineering_template_version_set="engineeringTemplateVersion" in body.model_fields_set,
     )
     return success(data=data, message="更新成功")
 
@@ -528,7 +589,7 @@ async def update_loop_endpoint(
 async def delete_loop_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("loop:delete")),
 ) -> dict:
     """删除回路（仅 ADMIN，硬删除）。
 
@@ -561,7 +622,7 @@ async def update_loop_tags_endpoint(
     loop_id: str,
     body: LoopTagMappingUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    user: SysUser = Depends(require_perms("loop:edit")),
 ) -> dict:
     """批量更新回路 Tag 关联。
 
@@ -620,6 +681,7 @@ async def get_loop_monitor_detail_endpoint(
     db: AsyncSession = Depends(get_db),
     # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻回路监控详情（趋势/性能）
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
+    _perm: SysUser = Depends(require_perms("loop:view")),
 ) -> dict:
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。"""
     data = await get_loop_monitor_detail(

@@ -73,8 +73,9 @@ const userStore = useUserStore();
 const router = useRouter();
 // 0929 权限收口：roles[0] 只看第一个角色，多角色用户（如 ADMIN+IC）会被误判只读，
 // 统一走 useClpmRoles.hasAnyRole（roles.some 语义）
-const { hasAnyRole } = useClpmRoles();
-const canEdit = computed(() => hasAnyRole(['ADMIN', 'IC_ENGINEER']));
+const { hasAnyRole, hasPerm } = useClpmRoles();
+// P4-02：确认/解决/误报按钮改权限码判定（后端 require_perms("alert:event-handle"）
+const canEdit = computed(() => hasPerm('alert:event-handle'));
 const canArchive = computed(() => hasAnyRole(['ADMIN']));
 const canOpenWorkbench = computed(() =>
   hasAnyRole(['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER']),
@@ -263,9 +264,7 @@ const METRIC_LABEL: Record<string, string> = {
 
 /** 事件触发指标中文标签（取自触发条件快照的 metric 字段） */
 function metricLabelOf(record: AlertApi.EventItem): string {
-  const metric = record.triggerConditionSnapshot?.metric as
-    | string
-    | undefined;
+  const metric = record.triggerConditionSnapshot?.metric as string | undefined;
   if (!metric) return '-';
   return METRIC_LABEL[metric] ?? metric;
 }
@@ -277,7 +276,6 @@ function metricScoreOf(record: AlertApi.EventItem): string {
     record.triggeredValue;
   return v == null ? '-' : Number(v).toFixed(3);
 }
-
 
 const columns: TableColumnsType = [
   {
@@ -918,7 +916,9 @@ onMounted(() => {
       </template>
       <template #emptyText>
         <ClpmEmptyState
-          :title="activeTab === 'realtime' ? '当前无未确认预警' : '暂无历史预警'"
+          :title="
+            activeTab === 'realtime' ? '当前无未确认预警' : '暂无历史预警'
+          "
           :description="
             activeTab === 'realtime'
               ? '当前筛选条件下没有待确认的预警事件；规则引擎巡检产生的新事件会实时出现在这里。'

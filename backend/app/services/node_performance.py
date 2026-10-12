@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 from uuid import uuid4
 
 from sqlalchemy import func, select, text
@@ -30,6 +32,12 @@ from app.models.node_kpi import (
 )
 from app.models.plant_node import PlantNode
 from app.models.unit_kpi_summary import UnitKpiSummary
+from app.services import result_ledger
+from app.services.metric_calculator.reference_stats import (
+    fast_rate_reference_stats,
+    scorable_p_ratio,
+    weighted_score_stats,
+)
 from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
@@ -52,6 +60,362 @@ KPI_FIELDS = (
     "output_trip_index",
     "ideal_settling_time",
 )
+
+
+# ---------------------------------------------------------------------------
+# P3-08d：固定参评名册与完整 P 可评分统计（10§3.6.2/§3.6.3，C26-EA1～5）
+# ---------------------------------------------------------------------------
+
+#: 名册六类互斥状态（11§3 对账表：E = scorable+incomplete+failed+cancelled+
+#: pending+missing；每回路按选定窗/profile 取唯一归类）
+ROSTER_STATE_SCORABLE = "scorable"
+ROSTER_STATE_INCOMPLETE = "incomplete"
+ROSTER_STATE_FAILED = "failed"
+ROSTER_STATE_CANCELLED = "cancelled"
+ROSTER_STATE_PENDING = "pending"
+ROSTER_STATE_MISSING = "missing"
+ROSTER_STATES: tuple[str, ...] = (
+    ROSTER_STATE_SCORABLE,
+    ROSTER_STATE_INCOMPLETE,
+    ROSTER_STATE_FAILED,
+    ROSTER_STATE_CANCELLED,
+    ROSTER_STATE_PENDING,
+    ROSTER_STATE_MISSING,
+)
+
+#: weighted_score_stats 的 eta 归一仅对 0～100 分值指标有效（09a 契约）；
+#: 秒/指数类指标用本地原始加权统计（同键名，不做 [0,100] 截断）
+_PERCENT_SCALE_FIELDS = frozenset(
+    {
+        "score",
+        "good_value_rate",
+        "auto_mode_rate",
+        "effective_auto_rate",
+        "steady_rate",
+        "accuracy_rate",
+        "fast_rate",
+        "oscillation_rate",
+        "saturation_rate",
+        "instrument_fault_rate",
+    }
+)
+
+
+def classify_roster_state(
+    *,
+    has_snapshot: bool,
+    snapshot_status: str | None,
+    snapshot_score: Decimal | float | None,
+    composite_state: str | None,
+    has_failed_record: bool = False,
+) -> tuple[str, str]:
+    """单回路 → 名册互斥状态 + 原因码（纯函数）.
+
+    - 无快照行：有 FAILED record → failed（已知任务终态）；否则 missing
+      （无对应记录/任务）。cancelled/pending 当前标准小时链无逐回路×窗口
+      的持久任务登记（task_tracker 为 Redis 任务级），诚实计 0 并在
+      ``stateSourceNote`` 说明（不虚构状态）。
+    - 有快照行：SUCCESS 行需完整 P 才 scorable——composite assessmentState
+      为 COMPLETE（或 legacy 无该键但 score 非 null）→ scorable；PARTIAL/
+      UNASSESSABLE/score null → incomplete（已完成但 P 证据不足）。
+      INCONCLUSIVE/PARTIAL 快照 → incomplete。真实 0 分是有效值算 scorable。
+    """
+    if not has_snapshot:
+        if has_failed_record:
+            return ROSTER_STATE_FAILED, "FAILED_RECORD"
+        return ROSTER_STATE_MISSING, "NO_RECORD"
+    if snapshot_status == "SUCCESS":
+        if composite_state == "COMPLETE":
+            return ROSTER_STATE_SCORABLE, "COMPOSITE_COMPLETE"
+        if composite_state in ("PARTIAL", "UNASSESSABLE"):
+            return ROSTER_STATE_INCOMPLETE, f"COMPOSITE_{composite_state}"
+        # legacy record（无 metricsSemantic）：score 非 null 即完整 P
+        if snapshot_score is not None:
+            return ROSTER_STATE_SCORABLE, "LEGACY_SCORE_FINITE"
+        return ROSTER_STATE_INCOMPLETE, "SUCCESS_NULL_SCORE"
+    # INCONCLUSIVE / PARTIAL 快照
+    return ROSTER_STATE_INCOMPLETE, f"SNAPSHOT_{snapshot_status}"
+
+
+def _membership_revision(eligible_ids: list[str], ts_start: datetime, ts_end: datetime) -> str:
+    """名册成员身份摘要（同窗同名册幂等；成员变化即新 revision）."""
+    payload = "|".join(sorted(eligible_ids))
+    digest = hashlib.sha256(
+        f"{ts_start.isoformat()}~{ts_end.isoformat()}~{payload}".encode()
+    ).hexdigest()
+    return f"roster-{digest[:16]}"
+
+
+def _raw_weighted_stats(entries: list[dict]) -> dict:
+    """秒/指数类指标的独立加权统计（同 weighted_score_stats 键名，无截断）."""
+    object_count = len(entries)
+    numerator = 0.0
+    weight_sum = 0.0
+    numeric_weight_sum = 0.0
+    numeric_count = 0
+    for e in entries:
+        w = float(e.get("weight") or 0.0)
+        weight_sum += w
+        v = e.get("value")
+        if v is None:
+            continue
+        numeric_count += 1
+        numeric_weight_sum += w
+        numerator += w * float(v)
+    return {
+        "objectCount": object_count,
+        "numericCount": numeric_count,
+        "weightedNumerator": round(numerator, 6),
+        "weightSum": round(weight_sum, 6),
+        "numericWeightSum": round(numeric_weight_sum, 6),
+        "weightedMean": (
+            round(numerator / numeric_weight_sum, 4) if numeric_weight_sum > 0 else None
+        ),
+    }
+
+
+def build_assessment_stats(
+    *,
+    eligible_ids: list[str],
+    excluded_count: int,
+    latest_snaps: dict[str, Any],
+    failed_ids: set[str],
+    semantics: dict[str, dict],
+    weights: dict[str, Decimal],
+    ts_start: datetime,
+    ts_end: datetime,
+    representatives: list | None = None,
+) -> dict:
+    """08d 节点统计组装（纯函数；DB 数据由调用方装载）.
+
+    输出（落 ``kpi_node_snapshot_hourly.assessment_stats`` 与 NODE record
+    payload ``assessmentStats``，两者同值）：
+
+    - ``roster``：固定参评名册（membershipRevision + E/excluded + 六类互斥
+      状态账 + 成员清单）——E=eligibleLoopCount，N=scorableLoopCount，
+      ``scorableLoopRatio`` 消费 ``scorable_p_ratio``（E=0→null，N=0→0%）；
+    - ``metricStats``：每指标独立分子/权重和/计数（0～100 指标消费
+      ``weighted_score_stats``；秒/指数类用原始加权，同键名不截断）；
+    - ``fastRateReference``：F 参考双统计（消费 ``fast_rate_reference_stats``；
+      正式 F 与静稳参考互斥、正式 0 分优先；legacy 无语义的按正式值归类并
+      计入 ``legacyUnclassifiedCount``）。
+
+    Args:
+        eligible_ids: 参评名册（CAL-06 三条件：is_active+READY+include）；
+        excluded_count: 既有排除规则回路数（不含数据不足类原因，单列）；
+        latest_snaps: {loop_id: snapshot-like（status/score/fast_rate…）}——
+            窗口内该回路最新一条快照（任意状态）；
+        failed_ids: 窗口内有 FAILED loop record 的回路集合；
+        semantics: {loop_id: record payload 语义视图}——至少含
+            ``compositeState`` 与 ``fastRate``（{formalValue, referenceScore}）；
+        weights: {loop_id: 重要度权重}（缺省 1.0 口径由调用方填充）；
+        representatives: 复杂组去重后的聚合对象（metricStats 用；缺省=
+            名册全体，此时 metricStats 退化为名册级统计）。
+    """
+    states = dict.fromkeys(ROSTER_STATES, 0)
+    members: list[dict] = []
+    p_values: list[Any] = []
+    fast_entries: list[dict] = []
+    legacy_unclassified = 0
+
+    for lid in eligible_ids:
+        snap = latest_snaps.get(lid)
+        sem = semantics.get(lid) or {}
+        composite_state = sem.get("compositeState")
+        state, reason = classify_roster_state(
+            has_snapshot=snap is not None,
+            snapshot_status=getattr(snap, "status", None) if snap is not None else None,
+            snapshot_score=getattr(snap, "score", None) if snap is not None else None,
+            composite_state=composite_state,
+            has_failed_record=lid in failed_ids,
+        )
+        states[state] += 1
+        members.append({"loopId": lid, "state": state, "reason": reason})
+        # P 值（scorable 才有有限 P；真实 0 分有效）
+        p_values.append(
+            float(snap.score)
+            if state == ROSTER_STATE_SCORABLE and snap is not None and snap.score is not None
+            else None
+        )
+        # F 参考双统计条目（正式与参考互斥，正式含 0 分优先）
+        fast_sem = sem.get("fastRate") or {}
+        weight = float(weights.get(lid, Decimal("1.0")))
+        if fast_sem.get("formalValue") is not None:
+            fast_entries.append({"weight": weight, "formalValue": fast_sem["formalValue"]})
+        elif fast_sem.get("referenceScore") is not None:
+            fast_entries.append({"weight": weight, "referenceScore": fast_sem["referenceScore"]})
+        elif (
+            snap is not None
+            and getattr(snap, "fast_rate", None) is not None
+            and getattr(snap, "status", None) == "SUCCESS"
+        ):
+            # legacy record 无语义视图：按正式值归类（不冒称参考也不丢值）
+            legacy_unclassified += 1
+            fast_entries.append({"weight": weight, "formalValue": float(snap.fast_rate)})
+        else:
+            fast_entries.append({"weight": weight})
+
+    ratio = scorable_p_ratio(p_values)
+
+    # 每指标独立统计（复杂组去重后的聚合对象；与既有加权均值同对象集）
+    metric_stats: dict[str, dict] = {}
+    for field in ("score", *KPI_FIELDS):
+        entries = [
+            {
+                "weight": float(getattr(r, "weight", 1) or 0),
+                "value": float(getattr(r, field)) if getattr(r, field, None) is not None else None,
+            }
+            for r in (representatives if representatives is not None else [])
+        ]
+        if not entries:
+            continue
+        if field in _PERCENT_SCALE_FIELDS:
+            metric_stats[field] = weighted_score_stats(entries)
+        else:
+            metric_stats[field] = _raw_weighted_stats(entries)
+
+    roster = {
+        "membershipRevision": _membership_revision(eligible_ids, ts_start, ts_end),
+        "eligibleLoopCount": ratio["eligibleLoopCount"],
+        "scorableLoopCount": ratio["scorableLoopCount"],
+        "scorableLoopRatio": ratio["scorableLoopRatio"],
+        "excludedLoopCount": excluded_count,
+        "states": states,
+        "stateSourceNote": (
+            "cancelled/pending 标准小时链无逐回路×窗口持久任务登记，诚实计 0；"
+            "custom 任务经 task_tracker（Redis）不在此聚合"
+        ),
+        "members": members,
+    }
+    return {
+        "roster": roster,
+        "metricStats": metric_stats,
+        "fastRateReference": {
+            **fast_rate_reference_stats(fast_entries),
+            "legacyUnclassifiedCount": legacy_unclassified,
+        },
+    }
+
+
+async def _load_roster_inputs(
+    db: AsyncSession,
+    loop_ids: list[str],
+    ts_start: datetime,
+    ts_end: datetime,
+) -> tuple[list[str], int, dict[str, Any], set[str], dict[str, dict], dict[str, Decimal]]:
+    """装载名册输入：参评名册/排除数/最新快照（任意状态）/FAILED records/
+    record 语义视图/重要度权重.
+
+    查询口径（半开 [ts_start, ts_end)，CAL-05）：与主聚合一致；最新快照
+    不筛状态（禁止"先筛 SUCCESS 再挑记录"——非 SUCCESS 回路进入名册状态账）。
+    """
+    from sqlalchemy import func as _func
+
+    from app.models.calculation_result import CalculationResultRecord
+
+    # 1) 参评三条件（CAL-06）+ 排除数
+    ledger_rows = (
+        await db.execute(
+            select(LoopLedger.id, LoopLedger.status, LoopLedger.include_in_evaluation).where(
+                LoopLedger.id.in_(loop_ids)
+            )
+        )
+    ).all()
+    eligible_ids: list[str] = []
+    excluded_count = 0
+    for r in ledger_rows:
+        if r.status == "READY" and r.include_in_evaluation:
+            eligible_ids.append(str(r.id))
+        else:
+            excluded_count += 1
+    # 排序保证名册/成员清单顺序确定（record 内容寻址幂等依赖确定性）
+    eligible_ids.sort()
+
+    if not eligible_ids:
+        return eligible_ids, excluded_count, {}, set(), {}, {}
+
+    # 2) 窗口内每回路最新一条快照（任意状态；半开窗）
+    snap_subq = (
+        select(
+            KpiSnapshotHourly.loop_id,
+            KpiSnapshotHourly.status,
+            KpiSnapshotHourly.score,
+            KpiSnapshotHourly.fast_rate,
+            KpiSnapshotHourly.result_record_id,
+        )
+        .where(
+            KpiSnapshotHourly.loop_id.in_(eligible_ids),
+            KpiSnapshotHourly.ts_start >= ts_start,
+            KpiSnapshotHourly.ts_start < ts_end,
+        )
+        .distinct(KpiSnapshotHourly.loop_id)
+        .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_start.desc())
+    ).subquery()
+    snap_rows = (await db.execute(select(snap_subq))).all()
+    latest_snaps: dict[str, Any] = {str(r.loop_id): r for r in snap_rows}
+
+    # 3) FAILED loop records（已知失败终态；有快照行的回路以快照状态优先）
+    failed_rows = (
+        await db.execute(
+            select(CalculationResultRecord.object_id).where(
+                CalculationResultRecord.object_kind == result_ledger.OBJECT_KIND_LOOP,
+                CalculationResultRecord.status == result_ledger.RECORD_STATUS_FAILED,
+                CalculationResultRecord.ts_start >= ts_start,
+                CalculationResultRecord.ts_start < ts_end,
+                CalculationResultRecord.object_id.in_(eligible_ids),
+            )
+        )
+    ).all()
+    failed_ids = {str(r.object_id) for r in failed_rows}
+
+    # 4) record payload 语义视图（compositeState + fastRate 正式/参考互斥）
+    record_ids = [str(r.result_record_id) for r in snap_rows if r.result_record_id is not None]
+    semantics: dict[str, dict] = {}
+    loop_by_record: dict[str, str] = {
+        str(r.result_record_id): str(r.loop_id) for r in snap_rows if r.result_record_id
+    }
+    if record_ids:
+        rec_rows = (
+            await db.execute(
+                select(
+                    CalculationResultRecord.id,
+                    CalculationResultRecord.payload,
+                ).where(CalculationResultRecord.id.in_(record_ids))
+            )
+        ).all()
+        for rec in rec_rows:
+            lid = loop_by_record.get(str(rec.id))
+            if lid is None:
+                continue
+            payload = rec.payload or {}
+            semantic = payload.get("metricsSemantic") or {}
+            composite = semantic.get("__composite__") or {}
+            fast = semantic.get("fast_rate") or {}
+            fast_details = fast.get("details") or {}
+            # 正式 F 与静稳参考互斥：正式值（含 0 分）优先，仅参考时 formal=None
+            formal = fast.get("value")
+            reference = fast_details.get("referenceScore")
+            if formal is None and reference is not None:
+                pass  # 仅参考
+            elif formal is not None:
+                reference = None  # 正式优先（兼容残留参考字段）
+            semantics[lid] = {
+                "compositeState": composite.get("assessmentState"),
+                "fastRate": {"formalValue": formal, "referenceScore": reference},
+            }
+
+    # 5) 重要度权重（level NULL → 1.0，与主聚合 COALESCE 口径一致）
+    weight_rows = (
+        await db.execute(
+            select(LoopLedger.id, _func.coalesce(LoopLevelWeight.weight, Decimal("1.0")).label("w"))
+            .select_from(LoopLedger)
+            .outerjoin(LoopLevelWeight, LoopLedger.importance_level == LoopLevelWeight.level)
+            .where(LoopLedger.id.in_(eligible_ids))
+        )
+    ).all()
+    weights = {str(r.id): Decimal(str(r.w)) for r in weight_rows}
+
+    return eligible_ids, excluded_count, latest_snaps, failed_ids, semantics, weights
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +664,13 @@ async def _fetch_and_aggregate_loops(
     Returns:
         聚合结果 dict（含各 KPI 字段加权均值 / loop_count / auto_loop_count /
         auto_loop_ratio），无 SUCCESS 快照或权重为 0 返回 None。
+
+    口径（2026-10-10 CAL-04/CAL-05，01§3.1）：
+    - 聚合窗为半开区间 [ts_start, ts_end)：恰好窗口结束（ts_start == ts_end）
+      的快照仅归下一窗，不在本窗重复计数；
+    - 每指标独立有效分母 sum(w_i·v_i)/sum(w_i for valid_i)：NULL 行不留分母
+      （等权 100+NULL → 100 而非 50），全 NULL 指标返回 None，零权重行对
+      分子分母均无贡献。
     """
     # 子查询：每个回路在时间窗内最新一条 SUCCESS 快照（DISTINCT ON loop_id）
     subq = (
@@ -307,7 +678,7 @@ async def _fetch_and_aggregate_loops(
         .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "SUCCESS",
         )
         .distinct(KpiSnapshotHourly.loop_id)
@@ -320,10 +691,13 @@ async def _fetch_and_aggregate_loops(
     fields = [getattr(subq.c, f).label(f) for f in KPI_FIELDS]
 
     # S1：仅聚合 include_in_evaluation=True 的回路
+    # P1-05：附带 result_record_id（回路快照的结果账本指针），供节点 record
+    # 保存实际参与的 loop recordIds（节点输入版本可追）
     stmt = (
         select(
             subq.c.loop_id.label("loop_id"),
             subq.c.confidence_level.label("confidence_level"),
+            subq.c.result_record_id.label("result_record_id"),
             *fields,
             LoopLedger.complex_loop_group_id,
             LoopLedger.complex_role,
@@ -350,19 +724,42 @@ async def _fetch_and_aggregate_loops(
         logger.warning("[节点级聚合-S3] SUM(weight)=0，无法计算加权平均")
         return None
 
+    # P1-05 结果账本：实际参与聚合的 loop recordIds + 各指标有效分母
+    # （validCount=非空值回路数，validWeight=非空值权重和，totalWeight=总权重）
+    loop_record_ids = [
+        {
+            "loopId": str(r.loop_id),
+            "recordId": str(r.result_record_id) if r.result_record_id else None,
+        }
+        for r in representatives
+    ]
+    metric_denominators: dict[str, dict] = {}
+    for field in ("score", *KPI_FIELDS):
+        valid_rows = [r for r in representatives if getattr(r, field, None) is not None]
+        metric_denominators[field] = {
+            "validCount": len(valid_rows),
+            "validWeight": float(sum(Decimal(str(r.weight or 0)) for r in valid_rows)),
+            "totalWeight": float(weight_total),
+        }
+
     def avg_value(field: str) -> Decimal | None:
-        # 与原 SQL 一致：SUM(field*weight) / SUM(weight)，NULL 字段跳过（不参与分子）
-        # 全 NULL 时返回 None（与 performance.py weighted_avg 语义一致，避免 0.00 误导）
+        # CAL-04（2026-10-10）：每指标独立有效分母 sum(w·v)/sum(w for valid)。
+        # 原实现分子跳过 NULL 但除以全量 weight_total（含 NULL 行权重），
+        # 等权 100+NULL → 50 伪降。现 NULL 行不再留在该指标分母；全 NULL →
+        # None（"无有效分母返回 null"，与 performance.py weighted_avg 一致）；
+        # 零权重行 w=0 对分子分母均无贡献，不影响结果；真实 0 分是有效值
+        # 正常进分母（等权 100+0 → 50）。
         numerator = Decimal("0")
-        has_value = False
+        denominator = Decimal("0")
         for r in representatives:
             val = getattr(r, field)
             if val is not None:
-                numerator += Decimal(str(val)) * Decimal(str(r.weight or 0))
-                has_value = True
-        if not has_value:
+                w = Decimal(str(r.weight or 0))
+                numerator += Decimal(str(val)) * w
+                denominator += w
+        if denominator == 0:
             return None
-        return (numerator / weight_total).quantize(Decimal("0.01"))
+        return (numerator / denominator).quantize(Decimal("0.01"))
 
     auto_loop_count_val = sum(
         1
@@ -410,6 +807,11 @@ async def _fetch_and_aggregate_loops(
         "loop_count": loop_count,
         "auto_loop_count": auto_loop_count_val,
         "auto_loop_ratio": Decimal(str(auto_loop_ratio)).quantize(Decimal("0.01")),
+        # P1-05 结果账本：节点 record 输入可追溯（loop recordIds + 各指标分母）
+        "loop_record_ids": loop_record_ids,
+        "metric_denominators": metric_denominators,
+        # P3-08d：复杂组代表对象集（assessmentStats.metricStats 用）
+        "representatives": representatives,
     }
 
 
@@ -427,8 +829,12 @@ async def aggregate_node_snapshot(
     - 按回路级别加权平均（level=1→3.0, level=2→2.0, level=3→1.0）
     - 投自动回路占比 = auto_mode_rate > 0 的回路数 / 总回路数
 
+    P3-08d（10§3.6.2/§3.6.3，C26-EA2）：参评名册 E>0 而无任何 SUCCESS
+    快照时**仍产出节点结果**（score/metrics 全 None + 名册状态账 +
+    scorableLoopRatio=0%），不因缺 P 直接返回空。
+
     Returns:
-        节点级快照字典，若无数据返回 None
+        节点级快照字典，若无参评回路返回 None
     """
     loop_ids = await collect_descendant_loop_ids(db, plant_node_id)
     if not loop_ids:
@@ -437,14 +843,61 @@ async def aggregate_node_snapshot(
 
     # P4 S3：复杂组去重 + Python 加权聚合（替代原单 SQL 聚合）
     agg = await _fetch_and_aggregate_loops(db, loop_ids, ts_start, ts_end)
+
+    # P3-08d：固定参评名册 + 完整 P 可评分统计（不筛 SUCCESS；E>0 即产出）
+    (
+        eligible_ids,
+        excluded_count,
+        latest_snaps,
+        failed_ids,
+        semantics,
+        weights,
+    ) = await _load_roster_inputs(db, loop_ids, ts_start, ts_end)
+    if not eligible_ids:
+        return None
+    assessment_stats = build_assessment_stats(
+        eligible_ids=eligible_ids,
+        excluded_count=excluded_count,
+        latest_snaps=latest_snaps,
+        failed_ids=failed_ids,
+        semantics=semantics,
+        weights=weights,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        # metricStats 复用主聚合的复杂组代表对象集（每指标独立分子/权重和）
+        representatives=agg.get("representatives") if agg is not None else None,
+    )
+
     if agg is None:
         logger.debug(
-            "[节点级聚合] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
+            "[节点级聚合] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照"
+            "（名册 E=%d，仍产出空值快照）",
             plant_node_id,
             ts_start,
             ts_end,
+            len(eligible_ids),
         )
-        return None
+        roster = assessment_stats["roster"]
+        return {
+            "plant_node_id": plant_node_id,
+            "ts_start": ts_start,
+            "ts_end": ts_end,
+            "score": None,
+            **dict.fromkeys(KPI_FIELDS),
+            "auto_loop_ratio": Decimal("0.00"),
+            "realtime_auto_rate": None,
+            "loop_count": 0,
+            "status": _score_to_status(None),
+            "algorithm_version": ALGORITHM_VERSION,
+            "total_loops": len(loop_ids),
+            "evaluated_loops": 0,
+            "inconclusive_loops": roster["states"][ROSTER_STATE_INCOMPLETE],
+            "excluded_loops": excluded_count,
+            "unit_status": "EMPTY",
+            "loop_record_ids": [],
+            "metric_denominators": {},
+            "assessment_stats": assessment_stats,
+        }
 
     score_avg = agg["score"]
     auto_loop_count_val = agg["auto_loop_count"]
@@ -472,6 +925,7 @@ async def aggregate_node_snapshot(
     excluded_loops_count = int(ex_result.scalar() or 0)
 
     # inconclusive_loops: 只有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路数
+    # CAL-05（2026-10-10）：窗口边界与主聚合一致改半开 [ts_start, ts_end)
     ic_result = await db.execute(
         select(func.count(func.distinct(KpiSnapshotHourly.loop_id)))
         .select_from(KpiSnapshotHourly)
@@ -479,14 +933,14 @@ async def aggregate_node_snapshot(
         .where(
             KpiSnapshotHourly.loop_id.in_(loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "INCONCLUSIVE",
             LoopLedger.include_in_evaluation.is_(True),
             ~KpiSnapshotHourly.loop_id.in_(
                 select(KpiSnapshotHourly.loop_id).where(
                     KpiSnapshotHourly.loop_id.in_(loop_ids),
                     KpiSnapshotHourly.ts_start >= ts_start,
-                    KpiSnapshotHourly.ts_start <= ts_end,
+                    KpiSnapshotHourly.ts_start < ts_end,
                     KpiSnapshotHourly.status == "SUCCESS",
                 )
             ),
@@ -539,6 +993,11 @@ async def aggregate_node_snapshot(
         "excluded_loops": excluded_loops_count,
         # unit_status: 聚合状态（SUCCESS/PARTIAL/EMPTY），不是性能定级
         "unit_status": "PARTIAL" if inconclusive_loops_count > 0 else "SUCCESS",
+        # P1-05 结果账本：节点 record 输入可追溯
+        "loop_record_ids": agg.get("loop_record_ids", []),
+        "metric_denominators": agg.get("metric_denominators", {}),
+        # P3-08d：固定参评名册 + 完整 P 可评分统计 + F 参考双统计
+        "assessment_stats": assessment_stats,
     }
 
 
@@ -547,6 +1006,12 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
 
     v5.3：并行写入 KpiNodeSnapshotHourly + UnitKpiSummary（装置级汇总）。
     UnitKpiSummary 仅写入装置类型节点（type=UNIT），其他类型节点跳过。
+
+    P1-05 结果账本：先追加不可变 NODE record（logicalRunId 按聚合输入与
+    输出内容寻址——同输入重跑/重试幂等复用，输入变化即新版本，DEC-10a
+    唯一约束下同窗多版本 record 共存、投影指向最新写入），同事务把快照行
+    的 ``result_record_id`` 指向该 record。record payload 含实际参与的
+    loop recordIds 与各指标有效分母（节点输入版本可追）。
 
     Args:
         db: 异步数据库会话
@@ -557,6 +1022,7 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
     """
     plant_node_id = snap_data["plant_node_id"]
     ts_start = snap_data["ts_start"]
+    ts_end = snap_data["ts_end"]
 
     # v5.3 字段分离：UnitKpiSummary 专用字段不写入 KpiNodeSnapshotHourly
     _UNIT_FIELDS = {
@@ -566,7 +1032,47 @@ async def save_node_snapshot(db: AsyncSession, snap_data: dict) -> dict:
         "inconclusive_loops",
         "unit_status",
     }
-    node_snap_data = {k: v for k, v in snap_data.items() if k not in _UNIT_FIELDS}
+    # P1-05：账本专用字段不写入 KpiNodeSnapshotHourly（进 record payload）
+    _RECORD_FIELDS = {"loop_record_ids", "metric_denominators"}
+    # P3-08d：仅内部传递（复杂组代表对象集），不落任何存储
+    _INTERNAL_FIELDS = {"representatives"}
+    node_snap_data = {
+        k: v
+        for k, v in snap_data.items()
+        if k not in _UNIT_FIELDS and k not in _RECORD_FIELDS and k not in _INTERNAL_FIELDS
+    }
+
+    # --- P1-05：先追加 NODE record（内容寻址幂等），再写投影 ---
+    record_payload = {
+        **node_snap_data,
+        "loopRecordIds": snap_data.get("loop_record_ids", []),
+        "metricDenominators": snap_data.get("metric_denominators", {}),
+        # P3-08d：assessment_stats（snake 键）随 node_snap_data 展开入账本
+        # payload——名册/每指标统计/F 参考双统计随不可变 record 保存
+    }
+    try:
+        record = await result_ledger.append_result_record(
+            db,
+            logical_run_id=result_ledger.derive_node_logical_run_id(
+                plant_node_id, ts_start, record_payload
+            ),
+            object_kind=result_ledger.OBJECT_KIND_NODE,
+            object_id=plant_node_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            algorithm_version=snap_data.get("algorithm_version") or ALGORITHM_VERSION,
+            config_revision=result_ledger.CONFIG_REVISION_UNVERSIONED,
+            payload=record_payload,
+        )
+    except Exception:  # noqa: BLE001
+        record = None
+        logger.warning(
+            "节点结果账本 record 追加失败（节点 %s 窗口 %s），投影照常写入",
+            plant_node_id,
+            ts_start,
+            exc_info=True,
+        )
+    node_snap_data["result_record_id"] = str(record.id) if record is not None else None
 
     # 查询是否已存在（幂等）
     existing_result = await db.execute(
@@ -698,6 +1204,8 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
         "loopCount": snap.loop_count,
         "status": snap.status,
         "algorithmVersion": snap.algorithm_version,
+        # P3-08d：名册/可评分统计（旧行 None=历史口径不可追溯）
+        "assessmentStats": getattr(snap, "assessment_stats", None),
     }
 
 
@@ -730,13 +1238,17 @@ async def get_node_trend(
     start: datetime,
     end: datetime,
 ) -> dict:
-    """获取节点历史趋势。"""
+    """获取节点历史趋势。
+
+    窗口为半开区间 [start, end)：ts_start == end 的快照属下一窗（CAL-05 同款，
+    2026-10-10 展示查询对齐聚合口径）。
+    """
     result = await db.execute(
         select(KpiNodeSnapshotHourly)
         .where(
             KpiNodeSnapshotHourly.plant_node_id == plant_node_id,
             KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start <= end,
+            KpiNodeSnapshotHourly.ts_start < end,
         )
         .order_by(KpiNodeSnapshotHourly.ts_start.asc())
     )
@@ -791,12 +1303,12 @@ async def get_node_ranking(
         sort_by: 排序字段 score/steady_rate/auto_loop_ratio
         sort_order: asc/desc（默认 desc，分数最高的在前）
     """
-    # 子查询：每个节点在时间窗内最新一条快照
+    # 子查询：每个节点在时间窗内最新一条快照（半开 [start, end)，CAL-05 同款）
     base = (
         select(KpiNodeSnapshotHourly)
         .where(
             KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start <= end,
+            KpiNodeSnapshotHourly.ts_start < end,
         )
         .distinct(KpiNodeSnapshotHourly.plant_node_id)
         .order_by(KpiNodeSnapshotHourly.plant_node_id, KpiNodeSnapshotHourly.ts_start.desc())
@@ -856,6 +1368,8 @@ async def get_node_ranking(
                 "loopCount": row.loop_count,
                 "status": row.status,
                 "algorithmVersion": row.algorithm_version,
+                # P3-08d：名册/可评分统计（旧行 None=历史口径不可追溯）
+                "assessmentStats": getattr(row, "assessment_stats", None),
             }
         )
     return items
@@ -882,12 +1396,12 @@ async def get_nodes_overview(
     node_name_map = {str(n.id): n.name for n in enabled_nodes}
     node_type_map = {str(n.id): n.type for n in enabled_nodes}
 
-    # 子查询：每个节点最新快照
+    # 子查询：每个节点最新快照（半开 [start, end)，CAL-05 同款）
     base = (
         select(KpiNodeSnapshotHourly)
         .where(
             KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start <= end,
+            KpiNodeSnapshotHourly.ts_start < end,
             KpiNodeSnapshotHourly.plant_node_id.in_(node_ids),
         )
         .distinct(KpiNodeSnapshotHourly.plant_node_id)
@@ -922,6 +1436,8 @@ async def get_nodes_overview(
                 "loopCount": row.loop_count,
                 "status": status,
                 "tsStart": row.ts_start.isoformat() if row.ts_start else None,
+                # P3-08d：名册/可评分统计（overview 卡片下钻对账用）
+                "assessmentStats": getattr(row, "assessment_stats", None),
             }
         )
 
@@ -979,6 +1495,8 @@ def _monitor_snapshot_to_dict(snap, dimension: str, node_name: str | None = None
         "loopCount": snap.loop_count,
         "status": snap.status,
         "algorithmVersion": snap.algorithm_version,
+        # P3-08d：名册/可评分统计（仅 hour 维度有该列；day/month 无=None）
+        "assessmentStats": getattr(snap, "assessment_stats", None),
     }
 
 
@@ -1007,12 +1525,13 @@ async def get_node_monitor_data(
     node_name = node.name if node else None
 
     if dimension == "hour":
+        # 半开 [start, end)：ts_start == end 的快照属下一窗（CAL-05 同款）
         stmt = (
             select(KpiNodeSnapshotHourly)
             .where(
                 KpiNodeSnapshotHourly.plant_node_id == plant_node_id,
                 KpiNodeSnapshotHourly.ts_start >= start,
-                KpiNodeSnapshotHourly.ts_start <= end,
+                KpiNodeSnapshotHourly.ts_start < end,
             )
             .order_by(KpiNodeSnapshotHourly.ts_start.asc())
         )
@@ -1277,12 +1796,13 @@ async def batch_query_loop_counts(
     # 2. 批量查询 inconclusive loops
     # 有 INCONCLUSIVE 快照但没有 SUCCESS 快照的回路
     # 使用两个子查询：先找有 SUCCESS 的 loop_ids，再找有 INCONCLUSIVE 但不在 SUCCESS 列表中的
+    # CAL-05（2026-10-10）：窗口边界与单节点路径一致改半开 [ts_start, ts_end)
     success_loops_result = await db.execute(
         select(KpiSnapshotHourly.loop_id)
         .where(
             KpiSnapshotHourly.loop_id.in_(all_loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "SUCCESS",
         )
         .distinct()
@@ -1294,7 +1814,7 @@ async def batch_query_loop_counts(
         .where(
             KpiSnapshotHourly.loop_id.in_(all_loop_ids),
             KpiSnapshotHourly.ts_start >= ts_start,
-            KpiSnapshotHourly.ts_start <= ts_end,
+            KpiSnapshotHourly.ts_start < ts_end,
             KpiSnapshotHourly.status == "INCONCLUSIVE",
         )
         .distinct()
@@ -1355,14 +1875,60 @@ async def aggregate_node_snapshot_with_presets(
 
     # P4 S3：复杂组去重 + Python 加权聚合（与 aggregate_node_snapshot 共用）
     agg = await _fetch_and_aggregate_loops(db, loop_ids, ts_start, ts_end)
+
+    # P3-08d：固定参评名册 + 完整 P 可评分统计（与单节点路径同口径）
+    (
+        eligible_ids,
+        excluded_count,
+        latest_snaps,
+        failed_ids,
+        semantics,
+        weights,
+    ) = await _load_roster_inputs(db, loop_ids, ts_start, ts_end)
+    if not eligible_ids:
+        return None
+    assessment_stats = build_assessment_stats(
+        eligible_ids=eligible_ids,
+        excluded_count=excluded_count,
+        latest_snaps=latest_snaps,
+        failed_ids=failed_ids,
+        semantics=semantics,
+        weights=weights,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        representatives=agg.get("representatives") if agg is not None else None,
+    )
+
     if agg is None:
         logger.debug(
-            "[节点级聚合-批量] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照",
+            "[节点级聚合-批量] plant_node_id=%s, 时间窗 %s~%s 无 SUCCESS 快照"
+            "（名册 E=%d，仍产出空值快照）",
             plant_node_id,
             ts_start,
             ts_end,
+            len(eligible_ids),
         )
-        return None
+        roster = assessment_stats["roster"]
+        return {
+            "plant_node_id": plant_node_id,
+            "ts_start": ts_start,
+            "ts_end": ts_end,
+            "score": None,
+            **dict.fromkeys(KPI_FIELDS),
+            "auto_loop_ratio": Decimal("0.00"),
+            "realtime_auto_rate": realtime_result["rate"] if realtime_result else None,
+            "loop_count": 0,
+            "status": _score_to_status(None),
+            "algorithm_version": ALGORITHM_VERSION,
+            "total_loops": len(loop_ids),
+            "evaluated_loops": 0,
+            "inconclusive_loops": roster["states"][ROSTER_STATE_INCOMPLETE],
+            "excluded_loops": counts.get("excluded_loops", 0),
+            "unit_status": "EMPTY",
+            "loop_record_ids": [],
+            "metric_denominators": {},
+            "assessment_stats": assessment_stats,
+        }
 
     score_avg = agg["score"]
     auto_loop_count_val = agg["auto_loop_count"]
@@ -1417,6 +1983,11 @@ async def aggregate_node_snapshot_with_presets(
         "inconclusive_loops": inconclusive_loops_count,
         "excluded_loops": excluded_loops_count,
         "unit_status": "PARTIAL" if inconclusive_loops_count > 0 else "SUCCESS",
+        # P1-05 结果账本：节点 record 输入可追溯
+        "loop_record_ids": agg.get("loop_record_ids", []),
+        "metric_denominators": agg.get("metric_denominators", {}),
+        # P3-08d：固定参评名册 + 完整 P 可评分统计 + F 参考双统计
+        "assessment_stats": assessment_stats,
     }
 
 

@@ -23,7 +23,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base
@@ -66,6 +66,19 @@ class KpiNodeSnapshotHourly(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)
     algorithm_version: Mapped[str | None] = mapped_column(String(30), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=func.now(), nullable=False)
+    # --- P1-05 结果账本：本行对应的不可变 calculation_result_record ---
+    result_record_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_result_record.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # --- P3-08d：固定参评名册 + 完整 P 可评分统计（10§3.6.2/§3.6.3）---
+    # {roster:{eligibleLoopCount E/scorableLoopCount N/scorableLoopRatio/
+    #   excludedLoopCount/states 六类互斥账/membershipRevision/members},
+    #  metricStats:{field:{weightedNumerator/weightSum/numericCount/…}},
+    #  fastRateReference:{fastRateReferenceMean/动态子集/参考构成计数}}
+    # 旧行 NULL=历史口径不可追溯（不猜算，10§3.6.2）
+    assessment_stats: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     __table_args__ = (
         CheckConstraint(
@@ -73,6 +86,13 @@ class KpiNodeSnapshotHourly(Base):
             name="ck_kpi_node_snapshot_status",
         ),
         CheckConstraint("ts_end > ts_start", name="ck_kpi_node_snapshot_window"),
+        # DEC-10a（2026-10-11 全按推荐）：同 (plant_node_id, ts_start) 唯一，
+        # 迁移先按保留每键最新行去重存量再建约束
+        UniqueConstraint(
+            "plant_node_id",
+            "ts_start",
+            name="uq_kpi_node_snapshot_hourly_node_ts",
+        ),
         Index("idx_kpi_node_snapshot_node_id", "plant_node_id"),
         Index("idx_kpi_node_snapshot_ts_start", "ts_start"),
         Index("idx_kpi_node_snapshot_status", "status"),

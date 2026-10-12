@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
@@ -76,7 +76,11 @@ def _parse_time_window(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{node_id}/snapshot", response_model=ApiResponse[NodeSnapshotItem])
+@router.get(
+    "/{node_id}/snapshot",
+    response_model=ApiResponse[NodeSnapshotItem],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_node_snapshot_endpoint(
     node_id: str,
     db: AsyncSession = Depends(get_db),
@@ -110,7 +114,11 @@ def _ensure_uuid(value: str, field: str) -> None:
         ) from None
 
 
-@router.get("/{node_id}/trend", response_model=ApiResponse[NodeTrendData])
+@router.get(
+    "/{node_id}/trend",
+    response_model=ApiResponse[NodeTrendData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_node_trend_endpoint(
     node_id: str,
     startTime: str = Query(..., description="起始时间（ISO 8601）"),
@@ -132,7 +140,11 @@ async def get_node_trend_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/ranking", response_model=ApiResponse[list[NodeRankingItem]])
+@router.get(
+    "/ranking",
+    response_model=ApiResponse[list[NodeRankingItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_node_ranking_endpoint(
     timeWindow: str = Query(
         "today",
@@ -188,6 +200,7 @@ async def calculate_node_endpoint(
     body: NodeCalculateRequest | None = None,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("metric:snapshot-manage")),
 ) -> dict:
     """手动触发节点级 KPI 聚合（仅 ADMIN）。
 
@@ -254,7 +267,11 @@ async def calculate_node_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/overview", response_model=ApiResponse[NodeOverviewData])
+@router.get(
+    "/overview",
+    response_model=ApiResponse[NodeOverviewData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_nodes_overview_endpoint(
     timeWindow: str = Query(
         "today", description="时间窗：today/yesterday/last_7_days/last_30_days"
@@ -273,7 +290,11 @@ async def get_nodes_overview_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/{node_id}/monitor", response_model=ApiResponse[NodeMonitorData])
+@router.get(
+    "/{node_id}/monitor",
+    response_model=ApiResponse[NodeMonitorData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_node_monitor_endpoint(
     node_id: str,
     dimension: str = Query("hour", description="维度：hour/day/month"),

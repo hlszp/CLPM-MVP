@@ -1,15 +1,19 @@
 {
-  "algorithm_version": "TUNE_IDENT_v1.4",
+  "algorithm_version": "TUNE_IDENT_v1.8",
   "description": "Phase 2.1 历史数据过程对象辨识算法栈 golden 基线",
   "scenarios": {
     "closed_loop_fopdt": {
       "description": "闭环 FOPDT 仿真（K=2.0, tau=30, theta=5, kp=2.0, ti=20, noise_std=0.5）；P2-009 起 CLIVC 使闭环辨识成功",
       "seed": 42,
       "n": 1200,
-      "truth": {"K": 2.0, "tau": 30.0, "theta": 5.0},
+      "truth": {
+        "K": 2.0,
+        "tau": 30.0,
+        "theta": 5.0
+      },
       "tolerance": {
         "K_relative_error": 0.05,
-        "tau_relative_error": 0.10,
+        "tau_relative_error": 0.1,
         "theta_absolute_error": 2.0
       },
       "expected": {
@@ -21,7 +25,11 @@
       "description": "开环 FOPDT 仿真（PRBS 输入，K=1.5, tau=20, theta=3）",
       "seed": 123,
       "n": 1000,
-      "truth": {"K": 1.5, "tau": 20.0, "theta": 3.0},
+      "truth": {
+        "K": 1.5,
+        "tau": 20.0,
+        "theta": 3.0
+      },
       "tolerance": {
         "K_relative_error": 0.03,
         "tau_relative_error": 0.08,
@@ -29,9 +37,18 @@
       },
       "expected": {
         "model_type": "FOPDT",
-        "K_range": [1.45, 1.55],
-        "tau_range": [18.0, 22.0],
-        "theta_range": [2.0, 4.0],
+        "K_range": [
+          1.45,
+          1.55
+        ],
+        "tau_range": [
+          18.0,
+          22.0
+        ],
+        "theta_range": [
+          2.0,
+          4.0
+        ],
         "min_fitting_score": 95.0
       }
     },
@@ -39,11 +56,16 @@
       "description": "闭环 SOPDT 仿真（K=1.0, T1=10, T2=5, theta=2）",
       "seed": 7,
       "n": 1500,
-      "truth": {"K": 1.0, "T1": 10.0, "T2": 5.0, "theta": 2.0},
+      "truth": {
+        "K": 1.0,
+        "T1": 10.0,
+        "T2": 5.0,
+        "theta": 2.0
+      },
       "tolerance": {
-        "K_relative_error": 0.10,
-        "T1_relative_error": 0.20,
-        "T2_relative_error": 0.30,
+        "K_relative_error": 0.1,
+        "T1_relative_error": 0.2,
+        "T2_relative_error": 0.3,
         "theta_absolute_error": 2.0
       },
       "expected": {
@@ -55,11 +77,19 @@
       "description": "闭环 FOPDT 带工业偏置、无噪声确定性场景（K=2.0, tau=60, theta=5, 负载 L=330 使 PV≈450/OP≈60；P2-009 起 CLIVC 使闭环带偏置辨识成功）",
       "seed": 42,
       "n": 1800,
-      "truth": {"K": 2.0, "tau": 60.0, "theta": 5.0},
-      "bias": {"sp_base": 450.0, "load": 330.0, "op_steady_state": 60.0},
+      "truth": {
+        "K": 2.0,
+        "tau": 60.0,
+        "theta": 5.0
+      },
+      "bias": {
+        "sp_base": 450.0,
+        "load": 330.0,
+        "op_steady_state": 60.0
+      },
       "tolerance": {
-        "K_relative_error": 0.10,
-        "tau_relative_error": 0.30,
+        "K_relative_error": 0.1,
+        "tau_relative_error": 0.3,
         "theta_absolute_error": 2.0
       },
       "expected": {

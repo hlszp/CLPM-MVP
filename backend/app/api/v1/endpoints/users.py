@@ -15,7 +15,7 @@ import uuid
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
@@ -46,6 +46,7 @@ async def list_users_endpoint(
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:user-manage")),
 ) -> dict:
     """分页查询用户列表（仅 ADMIN）。"""
     data = await list_users(
@@ -64,6 +65,7 @@ async def create_user_endpoint(
     body: UserCreateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:user-manage")),
 ) -> dict:
     """创建用户（仅 ADMIN）。用户名重复返回 ERR_USER_DUPLICATE。"""
     data = await create_user(
@@ -84,6 +86,7 @@ async def update_user_endpoint(
     body: UserUpdateRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:user-manage")),
 ) -> dict:
     """更新用户信息（仅 ADMIN）。"""
     data = await update_user(
@@ -103,6 +106,7 @@ async def disable_user_endpoint(
     user_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:user-manage")),
 ) -> dict:
     """禁用用户（仅 ADMIN，软删除 is_active=FALSE）。"""
     data = await disable_user(
@@ -119,6 +123,7 @@ async def reset_password_endpoint(
     body: ResetPasswordRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("system:user-manage")),
 ) -> dict:
     """重置用户密码（仅 ADMIN）。"""
     data = await reset_password(

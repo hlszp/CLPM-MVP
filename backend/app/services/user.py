@@ -21,6 +21,7 @@ from app.core.exceptions import BizError
 from app.core.security import hash_password
 from app.models.audit import SysAuditLog
 from app.models.sys_user import SysUser
+from app.services.auth import _revoke_all_user_tokens
 
 # ---------------------------------------------------------------------------
 # Audit helper
@@ -287,6 +288,12 @@ async def reset_password(
         after_value=json.dumps({"passwordChanged": True}, ensure_ascii=False),
     )
     await db.commit()
+
+    # P1-04/AUTH-07：管理侧重置密码后撤销该用户全部已发令牌（复用
+    # change_password 同款 _revoke_all_user_tokens），旧 access/refresh
+    # token 立即失效。次序与 auth.change_password 一致：先提交新密码，
+    # 再撤销令牌。
+    await _revoke_all_user_tokens(user_id)
 
     return {"id": user_id, "passwordChanged": True}
 

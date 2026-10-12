@@ -6,7 +6,10 @@
  * 上部回路摘要（/handling/loops 聚合行）+ 下部双段全史：
  * - 建议段：GET /handling/suggestions?loopId=（审核全史）
  * - 工单段：GET /handling/orders?loopId=（执行全史）
- * 两段 Promise.all 并行拉取（pageSize 上限 100），各段内按时间倒序。
+ * 两段 Promise.all 并行拉取，各段内按时间倒序。
+ * IA-08（2026-10-10 诚实化）：消费 res.total 展示总数 + 分页控件——
+ * 原实现每来源仅取首 100 条且丢弃 total，超 100 条静默截断冒充全史；
+ * 现按页翻查可查全（C26：>100 条可查全），页头显式「共 M 条」。
  * 「查看详情」按深链接契约跳对应入口（档案只读，流转操作回工作台）。
  */
 import type { HandlingApi } from '#/api/handling';
@@ -20,6 +23,7 @@ import {
   DescriptionsItem,
   Drawer,
   Empty,
+  Pagination,
   Spin,
   Tag,
 } from 'ant-design-vue';
@@ -49,6 +53,13 @@ const suggestions = ref<HandlingApi.SuggestionItem[]>([]);
 const orders = ref<HandlingApi.OrderItem[]>([]);
 const loadError = ref('');
 
+/** IA-08：双段各自分页状态（后端 pageSize 上限 100；翻页可查全） */
+const ARCHIVE_PAGE_SIZE = 100;
+const sugPage = ref(1);
+const sugTotal = ref(0);
+const orderPage = ref(1);
+const orderTotal = ref(0);
+
 const fmt = (ts: null | string | undefined) =>
   formatLocalTime(ts, 'YYYY-MM-DD HH:mm');
 
@@ -58,6 +69,37 @@ const closeRateText = computed(() => {
   return rate == null ? '—' : `${Math.round(rate * 100)}%`;
 });
 
+/** 页头条数文案：总数 + 当前页不足时显式「仅当前页 N 条」（诚实化红线） */
+function countText(shown: number, total: number): string {
+  return total > shown ? `共 ${total} 条 · 仅当前页 ${shown} 条` : `共 ${total} 条`;
+}
+
+async function loadSuggestions(page: number) {
+  const res = await getHandlingSuggestionsApi({
+    loopId: props.loop!.loopId,
+    page,
+    pageSize: ARCHIVE_PAGE_SIZE,
+  });
+  sugPage.value = page;
+  suggestions.value = [...res.items].toSorted((a, b) =>
+    (b.suggestedAt ?? '').localeCompare(a.suggestedAt ?? ''),
+  );
+  sugTotal.value = res.total ?? suggestions.value.length;
+}
+
+async function loadOrders(page: number) {
+  const res = await getHandlingOrdersApi({
+    loopId: props.loop!.loopId,
+    page,
+    pageSize: ARCHIVE_PAGE_SIZE,
+  });
+  orderPage.value = page;
+  orders.value = [...res.items].toSorted((a, b) =>
+    (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''),
+  );
+  orderTotal.value = res.total ?? orders.value.length;
+}
+
 async function loadHistory() {
   if (!props.loop) return;
   loading.value = true;
@@ -65,25 +107,8 @@ async function loadHistory() {
   orders.value = [];
   loadError.value = '';
   try {
-    // 双段并行：建议段 + 工单段（字段以后端返回为准）
-    const [sugRes, orderRes] = await Promise.all([
-      getHandlingSuggestionsApi({
-        loopId: props.loop.loopId,
-        page: 1,
-        pageSize: 100,
-      }),
-      getHandlingOrdersApi({
-        loopId: props.loop.loopId,
-        page: 1,
-        pageSize: 100,
-      }),
-    ]);
-    suggestions.value = [...sugRes.items].toSorted((a, b) =>
-      (b.suggestedAt ?? '').localeCompare(a.suggestedAt ?? ''),
-    );
-    orders.value = [...orderRes.items].toSorted((a, b) =>
-      (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''),
-    );
+    // 双段并行（当前页）：建议段 + 工单段（字段以后端返回为准）
+    await Promise.all([loadSuggestions(sugPage.value), loadOrders(orderPage.value)]);
   } catch (error: any) {
     loadError.value = error?.message ?? '处置全史加载失败';
   } finally {
@@ -91,10 +116,42 @@ async function loadHistory() {
   }
 }
 
+/** 分页翻页（IA-08：单段重载，total 持续展示） */
+function changeSugPage(page: number) {
+  void (async () => {
+    loading.value = true;
+    try {
+      await loadSuggestions(page);
+    } catch (error: any) {
+      loadError.value = error?.message ?? '处置建议翻页失败';
+    } finally {
+      loading.value = false;
+    }
+  })();
+}
+
+function changeOrderPage(page: number) {
+  void (async () => {
+    loading.value = true;
+    try {
+      await loadOrders(page);
+    } catch (error: any) {
+      loadError.value = error?.message ?? '处置工单翻页失败';
+    } finally {
+      loading.value = false;
+    }
+  })();
+}
+
 watch(
   () => [open.value, props.loop?.loopId],
   ([isOpen]) => {
-    if (isOpen) loadHistory();
+    if (isOpen) {
+      // 重开抽屉回第 1 页（换回路/重开的口径一致）
+      sugPage.value = 1;
+      orderPage.value = 1;
+      loadHistory();
+    }
   },
 );
 
@@ -149,10 +206,10 @@ function gotoOrder(id: string) {
       </div>
 
       <template v-else>
-        <!-- 下部 · 建议段（审核全史，倒序） -->
+        <!-- 下部 · 建议段（审核全史，倒序；IA-08：总数+分页查全） -->
         <div class="mt-4">
           <div class="mb-2 text-xs font-medium">
-            处置建议（{{ suggestions.length }} 条，倒序）
+            处置建议（{{ countText(suggestions.length, sugTotal) }}，倒序）
           </div>
           <Empty
             v-if="!loading && suggestions.length === 0"
@@ -195,12 +252,23 @@ function gotoOrder(id: string) {
               </Button>
             </div>
           </div>
+          <Pagination
+            v-if="sugTotal > ARCHIVE_PAGE_SIZE"
+            :current="sugPage"
+            :page-size="ARCHIVE_PAGE_SIZE"
+            :total="sugTotal"
+            class="mt-2 text-right"
+            size="small"
+            :show-size-changer="false"
+            :show-total="(t: number) => `共 ${t} 条`"
+            @change="changeSugPage"
+          />
         </div>
 
-        <!-- 下部 · 工单段（执行全史，倒序） -->
+        <!-- 下部 · 工单段（执行全史，倒序；IA-08：总数+分页查全） -->
         <div class="mt-4">
           <div class="mb-2 text-xs font-medium">
-            处置工单（{{ orders.length }} 条，倒序）
+            处置工单（{{ countText(orders.length, orderTotal) }}，倒序）
           </div>
           <Empty
             v-if="!loading && orders.length === 0"
@@ -249,6 +317,17 @@ function gotoOrder(id: string) {
               </Button>
             </div>
           </div>
+          <Pagination
+            v-if="orderTotal > ARCHIVE_PAGE_SIZE"
+            :current="orderPage"
+            :page-size="ARCHIVE_PAGE_SIZE"
+            :total="orderTotal"
+            class="mt-2 text-right"
+            size="small"
+            :show-size-changer="false"
+            :show-total="(t: number) => `共 ${t} 条`"
+            @change="changeOrderPage"
+          />
         </div>
       </template>
     </Spin>

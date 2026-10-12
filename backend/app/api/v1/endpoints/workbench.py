@@ -26,12 +26,13 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.core.event_bus import mark_read
 from app.models.module_plugin import ModulePlugin
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
+from app.services.workbench_scope import normalize_window
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +44,11 @@ router = APIRouter(prefix="/workbench", tags=["workbench"])
 # ---------------------------------------------------------------------------
 
 
-@router.get("/scope-tree", response_model=ApiResponse[list[dict]])
+@router.get(
+    "/scope-tree",
+    response_model=ApiResponse[list[dict]],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def get_scope_tree(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
@@ -96,7 +101,11 @@ class EventReadRequest(BaseModel):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/overview", response_model=ApiResponse[dict])
+@router.get(
+    "/overview",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def get_overview(
     scopeType: str = Query("GLOBAL", description="范围：GLOBAL/FACTORY/AREA/UNIT/LOOP"),
     scopeId: int | None = Query(None, description="范围 ID"),
@@ -112,7 +121,9 @@ async def get_overview(
     """
     from app.services.workbench_overview import build_overview
 
-    data = await build_overview(db, scope_type=scopeType, scope_id=scopeId, window=window)
+    data = await build_overview(
+        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window)
+    )
     return success(data=data)
 
 
@@ -121,7 +132,11 @@ async def get_overview(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/assessment", response_model=ApiResponse[dict])
+@router.get(
+    "/assessment",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_assessment(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -139,7 +154,7 @@ async def get_assessment(
     from app.services.workbench_assessment import build_assessment
 
     data = await build_assessment(
-        db, scope_type=scopeType, scope_id=scopeId, window=window, view=view
+        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window), view=view
     )
     return success(data=data)
 
@@ -149,7 +164,11 @@ async def get_assessment(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/diagnosis", response_model=ApiResponse[dict])
+@router.get(
+    "/diagnosis",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("diagnosis:view"))],
+)
 async def get_diagnosis(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -171,7 +190,11 @@ async def get_diagnosis(
     from app.services.workbench_diagnosis import build_diagnosis
 
     data = await build_diagnosis(
-        db, scope_type=scopeType, scope_id=scopeId, window=window, only_active=onlyActive
+        db,
+        scope_type=scopeType,
+        scope_id=scopeId,
+        window=normalize_window(window),
+        only_active=onlyActive,
     )
     return success(data=data)
 
@@ -181,7 +204,11 @@ async def get_diagnosis(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tuning", response_model=ApiResponse[dict])
+@router.get(
+    "/tuning",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("tuning:view"))],
+)
 async def get_tuning(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -197,7 +224,9 @@ async def get_tuning(
     """
     from app.services.workbench_tuning import build_tuning
 
-    data = await build_tuning(db, scope_type=scopeType, scope_id=scopeId, window=window)
+    data = await build_tuning(
+        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window)
+    )
     return success(data=data)
 
 
@@ -214,7 +243,9 @@ async def get_tuning(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/plugins", response_model=ApiResponse[dict])
+@router.get(
+    "/plugins", response_model=ApiResponse[dict], dependencies=[Depends(require_perms("loop:view"))]
+)
 async def get_plugins(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
@@ -250,7 +281,11 @@ async def get_plugins(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/events/read", response_model=ApiResponse[dict])
+@router.post(
+    "/events/read",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("loop:view"))],
+)
 async def mark_events_read(
     body: EventReadRequest,
     db: AsyncSession = Depends(get_db),
@@ -267,7 +302,11 @@ async def mark_events_read(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/tuning-scatters", response_model=ApiResponse[dict])
+@router.get(
+    "/tuning-scatters",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("tuning:view"))],
+)
 async def get_tuning_scatters(
     scopeType: str = Query("GLOBAL"),
     scopeId: int | None = Query(None),
@@ -284,6 +323,10 @@ async def get_tuning_scatters(
     from app.services.workbench_tuning import build_tuning_scatters
 
     data = await build_tuning_scatters(
-        db, scope_type=scopeType, scope_id=scopeId, window=window, batch_id=batchId
+        db,
+        scope_type=scopeType,
+        scope_id=scopeId,
+        window=normalize_window(window),
+        batch_id=batchId,
     )
     return success(data=data)

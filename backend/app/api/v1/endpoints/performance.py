@@ -10,6 +10,8 @@
 - GET    /api/v1/performance/analytics          — 统计报表数据
 - POST   /api/v1/performance/analytics/export   — 导出报表（CSV）
 - GET    /api/v1/performance/loops/snapshots    — 回路小时指标快照列表
+- GET    /api/v1/performance/loops/result-records/{recordId} — 结果账本记录详情
+    （P1-05：按不可变 recordId 读取；旧快照 ID 经迁移映射兼容）
 - GET    /api/v1/performance/grade-distribution — 各性能等级回路数分布（SQL 聚合）
 """
 
@@ -21,7 +23,7 @@ from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_roles
+from app.api.deps import get_current_user, require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
@@ -42,6 +44,7 @@ from app.schemas.performance import (
     RankingItem,
     SnapshotBatchDeleteRequest,
 )
+from app.services import result_ledger
 from app.services.gate_overview import get_gate_overview
 from app.services.performance import (
     SNAPSHOT_SORT_COLUMNS,
@@ -64,7 +67,11 @@ router = APIRouter(prefix="/performance", tags=["performance"])
 _FLOOR_DT = datetime(1970, 1, 1)
 
 
-@router.get("/gate-overview", response_model=ApiResponse[dict])
+@router.get(
+    "/gate-overview",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_gate_overview_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -83,7 +90,11 @@ async def get_gate_overview_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/metrics", response_model=ApiResponse[list[MetricConfigItem]])
+@router.get(
+    "/metrics",
+    response_model=ApiResponse[list[MetricConfigItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_metrics_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -98,7 +109,7 @@ async def update_metric_endpoint(
     metric_id: str,
     body: MetricConfigUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新指标配置（仅 ADMIN）。
 
@@ -123,7 +134,11 @@ async def update_metric_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/rules", response_model=ApiResponse[list[EngineRuleItem]])
+@router.get(
+    "/rules",
+    response_model=ApiResponse[list[EngineRuleItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_rules_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
@@ -138,7 +153,7 @@ async def update_rule_endpoint(
     rule_id: str,
     body: EngineRuleUpdate,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新引擎规则（仅 ADMIN）。"""
     data = await update_engine_rule(
@@ -157,7 +172,11 @@ async def update_rule_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/ranking", response_model=ApiResponse[list[RankingItem]])
+@router.get(
+    "/ranking",
+    response_model=ApiResponse[list[RankingItem]],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_ranking_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选"),
     timeWindow: str = Query(
@@ -215,7 +234,11 @@ async def get_ranking_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/analytics", response_model=ApiResponse[AnalyticsData])
+@router.get(
+    "/analytics",
+    response_model=ApiResponse[AnalyticsData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_analytics_endpoint(
     startTime: str = Query(..., description="开始时间（ISO 8601）"),
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
@@ -237,7 +260,11 @@ async def get_analytics_endpoint(
     return success(data=data)
 
 
-@router.post("/analytics/export", response_class=PlainTextResponse)
+@router.post(
+    "/analytics/export",
+    response_class=PlainTextResponse,
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def export_analytics_endpoint(
     body: ExportRequest,
     db: AsyncSession = Depends(get_db),
@@ -264,7 +291,11 @@ async def export_analytics_endpoint(
 # ---------------------------------------------------------------------------
 
 
-@router.get("/realtime-auto-rate", response_model=ApiResponse[dict])
+@router.get(
+    "/realtime-auto-rate",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_realtime_auto_rate_endpoint(
     plantNodeId: str | None = Query(None, description="工厂节点 ID（不传则全厂）"),
     db: AsyncSession = Depends(get_db),
@@ -355,12 +386,32 @@ def _to_float(val) -> float | None:
         return None
 
 
+def _fitness_tags_list(val) -> list[str] | None:
+    """fitness_tags JSONB → list[str] | None（IA-06，2026-10-10）.
+
+    存量写入形如 ``{"tags": [...]}``（tasks/kpi_calc.py）；旧 list 直存或
+    非法形状返回 None（不虚构标签），归一口径同 services/loop_fitness.py。
+    """
+    if isinstance(val, dict):
+        tags = val.get("tags")
+        if isinstance(tags, list):
+            return [str(x) for x in tags]
+        return None
+    if isinstance(val, list):
+        return [str(x) for x in val]
+    return None
+
+
 # ---------------------------------------------------------------------------
 # 各性能等级回路数分布（Phase 4 性能项：替代前端全量拉取客户端统计）
 # ---------------------------------------------------------------------------
 
 
-@router.get("/grade-distribution", response_model=ApiResponse[dict])
+@router.get(
+    "/grade-distribution",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_grade_distribution_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
@@ -400,7 +451,11 @@ async def get_grade_distribution_endpoint(
     return success(data=data)
 
 
-@router.get("/valve-alerts", response_model=ApiResponse[dict])
+@router.get(
+    "/valve-alerts",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_valve_alerts_endpoint(
     plantNodeId: str | None = Query(None, description="按装置/单元筛选（递归子树）"),
     timeWindow: str = Query(
@@ -441,7 +496,11 @@ async def get_valve_alerts_endpoint(
     return success(data=data)
 
 
-@router.get("/loops/snapshots", response_model=ApiResponse[KpiSnapshotListData])
+@router.get(
+    "/loops/snapshots",
+    response_model=ApiResponse[KpiSnapshotListData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def list_loop_snapshots_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多个）"),
     plantNodeId: str | None = Query(None, description="装置 ID（逗号分隔多个）"),
@@ -449,9 +508,15 @@ async def list_loop_snapshots_endpoint(
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
     status: str | None = Query(
         None,
-        description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）",
+        description="快照状态（SUCCESS/INCONCLUSIVE/PARTIAL，支持逗号分隔多值）。"
+        "latestOnly=true 时为最新代表结果后置筛选（回路最新代表处于该状态才入选，"
+        "不以旧窗口成功冒充）；latestOnly=false 时为行级历史搜索",
     ),
-    confidenceLevel: str | None = Query(None, description="可信度等级（A/B/C/D/E）"),
+    confidenceLevel: str | None = Query(
+        None,
+        description="可信度等级（A/B/C/D/E）。latestOnly 语义同 status"
+        "（最新代表后置筛选 / 历史行级过滤）",
+    ),
     loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
     grade: str | None = Query(
         None,
@@ -573,6 +638,17 @@ async def list_loop_snapshots_endpoint(
             total = total + custom_total
 
     # 组装响应
+    # G3-R01（14 号文 §2）：先按 result_record_id 批量读 record payload（精确
+    # 记录身份，无时间匹配），每行的语义/链路状态来自该行自己的 record——
+    # 不从"当前最新结果"拼接，改当前配置后历史行显示不漂移
+    from app.services.performance import (
+        SEMANTIC_LINK_UNLINKED,
+        load_snapshot_record_payloads,
+        resolve_semantic_link,
+    )
+
+    record_payloads = await load_snapshot_record_payloads(db, [snap for snap, _ in rows])
+
     items: list[KpiSnapshotListItem] = []
     for snap, tag_name in rows:
         # 来源标注（整合方案 B3）：非字符串（测试 MagicMock 等）置 None
@@ -588,6 +664,16 @@ async def list_loop_snapshots_endpoint(
             _source_task_id = _source_task_id or (
                 str(snap.task_id) if getattr(snap, "task_id", None) else None
             )
+        # G3-R01：该行的语义链路（record 指针缺失/不可读 → UNLINKED 防御）
+        _record_id = (
+            str(snap.result_record_id)
+            if getattr(snap, "result_record_id", None) is not None
+            else None
+        )
+        if _record_id is None or _record_id not in record_payloads:
+            _metrics_semantic, _semantic_link = None, SEMANTIC_LINK_UNLINKED
+        else:
+            _metrics_semantic, _semantic_link = resolve_semantic_link(record_payloads[_record_id])
         from app.schemas.performance import DataLineageSchema
 
         data_lineage = None
@@ -648,6 +734,15 @@ async def list_loop_snapshots_endpoint(
                 ),
                 # F5：时间常数（秒，激励不足窗口为 None）
                 timeConstant=_to_float(snap.time_constant),
+                # IA-06（2026-10-10）：适用性权威接线——快照行 fitness 列填充。
+                # fitness_level 直读（String(2)，L0~L4，旧快照 NULL 透传）；
+                # fitness_tags JSONB 形如 {"tags": [...]}（loop_fitness 同款归一）
+                fitnessLevel=(snap.fitness_level if isinstance(snap.fitness_level, str) else None),
+                fitnessTags=_fitness_tags_list(snap.fitness_tags),
+                # G3-R01：该行自己的 record 语义（原样透出）+ 链路状态
+                resultRecordId=_record_id,
+                metricsSemantic=_metrics_semantic,
+                semanticLinkStatus=_semantic_link,
             )
         )
 
@@ -660,7 +755,11 @@ async def list_loop_snapshots_endpoint(
     return success(data=data)
 
 
-@router.get("/loops/metric-series", response_model=ApiResponse[MetricSeriesData])
+@router.get(
+    "/loops/metric-series",
+    response_model=ApiResponse[MetricSeriesData],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def get_loop_metric_series_endpoint(
     loopIds: str = Query(..., description="回路 ID 列表（逗号分隔，≤10 个）"),
     metricKey: str = Query(..., description="指标键（snake_case，服务端白名单校验）"),
@@ -704,7 +803,11 @@ async def get_loop_metric_series_endpoint(
     return success(data=data)
 
 
-@router.get("/loops/snapshots/window-agg", response_model=ApiResponse[dict])
+@router.get(
+    "/loops/snapshots/window-agg",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
 async def window_agg_snapshots_endpoint(
     startTime: str = Query(..., description="窗口起始（ISO 8601）"),
     endTime: str = Query(..., description="窗口结束（ISO 8601）"),
@@ -750,7 +853,7 @@ def _parse_iso_arg(value: str | None) -> datetime | None:
 async def batch_delete_snapshots_endpoint(
     body: SnapshotBatchDeleteRequest,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    _: SysUser = Depends(require_perms("metric:snapshot-manage")),
 ) -> dict:
     """按筛选条件批量删除历史快照（dryRun 默认 True 仅预览计数）。
 
@@ -785,6 +888,35 @@ async def batch_delete_snapshots_endpoint(
     )
 
 
+@router.get(
+    "/loops/result-records/{record_id}",
+    response_model=ApiResponse[dict],
+)
+async def get_result_record_endpoint(
+    record_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """结果账本记录详情（P1-05，所有角色可查看）.
+
+    历史详情按不可变 recordId 读取；传入旧投影行 ID（kpi_snapshot_hourly /
+    loop_confidence_latest / kpi_node_snapshot_hourly 的 id）时经迁移归档
+    映射兼容解析。payload 含完整结果（节点记录另含 loopRecordIds 与
+    各指标分母）；datasetSnapshotId 为空即"该结果不可完整复现"（P2-03 前
+    的 P1 记录均如此，属显式事实而非缺数）。
+    """
+    record, matched_via = await result_ledger.find_record_any_id(db, record_id)
+    if record is None:
+        raise BizError(
+            code="ERR_RESULT_RECORD_NOT_FOUND",
+            message=f"结果记录 {record_id} 不存在（既非 recordId 也无法按旧 ID 映射）",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+    data = result_ledger.record_to_dict(record)
+    data["matchedVia"] = matched_via
+    return success(data=data)
+
+
 @router.delete(
     "/loops/snapshots/{snapshot_id}",
     response_model=ApiResponse[dict],
@@ -792,7 +924,7 @@ async def batch_delete_snapshots_endpoint(
 async def delete_snapshot_endpoint(
     snapshot_id: str,
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER")),
+    _: SysUser = Depends(require_perms("metric:snapshot-manage")),
 ) -> dict:
     """删除单条历史快照。"""
     from app.services.performance import delete_snapshot_by_id

@@ -31,7 +31,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -183,6 +183,7 @@ def _build_schema(raw: dict[str, str | None], updated_by: str | None) -> LlmConf
 async def get_llm_config(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取当前 LLM 配置（API Key 脱敏返回）。
 
@@ -209,6 +210,7 @@ async def save_llm_config(
     body: LlmConfigSaveRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """更新 LLM 配置（仅 ADMIN）。
 
@@ -313,6 +315,7 @@ async def save_llm_config(
 async def test_llm_connection(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """连接测试：向已配置的 LLM 服务发一条 ping 请求。
 

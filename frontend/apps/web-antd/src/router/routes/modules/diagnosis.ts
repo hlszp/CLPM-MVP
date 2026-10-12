@@ -44,6 +44,7 @@ const routes: RouteRecordRaw[] = [
             : { path: '/diagnosis/overview', query: { ...to.query } };
         },
         meta: {
+          permCode: 'page:diagnosis.overview',
           hideInMenu: true,
           title: '诊断概览',
         },
@@ -53,6 +54,7 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/overview',
         component: () => import('#/views/diagnosis/overview.vue'),
         meta: {
+          permCode: 'page:diagnosis.overview',
           authority: [
             'ADMIN',
             'EXPERT',
@@ -71,6 +73,7 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/tasks',
         component: () => import('#/views/diagnosis/tasks.vue'),
         meta: {
+          permCode: 'page:diagnosis.tasks',
           // 查看类页面统一全 5 角色（2026-10-04 D1；发起类操作在回路工作台剖面）
           authority: [
             'ADMIN',
@@ -89,6 +92,7 @@ const routes: RouteRecordRaw[] = [
         path: '/diagnosis/records',
         component: () => import('#/views/diagnosis/records.vue'),
         meta: {
+          permCode: 'page:diagnosis.records',
           authority: [
             'ADMIN',
             'EXPERT',

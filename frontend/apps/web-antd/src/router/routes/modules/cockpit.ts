@@ -26,6 +26,7 @@ const routes: RouteRecordRaw[] = [
     path: '/cockpit',
     component: () => import('#/views/cockpit/overview.vue'),
     meta: {
+      permCode: 'page:cockpit.overview',
       authority: COCKPIT_ROLES,
       icon: 'lucide:gauge',
       noBasicLayout: true,
@@ -38,6 +39,7 @@ const routes: RouteRecordRaw[] = [
     path: '/cockpit/loops',
     component: () => import('#/views/cockpit/loops.vue'),
     meta: {
+      permCode: 'page:cockpit.loops',
       authority: COCKPIT_ROLES,
       hideInMenu: true,
       noBasicLayout: true,
@@ -49,6 +51,7 @@ const routes: RouteRecordRaw[] = [
     path: '/cockpit/performance',
     component: () => import('#/views/cockpit/performance.vue'),
     meta: {
+      permCode: 'page:cockpit.performance',
       authority: COCKPIT_ROLES,
       hideInMenu: true,
       noBasicLayout: true,
@@ -60,6 +63,7 @@ const routes: RouteRecordRaw[] = [
     path: '/cockpit/diagnosis',
     component: () => import('#/views/cockpit/diagnosis.vue'),
     meta: {
+      permCode: 'page:cockpit.diagnosis',
       authority: COCKPIT_ROLES,
       hideInMenu: true,
       noBasicLayout: true,
@@ -71,6 +75,7 @@ const routes: RouteRecordRaw[] = [
     path: '/cockpit/tuning',
     component: () => import('#/views/cockpit/tuning.vue'),
     meta: {
+      permCode: 'page:cockpit.tuning',
       authority: COCKPIT_ROLES,
       hideInMenu: true,
       noBasicLayout: true,
@@ -82,6 +87,7 @@ const routes: RouteRecordRaw[] = [
     path: '/cockpit/handling',
     component: () => import('#/views/cockpit/handling.vue'),
     meta: {
+      permCode: 'page:cockpit.handling',
       authority: COCKPIT_ROLES,
       hideInMenu: true,
       noBasicLayout: true,

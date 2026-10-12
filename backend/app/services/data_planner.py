@@ -209,15 +209,23 @@ class DataPlanner:
         版本口径：活跃 manifest 行（布局+时段+scope）摘要——manifest 任何
         变更（切换/回退）都产生新键；无 manifest 恒 "legacy-v1"（与旧缓存
         键逐字节一致，legacy 路径零失效）。
+
+        P3-08b：追加时间/质量契约策略版本分量（time_axis.TIME_QUALITY_
+        POLICY_VERSION）——半开窗口/未知语义/无拼接段切割的策略演进必须
+        换缓存键（10§3.2"缓存身份纳入数据策略版本"），否则旧缓存块以旧
+        语义混入新策略消费。
         """
+        from app.services.metric_calculator.time_axis import TIME_QUALITY_POLICY_VERSION
+
         try:
             from app.services.data_source.history_layout_router import (
                 current_layout_version,
             )
 
-            return await current_layout_version()
+            layout_version = await current_layout_version()
         except Exception:  # noqa: BLE001 — 版本解析失败按 legacy（键保守回退）
-            return "legacy-v1"
+            layout_version = "legacy-v1"
+        return f"{layout_version}:{TIME_QUALITY_POLICY_VERSION}"
 
     # ------------------------------------------------------------------
     # 核心入口
@@ -433,12 +441,16 @@ class DataPlanner:
     ) -> list[QueryTask]:
         """按 tagGroup 分组指标并合并查询计划.
 
-        合并规则（算法说明 §3.5.2）：
+        合并规则（算法说明 §3.5.2 + P3-08b EA-01/10§3.2 高频保真）：
             - 相同 tagGroup 的指标合并为一次查询（tags 取并集）
-            - 所有控制类型复用 BASE：OP_HF/PVOP_HF/MODE_HF/QUALITY_HF
-              从 BASE DataBlock 派生（宽表查询固定 SELECT 全部列，派生不丢数据），
-              每回路-窗口仅需 1 次 TDengine 查询；派生组 interval_s 固定 1s
-              （与原独立 HF 查询的取值一致，仅为元数据，派生不发起查询）
+            - **BASE 周期 ≤ 1s（如 FLOW）**：HF 组（OP_HF/PVOP_HF/MODE_HF/
+              QUALITY_HF）从 BASE DataBlock 派生（宽表查询固定 SELECT 全部
+              列，派生不丢数据），每回路-窗口仅 1 次 TDengine 查询
+            - **BASE 周期 > 1s（PC=2s/TC=5s/LC=5s/CC=10s）：HF 组禁止从粗
+              BASE 派生**——短手动/饱和/Bad 事件（如 1s 手动段）会被粗网格
+              抹掉（C03-EA1），HF 组恢复**独立 1s 读取**（10§3.2 正确性
+              首版：BASE 实际周期大于 HF 所需周期时禁止直接标成 HF 使用；
+              允许暂时增加读取成本，共享事件读取的优化归 P5）
             - 查询计划中无 BASE 组时（如波形接口按单 tagGroup 取数），
               HF 组回退为独立查询（HF 固定 1s 采样）
             - CONFIG tagGroup 跳过（无时序数据，如 ideal_settling_time）
@@ -450,7 +462,7 @@ class DataPlanner:
         Returns:
             QueryTask 列表（每个对应一次 TDengine 查询或一次 BASE 派生）
 
-        设计依据：算法说明 §3.5.2, PRD §8.3
+        设计依据：算法说明 §3.5.2, PRD §8.3；10 号文 §3.2（C03-EA1 保真）
         """
         base_threshold = get_threshold(control_type)
         base_interval = base_threshold.base_sampling_freq
@@ -472,13 +484,10 @@ class DataPlanner:
             for t in tags:
                 grouped[tag_group]["tag_roles"].add(t)
 
-        # 所有控制类型复用 BASE：宽表查询固定 SELECT 全部列，HF 组与 BASE 组
-        # 取数内容完全一致（同样的行、同样的列子集），独立查询只是重复拉取，
-        # 因此 HF tagGroup 一律从 BASE DataBlock 派生（此前仅 FC 回路复用，
-        # PC/TC/LC/CC 会把同一段数据重复拉 5 遍）。
-        # 仅当计划中存在 BASE 组时启用复用（KPI 路径固定请求全量 12 指标，始终
-        # 含 BASE）；无 BASE 组时（如波形接口按单 tagGroup 取数）HF 组保持独立查询。
-        reuse_base = TagGroup.BASE in grouped
+        # HF 组从 BASE 派生的前置（P3-08b EA-01）：BASE 实际周期必须 ≤ HF
+        # 所需周期（1s）——粗 BASE（2/5/10s）派生 HF 会抹掉 1s 短事件，
+        # 禁止；此类控制类型的 HF 组保持独立 1s 查询（C03-EA1）
+        reuse_base = TagGroup.BASE in grouped and base_interval <= 1
 
         # 构建 QueryTask 列表
         tasks: list[QueryTask] = []
@@ -490,6 +499,12 @@ class DataPlanner:
             for tg, info in grouped.items():
                 if tg != TagGroup.BASE:
                     base_tags.update(info["tag_roles"])
+        if not reuse_base and TagGroup.BASE in grouped and base_interval > 1:
+            logger.info(
+                "DataPlanner HF 独立读取（BASE=%ds 粗于 HF 所需 1s，禁止派生）: control=%s",
+                base_interval,
+                control_type.value,
+            )
 
         for tag_group, info in grouped.items():
             tag_roles = sorted(info["tag_roles"])
@@ -767,6 +782,10 @@ class DataPlanner:
             loop_valid_rate=base_block.loop_valid_rate,
             # AD02：派生组继承 BASE 的数据上下文（同一网格/覆盖语义）
             series_context=getattr(base_block, "series_context", None),
+            # P3-08b（O-2）：派生组继承 BASE 的查询窗口（同一请求事实；
+            # 时间视图在派生组上可重建）
+            query_window_start=getattr(base_block, "query_window_start", None),
+            query_window_end=getattr(base_block, "query_window_end", None),
         )
 
     # ------------------------------------------------------------------
@@ -881,6 +900,18 @@ class DataPlanner:
         def _normalize(value: float) -> float:
             return (value - op_min) / (op_max - op_min) * 100.0
 
+        def _fill_limit_metadata(bundles: list[MetricDataBundle], source: str) -> None:
+            """P3-08b：限位来源三分落字（消费 B1/P3-03 resolve_assessment_supply_facts
+            的三分语义——LOOP_FIELD/TAG_RANGE=ACTUAL（已核实有来源）、
+            DEFAULT_0_100=DEFAULT（默认假设，不当已核实限位））。供
+            saturation/effective_auto 在 details 中报告限位证据来源；
+            数值供数仍以工程事实侧唯一入口为准（本卡只消费不新增供数）。
+            """
+            provenance = "DEFAULT" if source == "DEFAULT_0_100" else "ACTUAL"
+            for bundle in bundles:
+                bundle.data_block.signals["op_limits_source"] = [source]
+                bundle.data_block.signals["op_limits_provenance"] = [provenance]
+
         # v6.2：优先使用预加载的 OP 限位
         if self._preloaded_op_limits is not None:
             op_limits = self._preloaded_op_limits.get(loop_id)
@@ -898,6 +929,9 @@ class DataPlanner:
                         op_lower,
                         op_upper,
                     )
+                # 预加载限位有值=回路字段供数（ACTUAL）；全空=默认假设
+                has_limits = op_lower is not None or op_upper is not None
+                _fill_limit_metadata(bundles, "LOOP_FIELD" if has_limits else "DEFAULT_0_100")
             return
 
         if self._db is None:
@@ -922,6 +956,9 @@ class DataPlanner:
         # 若 Loop 表字段为 NULL，回退到 OP Tag 量程
         op_lower = loop_lower
         op_upper = loop_upper
+        op_source = (
+            "LOOP_FIELD" if (loop_lower is not None or loop_upper is not None) else "DEFAULT_0_100"
+        )
         if op_lower is None or op_upper is None:
             op_result = await self._db.execute(
                 select(TagRegistry.range_min, TagRegistry.range_max)
@@ -935,8 +972,10 @@ class DataPlanner:
             if op_row is not None:
                 if op_lower is None and op_row[0] is not None:
                     op_lower = float(op_row[0])
+                    op_source = "TAG_RANGE"
                 if op_upper is None and op_row[1] is not None:
                     op_upper = float(op_row[1])
+                    op_source = "TAG_RANGE"
 
         # 填充到每个 bundle 的 signals 字典（归一化到与 OP 序列同尺度）
         for bundle in bundles:
@@ -944,12 +983,14 @@ class DataPlanner:
                 bundle.data_block.signals["op_low"] = [_normalize(op_lower)]
             if op_upper is not None:
                 bundle.data_block.signals["op_high"] = [_normalize(op_upper)]
+        _fill_limit_metadata(bundles, op_source)
         if op_lower is not None or op_upper is not None:
             logger.debug(
-                "DataPlanner 填充 OP 限位(归一化): loop=%s, op_low=%s, op_high=%s",
+                "DataPlanner 填充 OP 限位(归一化): loop=%s, op_low=%s, op_high=%s, source=%s",
                 loop_id,
                 op_lower,
                 op_upper,
+                op_source,
             )
 
     # ------------------------------------------------------------------

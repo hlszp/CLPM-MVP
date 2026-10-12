@@ -174,7 +174,7 @@ class TestLowpassSignals:
         u = slow * 0.5 + rng.normal(0, 1.0, n)  # OP 含高频噪声
         y = slow + rng.normal(0, 1.0, n)
 
-        fu, fy, _fsp, note = _lowpass_signals(u, y, None, ts=1.0)
+        fu, fy, _fsp, note, meta = _lowpass_signals(u, y, None, ts=1.0)
 
         assert note is not None and "lowpass" in note
         # 噪声残留显著下降（直接度量：滤波后与干净慢信号的差；
@@ -183,6 +183,9 @@ class TestLowpassSignals:
         # 慢分量保留
         assert abs(float(np.corrcoef(slow, fy)[0, 1])) > 0.98
         assert fu is not None
+        # P2-03：结构化预处理参数（applied + 实际生效 Wn/fc）
+        assert meta is not None and meta["applied"] is True
+        assert 0 < meta["appliedWn"] < 0.4 and meta["appliedFcHz"] > 0
 
     def test_broadband_signal_skipped(self) -> None:
         """宽带信号（白噪声）：自适应截止达上限 → 跳过滤滤（note=None）."""
@@ -191,9 +194,10 @@ class TestLowpassSignals:
         y = rng.normal(0, 1.0, n)  # 纯白噪声，能量均匀铺到 Nyquist
         u = rng.normal(0, 1.0, n)
 
-        _fu, _fy, _fsp, note = _lowpass_signals(u, y, None, ts=1.0)
+        _fu, _fy, _fsp, note, meta = _lowpass_signals(u, y, None, ts=1.0)
 
         assert note is None
+        assert meta is None  # P2-03：跳过时结构化参数为 None
 
 
 # ---------------------------------------------------------------------------

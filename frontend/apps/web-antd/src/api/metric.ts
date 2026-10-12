@@ -891,6 +891,42 @@ export namespace MetricApi {
     loopCount: number;
     status: KpiStatus;
     algorithmVersion?: null | string;
+    /**
+     * P3-08d 名册/可评分统计（仅 hour 维度携带；旧行 null=历史口径
+     * 不可追溯——读端不得将 null 猜算为 0）。
+     */
+    assessmentStats?: NodeAssessmentStats | null;
+  }
+
+  /** 名册账（08d build_assessment_stats.roster；E/N 互斥六类和=E） */
+  export interface NodeAssessmentRoster {
+    membershipRevision?: null | string;
+    eligibleLoopCount: null | number;
+    scorableLoopCount: null | number;
+    /** 可评分比例（E=0 → null「无参评回路」；N=0 → 0%） */
+    scorableLoopRatio: null | number;
+    excludedLoopCount?: null | number;
+    states?: Record<string, number>;
+    stateSourceNote?: null | string;
+    members?: { loopId: string; reason?: null | string; state: string }[];
+  }
+
+  /** 每指标独立分子/权重和/计数（08d metricStats 元素） */
+  export interface NodeMetricStat {
+    objectCount: number;
+    numericCount: number;
+    weightedNumerator?: null | number;
+    weightSum?: null | number;
+    numericWeightSum?: null | number;
+    /** null 不作 0：分子/有效权重和为 0 时为 null（非 0 分） */
+    weightedMean: null | number;
+  }
+
+  /** 08d 节点评估统计（roster + metricStats + fastRateReference） */
+  export interface NodeAssessmentStats {
+    roster?: NodeAssessmentRoster;
+    metricStats?: Record<string, NodeMetricStat>;
+    fastRateReference?: Record<string, null | number>;
   }
 
   /** 节点监控数据（对齐 NodeMonitorData） */
@@ -929,14 +965,22 @@ export namespace MetricApi {
     overridden: boolean;
   }
 
-  /** 参数元数据项（整改 F6：注册表单源下发） */
+  /**
+   * 参数元数据项（整改 F6：注册表单源下发；P2-01 补齐 label/type 全集）
+   * 后端 build_param_meta 下发 16 个元数据字段，前端消费其中的键集合与
+   * label/type/min/max/unit/description/category；其余字段（defaultBasis/
+   * kind/risk 等）透传保留，不在 UI 强制消费。
+   */
   export interface AlgorithmParamMeta {
+    label?: string;
+    /** 注册类型：bool=开关（存 0/1）/ int=整数点数 / float=数值（默认） */
+    type?: 'bool' | 'float' | 'int';
     min?: number;
     max?: number;
     unit?: string;
     description?: string;
     category?: string;
-    type?: 'bool';
+    [key: string]: unknown;
   }
 
   /** 指标参数组 */
@@ -944,7 +988,10 @@ export namespace MetricApi {
     metricCode: string;
     metricName: string;
     items: AlgorithmParamsControlItem[];
-    /** F6：参数元数据（min/max/unit/description/category），可能缺失时回落前端兜底 */
+    /**
+     * F6+P2-01：参数元数据（注册表单源），**键集合即该指标参数全集**
+     * （本地不再维护第二份键清单，旧键/新键随注册表自动增减）
+     */
     paramMeta?: Record<string, AlgorithmParamMeta>;
   }
 
@@ -1548,8 +1595,42 @@ export function saveOutlierParamsApi(data: MetricApi.OutlierParamsSaveRequest) {
 
 const SNAPSHOTS_BASE = '/performance/loops/snapshots';
 
+/**
+ * 单指标语义明细（P3-08a record payload ``metricsSemantic`` 元素形状；
+ * 快照行/可信度行当前不携带该键——读端按可选增量键消费，出现即启用
+ * "正式/参考"与 assessmentState 判定，未出现按 legacy 口径）。
+ */
+export interface MetricSemanticEntry {
+  value?: null | number;
+  confidenceLevel?: null | string;
+  /** 评估三值（COMPLETE/PARTIAL/UNASSESSABLE；legacy 计算器未填为 null） */
+  assessmentState?: null | string;
+  details?: null | Record<string, unknown>;
+}
+
+/** record payload metricsSemantic（键=指标 DB 列名 + __composite__） */
+export interface MetricsSemantic {
+  __composite__?: MetricSemanticEntry;
+  fast_rate?: MetricSemanticEntry;
+  [key: string]: MetricSemanticEntry | undefined;
+}
+
 /** 回路小时指标快照列表项（24 字段 + loopTagName） */
 export interface KpiSnapshotItem {
+  /**
+   * P3-08a 语义明细（G3-R01 起由 /performance/loops/snapshots 按行透出：
+   * 该行自己 result_record 的 payload.metricsSemantic 原样，键=指标 DB
+   * 列名 + __composite__——与账本 payload 顶层 composite 为同一对象）。
+   */
+  metricsSemantic?: MetricsSemantic | null;
+  /** G3-R01：本行对应的不可变结果账本 record 身份 */
+  resultRecordId?: null | string;
+  /**
+   * G3-R01 语义链路状态：AVAILABLE=携带完整语义；NOT_TRACEABLE=legacy 无
+   * 语义（历史不可追溯）；BROKEN=新 profile 缺语义（断链暴露）；
+   * UNLINKED=快照行无账本链接
+   */
+  semanticLinkStatus?: null | string;
   loopId: null | string;
   loopTagName: null | string;
   /** 评估来源（整合方案 B3）：SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL */

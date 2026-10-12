@@ -127,6 +127,9 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     ideal_settling_time FLOAT,
     complex_loop_group_id UUID,
     complex_role    VARCHAR(10),
+    control_action_direction VARCHAR(16) NOT NULL DEFAULT 'UNKNOWN',
+    engineering_template_id UUID,
+    engineering_template_version INTEGER,
     CONSTRAINT uk_loop_ledger_tag_name UNIQUE (tag_name),
     CONSTRAINT fk_loop_ledger_unit_id  FOREIGN KEY (unit_id) REFERENCES plant_node(id) ON DELETE RESTRICT,
     CONSTRAINT ck_loop_ledger_status   CHECK (status IN ('READY', 'PARTIAL', 'INACTIVE')),
@@ -136,6 +139,9 @@ CREATE TABLE IF NOT EXISTS loop_ledger (
     CONSTRAINT ck_loop_ledger_complex_group_coherence CHECK (
         (complex_loop_group_id IS NULL AND complex_role IS NULL)
         OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL)
+    ),
+    CONSTRAINT ck_loop_ledger_control_action_direction CHECK (
+        control_action_direction IN ('DIRECT', 'REVERSE', 'UNKNOWN')
     )
 );
 
@@ -322,6 +328,61 @@ COMMENT ON COLUMN engine_rule.updated_by IS '最后更新人';
 COMMENT ON COLUMN engine_rule.updated_at IS '最后更新时间';
 
 -- =============================================================================
+-- 8.9 calculation_result_record（追加式结果账本，P1-05，迁移 p105resledger01）
+--   不可变 record：唯一键 (logical_run_id, object_kind, object_id, ts_start, ts_end)；
+--   同 logicalRunId 重试幂等复用，显式重评换新 logicalRunId 追加；
+--   四投影表（hourly/latest/custom/node_hourly）以可空 result_record_id 指向本表。
+--   calculation_result_legacy_map：旧投影行 ID → recordId 映射（迁移归档，兼容读）。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS calculation_result_record (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    logical_run_id      UUID            NOT NULL,
+    object_kind         VARCHAR(8)      NOT NULL,
+    object_id           UUID            NOT NULL,
+    ts_start            TIMESTAMP       NOT NULL,
+    ts_end              TIMESTAMP       NOT NULL,
+    source_record_id    UUID,
+    algorithm_version   VARCHAR(50)     NOT NULL,
+    config_revision     VARCHAR(64)     NOT NULL,
+    dataset_snapshot_id UUID,
+    status              VARCHAR(16)     NOT NULL,
+    payload             JSONB           NOT NULL,
+    created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT fk_calc_result_record_source FOREIGN KEY (source_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
+    CONSTRAINT ck_calc_result_record_object_kind CHECK (object_kind IN ('LOOP', 'NODE')),
+    CONSTRAINT ck_calc_result_record_status CHECK (status IN ('COMPLETED', 'FAILED')),
+    CONSTRAINT ck_calc_result_record_window CHECK (ts_end > ts_start),
+    CONSTRAINT uq_calc_result_record_run_object_window UNIQUE (logical_run_id, object_kind, object_id, ts_start, ts_end)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_result_record_object_window
+    ON calculation_result_record (object_kind, object_id, ts_start);
+
+CREATE TABLE IF NOT EXISTS calculation_result_legacy_map (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    legacy_table        VARCHAR(40)     NOT NULL,
+    legacy_id           VARCHAR(64)     NOT NULL,
+    record_id           UUID            NOT NULL,
+    created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT fk_calc_legacy_map_record FOREIGN KEY (record_id) REFERENCES calculation_result_record(id) ON DELETE CASCADE,
+    CONSTRAINT uq_calc_legacy_map_table_id UNIQUE (legacy_table, legacy_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_legacy_map_record_id
+    ON calculation_result_legacy_map (record_id);
+
+COMMENT ON TABLE  calculation_result_record IS '追加式计算结果账本（不可变 record，P1-05）';
+COMMENT ON COLUMN calculation_result_record.logical_run_id IS '逻辑运行身份（同任务重试复用；显式重评新值）';
+COMMENT ON COLUMN calculation_result_record.object_kind IS '对象类别：LOOP/NODE';
+COMMENT ON COLUMN calculation_result_record.source_record_id IS '显式重评来源记录（不覆盖失败证据）';
+COMMENT ON COLUMN calculation_result_record.algorithm_version IS '算法版本（未知旧算法=LEGACY_UNVERIFIABLE）';
+COMMENT ON COLUMN calculation_result_record.config_revision IS '配置版本（未知=LEGACY_UNVERIFIABLE；P1=实际消费配置摘要）';
+COMMENT ON COLUMN calculation_result_record.dataset_snapshot_id IS '输入包引用（P2-03 落地；可空=不可完整复现）';
+COMMENT ON COLUMN calculation_result_record.status IS '终态：COMPLETED/FAILED（FAILED 不可变）';
+COMMENT ON COLUMN calculation_result_record.payload IS '完整结果；NODE 记录含 loopRecordIds 与各指标分母';
+COMMENT ON TABLE  calculation_result_legacy_map IS '旧投影表 ID→结果账本 recordId 映射（P1-05 迁移归档）';
+
+-- =============================================================================
 -- 9. kpi_snapshot_hourly (每小时性能评估快照)
 -- =============================================================================
 CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
@@ -375,7 +436,10 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_hourly (
     tune_level          VARCHAR(2),
     source              VARCHAR(16),
     source_task_id      VARCHAR(36),
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id    UUID,
     CONSTRAINT fk_kpi_snapshot_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_kpi_snapshot_hourly_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_snapshot_status  CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_kpi_snapshot_window  CHECK (ts_end > ts_start),
     CONSTRAINT ck_kpi_snapshot_confidence CHECK (
@@ -436,9 +500,14 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_hourly (
     status              VARCHAR(20)     NOT NULL,
     algorithm_version   VARCHAR(30),
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id    UUID,
     CONSTRAINT fk_kpi_node_snapshot_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
+    CONSTRAINT fk_kpi_node_snapshot_hourly_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_node_snapshot_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
-    CONSTRAINT ck_kpi_node_snapshot_window CHECK (ts_end > ts_start)
+    CONSTRAINT ck_kpi_node_snapshot_window CHECK (ts_end > ts_start),
+    -- DEC-10a（P1-05）：同 (plant_node_id, ts_start) 唯一
+    CONSTRAINT uq_kpi_node_snapshot_hourly_node_ts UNIQUE (plant_node_id, ts_start)
 );
 
 COMMENT ON TABLE  kpi_node_snapshot_hourly IS '节点级每小时性能评估快照（按 plant_node 递归聚合，对齐 GB/T 44693.2-2024 §6.4）';
@@ -700,6 +769,11 @@ CREATE TABLE IF NOT EXISTS tuning_record (
     current_pid          JSON,
     risk_assessment      JSON,
     rollback_pid         JSON,
+    -- P2-03：计算上下文与历史复现（迁移 p203dssnap01）
+    -- dataset_snapshot_id 的 FK 延迟到 calculation_dataset_snapshot 表创建后添加（见 8.11 后 DO 块）
+    source_record_id     UUID,
+    dcs_template_revision VARCHAR(64),
+    calc_context         JSON,
     CONSTRAINT fk_tuning_record_loop_id FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
     -- fk_tuning_record_process_model_version 延迟到 process_model_version 表创建后添加（见下方 DO 块）
     CONSTRAINT ck_tuning_record_model   CHECK (model_type IN ('FOPDT', 'SOPDT', 'IPDT')),
@@ -1015,8 +1089,11 @@ CREATE TABLE IF NOT EXISTS kpi_snapshot_custom (
     tune_level              VARCHAR(2),
     source                  VARCHAR(16),
     source_task_id          VARCHAR(36),
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id        UUID,
     CONSTRAINT uq_kpi_custom_task_loop UNIQUE (task_id, loop_id),
     CONSTRAINT fk_kpi_custom_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_kpi_snapshot_custom_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_custom_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_kpi_custom_window CHECK (ts_end > ts_start),
     CONSTRAINT ck_kpi_custom_fitness_level CHECK (
@@ -1238,11 +1315,15 @@ CREATE TABLE IF NOT EXISTS dcs_pid_structure (
     d_filter_enabled        BOOLEAN         NOT NULL DEFAULT FALSE,
     d_filter_unit           VARCHAR(10),
     d_filter_multiplier     BOOLEAN         NOT NULL DEFAULT FALSE,
+    representation_status   VARCHAR(16)     NOT NULL DEFAULT 'KNOWN',
     description             VARCHAR(500),
     created_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     updated_at              TIMESTAMP       NOT NULL DEFAULT NOW(),
     CONSTRAINT fk_dcs_pid_structure_model FOREIGN KEY (dcs_model_id) REFERENCES dcs_model(id) ON DELETE CASCADE,
-    CONSTRAINT ck_dcs_pid_structure_filter_unit CHECK (d_filter_enabled = FALSE OR d_filter_unit IS NOT NULL)
+    CONSTRAINT ck_dcs_pid_structure_filter_unit CHECK (d_filter_enabled = FALSE OR d_filter_unit IS NOT NULL),
+    CONSTRAINT ck_dcs_pid_structure_representation_status CHECK (
+        representation_status IN ('KNOWN', 'UNKNOWN')
+    )
 );
 
 -- =============================================================================
@@ -1338,7 +1419,10 @@ CREATE TABLE IF NOT EXISTS loop_confidence_latest (
     metrics             JSONB,
     algorithm_version   VARCHAR(50),
     updated_at          TIMESTAMP,
+    -- P1-05 结果账本投影指针（迁移 p105resledger01）
+    result_record_id    UUID,
     CONSTRAINT fk_loop_confidence_latest_loop FOREIGN KEY (loop_id) REFERENCES loop_ledger(id) ON DELETE CASCADE,
+    CONSTRAINT fk_loop_confidence_latest_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_loop_confidence_latest_status CHECK (status IN ('SUCCESS', 'INCONCLUSIVE', 'PARTIAL')),
     CONSTRAINT ck_loop_confidence_latest_confidence CHECK (confidence_level IS NULL OR confidence_level IN ('A', 'B', 'C', 'D', 'E'))
 );
@@ -1356,6 +1440,7 @@ CREATE TABLE IF NOT EXISTS process_model_version (
     data_window_start       TIMESTAMP,
     data_window_end         TIMESTAMP,
     data_hash               VARCHAR(64),
+    dataset_snapshot_id     UUID,
     condition_summary       JSON,
     algorithm_version       VARCHAR(50),
     identify_method         VARCHAR(30),
@@ -1408,6 +1493,8 @@ CREATE INDEX IF NOT EXISTS idx_loop_ledger_status  ON loop_ledger (status);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_tag_name ON loop_ledger (tag_name);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_importance_level ON loop_ledger (importance_level);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_dcs_model ON loop_ledger (dcs_model_id);
+CREATE INDEX IF NOT EXISTS idx_loop_ledger_engineering_template
+    ON loop_ledger (engineering_template_id);
 CREATE INDEX IF NOT EXISTS idx_loop_ledger_complex_group ON loop_ledger (complex_loop_group_id);
 
 -- tag_registry 索引
@@ -1668,6 +1755,7 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
     triggered_by        VARCHAR(64) NOT NULL DEFAULT 'system',
     time_window_start   TIMESTAMP    NOT NULL,
     time_window_end     TIMESTAMP    NOT NULL,
+    dataset_snapshot_id UUID,
     operator_group      VARCHAR(8)   NOT NULL DEFAULT 'full',
     status              VARCHAR(16)  NOT NULL DEFAULT 'RUNNING',
     data_gate           JSONB,
@@ -1693,6 +1781,10 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
     trigger_type        VARCHAR(16)  NOT NULL DEFAULT 'MANUAL',
     -- 指标摘要（迁移 a3b4c5d6e7f8）：6 负向 + 7 正向指标，统一 0-100 标度
     metric_summary      JSONB,
+    -- 诊断科学结论元信息（迁移 p308arele01，P3-08a/D0 契约 O-1）：
+    -- judgementStatus/causeStatus 等 08§4.2 结构；写入方归诊断侧（P3-01/D1），
+    -- NULL=历史 run 无元信息（LEGACY_UNVERIFIABLE 口径）
+    assessment_meta     JSONB,
     -- 人工复核四件套（迁移 b8c9d0e1f2a3）
     review_status       VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     review_results      JSONB,
@@ -1704,7 +1796,9 @@ CREATE TABLE IF NOT EXISTS diagnosis_run (
         ('TUNING', 'VALVE', 'INSTRUMENT', 'COMMUNICATION', 'PROCESS', 'UTILIZATION', 'DESIGN', 'DATA_INSUFFICIENT')),
     CONSTRAINT ck_diagnosis_run_severity CHECK (severity IS NULL OR severity IN ('HIGH', 'MEDIUM', 'LOW')),
     CONSTRAINT ck_diagnosis_run_trigger_type CHECK (trigger_type IN ('MANUAL', 'SCHEDULED', 'EVENT')),
-    CONSTRAINT ck_diagnosis_run_review_status CHECK (review_status IN ('PENDING', 'REVIEWED'))
+    CONSTRAINT ck_diagnosis_run_review_status CHECK (review_status IN ('PENDING', 'REVIEWED')),
+    -- 批次幂等唯一约束（P3-02 迁移 p302task01 同款；bootstrap 与迁移链同步）
+    CONSTRAINT uq_diagnosis_run_task_loop UNIQUE (task_id, loop_id)
 );
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_loop_created ON diagnosis_run (loop_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_diagnosis_run_category     ON diagnosis_run (primary_category);
@@ -1895,7 +1989,9 @@ CREATE TABLE IF NOT EXISTS workbench_window_summary (
     "window"              VARCHAR(8)   NOT NULL,
     window_start          TIMESTAMPTZ  NOT NULL,
     window_end            TIMESTAMPTZ  NOT NULL,
-    score                 NUMERIC(6,3) NOT NULL,
+    -- CAL-07（迁移 p102wsnull01）：score 可空——无有效评分窗口落 NULL（status=INCONCLUSIVE），
+    -- 不再以 0.0 伪 0 绩效；ck_ws_score_range 对 NULL 恒通过（PG CHECK 语义）。
+    score                 NUMERIC(6,3),
     status                VARCHAR(16)  NOT NULL,
     loop_count            INTEGER      NOT NULL DEFAULT 0,
     good_value_rate       NUMERIC(6,3),
@@ -2307,6 +2403,321 @@ CREATE TABLE IF NOT EXISTS point_state_anchor (
     PRIMARY KEY (point_id, anchor_ts)
 );
 CREATE INDEX IF NOT EXISTS ix_psa_point_ts ON point_state_anchor (point_id, anchor_ts);
+
+-- =============================================================================
+-- 8.10 config_override / config_publication（分层配置发布，P2-02，迁移 p202cfgpub01）
+--   统一作用域链：DEFAULT（算法默认 + algorithm_parameter + metric_config.threshold
+--   兼容全局覆盖）< TEMPLATE < NODE < LOOP < TASK（内存快照不落库）。
+--   config_override 仅承载 TEMPLATE/NODE/LOOP 三层；发布语义为整组替换。
+--   config_publication：追加式发布账本——全局单调 revision 唯一（持久版本号，
+--   Redis 仅加速通知；并发发布靠 revision 唯一约束实现 expectedRevision 乐观锁），
+--   每次发布记录 before/after、原因、操作者、影响范围与回退版本。
+--   无存量回填：revision 0 = 迁移前遗留配置状态，不伪补历史发布。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS config_override (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    layer               VARCHAR(16)     NOT NULL,
+    scope_id            VARCHAR(64)     NOT NULL,
+    metric_code         VARCHAR(50)     NOT NULL,
+    params              JSONB           NOT NULL,
+    is_enabled          BOOLEAN         NOT NULL DEFAULT TRUE,
+    published_revision  INTEGER         NOT NULL DEFAULT 0,
+    updated_by          VARCHAR(50),
+    updated_at          TIMESTAMP,
+    version             INTEGER         NOT NULL DEFAULT 1,
+    CONSTRAINT ck_config_override_layer CHECK (layer IN ('TEMPLATE', 'NODE', 'LOOP')),
+    CONSTRAINT uq_config_override_scope UNIQUE (layer, scope_id, metric_code)
+);
+
+CREATE INDEX IF NOT EXISTS ix_config_override_metric ON config_override (metric_code);
+CREATE INDEX IF NOT EXISTS ix_config_override_scope ON config_override (layer, scope_id);
+
+CREATE TABLE IF NOT EXISTS config_publication (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    revision            INTEGER         NOT NULL,
+    operation           VARCHAR(16)     NOT NULL,
+    layer               VARCHAR(16),
+    scope               JSONB           NOT NULL,
+    reason              TEXT            NOT NULL,
+    operator            VARCHAR(50)     NOT NULL,
+    before_value        TEXT,
+    after_value         TEXT,
+    affected_loops      INTEGER,
+    rollback_revision   INTEGER,
+    created_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT ck_config_publication_operation CHECK (
+        operation IN ('PUBLISH', 'RESET', 'ROLLBACK', 'LEGACY_SYNC', 'TEMPLATE_VERSION')
+    ),
+    CONSTRAINT uq_config_publication_revision UNIQUE (revision)
+);
+
+CREATE INDEX IF NOT EXISTS ix_config_publication_created_at ON config_publication (created_at);
+
+COMMENT ON TABLE  config_override IS '分层配置覆盖（TEMPLATE/NODE/LOOP，P2-02）';
+COMMENT ON COLUMN config_override.scope_id IS '作用域目标键：TEMPLATE=模板键 / NODE=plant_node.id / LOOP=loop_ledger.id';
+COMMENT ON COLUMN config_override.published_revision IS '最近发布本行的全局 config revision（sourceRevision）';
+COMMENT ON TABLE  config_publication IS '统一配置发布快照（追加式账本，全局单调 revision，P2-02）';
+COMMENT ON COLUMN config_publication.revision IS '持久版本号（Redis 仅加速通知）；唯一约束实现并发 409';
+COMMENT ON COLUMN config_publication.operation IS 'PUBLISH/RESET/ROLLBACK/LEGACY_SYNC/TEMPLATE_VERSION（模板版本发布，P2-04）';
+COMMENT ON COLUMN config_publication.rollback_revision IS '回退目标版本（= 发布前 revision）';
+
+-- =============================================================================
+-- 8.11 calculation_dataset_snapshot（不可变输入包元数据，P2-03，迁移 p203dssnap01）
+--   现有 datasetRef 只表示绑定/改绑身份，不是数值输入身份；本表把数值输入
+--   身份落到 input_hash（NPZ 数组+manifest 全部内容 SHA256，volatile 字段
+--   除外）——相同绑定但值/质量/mask 改变必须得到不同 inputHash。
+--   包文件 {snapshotId}.npz + {snapshotId}.manifest.json 存本地持久化共享目录
+--   （CLPM_CALC_SNAPSHOT_DIR），写入次序=先原子写文件+核 hash 再提交本表引用；
+--   不开放静态目录下载，访问走带 scope 校验的服务。
+--   保留契约（DEC-10）：NORMAL 90 天（expires_at）；被 record/方案/审核证据
+--   引用的包 FROZEN 永不清理；清理先标 cleaned_at 再删文件（隔离清理任务）。
+--   created_by_record_id 跨表（结果账本 record / tuning_record / diagnosis_run），
+--   故无硬 FK——引用完整性由清理任务的跨表核查保证。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS calculation_dataset_snapshot (
+    id                    UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    dataset_ref           VARCHAR(64)     NOT NULL,
+    input_hash            VARCHAR(64)     NOT NULL,
+    ts_start              TIMESTAMP       NOT NULL,
+    ts_end                TIMESTAMP       NOT NULL,
+    schema_version        VARCHAR(16)     NOT NULL,
+    kind                  VARCHAR(24)     NOT NULL,
+    created_by_record_id  UUID,
+    retention_class       VARCHAR(8)      NOT NULL DEFAULT 'NORMAL',
+    frozen_reason         VARCHAR(200),
+    frozen_by_record_ids  JSONB,
+    expires_at            TIMESTAMP,
+    size_bytes            BIGINT          NOT NULL DEFAULT 0,
+    cleaned_at            TIMESTAMP,
+    loop_id               UUID,
+    created_at            TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT ck_calc_dataset_snapshot_retention CHECK (retention_class IN ('NORMAL', 'FROZEN')),
+    CONSTRAINT ck_calc_dataset_snapshot_kind CHECK (kind IN ('KPI_GRID', 'IDENTIFICATION', 'DIAGNOSIS_RAW', 'KPI_ORIGINAL_EVENTS')),
+    CONSTRAINT ck_calc_dataset_snapshot_frozen_reason CHECK (retention_class <> 'FROZEN' OR frozen_reason IS NOT NULL),
+    CONSTRAINT ck_calc_dataset_snapshot_window CHECK (ts_end > ts_start),
+    CONSTRAINT uq_calc_dataset_snapshot_content_ref UNIQUE (dataset_ref, input_hash, ts_start, ts_end, created_by_record_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_dataset_snapshot_input_hash
+    ON calculation_dataset_snapshot (input_hash);
+CREATE INDEX IF NOT EXISTS idx_calc_dataset_snapshot_retention
+    ON calculation_dataset_snapshot (retention_class, expires_at);
+CREATE INDEX IF NOT EXISTS idx_calc_dataset_snapshot_loop
+    ON calculation_dataset_snapshot (loop_id);
+
+COMMENT ON TABLE  calculation_dataset_snapshot IS '不可变计算输入包元数据（P2-03，NPZ+manifest 内容寻址）';
+COMMENT ON COLUMN calculation_dataset_snapshot.dataset_ref IS '绑定身份（≠数值身份；logical_wide_builder 摘要或显式合成）';
+COMMENT ON COLUMN calculation_dataset_snapshot.input_hash IS '内容 SHA256（NPZ 数组+manifest 全部内容，volatile 字段除外）';
+COMMENT ON COLUMN calculation_dataset_snapshot.schema_version IS 'manifest 结构版本（主版本 1 版本化扩展）';
+COMMENT ON COLUMN calculation_dataset_snapshot.kind IS '包种类：KPI_GRID/IDENTIFICATION/DIAGNOSIS_RAW/KPI_ORIGINAL_EVENTS（重放按种类分派；原事件包 P3-08a）';
+COMMENT ON COLUMN calculation_dataset_snapshot.created_by_record_id IS '创建引用（跨表：结果账本 record/tuning_record/diagnosis_run，无硬 FK）';
+COMMENT ON COLUMN calculation_dataset_snapshot.frozen_by_record_ids IS 'FROZEN 时引用本包的方案/实施/审核证据 recordId 列表';
+COMMENT ON COLUMN calculation_dataset_snapshot.expires_at IS 'NORMAL 保留期终点（创建+90 天，DEC-10）；FROZEN 行忽略';
+COMMENT ON COLUMN calculation_dataset_snapshot.cleaned_at IS '清理完成标记（先标记再删文件）';
+
+-- =============================================================================
+-- 8.12 assessment_release_registry（评估发布代际登记，P3-08a，迁移 p308arele01）
+--   上线清单六要素：assessmentProfile/algorithmVersion/dataPolicyVersion/
+--   configRevision/buildDigest/releaseGeneration（+snapshotSchemaVersion）+
+--   消费者最低版本/作用范围/回退 profile。EA-D05：验收后直接采用（无线上
+--   SHADOW/节点试点前置）；发布/回退=状态迁移（STAGED→ACTIVE→RETIRED），
+--   同 profile 至多一条 ACTIVE（partial unique index），不删行不删记录。
+--   任务开始经 resolve_task_release_context 读取 ACTIVE 代际固定六要素；
+--   无 ACTIVE 行时消费侧 releaseGeneration=NULL（legacy 口径显式标记）。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS assessment_release_registry (
+    id                    UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    release_generation    VARCHAR(64)     NOT NULL,
+    assessment_profile    VARCHAR(50)     NOT NULL,
+    algorithm_version     VARCHAR(50)     NOT NULL,
+    data_policy_version   VARCHAR(32)     NOT NULL,
+    config_revision       VARCHAR(64),
+    build_digest          VARCHAR(64),
+    snapshot_schema_version VARCHAR(16)   NOT NULL,
+    consumer_min_version  VARCHAR(32),
+    scope                 JSONB,
+    rollback_profile      VARCHAR(50),
+    status                VARCHAR(8)      NOT NULL DEFAULT 'STAGED',
+    activated_at          TIMESTAMP,
+    retired_at            TIMESTAMP,
+    note                  VARCHAR(500),
+    created_at            TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    CONSTRAINT ck_assessment_release_status CHECK (status IN ('STAGED', 'ACTIVE', 'RETIRED')),
+    CONSTRAINT uq_assessment_release_generation UNIQUE (release_generation)
+);
+
+CREATE INDEX IF NOT EXISTS idx_assessment_release_profile
+    ON assessment_release_registry (assessment_profile, status);
+CREATE UNIQUE INDEX IF NOT EXISTS uq_assessment_release_active_profile
+    ON assessment_release_registry (assessment_profile)
+    WHERE status = 'ACTIVE';
+
+COMMENT ON TABLE  assessment_release_registry IS '评估发布代际登记（上线清单六要素，P3-08a，EA-D05 直接采用）';
+COMMENT ON COLUMN assessment_release_registry.release_generation IS '发布代际标识（唯一；如 rg-0001-legacy-v2）';
+COMMENT ON COLUMN assessment_release_registry.assessment_profile IS '评估 profile（服务端策略表登记标识）';
+COMMENT ON COLUMN assessment_release_registry.build_digest IS '发布时冻结的受控构建摘要（空=登记时未冻结，消费回落当前构建）';
+COMMENT ON COLUMN assessment_release_registry.status IS 'STAGED 已登记未生效 / ACTIVE 正式生效 / RETIRED 已被新代际取代';
+COMMENT ON COLUMN assessment_release_registry.rollback_profile IS '回退 profile（回退=activate 旧代际，保留全部记录）';
+
+-- 延迟外键：tuning_record / process_model_version / diagnosis_run →
+-- calculation_dataset_snapshot（表定义顺序在前）
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_tuning_record_dataset_snapshot'
+          AND conrelid = 'tuning_record'::regclass
+    ) THEN
+        ALTER TABLE tuning_record
+            ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
+            ADD CONSTRAINT fk_tuning_record_dataset_snapshot
+            FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_process_model_version_dataset_snapshot'
+          AND conrelid = 'process_model_version'::regclass
+    ) THEN
+        ALTER TABLE process_model_version
+            ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
+            ADD CONSTRAINT fk_process_model_version_dataset_snapshot
+            FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_diagnosis_run_dataset_snapshot'
+          AND conrelid = 'diagnosis_run'::regclass
+    ) THEN
+        ALTER TABLE diagnosis_run
+            ADD COLUMN IF NOT EXISTS dataset_snapshot_id UUID,
+            ADD CONSTRAINT fk_diagnosis_run_dataset_snapshot
+            FOREIGN KEY (dataset_snapshot_id) REFERENCES calculation_dataset_snapshot(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
+
+-- =============================================================================
+-- 8.12 engineering_template / engineering_template_version（工程模板，P2-04，
+--   迁移 p204engtpl01）
+--   模板按响应/控制特征组织；template_key 即 config_override TEMPLATE 层
+--   scope_id——模板实体化后 TEMPLATE→回路映射经 loop_ledger.engineering_
+--   template_id 精确计数（消除 affectedLoops=None 诚实降级成因）。
+--   版本行追加式不可变：发布只 INSERT 新行 + 前进 current_version 指针；
+--   已固定引用（loop pin 版本 / revisionRef）发布新版后解析结果不变。
+--   发布/回拨接 P2-02 统一发布链（config_publication.operation=
+--   TEMPLATE_VERSION，revision 乐观锁 + 审计）。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS engineering_template (
+    id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_key    VARCHAR(64)     NOT NULL,
+    name            VARCHAR(200)    NOT NULL,
+    category        VARCHAR(32)     NOT NULL DEFAULT 'RESPONSE',
+    current_version INTEGER,
+    description     VARCHAR(500),
+    created_by      VARCHAR(50),
+    created_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    updated_at      TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT ck_engineering_template_category CHECK (category IN ('RESPONSE', 'CONTROL')),
+    CONSTRAINT uq_engineering_template_key UNIQUE (template_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_engineering_template_key ON engineering_template (template_key);
+
+CREATE TABLE IF NOT EXISTS engineering_template_version (
+    id            UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    template_id   UUID            NOT NULL,
+    version       INTEGER         NOT NULL,
+    profile       JSONB           NOT NULL,
+    reason        TEXT            NOT NULL,
+    published_by  VARCHAR(50),
+    published_at  TIMESTAMP       NOT NULL DEFAULT NOW(),
+    CONSTRAINT fk_engineering_template_version_template
+        FOREIGN KEY (template_id) REFERENCES engineering_template(id) ON DELETE CASCADE,
+    CONSTRAINT uq_engineering_template_version UNIQUE (template_id, version)
+);
+
+CREATE INDEX IF NOT EXISTS idx_engineering_template_version_template
+    ON engineering_template_version (template_id, version);
+
+COMMENT ON TABLE  engineering_template IS '工程模板（响应/控制特征；TEMPLATE 层覆盖的作用域目标，P2-04）';
+COMMENT ON COLUMN engineering_template.template_key IS '模板键（全局唯一；config_override TEMPLATE 层 scope_id）';
+COMMENT ON COLUMN engineering_template.current_version IS '当前版本指针；发布=追加版本行+前进指针，回拨=指针回拨（历史保持追加式）';
+COMMENT ON TABLE  engineering_template_version IS '工程模板不可变版本（追加式；发布新版不自动改已固定引用）';
+COMMENT ON COLUMN engineering_template_version.profile IS '版本内容（响应/控制特征工程档案；算法消费归后续阶段）';
+
+-- 延迟外键：loop_ledger → engineering_template（表定义顺序在前）
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'fk_loop_ledger_engineering_template'
+          AND conrelid = 'loop_ledger'::regclass
+    ) THEN
+        ALTER TABLE loop_ledger
+            ADD CONSTRAINT fk_loop_ledger_engineering_template
+            FOREIGN KEY (engineering_template_id) REFERENCES engineering_template(id) ON DELETE SET NULL;
+    END IF;
+END
+$$;
+
+-- §9 授权目录与持久策略（P4-01，与迁移 p401authz01 同批同内容）
+CREATE TABLE IF NOT EXISTS sys_permission (
+    code VARCHAR(64) PRIMARY KEY,
+    kind VARCHAR(16) NOT NULL,
+    parent_code VARCHAR(64) REFERENCES sys_permission (code) ON DELETE RESTRICT,
+    requires_codes JSONB,
+    module_key VARCHAR(20),
+    is_protected BOOLEAN NOT NULL DEFAULT FALSE,
+    description VARCHAR(500),
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_permission_kind CHECK (kind IN ('PAGE_GROUP', 'PAGE', 'ACTION')),
+    CONSTRAINT ck_sys_permission_parent_kind CHECK (kind = 'PAGE' OR parent_code IS NULL)
+);
+CREATE INDEX IF NOT EXISTS idx_sys_permission_kind ON sys_permission (kind);
+CREATE INDEX IF NOT EXISTS idx_sys_permission_module_key ON sys_permission (module_key);
+
+CREATE TABLE IF NOT EXISTS sys_role_permission (
+    role VARCHAR(20) NOT NULL,
+    permission_code VARCHAR(64) NOT NULL REFERENCES sys_permission (code) ON DELETE RESTRICT,
+    granted_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_role_permission_role CHECK (role IN ('ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT')),
+    PRIMARY KEY (role, permission_code)
+);
+CREATE INDEX IF NOT EXISTS idx_sys_role_permission_role ON sys_role_permission (role);
+
+CREATE TABLE IF NOT EXISTS sys_user_scope (
+    user_id UUID PRIMARY KEY REFERENCES sys_user (id) ON DELETE CASCADE,
+    scope_type VARCHAR(20) NOT NULL,
+    node_id UUID REFERENCES plant_node (id) ON DELETE RESTRICT,
+    updated_by VARCHAR(50),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_user_scope_type CHECK (scope_type IN ('ALL', 'NODE_SUBTREE')),
+    CONSTRAINT ck_sys_user_scope_node CHECK ((scope_type = 'ALL' AND node_id IS NULL) OR (scope_type = 'NODE_SUBTREE' AND node_id IS NOT NULL))
+);
+
+CREATE TABLE IF NOT EXISTS sys_authz_policy (
+    revision INTEGER PRIMARY KEY,
+    operation VARCHAR(20) NOT NULL,
+    role VARCHAR(20),
+    user_id UUID,
+    reason VARCHAR(500),
+    operator VARCHAR(50) NOT NULL,
+    before_value JSONB,
+    after_value JSONB,
+    rollback_of INTEGER,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION')),
+    CONSTRAINT uq_sys_authz_policy_rollback_of UNIQUE (rollback_of)
+);
+CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_operation ON sys_authz_policy (operation);
+CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_created_at ON sys_authz_policy (created_at);
+
+COMMENT ON TABLE sys_permission IS '页面码/动作码目录（P4-01；无机械通配展开）';
+COMMENT ON TABLE sys_role_permission IS '五角色授权矩阵（P4-01）';
+COMMENT ON TABLE sys_user_scope IS '用户数据范围 ALL/NODE_SUBTREE（P4-01；消费在 P4-03）';
+COMMENT ON TABLE sys_authz_policy IS '授权策略版本账本（P4-01；不可变追加式）';
 
 -- =============================================================================
 -- 脚本结束

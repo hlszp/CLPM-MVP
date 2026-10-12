@@ -43,6 +43,8 @@ from app.api.v1.endpoints import (
     cockpit,
     # v6.1: 数据可信度阈值配置
     confidence_config,
+    # P2-02: 分层配置发布（统一作用域 + expectedRevision + 跨进程一致）
+    config_publish,
     configs,
     dashboard,
     dataplanner,
@@ -55,6 +57,8 @@ from app.api.v1.endpoints import (
     diagnosis_v2,
     # 通用字典项（可配置枚举：测点类型等）
     dicts,
+    # P2-04: 工程模板（版本化模板 + TEMPLATE→回路映射）
+    engineering_templates,
     # 工厂模型 AAS 同步（工厂配置页：独立同步配置区 + 全量同步）
     factory_sync,
     # diagnosis_trigger_config,
@@ -94,6 +98,7 @@ from app.api.v1.endpoints import (
 from app.api.v1.endpoints import (
     tasks as eval_tasks,
 )
+from app.api.v1.endpoints.system import authorization as system_authorization
 from app.api.v1.endpoints.system import modules as system_modules
 from app.core.config import settings
 from app.core.db import dispose_engine
@@ -925,6 +930,17 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("预载可信度阈值失败（将使用算法默认值）: %s", exc)
 
+    # P2-02：统一配置 revision——预载运行时缓存至当前持久 revision + 启动
+    # CONFIG_REVISION_CHANNEL 订阅线程（广播仅加速通知；一致性由任务边界读
+    # 持久 revision 保证，Redis 故障不静默用旧值）。预载失败不阻塞启动。
+    from app.services.config_publish import preload_config_revision
+
+    try:
+        async with AsyncSessionLocal() as db:
+            await preload_config_revision(db)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("预载统一配置 revision 失败（任务边界将按持久 revision 补齐）: %s", exc)
+
     # 启动实时数据订阅（如已启用）
     from app.services.data_source.realtime_subscriber import start_subscriber
 
@@ -1207,6 +1223,9 @@ def create_app() -> FastAPI:
     v1_router.include_router(outlier_config.router)
     # P0-B: 算法参数配置
     v1_router.include_router(algorithm_config.router)
+    # P2-02: 分层配置发布（发布/重置/回退 ADMIN，DEC-03）
+    v1_router.include_router(config_publish.router)
+    v1_router.include_router(engineering_templates.router)
     # MVP 精简：已屏蔽诊断模块 → 不挂载 diagnosis_trigger_config.router
     # v1_router.include_router(diagnosis_trigger_config.router)
     # v4.0: 评估任务管理（标准/自定义）
@@ -1217,6 +1236,8 @@ def create_app() -> FastAPI:
     v1_router.include_router(reports.router)
     # 系统-模块管理（基础模块，始终可用）
     v1_router.include_router(system_modules.router)
+    # P4-01 授权目录与持久策略管理（基础能力，始终可用；P4-02 起统一接线）
+    v1_router.include_router(system_authorization.router)
     # 站点基础信息（公开 + ADMIN 配置 + LOGO 上传）
     v1_router.include_router(site.router)
     # S7 回路整定：模型辨识、PID 整定、闭环仿真（09 设计方案恢复为一级模块）

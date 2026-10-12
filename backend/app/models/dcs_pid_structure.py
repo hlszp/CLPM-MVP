@@ -29,6 +29,12 @@ P_TYPE_PROPORTION_BAND = "PROPORTION_BAND"  # 比例度 PB = 100/Kp
 UNIT_SECONDS = "SECONDS"
 UNIT_MINUTES = "MINUTES"
 
+#: PID 表示已知状态（P2-04，07 号文 §3.3）：UNKNOWN 为显式未知态——
+#: 未绑定 DCS 型号/未配置结构/结构显式标记未知时，解析结果恒为 UNKNOWN，
+#: 不得默认成标准 kp/ti/td（转换归 P3-03）。
+PID_REPRESENTATION_KNOWN = "KNOWN"
+PID_REPRESENTATION_UNKNOWN = "UNKNOWN"
+
 
 class DcsPidStructure(Base, TimestampMixin):
     """DCS 型号 PID 结构模板（1:1 关联 ``dcs_model``）.
@@ -85,6 +91,15 @@ class DcsPidStructure(Base, TimestampMixin):
         default=False,
         comment="微分滤波是否为乘法因子（True=乘法，False=加法/独立时间常数）",
     )
+    # P2-04（07 号文 §3.3）：PID 表示已知状态。UNKNOWN=该型号 PID 表示显式
+    # 未知（p_type/i_unit/d_unit 仅占位，无转换语义；转换与算法消费归
+    # P3-03，禁止把未知 DCS 型号默认成标准 kp/ti/td）。
+    representation_status: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="KNOWN",
+        comment="PID 表示状态：KNOWN(已知，字段有转换语义) / UNKNOWN(显式未知，禁止默认标准表示)",
+    )
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     __table_args__ = (
@@ -95,11 +110,18 @@ class DcsPidStructure(Base, TimestampMixin):
             "d_filter_enabled = false OR d_filter_unit IS NOT NULL",
             name="ck_dcs_pid_structure_filter_unit",
         ),
+        # P2-04：PID 表示已知状态显式二态
+        CheckConstraint(
+            "representation_status IN ('KNOWN', 'UNKNOWN')",
+            name="ck_dcs_pid_structure_representation_status",
+        ),
     )
 
 
 __all__ = [
     "DcsPidStructure",
+    "PID_REPRESENTATION_KNOWN",
+    "PID_REPRESENTATION_UNKNOWN",
     "P_TYPE_PROPORTION",
     "P_TYPE_PROPORTION_BAND",
     "UNIT_MINUTES",

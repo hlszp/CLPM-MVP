@@ -14,8 +14,21 @@ from app.models.alert import (
     AlertSuppression,
 )
 from app.models.algorithm_parameter import AlgorithmParameter
+from app.models.assessment_release import AssessmentReleaseRegistry  # P3-08a
 from app.models.audit import SysAuditLog
+from app.models.authz import (  # P4-01
+    SysAuthzPolicy,
+    SysPermission,
+    SysRolePermission,
+    SysUserScope,
+)
 from app.models.base import Base, TimestampMixin
+from app.models.calc_dataset_snapshot import CalculationDatasetSnapshot  # P2-03
+from app.models.calculation_result import (
+    CalculationResultLegacyMap,
+    CalculationResultRecord,
+)
+from app.models.config_publish import ConfigOverride, ConfigPublication  # P2-02
 from app.models.dcs_mode_mapping import DcsModeMapping
 from app.models.dcs_model import DcsModel
 from app.models.dcs_pid_structure import DcsPidStructure
@@ -23,6 +36,10 @@ from app.models.dcs_vendor import DcsVendor
 from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.engine import EngineRule
+from app.models.engineering_template import (  # P2-04
+    EngineeringTemplate,
+    EngineeringTemplateVersion,
+)
 from app.models.event_bus import EventBus  # Workbench v2.0
 from app.models.handling_order import HandlingOrder
 from app.models.loop import LoopLedger, LoopTagMapping
@@ -73,10 +90,15 @@ from app.models.workbench_loop_latest import (  # 驾驶舱 P1 预计算
 from app.models.workbench_summary import WorkbenchWindowSummary  # Workbench v2.0
 
 __all__ = [
+    "SysAuthzPolicy",
+    "SysPermission",
+    "SysRolePermission",
+    "SysUserScope",
     "Base",
     "LoopHealthFlag",
     "TimestampMixin",
     "AlgorithmParameter",
+    "AssessmentReleaseRegistry",  # P3-08a 评估发布代际登记
     "SysDictItem",
     "SysUser",
     "PlantNode",
@@ -96,8 +118,15 @@ __all__ = [
     "LoopLevelWeight",
     "TagRegistry",
     "MetricConfig",
+    "CalculationResultRecord",  # P1-05 结果账本
+    "CalculationResultLegacyMap",  # P1-05 旧 ID 映射
+    "CalculationDatasetSnapshot",  # P2-03 不可变输入包元数据
+    "ConfigOverride",  # P2-02 分层配置覆盖
+    "ConfigPublication",  # P2-02 统一配置发布快照
     "DiagnosisConfig",
     "EngineRule",
+    "EngineeringTemplate",
+    "EngineeringTemplateVersion",
     "KpiSnapshotHourly",
     "KpiSnapshotCustom",
     "LoopConfidenceLatest",

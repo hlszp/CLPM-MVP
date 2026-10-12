@@ -62,6 +62,52 @@ def _to_pct(v: float | None) -> str:
     return f"{v * 100:.1f}%" if v is not None else "—"
 
 
+async def _load_fast_rate_evidence(db: AsyncSession, snap: Any) -> dict[str, Any]:
+    """从结果账本 record payload 提取 fast_rate 正式/参考语义（R12）.
+
+    - 正式 F（含合法 0 分）→ ``{"kind": "formal", "value": v}``；
+    - 仅有静稳参考分 → ``{"kind": "reference", "referenceScore": r,
+      "evidenceStatus": ...}``（100 是管理参考约定，不是测量值）；
+    - legacy record 无语义键 → ``{"kind": "legacy_unclassified"}``；
+    - 无 record 可读 → ``{"kind": "unknown"}``（不虚构）。
+    """
+    record_id = getattr(snap, "result_record_id", None)
+    if not record_id:
+        return {"kind": "unknown"}
+    try:
+        from sqlalchemy import select as _select
+
+        from app.models.calculation_result import CalculationResultRecord
+
+        row = (
+            await db.execute(
+                _select(CalculationResultRecord.payload).where(
+                    CalculationResultRecord.id == str(record_id)
+                )
+            )
+        ).scalar_one_or_none()
+        payload = row if isinstance(row, dict) else None
+    except Exception:  # noqa: BLE001 — 语义读取失败不阻断洞察，按未知处理
+        return {"kind": "unknown"}
+    if payload is None:
+        return {"kind": "unknown"}
+    semantic = payload.get("metricsSemantic") or {}
+    fast = semantic.get("fast_rate") or {}
+    details = fast.get("details") or {}
+    if fast.get("value") is not None:
+        return {"kind": "formal", "value": float(fast["value"])}
+    if details.get("referenceScore") is not None:
+        return {
+            "kind": "reference",
+            "referenceScore": float(details["referenceScore"]),
+            "evidenceStatus": details.get("evidenceStatus"),
+            "reasonCode": details.get("reasonCode"),
+        }
+    if semantic:
+        return {"kind": "formal-null"}
+    return {"kind": "legacy_unclassified"}
+
+
 class PerformanceScene(SceneStrategy):
     """性能评估场景：基于 6 大 KPI 指标分析回路性能短板与改善方向。"""
 
@@ -113,6 +159,12 @@ class PerformanceScene(SceneStrategy):
         confidence_level = getattr(snap, "confidence_level", None)
         ts_start = getattr(snap, "ts_start", None)
 
+        # R12（2026-10-12 P3-08d/D6）：F 正式值与静稳参考分分开——
+        # record payload metricsSemantic.fast_rate 携带 referenceScore/
+        # evidenceStatus（09a 产出）；legacy record 无该键时 evidence 未知，
+        # 按 formal 处理但标记 unclassified（不冒称参考也不虚构正式）。
+        fast_evidence = await _load_fast_rate_evidence(db, snap)
+
         return AiInsightContext(
             scene=self.scene_id,
             loopId=loop_id,
@@ -120,11 +172,12 @@ class PerformanceScene(SceneStrategy):
             data={
                 "metrics": metrics,
                 "score": float(score) if score is not None else None,
-                "grade": _grade_from_score(float(score) if score else None),
+                "grade": _grade_from_score(float(score) if score is not None else None),
                 "status": status,
                 "confidenceLevel": confidence_level,
                 "tsStart": ts_start.isoformat() if ts_start else None,
                 "total": total,
+                "fastRateEvidence": fast_evidence,
             },
         )
 
@@ -186,7 +239,13 @@ class PerformanceScene(SceneStrategy):
         lines.append(
             f"{tag} 回路当前综合评分 {score_text}，性能等级「{grade}」，可信度 {conf} 级。"
         )
-        if grade in ("优秀", "良好"):
+        if score is None:
+            # R12：无有效评分=未评估/证据不足，不能渲染成"不理想"（更不能
+            # 渲染成"性能良好"）——诚实提示补齐评估
+            lines.append(
+                "暂无有效综合评分（未评估或证据不足），不能据此判定性能水平，建议先补齐评估。"
+            )
+        elif grade in ("优秀", "良好"):
             lines.append("整体性能良好，建议保持当前控制策略并定期监测。")
         elif grade == "合格":
             lines.append("整体性能合格但仍有提升空间，建议关注下列短板指标。")
@@ -214,29 +273,47 @@ class PerformanceScene(SceneStrategy):
         # 改善建议
         lines.append("")
         lines.append("【改善建议】")
+        fast_kind = (d.get("fastRateEvidence") or {}).get("kind")
+        if fast_kind == "reference":
+            # R12：静稳参考 100 是管理参考约定，动态证据不足——不据此
+            # 判断响应速度，更不指导 PID 参数增减（证据注记先于任何建议）
+            lines.append(
+                "  • 快速率当前为静稳参考分（动态证据不足）：不能据此判断响应速度，"
+                "也不建议据此调整 PID 参数；建议采集动态响应证据后复评"
+            )
         if not shortfalls:
             lines.append("  维持现状，定期复评即可。")
         else:
-            # 基于短板类型给建议
-            if metrics.get("oscillation_rate") and metrics["oscillation_rate"] > 0.10:
+            # 基于短板类型给建议（R12：全部 is not None 判空——真实 0.0 是
+            # 有效值不因 falsy 被丢，0 值 higher_better 指标照样触发建议）
+            if metrics.get("oscillation_rate") is not None and metrics["oscillation_rate"] > 0.10:
                 lines.append("  • 振荡率偏高：建议进入诊断中心排查振荡源（PID 过激/阀门粘滞/外扰）")
-            if metrics.get("saturation_rate") and metrics["saturation_rate"] > 0.10:
+            if metrics.get("saturation_rate") is not None and metrics["saturation_rate"] > 0.10:
                 lines.append("  • 饱和率偏高：检查阀门选型与工况负荷匹配度，必要时调整工艺降低负荷")
-            if metrics.get("steady_rate") and metrics["steady_rate"] < 0.90:
+            if metrics.get("steady_rate") is not None and metrics["steady_rate"] < 0.90:
                 lines.append("  • 稳定率偏低：考虑 PID 参数整定（减小比例增益或增大积分时间）")
-            if metrics.get("auto_mode_rate") and metrics["auto_mode_rate"] < 0.90:
+            if metrics.get("auto_mode_rate") is not None and metrics["auto_mode_rate"] < 0.90:
                 lines.append("  • 自控率偏低：排查频繁切手动的原因，优化控制逻辑或投用条件")
-            if metrics.get("instrument_fault_rate") and metrics["instrument_fault_rate"] > 0.05:
+            if (
+                metrics.get("instrument_fault_rate") is not None
+                and metrics["instrument_fault_rate"] > 0.05
+            ):
                 lines.append("  • 仪表故障率偏高：联系仪表人员检修测量回路，恢复数据质量")
-            if metrics.get("fast_rate") and metrics["fast_rate"] < 0.80:
+            if metrics.get("fast_rate") is not None and metrics["fast_rate"] < 0.80:
                 lines.append("  • 快速率偏低：适当增大比例增益或减小积分时间以提升响应速度")
 
         # 优先级
         lines.append("")
         lines.append("【优先级】")
-        if score is not None and score < 60:
+        if score is None:
+            # R12：score=None 原落入 else"性能良好"——改为显式未评估
+            lines.append(
+                "  该回路暂无有效综合评分（未评估或证据不足），不能判定性能良好，"
+                "建议补齐评估后复判。"
+            )
+        elif score < 60:
             lines.append("  ⚠ 该回路性能等级低，建议作为高优先级尽快处置。")
-        elif score is not None and score < 80:
+        elif score < 80:
             lines.append("  该回路存在中等短板，建议择机优化。")
         else:
             lines.append("  该回路性能良好，纳入常规监测即可。")

@@ -43,6 +43,91 @@ logger = logging.getLogger(__name__)
 _ROLE_INT = frozenset({"mode"})  # 整数语义角色（legacy 宽表 TINYINT 对齐）
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
+# ---------------------------------------------------------------------------
+# R1（2026-10-12 界面审核修复批）：held_too_long 阈值按角色分层
+#
+# 背景：08b/c 契约把"保持超过阈值"的槽标 unknown（R2，防缺口被 HELD 掩盖），
+# 阈值原为 max(3×步长, 60s)。但 MODE/SP/PID_* 是 COV 稀疏信号——无变化=保持
+# =HELD 是**正确语义**，60s 远小于其真实事件间隔，导致全部正常保持段被误标
+# unknown（2026-10-12 实测：全回路自控率 100%→8.33%、综合分崩塌、预警洪流）。
+#
+# 分层依据（dev 库 2026-10-10~12 48h 全量 32 个 MODE tag + 抽样 SP/PID/PV/OP
+# 实测事件间隔分布）：
+#   - 慢角色（mode/sp/pid_p/pid_i/pid_d）：p50≈408s、p95≈2222s、p99≈3891s、
+#     正常态最大≈4806s（其中 >7200s 的长尾与 PV/OP 停机缺口同时段，应由
+#     gap 登记归因，非正常保持）；
+#   - 快角色（pv/op）：p50=1s、p95=2s。
+# 故慢角色容忍下限取 7200s ≈ 1.8× 正常态最大间隔（覆盖 p99/p95 全部余量，
+# 仍是**有界**兜底：未登记 gap 的真死链超过 2h 即标 unknown；快信号冻结
+# 检测 R2 反例不受影响）。两档下限均可经 sys_config 运行时调整：
+#   data.held_too_long_slow_seconds（默认 7200）
+#   data.held_too_long_fast_seconds（默认 60）
+# 改阈值语义 = 数据策略变化，须同步递增 time_axis.TIME_QUALITY_POLICY_VERSION
+# （缓存键换新，旧块不混算）。
+# ---------------------------------------------------------------------------
+#: COV 稀疏（慢变）角色集合：离散状态/组态量，"长期无变化"即正常保持
+SLOW_HELD_ROLES = frozenset({"mode", "sp", "pid_p", "pid_i", "pid_d"})
+#: 快角色 held 容忍下限（秒；防传感器冻结/缺口被 HELD 掩盖，R2 原语义）
+DEFAULT_HELD_FAST_S = 60.0
+#: 慢角色 held 容忍下限（秒；依据见上方实测分布）
+DEFAULT_HELD_SLOW_S = 7200.0
+#: sys_config 键（缺省/读失败 → 上述默认；TTL 缓存，无锁——最坏重复读）
+SYSCONF_HELD_FAST_S = "data.held_too_long_fast_seconds"
+SYSCONF_HELD_SLOW_S = "data.held_too_long_slow_seconds"
+_HELD_CFG_TTL_S = 60.0
+_held_cfg_cache: dict[str, float] = {}
+_held_cfg_read_at: float = 0.0  # time.monotonic()
+
+
+async def _held_limits_s(step_s: int) -> dict[str, float]:
+    """解析两档 held 容忍秒数（sys_config 覆盖 + 默认兜底；TTL 缓存）。
+
+    读库失败/表缺失/值非法 → 默认值（保持纯函数可测性：单测可 monkeypatch
+    本函数或直接依赖默认路径，不强制 PG）。
+    """
+    import time
+
+    global _held_cfg_read_at
+
+    now = time.monotonic()
+    if _held_cfg_cache and now - _held_cfg_read_at < _HELD_CFG_TTL_S:
+        return _held_cfg_cache
+    fast, slow = DEFAULT_HELD_FAST_S, DEFAULT_HELD_SLOW_S
+    try:
+        from sqlalchemy import select
+
+        from app.models.sys_config import SysConfig
+
+        rows = (
+            await _metadata_execute(
+                select(SysConfig.key, SysConfig.value).where(
+                    SysConfig.key.in_([SYSCONF_HELD_FAST_S, SYSCONF_HELD_SLOW_S])
+                )
+            )
+        ).all()
+        vals = dict(rows)
+        fast = _positive_float(vals.get(SYSCONF_HELD_FAST_S), DEFAULT_HELD_FAST_S)
+        slow = _positive_float(vals.get(SYSCONF_HELD_SLOW_S), DEFAULT_HELD_SLOW_S)
+    except Exception:  # noqa: BLE001 — 配置不可得按默认（与 G14 版本解析同策略）
+        fast, slow = DEFAULT_HELD_FAST_S, DEFAULT_HELD_SLOW_S
+    limits = {
+        "fast": max(3.0 * step_s, fast),
+        "slow": max(3.0 * step_s, slow),
+    }
+    _held_cfg_cache.clear()
+    _held_cfg_cache.update(limits)
+    _held_cfg_read_at = now
+    return limits
+
+
+def _positive_float(val: Any, default: float) -> float:
+    """sys_config 字符串值 → 正 float（非法/非正回默认）。"""
+    try:
+        f = float(val)
+    except (TypeError, ValueError):
+        return default
+    return f if f > 0 else default
+
 
 def _to_utc(dt: datetime) -> datetime:
     if dt.tzinfo is None:
@@ -288,21 +373,27 @@ async def build_logical_wide(
     # 调用方 tdengine_provider 早已在传该参数（data_planner 的查询任务本就
     # 带采样间隔），只是此处被丢弃。
     step_s = max(1, int(interval_s))
+    # R1：held 容忍按角色分层（快/慢两档下限，sys_config 可配；见模块头注释）
+    held_limits = await _held_limits_s(step_s)
     t = grid_start
     while t <= grid_end:
         grid.append(t)
         t += timedelta(seconds=step_s)
     n = len(grid)
 
-    # 槽状态记录（AD01 上下文）：role → [(known, reason)]；known 含
-    # OBSERVED（段内事件）与 HELD（初值/锚点保持）；unknown 归因常量见
-    # series_context 模块（gap/no_initial/rebind/unbound）
-    slot_status: dict[str, list[tuple[bool, str | None]]] = {}
+    # 槽状态记录（AD01 上下文 + P3-08b 三态细分）：role → [(known, reason,
+    # observed)]；known 含 OBSERVED（本槽时长内有新事件——新鲜度 ≤ 网格
+    # 周期）与 HELD（初值/锚点/前事件保持）；unknown 归因常量见
+    # series_context 模块（gap/no_initial/rebind/unbound/held_too_long）
+    slot_status: dict[str, list[tuple[bool, str | None, bool]]] = {}
     rebind_boundaries: list[datetime] = []
     for role in internal_roles:
         col: list[Any] = []
         status: list[tuple[bool, str | None]] = []
         segs = segments[role.upper()]
+        # R1：慢角色（COV 稀疏离散/组态量）用分层后的慢档容忍；
+        # 快角色（pv/op）维持 R2 原快档（冻结/缺口反例不放松）
+        held_limit_s = held_limits["slow"] if role in SLOW_HELD_ROLES else held_limits["fast"]
         first_event_seen = False
         active_pid: str | None = None
         # 预计算该角色网格内的改绑边界索引集（避免逐槽列表扫描）
@@ -326,7 +417,7 @@ async def build_logical_wide(
             if seg is not None:
                 active_pid = seg.point_id
             if seg is None:
-                status.append((False, sc.UNKNOWN_REASON_UNBOUND))
+                status.append((False, sc.UNKNOWN_REASON_UNBOUND, False))
                 col.append(None)
                 if role == "pv":
                     pv_quality.append(-1)
@@ -357,10 +448,12 @@ async def build_logical_wide(
                 # 保持值而非新观测；数据缺口期间正是这种形态，却被当成观测数据
                 # （曾导致 sensor_fault 把缺口误报为"传感器冻结 33%"）。
                 # 阈值按【时间】而非点数（G12 起网格步长可变 interval_s）：
-                #   max(3 x 网格步长, 60s)
-                # 取值理由：3 倍步长容忍常规采样抖动/对齐误差；60s 下限覆盖
-                # 秒级网格下慢变角色（SP/MODE/PID_* 等 COV 稀疏信号）的正常
-                # 保持间隔，避免把它们大面积误标。
+                #   max(3 x 网格步长, <角色档位下限>)
+                # R1（2026-10-12）阈值分层：快角色（pv/op）下限 60s（3 倍步长
+                # 容忍常规采样抖动，冻结/缺口反例不放松）；慢角色（mode/sp/
+                # pid_*，COV 稀疏离散量）下限 7200s——"无变化=保持"是其正常
+                # 语义，60s 会把全部正常保持段误标 unknown（实测自控率崩至
+                # 8.33%）。依据与可配键见模块头注释。
                 # 注意：只改"是否暴露为 unknown"，value 照旧保留（显示不变）。
                 ev_ts = ev.get("ts")
                 try:
@@ -370,16 +463,19 @@ async def build_logical_wide(
                 if in_gap:
                     # 已登记的缺口优先标记（比"保持过久"更明确的原因），
                     # 但 value/quality 已在上面保留 —— 见 P0 说明。
-                    status.append((False, sc.UNKNOWN_REASON_GAP))
-                elif hold_s > max(3.0 * step_s, 60.0):
-                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG))
+                    status.append((False, sc.UNKNOWN_REASON_GAP, False))
+                elif hold_s > held_limit_s:
+                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG, False))
                 else:
-                    status.append((True, None))
+                    # P3-08b 三态细分：事件新鲜度 ≤ 网格周期 = OBSERVED
+                    # （本槽时长内的新观测），更早事件的状态保持 = HELD
+                    # （合法 COV 保持；两者都算 known，observed ⊆ known）
+                    status.append((True, None, hold_s <= step_s))
                 first_event_seen = True
             elif in_gap:
                 # 缺口段且确实没有任何事件可保持：值只能是 None（真无数据），
                 # 原因归为 gap 而不是 no_initial（对下游更准确）。
-                status.append((False, sc.UNKNOWN_REASON_GAP))
+                status.append((False, sc.UNKNOWN_REASON_GAP, False))
                 col.append(None)
                 if role == "pv":
                     pv_quality.append(-1)
@@ -394,7 +490,7 @@ async def build_logical_wide(
                         if ts_i in role_rebind_idx
                         else sc.UNKNOWN_REASON_NO_INITIAL
                     )
-                status.append((False, reason))
+                status.append((False, reason, False))
                 col.append(None)
                 if role == "pv":
                     pv_quality.append(-1)
@@ -436,33 +532,44 @@ def _build_context(
     loop_id: str,
     grid: list[datetime],
     roles: list[str],
-    slot_status: dict[str, list[tuple[bool, str | None]]],
+    slot_status: dict[str, list[tuple[bool, str | None, bool]]],
     rebind_boundaries: list[datetime],
     segments: dict[str, list[_BindingSegment]],
     gap_windows: list[tuple[datetime, datetime]],
 ) -> sc.SeriesContext:
-    """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。"""
+    """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。
+
+    P3-08b：槽状态三元组 (known, reason, observed) 生成三类游程——
+    known（OBSERVED+HELD）/ observed（⊆known，新观测细分）/ unknown
+    （六因随游程携带，供时间视图逐槽归因）。
+    """
     import hashlib
 
     grid_start, grid_end = grid[0], grid[-1]
+    grid_end_half_open = grid_end + timedelta(seconds=1)
     role_coverage: dict[str, sc.RoleCoverage] = {}
     unknown_reasons: dict[str, int] = {}
     for role in roles:
         status = slot_status.get(role, [])
         runs = sc.RoleCoverage()
-        cur_known: bool | None = None
+        # 游程状态机：0=unknown / 1=held(known) / 2=observed(known)；observed
+        # 与 held 游程相邻不合并（细分语义），unknown 游程携带首个 reason
+        cur_kind: int | None = None  # 0/1/2；None=尚未开始
         cur_start = grid_start
+        cur_reason: str | None = None
         for i, ts in enumerate(grid):
-            known, reason = status[i] if i < len(status) else (False, None)
+            known, reason, observed = status[i] if i < len(status) else (False, None, False)
+            kind = 2 if (known and observed) else (1 if known else 0)
             if not known and reason:
                 unknown_reasons[reason] = unknown_reasons.get(reason, 0) + 1
-            if known != cur_known:
-                if cur_known is not None:
-                    _append_run(runs, cur_known, cur_start, ts)
-                cur_known = known
+            if kind != cur_kind:
+                if cur_kind is not None:
+                    _append_run(runs, cur_kind, cur_start, ts, cur_reason)
+                cur_kind = kind
                 cur_start = ts
-        if cur_known is not None:
-            _append_run(runs, cur_known, cur_start, grid_end + timedelta(seconds=1))
+                cur_reason = reason if kind == 0 else None
+        if cur_kind is not None:
+            _append_run(runs, cur_kind, cur_start, grid_end_half_open, cur_reason)
         role_coverage[role] = runs
 
     boundaries = [sc.SegmentBoundary(at=b, kind="rebind") for b in sorted(set(rebind_boundaries))]
@@ -493,12 +600,27 @@ def _build_context(
     )
 
 
-def _append_run(cov: sc.RoleCoverage, known: bool, start: datetime, end: datetime) -> None:
-    run = sc.IntervalRun(start=start, end=end)
-    if known:
+def _append_run(
+    cov: sc.RoleCoverage,
+    kind: int,
+    start: datetime,
+    end: datetime,
+    reason: str | None = None,
+) -> None:
+    """按游程类别落游程：0=unknown（六因随游程） / 1=held(known) / 2=observed。
+
+    observed 同时计入 known（known ≡ OBSERVED∪HELD 语义不变——
+    ``known_slots``/``source_coverage_ratio`` 等既有读方零变化；
+    observed 是 known 的新观测细分，供时间视图三态分类）。
+    """
+    if kind == 0:
+        cov.unknown.append(sc.IntervalRun(start=start, end=end, reason=reason))
+    elif kind == 2:
+        run = sc.IntervalRun(start=start, end=end)
+        cov.observed.append(run)
         cov.known.append(run)
     else:
-        cov.unknown.append(run)
+        cov.known.append(sc.IntervalRun(start=start, end=end))
 
 
 def _active_segment(segs: list[_BindingSegment], at: datetime) -> _BindingSegment | None:

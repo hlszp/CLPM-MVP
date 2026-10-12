@@ -148,6 +148,12 @@ class Settings(BaseSettings):
     # WS 单帧发送期限（秒）：超期限定该客户端为慢消费者并断开
     WS_SEND_TIMEOUT_SECONDS: float = 5.0
 
+    # ---- 不可变计算输入包（P2-03）----
+    # 本地持久化共享目录（与 TDengine 数据卷同级规划；生产指向共享卷挂载路径）。
+    # 未配置时落 ./data/calc-snapshots（开发默认）。禁止静态目录直接对外暴露，
+    # 下载/访问走带 scope 校验的服务。
+    CLPM_CALC_SNAPSHOT_DIR: str = ""
+
     # ---- 断点续传（实时数据缺口自动补全）----
     # SignalR 断线/进程重启导致的数据缺口，重连成功后自动调用远端历史数据接口补全
     GAP_BACKFILL_ENABLED: bool = False  # 默认关闭，运行时经 sys_config（UI 链路配置页）调整

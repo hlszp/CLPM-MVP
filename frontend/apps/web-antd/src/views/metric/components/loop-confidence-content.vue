@@ -2,14 +2,21 @@
 /**
  * 可信度详情内容（P2-3 从 loop-performance.vue 抽取）
  *
- * 内容：评估概要（最新评估时间/数据源区间/状态/评分/可信度/有效数据率/算法版本）+
- * 12 子指标数值表（3+1+8）。数据源 GET /loops/{loopId}/confidence-latest；
- * 无记录时展示"暂无评估记录"空态（与原页面一致）。
+ * 内容：评估概要（最新评估时间/数据源区间/状态/评分/算法版本）+
+ * 数据质量与动态证据分列（P3-D6b R02-4：好值率/有效数据率 ≠ 可信度）+
+ * 12 子指标数值表（3+1+8）+ 评估历史分页表（P3-D6b R02-3：latest 与
+ * 历史并列标注窗口/算法版本，历史不再被 latest 替代）。
+ * 数据源 GET /loops/{loopId}/confidence-latest + GET /performance/loops/snapshots
+ * （latestOnly=false 分页，消费评估记录账本）。
+ * G3-R03（14 号文 §4）：latest 概要与评估历史各自区分 loading/成功空/
+ * 成功有值/error 四态——失败显式原因+重试，不冒充"暂无记录"；翻页失败
+ * 保留旧页数据与页码对应并标"旧数据+更新失败"；useLatestRequest 竞态
+ * 守卫（切换回路/关闭组件后迟到响应不写入）；latest 与历史独立失败域。
  * 纯内容组件（无抽屉壳）：原页面 antd Drawer / workbench360 WbDrawer 共用。
  */
-import type { LoopConfidenceLatestItem } from '#/api/metric';
+import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import {
   Badge,
@@ -20,7 +27,9 @@ import {
   Tag,
 } from 'ant-design-vue';
 
-import { getLoopConfidenceLatestApi } from '#/api/metric';
+import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
+import { ClpmLoadErrorAlert } from '#/components/clpm';
+import { useLatestRequest } from '#/composables/use-latest-request';
 import { useScoreColor } from '#/composables/use-score-color';
 
 import {
@@ -28,6 +37,7 @@ import {
   CONFIDENCE_COLOR_MAP,
   CONFIDENCE_LABEL_MAP,
   CONFIDENCE_METRIC_META,
+  describeRequestError,
   formatFullTime,
   formatNumber,
   formatRatio,
@@ -43,8 +53,14 @@ const props = defineProps<{
   loopId?: null | string;
 }>();
 
+// ===== G3-R03：latest 概要与评估历史各自独立竞态守卫（复用 useLatestRequest） =====
+const latestGuard = useLatestRequest<string>();
+const historyGuard = useLatestRequest<string>();
+
 const loading = ref(false);
 const detail = ref<LoopConfidenceLatestItem | null>(null);
+/** latest 概要加载失败原因（null=未失败；失败不冒充"暂无评估记录"空态） */
+const latestError = ref<null | string>(null);
 
 /** 12 子指标表格行（原 confMetricRows 逻辑搬移） */
 const metricRows = computed(() => {
@@ -55,6 +71,108 @@ const metricRows = computed(() => {
   }));
 });
 
+/** R02-4：数据质量区的"好值率"与 12 子指标表同源同格式 */
+const goodValueRate = computed<null | number>(
+  () => detail.value?.metrics?.good_value_rate?.value ?? null,
+);
+
+// ===== R02-3（P3-D6b）评估历史分页 + G3-R03 四态 =====
+const HISTORY_PAGE_SIZE = 10;
+const historyRows = ref<KpiSnapshotItem[]>([]);
+const historyTotal = ref(0);
+const historyPage = ref(1);
+const historyLoading = ref(false);
+/** 历史加载失败原因（null=最近一次成功；失败时不清空旧数据冒充空态） */
+const historyError = ref<null | string>(null);
+/** true=当前展示旧一次成功的数据且最近一次加载失败（"旧数据+更新失败"标注） */
+const historyStale = ref(false);
+/** 最近一次失败的目标页（重试重发该页，避免"重试却加载别的页"） */
+const historyRetryPage = ref(1);
+
+/** 历史错误提示文案（有旧数据时显式标注旧数据与所在页码） */
+const historyErrorText = computed(() => {
+  if (!historyError.value) return '';
+  const reason = `评估历史加载失败：${historyError.value}`;
+  return historyStale.value
+    ? `${reason}——当前仍展示旧数据（第 ${historyPage.value} 页），页码未推进`
+    : reason;
+});
+
+async function loadLatest(loopId: string) {
+  latestGuard.bump(loopId);
+  loading.value = true;
+  await latestGuard.run(async (_signal, capturedEpoch) => {
+    try {
+      const data = await getLoopConfidenceLatestApi(loopId);
+      if (!latestGuard.guard(loopId, capturedEpoch)) return;
+      detail.value = data;
+      latestError.value = null;
+    } catch (error) {
+      if (!latestGuard.guard(loopId, capturedEpoch)) return;
+      detail.value = null;
+      latestError.value = describeRequestError(error);
+    } finally {
+      if (latestGuard.guard(loopId, capturedEpoch)) loading.value = false;
+    }
+  });
+}
+
+async function loadHistory(loopId: string, page = 1) {
+  historyGuard.bump(loopId);
+  historyLoading.value = true;
+  await historyGuard.run(async (_signal, capturedEpoch) => {
+    try {
+      const result = await getLoopSnapshotsApi({
+        loopId,
+        latestOnly: false,
+        page,
+        pageSize: HISTORY_PAGE_SIZE,
+      });
+      if (!historyGuard.guard(loopId, capturedEpoch)) return;
+      historyRows.value = result.items || [];
+      historyTotal.value = result.total ?? 0;
+      historyPage.value = page;
+      historyError.value = null;
+      historyStale.value = false;
+    } catch (error) {
+      if (!historyGuard.guard(loopId, capturedEpoch)) return;
+      // G3-R03：失败不清空旧页数据冒充空态——rows/total/page 保持旧值
+      // （页码与数据对应），有旧数据时标"旧数据+更新失败"
+      historyError.value = describeRequestError(error);
+      historyStale.value = historyRows.value.length > 0;
+      historyRetryPage.value = page;
+    } finally {
+      if (historyGuard.guard(loopId, capturedEpoch)) historyLoading.value = false;
+    }
+  });
+}
+
+function retryLatest() {
+  if (props.loopId) loadLatest(props.loopId);
+}
+
+function retryHistory() {
+  if (props.loopId) loadHistory(props.loopId, historyRetryPage.value);
+}
+
+const historyColumns = [
+  { key: 'tsRange', title: '时间窗', width: 150 },
+  { key: 'score', dataIndex: 'score', title: '综合评分', width: 90 },
+  {
+    key: 'confidenceLevel',
+    dataIndex: 'confidenceLevel',
+    title: '可信度',
+    width: 80,
+  },
+  { key: 'status', dataIndex: 'status', title: '状态', width: 80 },
+  {
+    key: 'algorithmVersion',
+    dataIndex: 'algorithmVersion',
+    title: '算法版本',
+    width: 110,
+  },
+];
+
 /** 评分颜色（原 scoreColor 判定链） */
 function scoreColor(val: null | number | undefined): string {
   return useScoreColor(val).color.value;
@@ -62,29 +180,40 @@ function scoreColor(val: null | number | undefined): string {
 
 watch(
   () => props.loopId,
-  async (loopId) => {
+  (loopId) => {
+    // 切换目标：失效所有在途响应（旧回路迟到数据不写入）并重置四态
+    latestGuard.bump(loopId ?? null);
+    historyGuard.bump(loopId ?? null);
     detail.value = null;
+    latestError.value = null;
+    loading.value = false;
+    historyRows.value = [];
+    historyTotal.value = 0;
+    historyPage.value = 1;
+    historyError.value = null;
+    historyStale.value = false;
+    historyRetryPage.value = 1;
     if (!loopId) return;
-    loading.value = true;
-    try {
-      detail.value = await getLoopConfidenceLatestApi(loopId);
-    } catch (error) {
-      // 错误 toast 由 api/request.ts 拦截器统一弹出，抽屉内展示"暂无评估记录"
-      console.error('加载可信度详情失败:', error);
-    } finally {
-      loading.value = false;
-    }
+    // latest 与历史并行、独立失败域：latest 失败不阻塞历史成功，反之亦然
+    loadLatest(loopId);
+    loadHistory(loopId, 1);
   },
   { immediate: true },
 );
+
+// 组件关闭：递增代次使所有在途响应 guard 全拒（迟到返回不污染新实例）
+onBeforeUnmount(() => {
+  latestGuard.cancelAll();
+  historyGuard.cancelAll();
+});
 </script>
 
 <template>
   <div class="lp-conf-content">
     <Spin :spinning="loading">
       <template v-if="detail">
-        <!-- 评估概要 -->
-        <div class="mb-2 text-sm font-medium">评估概要</div>
+        <!-- 评估概要（最新一条 latest 记录；R02-3：窗口/算法版本随行标注） -->
+        <div class="mb-2 text-sm font-medium">评估概要（最新一条 latest）</div>
         <Descriptions
           :column="2"
           size="small"
@@ -117,21 +246,57 @@ watch(
               {{ formatNumber(detail.score) }}
             </span>
           </DescriptionsItem>
-          <DescriptionsItem label="可信度">
-            <Badge
-              v-if="detail.confidenceLevel"
-              :color="CONFIDENCE_COLOR_MAP[detail.confidenceLevel]"
-              :text="CONFIDENCE_LABEL_MAP[detail.confidenceLevel]"
-            />
-            <span v-else>—</span>
-          </DescriptionsItem>
-          <DescriptionsItem label="有效数据率">
-            {{ formatRatio(detail.validRate) }}
-          </DescriptionsItem>
           <DescriptionsItem label="算法版本" :span="2">
             {{ detail.algorithmVersion || '—' }}
           </DescriptionsItem>
         </Descriptions>
+
+        <!--
+          R02-4（P3-D6b）：数据质量与动态证据分列（对齐 R11 语义）——
+          好值率/有效数据率是数据质量；可信度（D/E=证据不足）反映动态
+          证据充分性，两者不混展示、互不冒充。
+        -->
+        <div class="mb-2 mt-4 text-sm font-medium">
+          数据质量与动态证据（分列）
+        </div>
+        <div class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <Descriptions
+            title="数据质量"
+            :column="1"
+            size="small"
+            bordered
+            :label-style="{ width: '110px' }"
+          >
+            <DescriptionsItem label="好值率">
+              {{ formatNumber(goodValueRate, '%') }}
+            </DescriptionsItem>
+            <DescriptionsItem label="有效数据率">
+              {{ formatRatio(detail.validRate) }}
+            </DescriptionsItem>
+          </Descriptions>
+          <Descriptions
+            title="动态证据充分性（可信度）"
+            :column="1"
+            size="small"
+            bordered
+            :label-style="{ width: '110px' }"
+          >
+            <DescriptionsItem label="可信度">
+              <Badge
+                v-if="detail.confidenceLevel"
+                :color="CONFIDENCE_COLOR_MAP[detail.confidenceLevel]"
+                :text="CONFIDENCE_LABEL_MAP[detail.confidenceLevel]"
+              />
+              <span v-else>—</span>
+            </DescriptionsItem>
+            <DescriptionsItem label="说明" :span="1">
+              <span class="text-xs text-gray-400">
+                可信度反映动态证据充分性（D/E
+                =证据不足），不等于数据质量问题；数据质量看好值率/有效数据率
+              </span>
+            </DescriptionsItem>
+          </Descriptions>
+        </div>
 
         <!-- 12 子指标明细（可信度统一 Phase 2：仅展示计算值，可信度统一为回路级） -->
         <div class="mb-2 mt-4 text-sm font-medium">子指标数值（3+1+8）</div>
@@ -150,10 +315,99 @@ watch(
             </template>
           </template>
         </Table>
+
+        <!-- R02-3（P3-D6b）：评估历史（分页，历史版本可见，不再被 latest 替代） -->
+        <!-- G3-R03：历史区独立于 latest 概要渲染（见下方 Spin 外区块） -->
       </template>
+      <!-- G3-R03：latest 概要加载失败——显式原因+重试，不冒充"暂无评估记录" -->
+      <ClpmLoadErrorAlert
+        v-else-if="latestError"
+        :error="true"
+        :error-text="`评估概要加载失败：${latestError}`"
+        @retry="retryLatest"
+      />
       <div v-else-if="!loading" class="py-12 text-center text-gray-400">
         暂无评估记录。该回路尚未执行过 KPI 评估，请前往「评估任务」页触发评估
       </div>
     </Spin>
+
+    <!-- 评估历史（独立失败域：latest 失败/为空不替代历史成功，反之亦然） -->
+    <template v-if="loopId">
+      <div class="mb-2 mt-4 text-sm font-medium">
+        评估历史（每回路全部评估记录，最新在前）
+      </div>
+      <ClpmLoadErrorAlert
+        v-if="historyError && !historyLoading"
+        :error="true"
+        :error-text="historyErrorText"
+        @retry="retryHistory"
+      />
+      <Table
+        :columns="historyColumns"
+        :data-source="historyRows"
+        :loading="historyLoading"
+        :pagination="{
+          current: historyPage,
+          pageSize: HISTORY_PAGE_SIZE,
+          total: historyTotal,
+          size: 'small',
+          showTotal: (t: number) => `共 ${t} 条`,
+        }"
+        row-key="tsStart"
+        size="small"
+        :scroll="{ x: 520 }"
+        @change="
+          (pag: { current?: number }) => {
+            if (props.loopId) loadHistory(props.loopId, pag.current ?? 1);
+          }
+        "
+      >
+        <template #bodyCell="{ column, record }">
+          <template v-if="column.key === 'tsRange'">
+            <span class="font-mono text-xs">
+              {{ formatTsRange(record.tsStart, record.tsEnd) }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'score'">
+            <span
+              class="font-semibold"
+              :style="{ color: scoreColor(record.score) }"
+            >
+              {{ formatNumber(record.score) }}
+            </span>
+          </template>
+          <template v-else-if="column.key === 'confidenceLevel'">
+            <Badge
+              v-if="record.confidenceLevel"
+              :color="CONFIDENCE_COLOR_MAP[record.confidenceLevel]"
+              :text="CONFIDENCE_LABEL_MAP[record.confidenceLevel]"
+            />
+            <span v-else class="text-gray-400">—</span>
+          </template>
+          <template v-else-if="column.key === 'status'">
+            <Tag
+              :color="STATUS_COLOR_MAP[record.status] || 'default'"
+              class="m-0"
+            >
+              {{ STATUS_LABEL_MAP[record.status] || record.status }}
+            </Tag>
+          </template>
+          <template v-else-if="column.key === 'algorithmVersion'">
+            <span class="font-mono text-xs">
+              {{ record.algorithmVersion || '—' }}
+            </span>
+          </template>
+        </template>
+        <!-- G3-R03：空态文案与错误态分开——HTTP 成功 0 条才显示"暂无记录" -->
+        <template #emptyText>
+          <span v-if="historyError" class="text-xs text-red-400">
+            历史加载失败，无法确认该回路是否有评估记录（请重试）
+          </span>
+          <span v-else class="text-xs text-gray-400">
+            该回路暂无历史评估记录（从未评估或仅有最新一条）
+          </span>
+        </template>
+      </Table>
+    </template>
   </div>
 </template>

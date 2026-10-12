@@ -237,6 +237,12 @@ export namespace WorkbenchApi {
       score: null | number;
     }[];
     score: null | number;
+    /**
+     * P1-02 CAL-07 三态（2026-10-10 前端接线）：COMPUTED=已计算 /
+     * NOT_COMPUTED=未计算（score NULL 或存量伪 0 行）——前端显式区分
+     * "未计算"与空态，不把缺评渲染成 0
+     */
+    score_state?: 'COMPUTED' | 'NOT_COMPUTED' | null;
     target: number;
   }
 

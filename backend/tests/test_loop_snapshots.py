@@ -33,6 +33,8 @@ def _make_snapshot_full(
     status: str = "SUCCESS",
     confidence_level: str | None = "A",
     ts_start: datetime | None = None,
+    fitness_level: str | None = None,
+    fitness_tags: dict | list | None = None,
 ) -> MagicMock:
     """构造完整的 KpiSnapshotHourly mock（24 字段）."""
     s = MagicMock()
@@ -82,6 +84,9 @@ def _make_snapshot_full(
     s.valve_op_max = Decimal("88.70")
     s.oscillation_amplitude = Decimal("3.45")
     s.setpoint_crossing_count = 7
+    # IA-06（2026-10-10）：适用性列（默认 None = 旧快照/未评估口径）
+    s.fitness_level = fitness_level
+    s.fitness_tags = fitness_tags
     return s
 
 
@@ -373,6 +378,60 @@ class TestListLoopSnapshots:
         # 振荡/穿越（振幅 Decimal→float，穿越次数 int）
         assert item["oscillationAmplitude"] == 3.45
         assert item["setpointCrossingCount"] == 7
+
+    def test_list_snapshots_fitness_fields_filled(self, client, mock_db, fake_redis) -> None:
+        """IA-06：快照列表组装填充 fitnessLevel/fitnessTags（接入位自动点亮）."""
+        snap = _make_snapshot_full(
+            fitness_level="L2",
+            fitness_tags={"tags": ["TUNING_LIMITED", "DATA_INSUFFICIENT"]},
+        )
+        rows = [(snap, "tag1")]
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        item = resp.json()["data"]["items"][0]
+        assert item["fitnessLevel"] == "L2"
+        # JSONB {"tags": [...]} 归一为 list[str]（同 loop_fitness 口径）
+        assert item["fitnessTags"] == ["TUNING_LIMITED", "DATA_INSUFFICIENT"]
+
+    def test_list_snapshots_fitness_none_passthrough(self, client, mock_db, fake_redis) -> None:
+        """IA-06：旧快照 NULL 适用性透传 None（不虚构等级/标签）."""
+        snap = _make_snapshot_full()  # fitness_level/tags 默认 None
+        rows = [(snap, "tag1")]
+
+        call_count = [0]
+
+        async def execute_side_effect(stmt, *args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return _make_list_result(rows)
+            return _make_count_result(1)
+
+        mock_db.execute = AsyncMock(side_effect=execute_side_effect)
+
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots",
+                headers={"Authorization": "Bearer fake-token"},
+            )
+
+        item = resp.json()["data"]["items"][0]
+        assert item["fitnessLevel"] is None
+        assert item["fitnessTags"] is None
 
     def test_list_snapshots_no_token(self, client) -> None:
         """未认证返回 401."""

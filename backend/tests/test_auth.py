@@ -18,6 +18,7 @@ import pytest
 from tests.conftest import (
     TEST_PASSWORD,
     TEST_USERS,
+    _make_user,
     make_db_execute_return,
 )
 
@@ -48,7 +49,10 @@ class TestLogin:
         user = data["user"]
         assert user["username"] == "admin"
         assert user["role"] == "ADMIN"
-        assert user["permissions"] == ["*"]
+        # P4-02：显式码（无 "*" 通配），pageCodes 含系统管理页
+        assert "*" not in user["permissions"]
+        assert "loop:delete" in user["permissions"]
+        assert "page:system.users" in user["pageCodes"]
         assert user["defaultHome"] == "/workbench"
 
     def test_login_success_all_roles(self, client, mock_db, fake_redis) -> None:
@@ -61,24 +65,76 @@ class TestLogin:
             )
             assert resp.status_code == 200, f"{username} login failed: {resp.json()}"
             perms = resp.json()["data"]["user"]["permissions"]
+            pages = resp.json()["data"]["user"]["pageCodes"]
+            # P4-02：permissions 改由 DB 授权矩阵（种子兜底）下发显式码集合
+            # （无通配，ADMIN 亦全量展开），pageCodes=菜单可达页码集合
             if username == "admin":
-                assert perms == ["*"]
+                assert "*" not in perms
+                assert "loop:delete" in perms
+                assert "system:user-manage" in perms
+                assert "alert:subscription-manage" in perms
+                assert "page:system.permissions" in pages
             elif username == "ic_engineer":
-                assert "loop:*" in perms
+                assert "loop:create" in perms
+                assert "loop:import" in perms
+                assert "loop:delete" not in perms
                 assert "portal:view" in perms
+                assert "page:config.tag" in pages
+                assert "page:system.users" not in pages
             elif username == "pe_engineer":
-                assert "tracker:*" in perms
+                assert "tracker:operate" in perms
                 assert "loop:view" in perms
+                # P1-04/AUTH-02：PE 提交→轮询→结果/记录链闭合（读码）
+                assert "tuning:view" in perms
             elif username == "sponsor":
+                # P1-04/AUTH-02：模块查看五角色——只读 7 码（零写红线）
                 assert perms == [
-                    "portal:view",
-                    "metric:view",
-                    "diagnosis:view",
                     "alert:view",
+                    "diagnosis:view",
                     "handling:view",
+                    "loop:view",
+                    "metric:view",
+                    "portal:view",
+                    "tuning:view",
+                ]
+                assert pages == [
+                    "page:assess.dashboard",
+                    "page:assess.indicator",
+                    "page:assess.kpi-report",
+                    "page:assess.loop-evaluation",
+                    "page:assess.matrix",
+                    "page:assess.performance",
+                    "page:cockpit.diagnosis",
+                    "page:cockpit.handling",
+                    "page:cockpit.loops",
+                    "page:cockpit.overview",
+                    "page:cockpit.performance",
+                    "page:cockpit.tuning",
+                    "page:diagnosis.overview",
+                    "page:diagnosis.records",
+                    "page:diagnosis.tasks",
+                    "page:handling.archive",
+                    "page:handling.orders",
+                    "page:handling.statistics",
+                    "page:handling.suggestions",
+                    "page:handling.tasks",
+                    "page:handling.workbench",
+                    "page:monitor.alerts",
+                    "page:monitor.attention",
+                    "page:monitor.loops",
+                    "page:reports.alert-statistics",
+                    "page:reports.benefit",
+                    "page:reports.data-quality",
+                    "page:reports.diagnosis",
+                    "page:reports.handling",
+                    "page:reports.performance",
+                    "page:tuning.overview",
+                    "page:tuning.records",
+                    "page:tuning.verification",
                 ]
             elif username == "expert":
                 assert "tracker:review" in perms
+                assert "tuning:advanced" in perms
 
     def test_login_user_not_found(self, client, mock_db, fake_redis) -> None:
         """Non-existent user returns ERR_INVALID_CREDENTIALS (400).
@@ -362,7 +418,10 @@ class TestMe:
         data = resp.json()["data"]
         assert data["username"] == "admin"
         assert data["role"] == "ADMIN"
-        assert data["permissions"] == ["*"]
+        # P4-02：DB 授权矩阵显式码 + pageCodes
+        assert "*" not in data["permissions"]
+        assert "loop:delete" in data["permissions"]
+        assert "page:system.users" in data["pageCodes"]
         assert data["defaultHome"] == "/workbench"
 
     def test_me_no_token(self, client) -> None:
@@ -498,6 +557,69 @@ class TestChangePassword:
             json={"oldPassword": TEST_PASSWORD, "newPassword": "Ab1"},
         )
         assert resp.status_code == 422
+
+
+class TestAdminResetPassword:
+    """P1-04/AUTH-07：管理侧重置密码后必须撤销目标用户全部旧令牌。
+
+    修复前 services/user.reset_password 只改 hash+审计，不调
+    _revoke_all_user_tokens——被重置用户的既有 access/refresh token
+    在重置后仍有效（对照自助改密 change_password 已撤销）。
+    """
+
+    def test_reset_password_revokes_target_tokens(self, client, mock_db, fake_redis) -> None:
+        """ADMIN 重置 expert 密码后，expert 旧 access token 立即失效（401）。
+
+        注意：reset_password 会对 ORM 对象赋值 password_hash，而 TEST_USERS
+        是模块级共享 mock——重置请求的 db mock 必须返回独立副本，避免污染
+        后续用例的登录凭据。
+        """
+        # expert 登录拿 token（登录即跟踪 jti 到 user_tokens:{id}）
+        expert = _make_user("expert", "EXPERT", user_id="00000000-0000-0000-0000-000000000005")
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(expert))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "expert", "password": TEST_PASSWORD},
+        )
+        expert_token = login_resp.json()["data"]["accessToken"]
+
+        # ADMIN 登录并重置 expert 密码（reset 请求全程用独立 admin 副本，
+        # 服务内按 id 查到的"目标用户"也落在副本上）
+        admin_fresh = _make_user("admin", "ADMIN", user_id="00000000-0000-0000-0000-000000000001")
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(admin_fresh))
+        admin_login = client.post(
+            "/api/v1/auth/login",
+            json={"username": "admin", "password": TEST_PASSWORD},
+        )
+        admin_token = admin_login.json()["data"]["accessToken"]
+        resp = client.put(
+            f"/api/v1/users/{expert.id}/reset-password",
+            headers={"Authorization": f"Bearer {admin_token}"},
+            json={"newPassword": "Reset@2026"},
+        )
+        assert resp.status_code == 200, f"重置密码失败: {resp.json()}"
+
+        # expert 旧 token 必须被拒绝（jti 已进黑名单）
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(expert))
+        me_resp = client.get("/api/v1/auth/me", headers={"Authorization": f"Bearer {expert_token}"})
+        assert me_resp.status_code == 401, "重置密码后旧令牌仍有效（AUTH-07 回归）"
+
+    def test_reset_password_forbidden_for_non_admin(self, client, mock_db, fake_redis) -> None:
+        """重置密码端点仍仅 ADMIN（require_roles），AUTH-07 改动不扩大角色。"""
+        mock_db.execute = AsyncMock(return_value=make_db_execute_return(TEST_USERS["ic_engineer"]))
+        login_resp = client.post(
+            "/api/v1/auth/login",
+            json={"username": "ic_engineer", "password": TEST_PASSWORD},
+        )
+        ic_token = login_resp.json()["data"]["accessToken"]
+
+        resp = client.put(
+            f"/api/v1/users/{TEST_USERS['expert'].id}/reset-password",
+            headers={"Authorization": f"Bearer {ic_token}"},
+            json={"newPassword": "Reset@2026"},
+        )
+        assert resp.status_code == 403
+        assert resp.json()["code"] == "ERR_PERMISSION_DENIED"
 
 
 # ===========================================================================
@@ -638,6 +760,7 @@ class TestRolePermissions:
     def test_sponsor_permissions(self) -> None:
         from app.services.auth import get_permissions
 
+        # P1-04/AUTH-02：模块查看五角色——SPONSOR 补 loop:view/tuning:view（只读）
         perms = get_permissions("SPONSOR")
         assert perms == [
             "portal:view",
@@ -645,6 +768,8 @@ class TestRolePermissions:
             "diagnosis:view",
             "alert:view",
             "handling:view",
+            "loop:view",
+            "tuning:view",
         ]
 
     def test_expert_permissions(self) -> None:

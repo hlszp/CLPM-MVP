@@ -14,7 +14,11 @@ GLOBAL/FACTORY/AREA/UNIT × 24h/7d/30d 加权聚合，upsert 到
 - distribution.metric_slopes：当前窗口 vs 上一等长窗口的 6 指标差值
 - distribution.level_dist：scope 子树回路最新快照等级分桶（复用
   get_grade_distribution，含 sys_config 动态阈值，Global=全厂）
-- flags / mode_dist / data_quality：暂无真实检测口径，置空数组（不造数据）
+- distribution.mode_dist（2026-10-12 R2 补数）：scope 子树参评回路的实时
+  控制模式五态分布（Redis 实时值优先，回退 PG current_value，DCS 型号
+  映射口径同 app/services/monitor.py _build_loop_monitor_aggregate 的
+  "aggregate MODE" 段；与窗口无关，每 scope 计算一次、三窗口行共享）
+- flags / data_quality：暂无真实检测口径，置空数组（不造数据）
 - window_end 对齐 5min 网格（beat 周期），同网格内重跑幂等覆盖；
   每 (scope × window) 保留最近 ``_RETAIN_ROWS`` 行防止表膨胀
 - 窗口起点用参数化 naive UTC（PG 会话时区 +8，勿裸用 now()）
@@ -31,7 +35,15 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.constants.mode import (
+    ALL_STANDARD_MODES,
+    MODE_CHART_COLORS,
+    MODE_LABELS_ZH,
+    StandardMode,
+)
+from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.plant_node import PlantNode
+from app.models.tag import TagRegistry
 from app.models.unit_kpi_summary import UnitKpiSummary
 from app.models.workbench_summary import WorkbenchWindowSummary
 from app.services.workbench_scope import node_scope_id
@@ -153,7 +165,8 @@ def aggregate_rows(rows: Sequence[_RowLike]) -> dict[str, Any]:
     """窗口内 UnitKpiSummary 行 → 加权聚合（每指标独立非 NULL 分母）。
 
     返回 {score, loop_count, rates: {rate_field: 0-1|None}}；
-    无有效行时 score/loop_count 为 0 且 rates 全 None（status 判 INCONCLUSIVE）。
+    无有效行时 score=None 且 rates 全 None（status 判 INCONCLUSIVE；
+    CAL-07：score 为 None 而非 0，读方显式区分"未计算"与"真实 0 分"）。
     """
     score_vals = [
         (_to_f(r.avg_score), int(r.evaluated_loops or 0))
@@ -245,6 +258,155 @@ def shape_level_dist(dist: dict[str, int] | None) -> list[dict[str, Any]]:
     return out
 
 
+# 控制模式展示顺序（自动/串级/远程/先控/手动，未知垫底；对齐原型饼图口径）
+_MODE_DIST_ORDER: tuple[int | None, ...] = (
+    StandardMode.AUTO.value,
+    StandardMode.CAS.value,
+    StandardMode.REMOTE.value,
+    StandardMode.APC.value,
+    StandardMode.MANUAL.value,
+    None,
+)
+
+# 未知（无实时 MODE 值/未映射）展示色（与"不可评"斜纹灰一致）
+_MODE_UNKNOWN_COLOR = "#C9D6E8"
+
+
+def shape_mode_dist(
+    counts: dict[int | None, int],
+    labels: dict[int, str] | None = None,
+) -> list[dict[str, Any]]:
+    """标准 MODE 计数 → 控制模式分布段（纯函数，2026-10-12 R2）.
+
+    入参 counts：{standard_mode: 回路数}，键 None 表示"无实时值/未映射"。
+    D2（验收 REWORK）：非标准 MODE 键（未映射 raw 值透传，∉ StandardMode
+    合法值）并入"未知"段不丢弃——与 docstring"未映射"承诺及 monitor 口径
+    （未映射 → Unknown）一致。
+    labels：配置驱动中文标签（get_mode_labels 结果），缺省回退
+    constants.mode.MODE_LABELS_ZH。输出仅含 count>0 的段（诚实空段不渲染），
+    顺序按 _MODE_DIST_ORDER（自动/串级/远程/先控/手动/未知）。
+    """
+    labels = labels or {}
+    known_keys = {k for k in _MODE_DIST_ORDER if k is not None}
+    # 非标准键（未映射 raw 值）并入未知桶，不静默丢弃
+    unknown_extra = sum(
+        int(v or 0) for k, v in counts.items() if k is not None and k not in known_keys
+    )
+    merged: dict[int | None, int] = {
+        k: v for k, v in counts.items() if k is None or k in known_keys
+    }
+    if unknown_extra:
+        merged[None] = int(merged.get(None, 0) or 0) + unknown_extra
+    out: list[dict[str, Any]] = []
+    for key in _MODE_DIST_ORDER:
+        count = int(merged.get(key, 0) or 0)
+        if count <= 0:
+            continue
+        if key is None:
+            out.append({"label": "未知", "count": count, "color": _MODE_UNKNOWN_COLOR})
+        else:
+            out.append(
+                {
+                    "label": labels.get(key) or MODE_LABELS_ZH.get(key, str(key)),
+                    "count": count,
+                    "color": MODE_CHART_COLORS.get(key, _MODE_UNKNOWN_COLOR),
+                }
+            )
+    return out
+
+
+async def _query_mode_distribution(
+    db: AsyncSession, unit_node_ids: list[str]
+) -> list[dict[str, Any]]:
+    """scope 子树参评回路 → 实时控制模式分布（2026-10-12 R2 补数）.
+
+    口径对齐 app/services/monitor.py _build_loop_monitor_aggregate 的
+    "aggregate MODE" 段（Redis 实时值优先、PG current_value 回退、DCS
+    型号 raw→standard 映射、无映射 1:1 回退后按 D2 校验合法值，未映射
+    入未知桶），回路基数改为参评三条件（is_active+READY+
+    include_in_evaluation，与评估页"应评 N"口径一致）。任何失败返回空
+    列表（读方诚实空态），不阻断预计算行写入。
+    """
+    if not unit_node_ids:
+        return []
+    from app.services.data_source.realtime_subscriber import get_subscriber
+    from app.services.mode_resolver import build_raw_to_standard_map, get_mode_labels
+
+    # 1) 参评回路 × MODE tag 映射 + DCS 型号
+    result = await db.execute(
+        select(
+            LoopLedger.id.label("loop_id"),
+            LoopLedger.dcs_model_id,
+            TagRegistry.id.label("tag_id"),
+            TagRegistry.tag_name,
+            TagRegistry.current_value,
+        )
+        .join(
+            LoopTagMapping,
+            (LoopTagMapping.loop_id == LoopLedger.id) & (LoopTagMapping.tag_role == "MODE"),
+        )
+        .join(TagRegistry, TagRegistry.id == LoopTagMapping.tag_id)
+        .where(LoopLedger.is_active.is_(True))
+        .where(LoopLedger.status == "READY")
+        .where(LoopLedger.include_in_evaluation.is_(True))
+        .where(LoopLedger.unit_id.in_(unit_node_ids))
+    )
+    rows = result.all()
+    if not rows:
+        return []
+
+    tag_name_to_row = {r.tag_name: r for r in rows if r.tag_name}
+
+    # 2) Redis 实时值优先（失败回退 PG current_value，随行已带）
+    redis_values: dict[str, float | None] = {}
+    try:
+        cached = await get_subscriber().get_cached_values(list(tag_name_to_row.keys()))
+        for item in cached:
+            tc = item.get("tagCode")
+            if tc in tag_name_to_row:
+                try:
+                    redis_values[str(tc)] = float(item.get("value"))
+                except (TypeError, ValueError):
+                    redis_values[str(tc)] = None
+    except Exception:  # noqa: BLE001 — Redis 不可用回退 PG 值
+        logger.warning(
+            "precalc mode_dist: Redis 实时值读取失败，回退 PG current_value",
+            exc_info=True,
+        )
+
+    # 3) DCS 型号 raw→standard 映射（按型号分组构建，缺失 1:1 回退）
+    r2s_maps: dict[str | None, dict[int, int]] = {}
+    for mid in {str(r.dcs_model_id) if r.dcs_model_id else None for r in rows}:
+        r2s_maps[mid] = await build_raw_to_standard_map(db, mid)
+
+    counts: dict[int | None, int] = {}
+    for r in rows:
+        cv = redis_values.get(str(r.tag_name)) if r.tag_name else None
+        if cv is None:
+            try:
+                cv = float(r.current_value) if r.current_value is not None else None
+            except (TypeError, ValueError):
+                cv = None
+        if cv is None:
+            counts[None] = counts.get(None, 0) + 1
+            continue
+        mid = str(r.dcs_model_id) if r.dcs_model_id else None
+        standard = r2s_maps.get(mid, {}).get(int(cv), int(cv))
+        # D2（验收 REWORK）：映射缺失时 int(cv) 1:1 透传，透传结果不在
+        # StandardMode 合法值内（raw ∉0..4 且无映射）计入未知桶——口径对齐
+        # monitor（未映射 → Unknown），不静默丢弃该回路
+        if standard not in ALL_STANDARD_MODES:
+            counts[None] = counts.get(None, 0) + 1
+        else:
+            counts[standard] = counts.get(standard, 0) + 1
+
+    try:
+        labels = await get_mode_labels(db)
+    except Exception:  # noqa: BLE001 — 标签配置失败回退常量
+        labels = {}
+    return shape_mode_dist(counts, labels)
+
+
 # ---------------------------------------------------------------------------
 # async 主流程
 # ---------------------------------------------------------------------------
@@ -314,8 +476,13 @@ async def _upsert_row(
     trend: list[dict[str, Any]],
     distribution: dict[str, Any],
 ) -> bool:
-    """单行 upsert（ON CONFLICT (scope,window,window_end) DO UPDATE）。"""
-    score = agg["score"] if agg["score"] is not None else 0.0
+    """单行 upsert（ON CONFLICT (scope,window,window_end) DO UPDATE）。
+
+    CAL-07（2026-10-10）：无评分聚合 score 落 None（不再 0.0 伪 0 绩效）；
+    列已随迁移 p102wsnull01 改可空，status=score_to_status(None)=INCONCLUSIVE
+    供读方显式区分"未计算"。
+    """
+    score = agg["score"]
     stmt = (
         pg_insert(WorkbenchWindowSummary)
         .values(
@@ -385,6 +552,8 @@ async def build_and_upsert(db: AsyncSession) -> dict[str, Any]:
 
     written = 0
     errors = 0
+    # mode_dist 与窗口无关（实时口径）：每 scope 计算一次，三窗口行共享
+    mode_dist_cache: dict[str, list[dict[str, Any]]] = {}
     for window in WINDOWS:
         hours = WINDOW_HOURS[window]
         w_start = window_end - timedelta(hours=hours)
@@ -407,9 +576,16 @@ async def build_and_upsert(db: AsyncSession) -> dict[str, Any]:
                 except Exception:  # noqa: BLE001 — 等级分布失败不阻断该行写入
                     logger.warning("precalc level_dist 失败 scope=%s", scope_key, exc_info=True)
 
+                if scope_key not in mode_dist_cache:
+                    try:
+                        mode_dist_cache[scope_key] = await _query_mode_distribution(db, unit_ids)
+                    except Exception:  # noqa: BLE001 — 模式分布失败写空（诚实空态）
+                        logger.warning("precalc mode_dist 失败 scope=%s", scope_key, exc_info=True)
+                        mode_dist_cache[scope_key] = []
+
                 distribution = {
                     "level_dist": level_dist,
-                    "mode_dist": [],
+                    "mode_dist": mode_dist_cache[scope_key],
                     "data_quality": [],
                     "metric_slopes": build_metric_slopes(agg, prev_agg),
                 }

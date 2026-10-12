@@ -31,6 +31,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
 import { ClpmConfidenceBadge } from '#/components/clpm';
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 
 import { fmtNum2 } from '../constants';
 
@@ -39,6 +40,11 @@ const props = defineProps<{ ctx: TuningWorkbenchContext }>();
 dayjs.extend(utc);
 
 const { ctx } = props;
+
+// W8 绑定语义（P4-02 尾批）：开始辨识按 tuning:identify 码显隐
+// （种子四角色 == 后端 /tuning/identify require_perms，零行为变化）
+const { hasPerm } = useClpmRoles();
+const canIdentify = computed(() => hasPerm('tuning:identify'));
 
 const rangeValue = ref<[dayjs.Dayjs, dayjs.Dayjs] | undefined>([
   dayjs().subtract(7, 'day'),
@@ -170,6 +176,7 @@ async function applyEdit() {
         placement="top"
       >
         <Button
+          v-if="canIdentify"
           type="primary"
           size="small"
           :loading="ctx.identifying.value"
@@ -182,7 +189,7 @@ async function applyEdit() {
         </Button>
       </Tooltip>
       <Button
-        v-else
+        v-else-if="canIdentify"
         type="primary"
         size="small"
         :loading="ctx.identifying.value"

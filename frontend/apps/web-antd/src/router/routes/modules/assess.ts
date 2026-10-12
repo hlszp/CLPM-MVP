@@ -37,6 +37,7 @@ const routes: RouteRecordRaw[] = [
         path: '/metric/pid-dashboard',
         component: () => import('#/views/metric/pid-dashboard.vue'),
         meta: {
+          permCode: 'page:assess.dashboard',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
           title: '装置性能',
@@ -47,6 +48,7 @@ const routes: RouteRecordRaw[] = [
         path: '/metric/indicator-analysis',
         component: () => import('#/views/metric/indicator-analysis.vue'),
         meta: {
+          permCode: 'page:assess.indicator',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           // URL query 为真相源（metric/window/plantNodeId），控件切换 replace query；
           // fullPathKey=false 使 query 变化不重建组件实例（同 loop-workbench 先例），
@@ -61,6 +63,7 @@ const routes: RouteRecordRaw[] = [
         path: '/metric/loop-evaluation',
         component: () => import('#/views/metric/loop-evaluation/index.vue'),
         meta: {
+          permCode: 'page:assess.loop-evaluation',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           // URL query 为真相源（view=rank|history|matrix + 各视图原生参数），
           // fullPathKey=false 使 query 变化不重建组件实例（视图切换保活）
@@ -74,6 +77,7 @@ const routes: RouteRecordRaw[] = [
         path: '/metric/tasks',
         component: () => import('#/views/metric/tasks.vue'),
         meta: {
+          permCode: 'page:assess.tasks',
           authority: ['ADMIN', 'IC_ENGINEER'],
           icon: 'lucide:list-checks',
           title: '评估任务',
@@ -91,6 +95,7 @@ const routes: RouteRecordRaw[] = [
       query: { ...to.query, view: 'rank' },
     }),
     meta: {
+      permCode: 'page:assess.loop-evaluation',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '回路性能',
@@ -103,7 +108,12 @@ const routes: RouteRecordRaw[] = [
       path: '/metric/loop-evaluation',
       query: { ...to.query, view: 'history' },
     }),
-    meta: { authority: ['ADMIN', 'IC_ENGINEER'], hideInMenu: true, title: '评估记录' },
+    meta: {
+      permCode: 'page:assess.loop-evaluation',
+      authority: ['ADMIN', 'IC_ENGINEER'],
+      hideInMenu: true,
+      title: '评估记录',
+    },
   },
   {
     name: 'LegacyMatrix',
@@ -113,6 +123,7 @@ const routes: RouteRecordRaw[] = [
       query: { ...to.query, view: 'matrix' },
     }),
     meta: {
+      permCode: 'page:assess.loop-evaluation',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '指标矩阵',
@@ -124,6 +135,7 @@ const routes: RouteRecordRaw[] = [
     path: '/metric',
     redirect: '/metric/pid-dashboard',
     meta: {
+      permCode: 'page:assess.dashboard',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '性能评估',
@@ -135,6 +147,7 @@ const routes: RouteRecordRaw[] = [
     path: '/metric/kpi-report',
     redirect: '/reports/performance',
     meta: {
+      permCode: 'page:reports.performance',
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '绩效报告',

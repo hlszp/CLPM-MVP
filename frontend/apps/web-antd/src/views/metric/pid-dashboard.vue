@@ -488,12 +488,22 @@ const aggregateData = computed(() => boardAggregate.value?.aggregate);
 
 const topNList = computed(() => {
   const items = [...rankingList.value];
+  // R07-1（P3-D6b）：null 不作 0——未评分回路恒沉底（治理语义：未评≠最差。
+  // 「待治理榜」是"可采取行动的最差回路"排名，未计算评分的回路与 L0/L1
+  // 不适用同属不可排名对象；服务端 fitnessFilter 已剔 L0/L1，score null
+  // 行保留但升/降序均排末位，不再被 ?? 0 冒充 0 分最差）
+  const scored = items.filter(
+    (it) => it.score !== null && it.score !== undefined,
+  );
+  const unscored = items.filter(
+    (it) => it.score === null || it.score === undefined,
+  );
   if (topNSort.value === 'asc') {
-    items.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
+    scored.sort((a, b) => a.score! - b.score!);
   } else {
-    items.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    scored.sort((a, b) => b.score! - a.score!);
   }
-  return items.slice(0, GOVERNANCE_TOP_N);
+  return [...scored, ...unscored].slice(0, GOVERNANCE_TOP_N);
 });
 
 // 默认定级阈值（国标 GB/T 44693.2-2024 §6.3，与 use-score-color 内部默认值同口径；
@@ -697,6 +707,9 @@ const topNTableData = computed(() => {
       ? item.fitnessTags
       : null;
     const isFitnessNA = fitnessLevel === 'L0' || fitnessLevel === 'L1';
+    // R07-1：未评行显式标注（null≠0，不冒充最差）
+    const isUnscored =
+      !isFitnessNA && (item.score === null || item.score === undefined);
     const ratingLevel = getRatingLevel(item.score);
     const ratingLabel = ratingLevel
       ? (ratingLabels.value[ratingLevel] ?? `L${ratingLevel}`)
@@ -718,8 +731,16 @@ const topNTableData = computed(() => {
       fitnessNATipText: isFitnessNA
         ? fitnessNATip(fitnessLevel, fitnessTags)
         : '',
-      score: isFitnessNA ? '—' : formatNumber(item.score),
-      scoreColor: isFitnessNA ? FITNESS_NA_COLOR : scoreColor(item.score),
+      isUnscored,
+      unscoredTipText: '该窗口评分未计算（null，非 0 分）；不参与最差排序（恒排末位）',
+      score: isFitnessNA
+        ? '—'
+        : (isUnscored
+          ? '未计算'
+          : formatNumber(item.score)),
+      scoreColor: isFitnessNA
+        ? FITNESS_NA_COLOR
+        : scoreColor(item.score),
       steadyRate: `${formatNumber(item.steadyRate)}%`,
     };
   });
@@ -728,6 +749,141 @@ const topNTableData = computed(() => {
 const trendChartRef = ref<EchartsUIType>();
 
 const { renderEcharts: renderTrend } = useEcharts(trendChartRef);
+
+// ===== R07-2/R07-3（P3-D6b）：可评分名册 N/E 与 metricStats 消费 =====
+// 数据源 nodes/{nodeId}/monitor（dimension=hour）的 assessmentStats.roster
+// （N=scorableLoopCount / E=eligibleLoopCount）与 metricStats——已评数
+// evaluatedLoops 不再冒充 N/E（已评数≠参评分母）。名册仅 hour 维快照携带；
+// 旧快照 assessmentStats=NULL=历史口径不可追溯，该桶显示断点（不猜算 0）。
+const rosterNValues = ref<(null | number)[]>([]);
+const rosterEValues = ref<(null | number)[]>([]);
+/** R07-3：窗口内最新带 assessmentStats 小时快照的 metricStats.score */
+const latestMetricStat = ref<MetricApi.NodeMetricStat | null>(null);
+/** 名册序列说明（图表头部角标：不可追溯/未计入节点） */
+const rosterNote = ref('');
+
+/** R07-3：性能评分卡——metricStats.weightedMean 优先（null 不作 0），
+ *  无 metricStats（历史快照）回退既有 board/aggregate 已评加权均分 */
+const gaugeScore = computed(() => {
+  if (latestMetricStat.value) return latestMetricStat.value.weightedMean;
+  return aggregateData.value?.avgScore ?? null;
+});
+const gaugeScoreMeta = computed(() => {
+  if (latestMetricStat.value) {
+    return `评分对象 ${latestMetricStat.value.numericCount}/${latestMetricStat.value.objectCount}（metricStats）`;
+  }
+  return `统计窗口：${timeWindowLabel.value}`;
+});
+
+async function loadRosterTrend() {
+  rosterNValues.value = [];
+  rosterEValues.value = [];
+  latestMetricStat.value = null;
+  rosterNote.value = '';
+  const trend = boardTrend.value;
+  if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
+  const bucketTimestamps = trend.timestamps;
+  // 作用域节点：选中节点子树 / 全厂=boardTree 各根节点并列（名册成员
+  // 跨根不相交，N/E 按桶求和口径正确）
+  const nodeIds = selectedPlantNodeId.value
+    ? [selectedPlantNodeId.value]
+    : boardTree.value.map((r) => r.nodeId);
+  if (nodeIds.length === 0) return;
+  const { start, end } = resolveWindow();
+  const { getNodeMonitorApi } = await import('#/api/metric');
+  const results = await Promise.all(
+    nodeIds.map((id) =>
+      getNodeMonitorApi(id, {
+        dimension: 'hour',
+        start: start.toISOString(),
+        end: end.toISOString(),
+      })
+        .then((r) => r.snapshots ?? [])
+        .catch(() => null),
+    ),
+  );
+  const noSnapshotNodeIds: string[] = [];
+  const perNodeSnaps = results.map((snaps, i) => {
+    if (snaps === null) return null; // 该节点拉取失败（整窗不可知）
+    if (snaps.length === 0) noSnapshotNodeIds.push(nodeIds[i]!);
+    return snaps;
+  });
+  const contributing = perNodeSnaps.filter(
+    (s): s is MetricApi.NodeMonitorSnapshot[] => s !== null && s.length > 0,
+  );
+  if (contributing.length === 0) {
+    rosterNote.value = '可评分 N/E：暂无名册数据';
+    await nextTick();
+    renderTrendChart();
+    return;
+  }
+
+  const isDay = trend.granularity === 'day';
+  // 节点内按桶取名册：hour=该小时快照；day=该北京日最末一条小时快照（日末状态）
+  function rosterOfBucket(
+    snaps: MetricApi.NodeMonitorSnapshot[],
+    bucketIdx: number,
+  ): MetricApi.NodeAssessmentRoster | null | undefined {
+    const bucketTs = bucketTimestamps[bucketIdx] ?? '';
+    let chosen: MetricApi.NodeMonitorSnapshot | undefined;
+    for (const s of snaps) {
+      const ts = s.tsStart ?? '';
+      const match = isDay
+        ? dayjs(ts).add(8, 'hour').format('YYYY-MM-DD') === bucketTs
+        : ts.slice(0, 13) === bucketTs.slice(0, 13); // UTC 整点对齐
+      if (match && (!chosen || (ts ?? '') > (chosen.tsStart ?? ''))) {
+        chosen = s;
+      }
+    }
+    if (!chosen) return undefined; // 该节点该桶无快照
+    return chosen.assessmentStats?.roster ?? null; // null=有快照无名册（历史）
+  }
+
+  const nSeries: (null | number)[] = [];
+  const eSeries: (null | number)[] = [];
+  for (let i = 0; i < bucketTimestamps.length; i++) {
+    let n: null | number = 0;
+    let e: null | number = 0;
+    let unknown = false;
+    for (const snaps of contributing) {
+      const roster = rosterOfBucket(snaps, i);
+      if (roster === undefined || roster === null) {
+        // 任一节点该桶无快照/无名册 → 合计不可知（不猜算，断点显示）
+        unknown = true;
+        break;
+      }
+      n += roster.scorableLoopCount ?? 0;
+      e += roster.eligibleLoopCount ?? 0;
+    }
+    nSeries.push(unknown ? null : n);
+    eSeries.push(unknown ? null : e);
+  }
+  rosterNValues.value = nSeries;
+  rosterEValues.value = eSeries;
+
+  // R07-3：窗口内最新带 metricStats 的快照（跨节点取 tsStart 最大者）
+  let latest: null | { snap: MetricApi.NodeMonitorSnapshot } = null;
+  for (const snaps of contributing) {
+    for (const s of snaps) {
+      if (!s.assessmentStats?.metricStats?.score) continue;
+      if (!latest || (s.tsStart ?? '') > (latest.snap.tsStart ?? '')) {
+        latest = { snap: s };
+      }
+    }
+  }
+  latestMetricStat.value = latest?.snap.assessmentStats?.metricStats?.score ?? null;
+
+  const notes: string[] = [];
+  if (nSeries.every((v) => v === null)) {
+    notes.push('可评分 N/E：历史快照无名册统计（不可追溯，断点显示）');
+  }
+  if (noSnapshotNodeIds.length > 0) {
+    notes.push(`${noSnapshotNodeIds.length} 个节点窗口内无快照（未计入 N/E）`);
+  }
+  rosterNote.value = notes.join('；');
+  await nextTick();
+  renderTrendChart();
+}
 
 function renderTrendChart() {
   const trend = boardTrend.value;
@@ -743,8 +899,10 @@ function renderTrendChart() {
       : dayjs(normalizeUtcTimestamp(ts)).format('M-D H:00'),
   );
 
-  // 装置性能改版 4：删除"总回路数"序列；"参评回路数"更名"产品回路"
-  const barDataEvaluated = trend.evaluatedLoops ?? [];
+  // R07-2（P3-D6b）：柱序列改消费名册可评分 N（nodes monitor
+  // assessmentStats.roster）；"产品回路"（evaluatedLoops 已评数）不再
+  // 冒充 N/E——已评数≠参评分母。无名册桶为 null（断点，不画作 0）
+  const barDataScorable = rosterNValues.value;
 
   renderTrend({
     grid: { bottom: 40, left: '2%', right: '2%', top: 20, containLabel: true },
@@ -778,9 +936,9 @@ function renderTrendChart() {
     ],
     series: [
       {
-        name: '产品回路',
+        name: '可评分 N/E',
         type: 'bar' as const,
-        data: barDataEvaluated,
+        data: barDataScorable,
         itemStyle: { color: themeColors.value.SUCCESS },
         barMaxWidth: 26,
       },
@@ -861,11 +1019,47 @@ function renderTrendChart() {
       ...getTooltipPreset(),
       trigger: 'axis',
       axisPointer: { type: 'cross' },
+      // R07-2：柱序列 Tooltip 显式 N/E 与占比；E=0→无参评回路；
+      // null→无名册（历史快照不可追溯）；线序列保持原值展示
+      formatter: (params: unknown) => {
+        const list = Array.isArray(params) ? params : [params];
+        const rows: string[] = [];
+        for (const p of list as {
+          axisValueLabel?: string;
+          dataIndex: number;
+          marker?: string;
+          seriesName: string;
+          value: null | number;
+        }[]) {
+          if (!p) continue;
+          if (rows.length === 0 && p.axisValueLabel) {
+            rows.push(p.axisValueLabel);
+          }
+          if (p.seriesName === '可评分 N/E') {
+            const e = rosterEValues.value[p.dataIndex];
+            if (p.value === null || p.value === undefined || e === null || e === undefined) {
+              rows.push(`${p.marker ?? ''} 可评分 N/E：该窗口无名册数据（历史快照不可追溯）`);
+            } else if (e === 0) {
+              rows.push(`${p.marker ?? ''} 可评分 N/E：无参评回路（E=0）`);
+            } else {
+              const ratio = Math.round((p.value / e) * 100);
+              rows.push(
+                `${p.marker ?? ''} 可评分 N/E：N=${p.value} / E=${e}（${ratio}%）`,
+              );
+            }
+          } else {
+            const v =
+              p.value === null || p.value === undefined ? '—' : p.value;
+            rows.push(`${p.marker ?? ''} ${p.seriesName}：${v}`);
+          }
+        }
+        return rows.join('<br/>');
+      },
     },
     legend: {
       bottom: 0,
       textStyle: { color: chartColors.value.text, fontSize: 11 },
-      data: ['产品回路', '性能评分', '自控率', '平稳率'],
+      data: ['可评分 N/E', '性能评分', '自控率', '平稳率'],
     },
   });
 }
@@ -1096,8 +1290,11 @@ async function loadGradingThresholds() {
 }
 
 function loadAll() {
-  loadBoard();
-  loadBoardTree();
+  // R07-2/R07-3：名册序列消费 board/trend 桶序列 + boardTree 根节点
+  // （全厂口径），两者就绪后链式加载
+  const boardLoaded = loadBoard();
+  const treeLoaded = loadBoardTree();
+  Promise.all([boardLoaded, treeLoaded]).then(() => loadRosterTrend());
   loadAutoRateRt();
   loadRanking();
   loadGradeDistribution();
@@ -1147,11 +1344,11 @@ function handleRefresh() {
 
 /** 工具栏帮助 */
 function handleHelp() {
-  showPageHelp({
-    title: '装置性能 帮助',
-    content:
-      '装置性能看板：实时自控率、性能评分、自控率/平稳率/好值率/仪表故障率/参评回路 7 仪表盘 + 性能指标趋势图（产品回路柱 + 三率线，长窗口自动按日聚合）+ 回路状态饼图 + 等级环形图（实时：每回路最新等级）与适用性 L0~L4 + 装置/单元可折叠明细表 + 待治理 TOP10 + 阀门越限 TOP10。支持按工厂节点树筛选与时间窗口切换（今日/日/周/月/自定义）。',
-  });
+      showPageHelp({
+        title: '装置性能 帮助',
+        content:
+          '装置性能看板：实时自控率、性能评分（metricStats 加权均分，null 不作 0）、自控率/平稳率/好值率/仪表故障率/参评回路 7 仪表盘 + 性能指标趋势图（可评分 N/E 柱（名册口径，已评数≠参评分母）+ 三率线，长窗口自动按日聚合）+ 回路状态饼图 + 等级环形图（实时：每回路最新等级）与适用性 L0~L4 + 装置/单元可折叠明细表 + 待治理 TOP10（未评分回路恒排末位标注未计算）+ 阀门越限 TOP10。支持按工厂节点树筛选与时间窗口切换（今日/日/周/月/自定义）。',
+      });
 }
 
 // ===== 统一工具栏（标准 2 工具：刷新 / 帮助） =====
@@ -1245,11 +1442,22 @@ onMounted(() => {
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
-              <ClpmBulletChart
-                label="性能评分"
-                :value="aggregateData?.avgScore ?? null"
-                :meta="`统计窗口：${timeWindowLabel}`"
-              />
+              <!-- R07-3（P3-D6b）：均分消费 metricStats.weightedMean（null
+                   不作 0），Tooltip 展示评分对象 numericCount/objectCount；
+                   无 metricStats（历史快照）时回退已评加权均分并注明口径 -->
+              <Tooltip
+                :title="
+                  latestMetricStat
+                    ? `均分口径：metricStats.weightedMean（null 不作 0）；评分对象 ${latestMetricStat.numericCount}/${latestMetricStat.objectCount}`
+                    : '均分口径：窗口内暂无 metricStats（历史快照不可追溯），显示已评加权均分'
+                "
+              >
+                <ClpmBulletChart
+                  label="性能评分"
+                  :value="gaugeScore"
+                  :meta="gaugeScoreMeta"
+                />
+              </Tooltip>
             </div>
 
             <div class="clpm-pid-dashboard__gauge-card">
@@ -1356,6 +1564,13 @@ onMounted(() => {
             >
               <div class="clpm-pid-dashboard__card-header">
                 <span>性能指标趋势图</span>
+                <span
+                  v-if="rosterNote"
+                  class="clpm-pid-dashboard__card-meta"
+                  :title="rosterNote"
+                >
+                  {{ rosterNote }}
+                </span>
               </div>
               <EchartsUI ref="trendChartRef" height="240px" />
             </div>
@@ -1607,6 +1822,14 @@ onMounted(() => {
                       <span :style="{ color: record.scoreColor }">{{
                         record.score
                       }}</span>
+                    </Tooltip>
+                    <!-- R07-1：未评行标注"未计算"（null 非 0，不冒充最差） -->
+                    <Tooltip
+                      v-else-if="record.isUnscored"
+                      :title="record.unscoredTipText"
+                      placement="top"
+                    >
+                      <span class="text-neutral-400">{{ record.score }}</span>
                     </Tooltip>
                     <span v-else :style="{ color: record.scoreColor }">{{
                       record.score

@@ -16,9 +16,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
+from app.services.tuning_algorithms import validate_tuning_params
 
 # ---------------------------------------------------------------------------
 # 枚举类型定义（S4-C3）
@@ -31,7 +32,8 @@ ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 # 历史辨识支持的模型类型（P2-008：IPDT 差分辨识链已接入历史路径）
 HistoryModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
-# 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
+# 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC（FOPDT 五法）+
+# IPDT_PI/SOPDT_IMC（P3-07：IPDT/SOPDT 专用方法，注册于 TUNING_METHODS_INFO）
 # V62-P3-006：新增 IDENTIFICATION_ONLY——纯辨识记录不再用 IMC 占位
 # MANUAL_TUNING：矩阵第 6 行"手动整定"——参数由工程师手工设定，不经算法计算
 TuningAlgorithm = Literal[
@@ -40,6 +42,8 @@ TuningAlgorithm = Literal[
     "ZN",
     "COHEN_COON",
     "SIMC",
+    "IPDT_PI",
+    "SOPDT_IMC",
     "IDENTIFICATION_ONLY",
     "MANUAL_TUNING",
 ]
@@ -239,6 +243,19 @@ class TuneRequest(CamelModel):
     )
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
+    @model_validator(mode="after")
+    def _validate_algorithm_params(self) -> TuneRequest:
+        """P2-01 TUN-05：algorithmParams 按方法注册表（TUNING_METHODS_INFO）校验.
+
+        未知键、非数值/非有限、越界、非法枚举（如非法 controllerType）
+        在 schema 层原子拒绝（422）；合法输入形状不变。
+        """
+        if self.algorithmParams:
+            errors = validate_tuning_params(self.algorithm, self.algorithmParams)
+            if errors:
+                raise ValueError("；".join(errors))
+        return self
+
 
 class TuningRisk(CamelModel):
     """V62-P3-007 整定风险评估。"""
@@ -251,7 +268,7 @@ class TuningRisk(CamelModel):
 
 
 class TuneResult(CamelModel):
-    """PID 整定结果（V62-P3-007 含人工实施清单字段）。"""
+    """PID 整定结果（V62-P3-007 含人工实施清单字段）."""
 
     algorithm: TuningAlgorithm
     recommendedPid: PidParams
@@ -264,6 +281,11 @@ class TuneResult(CamelModel):
     rollbackPid: PidParams | None = Field(None, description="回退 PID 值（实施失败时恢复）")
     unitConversion: dict[str, Any] | None = Field(
         None, description="单位转换说明（如时间单位秒↔分、量程转换）"
+    )
+    # P3-07（P-35 来源保存）：建议来源绑定——模型版本/终验结论/整定方法与
+    # 参数版本随建议携带（B2 冻结链兼容：加性键）
+    recommendationSource: dict[str, Any] | None = Field(
+        None, description="建议来源绑定（模型来源/版本/终验结论/方法与参数版本）"
     )
 
 
@@ -288,6 +310,64 @@ class TuneMatrixRequest(CamelModel):
     )
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
 
+    @model_validator(mode="after")
+    def _validate_algorithm_params_union(self) -> TuneMatrixRequest:
+        """P2-01 TUN-05：矩阵共用参数按全算法联合注册表校验.
+
+        同一份 algorithmParams 跨 5 算法共用：键在任一算法注册即合法
+        （如 controllerType 属于 ZN/COHEN_COON、lambdaRatio 属于 IMC/LAMBDA），
+        值须满足其所属算法的类型/范围/枚举约束；全算法都不认识的键拒绝。
+        """
+        if self.algorithmParams:
+            errors = validate_tuning_params(None, self.algorithmParams)
+            if errors:
+                raise ValueError("；".join(errors))
+        return self
+
+
+class RobustVerifyRequest(CamelModel):
+    """POST /tuning/tune/robustness 请求体（P3-07 R15 鲁棒验证链入口）.
+
+    对服务端已验证来源的模型 + 整定建议，在可信模型集合（终验通过模型
+    ± 参数 95% CI 采样，≤64 成员）上按 R15 冻结指标（GM≥2.0/PM≥30°/
+    超调≤20%/OP 实际限幅）验证；未知 DCS 表示、未核实 OP 限位、终验
+    未通过的模型明确拒绝（O-D6/P-34）。
+    """
+
+    loopId: str
+    modelType: ModelType
+    modelParams: ModelParams
+    algorithm: TuningAlgorithm
+    algorithmParams: dict[str, Any] | None = Field(
+        None, description="算法参数（如 lambdaRatio）；按方法注册表校验"
+    )
+    recommendedPid: PidParams | None = Field(
+        None,
+        description="待验证建议 PID；缺省=按 algorithm+algorithmParams 服务端现算",
+    )
+    simDuration: float = Field(
+        600.0, ge=1.0, le=600.0, description="集合单成员仿真时长（秒，B-11 冻结 ≤600）"
+    )
+    simStep: float = Field(1.0, gt=0.0, le=600.0, description="仿真步长（秒）")
+    setpointStep: float = Field(1.0, description="设定值阶跃幅值")
+    noiseStd: float | None = Field(
+        None, ge=0.0, description="扰动响应证据的测量噪声标准差（缺省 0.05）"
+    )
+    sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
+    modelSource: ModelSource | None = Field(
+        None, description="模型来源；旧请求可解析但不会绕过服务端安全门禁"
+    )
+    riskConfirmed: bool = Field(False, description="C 级辨识结果风险确认（与推荐链同门禁）")
+
+    @model_validator(mode="after")
+    def _validate_algorithm_params(self) -> RobustVerifyRequest:
+        """P2-01 TUN-05：algorithmParams 按方法注册表校验（与 TuneRequest 同源）."""
+        if self.algorithmParams:
+            errors = validate_tuning_params(self.algorithm, self.algorithmParams)
+            if errors:
+                raise ValueError("；".join(errors))
+        return self
+
 
 # ---------------------------------------------------------------------------
 # 闭环仿真
@@ -295,7 +375,12 @@ class TuneMatrixRequest(CamelModel):
 
 
 class SimulateRequest(CamelModel):
-    """POST /tuning/simulate 请求体。"""
+    """POST /tuning/simulate 请求体。
+
+    P3-04 行为变更：``disturbanceType`` 默认 "none"（旧默认 "step" 形参被
+    静默忽略=等效无扰动，默认曲线值不变）；显式 "step" 时负载阶跃扰动
+    真实施加于对象输入（可配幅值/施加时刻）。超同步预算明确拒绝。
+    """
 
     modelType: ModelType = Field("FOPDT", description="模型类型")
     modelParams: ModelParams
@@ -304,10 +389,18 @@ class SimulateRequest(CamelModel):
     pidCandidates: list[PidParamsWithLabel] | None = Field(
         None, description="多组候选 PID 参数（Phase 2 新增，向后兼容）"
     )
-    simDuration: float = Field(600.0, description="仿真时长（秒）")
-    simStep: float = Field(1.0, description="仿真步长（秒）")
+    simDuration: float = Field(600.0, ge=1.0, le=7200.0, description="仿真时长（秒，≤7200）")
+    simStep: float = Field(1.0, gt=0.0, le=600.0, description="仿真步长（秒）")
     setpointStep: float = Field(1.0, description="设定值阶跃幅值")
-    disturbanceType: str = Field("step", description="扰动类型: step/none")
+    disturbanceType: Literal["none", "step"] = Field(
+        "none", description="扰动类型: none=无扰动 / step=负载阶跃扰动（真实施加）"
+    )
+    disturbanceAmplitude: float | None = Field(
+        None, gt=0.0, le=100.0, description="step 扰动幅值（OP 同单位，缺省 0.5）"
+    )
+    disturbanceTime: float | None = Field(
+        None, gt=0.0, description="step 扰动施加时刻（秒，须 < simDuration，缺省 40% 时长）"
+    )
     loopId: str | None = Field(None, description="回路 ID（模型记录校验用）")
     sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
     modelSource: ModelSource | None = Field(
@@ -315,6 +408,17 @@ class SimulateRequest(CamelModel):
         description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
     )
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
+
+    @model_validator(mode="after")
+    def _validate_disturbance_window(self) -> SimulateRequest:
+        """P3-04：step 扰动施加时刻必须落在仿真窗口内。"""
+        if self.disturbanceType == "step" and self.disturbanceTime is not None:
+            if self.disturbanceTime >= self.simDuration:
+                raise ValueError(
+                    f"disturbanceTime（{self.disturbanceTime}s）必须小于 simDuration"
+                    f"（{self.simDuration}s）"
+                )
+        return self
 
 
 class CompareRequest(CamelModel):
@@ -324,6 +428,8 @@ class CompareRequest(CamelModel):
     - ``recommendedPid`` 不再要求（``/compare`` 端点从不消费该字段）
     - ``currentPid`` 可选（仅作为对比基线，缺失时仅返回候选响应）
     - ``pidCandidates`` 必填且 ≥2 组（schema 层 ``min_length=2`` 强校验）
+
+    P3-04：候选参数相对差 <1%（B-12）去重标记；扰动参数同 SimulateRequest。
     """
 
     modelType: ModelType = Field("FOPDT", description="模型类型")
@@ -332,9 +438,18 @@ class CompareRequest(CamelModel):
     pidCandidates: list[PidParamsWithLabel] = Field(
         ..., min_length=2, description="多组候选 PID 参数（至少 2 组）"
     )
-    simDuration: float = Field(600.0, description="仿真时长（秒）")
-    simStep: float = Field(1.0, description="仿真步长（秒）")
+    simDuration: float = Field(600.0, ge=1.0, le=7200.0, description="仿真时长（秒，≤7200）")
+    simStep: float = Field(1.0, gt=0.0, le=600.0, description="仿真步长（秒）")
     setpointStep: float = Field(1.0, description="设定值阶跃幅值")
+    disturbanceType: Literal["none", "step"] = Field(
+        "none", description="扰动类型: none=无扰动 / step=负载阶跃扰动（真实施加）"
+    )
+    disturbanceAmplitude: float | None = Field(
+        None, gt=0.0, le=100.0, description="step 扰动幅值（OP 同单位，缺省 0.5）"
+    )
+    disturbanceTime: float | None = Field(
+        None, gt=0.0, description="step 扰动施加时刻（秒，须 < simDuration，缺省 40% 时长）"
+    )
     loopId: str | None = Field(None, description="回路 ID（模型记录校验用）")
     sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
     modelSource: ModelSource | None = Field(
@@ -342,6 +457,17 @@ class CompareRequest(CamelModel):
         description="模型来源；旧请求可解析但不会绕过服务端安全门禁",
     )
     riskConfirmed: bool = Field(False, description="是否已显式确认 C 级/人工模型风险")
+
+    @model_validator(mode="after")
+    def _validate_disturbance_window(self) -> CompareRequest:
+        """P3-04：step 扰动施加时刻必须落在仿真窗口内。"""
+        if self.disturbanceType == "step" and self.disturbanceTime is not None:
+            if self.disturbanceTime >= self.simDuration:
+                raise ValueError(
+                    f"disturbanceTime（{self.disturbanceTime}s）必须小于 simDuration"
+                    f"（{self.simDuration}s）"
+                )
+        return self
 
 
 class SimulationMetrics(CamelModel):
@@ -354,15 +480,21 @@ class SimulationMetrics(CamelModel):
 
 
 class CandidateResponse(CamelModel):
-    """候选 PID 响应（多 PID 对比）."""
+    """候选 PID 响应（多 PID 对比）.
+
+    P3-04：``deduplicated``/``duplicateOf`` 为候选去重标记（B-12：参数
+    相对差 <1% 的候选不重复仿真，复用代表项响应与指标）。
+    """
 
     label: str = Field(..., description="PID 标签")
     response: dict[str, list[float]]
     metrics: SimulationMetrics
+    deduplicated: bool | None = Field(None, description="是否为去重候选（重复项不再仿真）")
+    duplicateOf: str | None = Field(None, description="去重代表项标签（deduplicated=true 时有值）")
 
 
 class SimulationResult(CamelModel):
-    """闭环仿真结果。"""
+    """闭环仿真结果."""
 
     timestamps: list[float]
     currentResponse: dict[str, list[float]]
@@ -372,6 +504,8 @@ class SimulationResult(CamelModel):
     improvement: dict[str, float | None]
     # Phase 2 新增：多 PID 对比
     candidateResponses: list[CandidateResponse] | None = None
+    # P3-04 新增：仿真上下文（模型分派/扰动/去重/预算随结果携带）
+    simulationContext: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -402,6 +536,8 @@ class TuningTaskItem(CamelModel):
     residualTestPassed: bool | None = None
     taskId: str | None = None
     completedAt: str | None = None
+    # P3-04：仿真验证状态（加性键；NOT_SIMULATED=无仿真结果，展示"未验证"）
+    simulationStatus: Literal["SIMULATED", "NOT_SIMULATED"] | None = None
     # V62-P3-007 人工实施清单（2026-10-04 出参补齐）
     currentPid: dict[str, Any] | None = None
     rollbackPid: dict[str, Any] | None = None
@@ -421,7 +557,21 @@ class TuningTaskDetail(TuningTaskItem):
 
 
 class CreateTuningTaskRequest(CamelModel):
-    """创建整定任务（保存整定结果）。"""
+    """创建整定任务（保存整定结果）。
+
+    P3-B2 W4（G2-INC-c，2026-10-11）——最终选定方案保存链服务端校验冻结：
+
+    - 新协议（携带 ``modelSource``）：来源/模型/参数/窗口/currentPid 快照全部
+      由服务端从来源记录与工程事实权威派生；旧客户端申报字段
+      （dataSource/identifyMethod/confidence*/fittingScore/currentPid/rollbackPid/
+      pidCandidates/candidateResults/excitationScore/residualTestPassed）不得
+      携带，携带即 ``ERR_TUNING_PROVENANCE_CONFLICT`` 拒绝（不静默忽略）。
+    - 旧协议（缺 ``modelSource`` 的裸模型 payload）：显式拒绝
+      ``ERR_TUNING_SOURCE_REQUIRED``——与 /tune /simulate /compare 推荐链
+      "旧版裸模型请求已停止放行"同口径（Owner 级定稿，依据记录于 P3-B2 交接）。
+    - 字段只加不改：旧字段保留解析形状（仅整批调用方为仓内前端，随本批同步
+      升级为新协议）。
+    """
 
     loopId: str
     modelType: ModelType
@@ -444,6 +594,17 @@ class CreateTuningTaskRequest(CamelModel):
     # V62-P3-007 人工实施清单（2026-10-04 P0：回退方案/风险评估随方案保存）
     rollbackPid: PidParams | None = None
     riskAssessment: dict[str, Any] | None = None
+    # P3-B2 W4：来源身份（服务端校验冻结入口）
+    modelSource: ModelSource | None = Field(
+        None,
+        description="模型来源 IDENTIFICATION_RECORD/STEP_EXPERIMENT/MANUAL；缺省=旧协议拒绝",
+    )
+    sourceRecordId: str | None = Field(
+        None, description="来源辨识记录 ID（IDENTIFICATION_RECORD/STEP_EXPERIMENT 必填）"
+    )
+    riskConfirmed: bool = Field(
+        False, description="C 级辨识结果/人工模型风险确认（与推荐链同门禁）"
+    )
 
 
 # ---------------------------------------------------------------------------

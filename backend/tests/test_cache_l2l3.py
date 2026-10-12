@@ -678,6 +678,9 @@ class TestDataPlannerL2Integration:
 
         # 预写 L2 缓存（模拟命中，cfg_version 与 config_loader 一致）
         bundles = _make_bundles()
+        # P3-08b：planner 的 data_version 追加时间/质量契约策略分量
+        from app.services.metric_calculator.time_axis import TIME_QUALITY_POLICY_VERSION
+
         l2_key = L2BundleCache.build_key(
             loop_id="TC101",
             metrics=["accuracy_rate", "output_trip_index"],
@@ -685,6 +688,7 @@ class TestDataPlannerL2Integration:
             time_window_end=_time_window().end,
             control_type=ControlType.TEMPERATURE.value,
             cfg_version="cfg_1000",
+            data_version=f"legacy-v1:{TIME_QUALITY_POLICY_VERSION}",
         )
         await l2_cache.set(l2_key, bundles)
 
@@ -866,7 +870,9 @@ class TestDataPlannerL2Integration:
         assert len(query_log) == 1
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
         assert len(l2_keys) == 1
-        assert l2_keys[0].endswith(":cfg_1000")
+        # P3-08b：key 末尾追加时间/质量契约策略分量（data_version）；
+        # P3-09c 翻 tqpv2；R1(2026-10-12) 翻 tqpv3（held 阈值角色分层）
+        assert ":cfg_1000:" in l2_keys[0] and l2_keys[0].endswith(":tqpv3")
 
         # 相同配置版本：L2 命中，不查 TDengine
         await _planner("cfg_1000").request_bundles(
@@ -887,4 +893,4 @@ class TestDataPlannerL2Integration:
         assert len(query_log) == 2
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
         assert len(l2_keys) == 2
-        assert any(k.endswith(":cfg_2000") for k in l2_keys)
+        assert any(":cfg_2000:" in k and k.endswith(":tqpv3") for k in l2_keys)

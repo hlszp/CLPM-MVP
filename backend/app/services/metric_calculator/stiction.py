@@ -35,7 +35,6 @@ from typing import Any
 import numpy as np
 
 from app.contracts.data_types import MetricDataBundle, MetricResult
-from app.services.algorithm_config import get_algorithm_params
 from app.services.metric_calculator.base import MetricCalculatorBase
 from app.services.metric_calculator.oscillation import OscillationRateCalculator
 
@@ -111,7 +110,8 @@ class StictionIndexCalculator(MetricCalculatorBase):
         # 而非 INCONCLUSIVE：平稳意味着无粘滞故障，是有意义的诊断结论。
         # 数据不足（vr<0.20）仍由 _make_result 内部判定 INCONCLUSIVE。
         # 整改 F2：极限环门控的零交叉下限复用 oscillation_rate 配置链
-        _params = get_algorithm_params("oscillation_rate", bundle.data_block.control_type)
+        # G2-INC-a：任务固定五层有效参数优先（stiction 消费 oscillation_rate 参数）
+        _params = self._effective_params("oscillation_rate", bundle)
         is_limit_cycle, gate_info = self._detect_limit_cycle(
             pv_vals,
             int(_params.get("min_zero_crossings", MIN_ZERO_CROSSINGS)),
@@ -391,7 +391,10 @@ def assess_stiction_features(
             - theta_hat_seconds: 估计纯滞后（秒）
             - theta_compensated: 是否做了 θ 补偿
             - corr_peak: 互相关峰值显著性
-            - reason: 非极限环时的原因码（no_limit_cycle / insufficient_data）
+            - reason: 前提/证据状态码（no_limit_cycle / insufficient_data /
+              insufficient_fit——D3：低相关随机散点的 b/a 无粘滞物理含义，
+              证据不足不确诊，与 KPI 侧 calculate() low_correlation
+              INCONCLUSIVE 同口径；调用方不得将该窗渲染成"未检出"阴性）
             - 其余极限环门控信息（zero_crossings/mean_half_period/s_a/s_b）
     """
     n = min(len(pv), len(op))
@@ -474,6 +477,13 @@ def assess_stiction_features(
             },
         }
     )
+    # D3（2026-10-11，08§5 椭圆行"低相关随机圆团不判粘滞"+08§4.1 拟合信息
+    # 不足）：R² < MIN_FITTING_SCORE 时 b/a 不具备粘滞物理含义——特征值保留
+    # 供参考，但打 insufficient_fit 原因码：证据不足不确诊，也不得作为
+    # "未检出"有效阴性（诊断侧消费见 diagnosis_operators/stiction.py；
+    # KPI 侧 calculate() 的 low_correlation INCONCLUSIVE 分支行为不变）。
+    if fitting_score < MIN_FITTING_SCORE:
+        info["reason"] = "insufficient_fit"
     return info
 
 

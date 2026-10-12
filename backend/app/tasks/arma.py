@@ -34,6 +34,36 @@ DEFAULT_SETTLING_THRESHOLD = 0.05  # Green 函数衰减阈值（5%）
 MAX_GREEN_FUNC_LENGTH = 3600  # Green 函数最大长度（1 小时 @ 1Hz）
 MIN_DATA_POINTS = 30  # 最少数据点数
 
+# ---------------------------------------------------------------------------
+# P3-09b（EA-D03 采纳口径）：持续尾段判稳与最短支持条件
+#
+# 旧判据（convergence_rule="window"，legacy 保留）：首个连续
+# ``max(3, 10/dt)`` 点低阈窗口即判稳——振荡衰减过程在正弦过零附近会产生
+# 短暂低阈窗口（C07-EA2：k≈2393 处 11 点低阈窗），旧判据提前判稳。
+#
+# 新判据（sustained_tail=True，CANDIDATE_V3_RC1 profile）：
+#   1. 从后向前扫描 O(G) 找最后一个 |G(k)| ≥ 阈值 的点，候选稳态点 =
+#      该点 + 1——候选到推演时域结束**全部**低于阈值（10§3.3"从候选点到
+#      当前有限模型推演时域结束全部低于阈值"）；
+#   2. 尾段最短支持 = max(3×dt, 10s)；
+#   3. 模型复极点给出可信振荡周期 P（所有被采用复极点对应周期的最大值）
+#      时，尾段还须覆盖至少一个 P；近实根（角度过小）与超出推演时域的
+#      周期不凭空生成周期条件（10§3.3"近实根/不可解析周期不凭空生成"）；
+#   4. 尾段不足 → INSUFFICIENT_TAIL_SUPPORT：报告候选进入带时刻与尾段
+#      支持信息，T 点估计仍为 null（不通过加长观察窗绕过预算）；
+#   5. 真实观测（observation_seconds）与模型推演（simulation_horizon_
+#      seconds）分开报告——不把模型外推写成真实观测，只声称"有限推演
+#      时域内持续收敛"，不声称无限未来保证。
+# ---------------------------------------------------------------------------
+#: 尾段最短持续时间下限（秒，与 dt 无关的绝对下限；EA-D03 采纳口径
+#: "最短持续条件为 max(3×dt,10秒)"）
+MIN_TAIL_SUPPORT_SECONDS = 10.0
+#: 尾段最短持续时间的 dt 倍数（max(3×dt, 10s) 的 3×dt 分量）
+MIN_TAIL_SUPPORT_DT_MULTIPLE = 3.0
+#: 可信极点振荡周期的角度下限（rad）：小于此角=近实根，不生成周期条件；
+#: 2π/3600 ↔ 周期上限=Green 推演长度（超出推演时域的周期不可解析）
+MIN_CREDIBLE_POLE_ANGLE = 2.0 * np.pi / MAX_GREEN_FUNC_LENGTH
+
 
 class SettlingStatus(StrEnum):
     """稳态时间计算状态（P0-1：区分三种边界语义）.
@@ -42,12 +72,15 @@ class SettlingStatus(StrEnum):
     - ALREADY_STABLE：信号恒定，已处于稳态（稳态时间 = 0）
     - NEVER_SETTLES：Green 函数稳定但窗口内不衰减（持续振荡/近单位根）
     - IDENTIFICATION_FAILED：数据不足或所有尝试阶数的 Green 函数均发散
+    - INSUFFICIENT_TAIL_SUPPORT：候选进入带但尾段不足最短支持条件
+      （P3-09b 新增，仅 sustained_tail 判据产生；legacy window 判据不产生）
     """
 
     SETTLED = "settled"
     ALREADY_STABLE = "already_stable"
     NEVER_SETTLES = "never_settles"
     IDENTIFICATION_FAILED = "identification_failed"
+    INSUFFICIENT_TAIL_SUPPORT = "insufficient_tail_support"
 
 
 @dataclass(frozen=True)
@@ -55,17 +88,37 @@ class SettlingTimeResult:
     """compute_settling_time_detailed 的结构化结果.
 
     Attributes:
-        status: 计算状态（区分 已稳态/不衰减/辨识失败）
+        status: 计算状态（区分 已稳态/不衰减/辨识失败/尾段不足）
         value: 实际稳态时间（秒）；仅 SETTLED/ALREADY_STABLE 有值，
-            NEVER_SETTLES/IDENTIFICATION_FAILED 为 None
+            NEVER_SETTLES/IDENTIFICATION_FAILED/INSUFFICIENT_TAIL_SUPPORT
+            为 None
         window_length_sec: Green 函数窗口长度（秒）=
             MAX_GREEN_FUNC_LENGTH × 采样周期，NEVER_SETTLES 时作为
             快速率计算的 actual_t 下界代入指数衰减公式
+        candidate_seconds: 候选进入带时刻（秒，sustained_tail 判据）；
+            尾段不足时仍报告（10§3.3"报告候选进入带时刻"）
+        tail_seconds: 候选到推演结束的尾段时长（秒，sustained_tail 判据）
+        required_tail_seconds: 尾段最短支持要求（秒；含极点周期条件时为
+            max(3×dt, 10s, P)）
+        pole_period_seconds: 模型复极点可信振荡周期（秒；被采用复极点对应
+            周期的最大值；无可信复极点时 None=不生成周期条件）
+        observation_seconds: 真实输入观测时长（秒，n×dt）——与模型推演
+            时域分开（P3-09b：真实观测与模型推演分开报告）
     """
 
     status: SettlingStatus
     value: float | None
     window_length_sec: float
+    candidate_seconds: float | None = None
+    tail_seconds: float | None = None
+    required_tail_seconds: float | None = None
+    pole_period_seconds: float | None = None
+    observation_seconds: float | None = None
+
+    @property
+    def simulation_horizon_seconds(self) -> float:
+        """模型推演时域长度（秒）= window_length_sec（Green 窗口 × dt）。"""
+        return self.window_length_sec
 
 
 def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarray:
@@ -215,11 +268,98 @@ def _green_function_recursive(ar_coeffs: np.ndarray, length: int) -> np.ndarray:
     return g
 
 
+def _credible_pole_period_seconds(
+    ar_coeffs: np.ndarray, sample_interval_sec: float
+) -> float | None:
+    """被采用复极点的可信振荡周期（秒；P3-09b）.
+
+    取特征方程复根共轭对（|imag|>0）中角度在 [MIN_CREDIBLE_POLE_ANGLE,
+    π/2] 内的最大周期：周期 = 2π/ω × dt。近实根（角度小于下限）与超出
+    Green 推演时域的周期（角度下限保证周期 ≤ 3600 样本）不生成周期条件
+    （10§3.3"近实根/不可解析周期不凭空生成周期条件"）；实根系统返回 None。
+    """
+    p = len(ar_coeffs)
+    if p < 2 or sample_interval_sec <= 0:
+        return None
+    poly_coeffs = np.concatenate([[1.0], np.asarray(ar_coeffs, dtype=float)])
+    roots = np.roots(poly_coeffs)
+    max_period = None
+    for r in roots:
+        if abs(r.imag) <= 0.0:
+            continue
+        angle = abs(np.arctan2(r.imag, r.real))
+        # 共轭对两根角度同值，天然只计一次
+        if angle < MIN_CREDIBLE_POLE_ANGLE or angle > np.pi / 2.0 + 1e-12:
+            continue
+        period_s = (2.0 * np.pi / angle) * sample_interval_sec
+        if max_period is None or period_s > max_period:
+            max_period = period_s
+    return max_period
+
+
+def first_window_below_index(abs_green: np.ndarray, threshold: float, n_consecutive: int) -> int:
+    """legacy window 判据（纯函数）：首个连续 n_consecutive 点低阈窗口起点.
+
+    无命中返回 0（与旧内联实现一致：settling_index 初值 0 → never_settles）。
+    """
+    below = abs_green < threshold
+    if len(below) < n_consecutive:
+        return 0
+    ones = np.ones(n_consecutive, dtype=int)
+    window_sums = np.convolve(below.astype(int), ones, mode="valid")
+    valid_starts = np.where(window_sums == n_consecutive)[0]
+    return int(valid_starts[0]) if len(valid_starts) > 0 else 0
+
+
+def sustained_tail_verdict(
+    abs_green: np.ndarray,
+    threshold: float,
+    sample_interval_sec: float,
+    pole_period_seconds: float | None = None,
+) -> tuple[str, int, float, float, float]:
+    """持续尾段判据（纯函数，P3-09b；C07-EA2 内核独立参考层）.
+
+    从后向前 O(G) 扫描找最后一个 |G(k)| ≥ 阈值点，候选 = 其后首个点
+    （候选到推演终点全部低阈）。三态裁决（边界登记：尾段连基础最短支持
+    ``max(3×dt, 10s)`` 都不足 = 无法确立任何持续低阈段，与持续振荡不可
+    区分 → never；达到基础支持但不足极点周期要求 → insufficient）：
+
+    - ``"never"``：推演时域内不衰减（持续振荡/近单位根）——T 下界=推演
+      时域长度，不是已测得的 T；
+    - ``"insufficient"``：候选已进带但尾段不足 ``max(3×dt, 10s, P)``；
+    - ``"settled"``：尾段满足全部最短支持条件，T = 候选时刻。
+
+    Returns:
+        (verdict, candidate_index, tail_seconds, base_required_seconds,
+         total_required_seconds)
+    """
+    above = abs_green >= threshold
+    # G(0)=1 ≥ 阈值恒成立（归一化前提），last_above 必存在；空数组防御
+    last_above = int(len(above) - 1 - np.argmax(above[::-1])) if len(above) else -1
+    candidate_index = last_above + 1
+    tail_seconds = float((len(abs_green) - candidate_index) * sample_interval_sec)
+    base_required = max(
+        MIN_TAIL_SUPPORT_DT_MULTIPLE * sample_interval_sec,
+        MIN_TAIL_SUPPORT_SECONDS,
+    )
+    total_required = base_required
+    if pole_period_seconds is not None:
+        total_required = max(total_required, pole_period_seconds)
+    if tail_seconds + 1e-9 < base_required:
+        verdict = "never"
+    elif tail_seconds + 1e-9 < total_required:
+        verdict = "insufficient"
+    else:
+        verdict = "settled"
+    return (verdict, candidate_index, tail_seconds, base_required, total_required)
+
+
 def compute_settling_time_detailed(
     signal: np.ndarray,
     sample_interval_sec: float = 1.0,
     threshold: float = DEFAULT_SETTLING_THRESHOLD,
     ar_order: int = DEFAULT_AR_ORDER,
+    sustained_tail: bool = False,
 ) -> SettlingTimeResult:
     """计算实际稳态时间（结构化结果） — GB/T 44693.2-2024 附录 F.4。
 
@@ -234,17 +374,22 @@ def compute_settling_time_detailed(
         - NEVER_SETTLES：Green 函数稳定但窗口内不衰减，持续振荡/近单位根
           回路（value=None，调用方应以 window_length_sec 作为稳态时间下界）
         - IDENTIFICATION_FAILED：数据不足或所有阶数辨识发散（value=None）
+        - INSUFFICIENT_TAIL_SUPPORT（仅 sustained_tail=True）：候选进入带
+          但尾段不足最短支持条件（value=None，candidate_seconds 仍报告）
 
     Args:
         signal: PV 偏差序列（已去均值）
         sample_interval_sec: 采样周期（秒）
         threshold: 衰减阈值（5% 或 2%）
         ar_order: AR 模型阶数
+        sustained_tail: P3-09b 持续尾段判据（CANDIDATE_V3_RC1 profile）；
+            False=legacy 首个低阈窗判据（golden 基线，行为不变）
 
     Returns:
-        SettlingTimeResult（status + value + window_length_sec）
+        SettlingTimeResult（status + value + window_length_sec + 尾段/观测字段）
     """
     window_length_sec = float(MAX_GREEN_FUNC_LENGTH * sample_interval_sec)
+    observation_seconds = float(len(signal) * sample_interval_sec)
     n = len(signal)
     if n < MIN_DATA_POINTS:
         logger.warning("[ARMA] 数据点不足（%d < %d），无法辨识稳态时间", n, MIN_DATA_POINTS)
@@ -252,6 +397,7 @@ def compute_settling_time_detailed(
             status=SettlingStatus.IDENTIFICATION_FAILED,
             value=None,
             window_length_sec=window_length_sec,
+            observation_seconds=observation_seconds,
         )
 
     signal = np.asarray(signal, dtype=float)
@@ -264,6 +410,7 @@ def compute_settling_time_detailed(
             status=SettlingStatus.ALREADY_STABLE,
             value=0.0,
             window_length_sec=window_length_sec,
+            observation_seconds=observation_seconds,
         )
 
     # 步骤 1-2：AR(p) 辨识 + Green 函数递推
@@ -314,23 +461,75 @@ def compute_settling_time_detailed(
             status=SettlingStatus.IDENTIFICATION_FAILED,
             value=None,
             window_length_sec=window_length_sec,
+            observation_seconds=observation_seconds,
         )
 
-    # 步骤 3：找到 |G(k)| 首次持续低于 threshold 的时刻 — 向量化
-    n_consecutive = max(3, int(10 / sample_interval_sec))
     abs_green = np.abs(green_func)
 
-    # 向量化：标记低于阈值的点，查找连续 n_consecutive 个 True 的起始位置
-    below = abs_green < threshold
-    settling_index = 0
-    if len(below) >= n_consecutive:
-        # 使用滑动窗口和：窗口内全部为 True 则和 = n_consecutive
-        ones = np.ones(n_consecutive, dtype=int)
-        window_sums = np.convolve(below.astype(int), ones, mode="valid")
-        # 找到第一个和为 n_consecutive 的窗口
-        valid_starts = np.where(window_sums == n_consecutive)[0]
-        if len(valid_starts) > 0:
-            settling_index = int(valid_starts[0])
+    # P3-09b 持续尾段判据：候选到推演结束全程低阈 + 最短支持条件
+    if sustained_tail:
+        pole_period = _credible_pole_period_seconds(ar_coeffs, sample_interval_sec)
+        verdict, candidate_index, tail_seconds, _base_req, required = sustained_tail_verdict(
+            abs_green, threshold, sample_interval_sec, pole_period
+        )
+        candidate_seconds = float(candidate_index * sample_interval_sec)
+        if verdict == "never":
+            # 推演时域内不衰减（持续振荡/近单位根）：T 下界=推演时域长度
+            logger.info(
+                "[ARMA] 持续尾段判稳：尾段 %.1fs 不足基础最短支持（持续振荡/近单位根），"
+                "标记为 never_settles",
+                tail_seconds,
+            )
+            return SettlingTimeResult(
+                status=SettlingStatus.NEVER_SETTLES,
+                value=None,
+                window_length_sec=window_length_sec,
+                candidate_seconds=candidate_seconds,
+                tail_seconds=tail_seconds,
+                required_tail_seconds=required,
+                pole_period_seconds=pole_period,
+                observation_seconds=observation_seconds,
+            )
+        if verdict == "insufficient":
+            logger.info(
+                "[ARMA] 持续尾段判稳：候选进入带 %.1fs，尾段 %.1fs < 最短支持 %.1fs"
+                "（极点周期 %ss）→ INSUFFICIENT_TAIL_SUPPORT，T=null",
+                candidate_seconds,
+                tail_seconds,
+                required,
+                f"{pole_period:.1f}" if pole_period is not None else "N/A",
+            )
+            return SettlingTimeResult(
+                status=SettlingStatus.INSUFFICIENT_TAIL_SUPPORT,
+                value=None,
+                window_length_sec=window_length_sec,
+                candidate_seconds=candidate_seconds,
+                tail_seconds=tail_seconds,
+                required_tail_seconds=required,
+                pole_period_seconds=pole_period,
+                observation_seconds=observation_seconds,
+            )
+
+        logger.debug(
+            "[ARMA] 持续尾段判稳：候选 %.1fs，尾段 %.1fs ≥ 最短支持 %.1fs",
+            candidate_seconds,
+            tail_seconds,
+            required,
+        )
+        return SettlingTimeResult(
+            status=SettlingStatus.SETTLED,
+            value=candidate_seconds,
+            window_length_sec=window_length_sec,
+            candidate_seconds=candidate_seconds,
+            tail_seconds=tail_seconds,
+            required_tail_seconds=required,
+            pole_period_seconds=pole_period,
+            observation_seconds=observation_seconds,
+        )
+
+    # 步骤 3（legacy window 判据）：找到 |G(k)| 首次持续低于 threshold 的时刻
+    n_consecutive = max(3, int(10 / sample_interval_sec))
+    settling_index = first_window_below_index(abs_green, threshold, n_consecutive)
 
     # 显式转换为 Python float，避免 numpy float64 在后续 Decimal(str(...)) 转换中
     # 引入多余精度（numpy float64 的 str 表示可能与 Python float 不同）
@@ -347,6 +546,7 @@ def compute_settling_time_detailed(
             status=SettlingStatus.NEVER_SETTLES,
             value=None,
             window_length_sec=window_length_sec,
+            observation_seconds=observation_seconds,
         )
 
     logger.debug(
@@ -359,6 +559,7 @@ def compute_settling_time_detailed(
         status=SettlingStatus.SETTLED,
         value=settling_time,
         window_length_sec=window_length_sec,
+        observation_seconds=observation_seconds,
     )
 
 
@@ -367,21 +568,23 @@ def compute_settling_time(
     sample_interval_sec: float = 1.0,
     threshold: float = DEFAULT_SETTLING_THRESHOLD,
     ar_order: int = DEFAULT_AR_ORDER,
+    sustained_tail: bool = False,
 ) -> float:
     """计算实际稳态时间（数值兼容包装） — GB/T 44693.2-2024 附录 F.4。
 
-    向后兼容的历史接口：仅返回数值，无法区分 已稳态/不衰减/辨识失败，
-    失败与不衰减均返回 0.0。新代码请使用 compute_settling_time_detailed
-    获取 SettlingStatus 语义（P0-1）。
+    向后兼容的历史接口：仅返回数值，无法区分 已稳态/不衰减/辨识失败/尾段不足，
+    失败、不衰减与尾段不足均返回 0.0。新代码请使用 compute_settling_time_detailed
+    获取 SettlingStatus 语义（P0-1/P3-09b）。
 
     Returns:
-        实际稳态时间（秒），不衰减或辨识失败返回 0.0
+        实际稳态时间（秒），不衰减、尾段不足或辨识失败返回 0.0
     """
     result = compute_settling_time_detailed(
         signal=signal,
         sample_interval_sec=sample_interval_sec,
         threshold=threshold,
         ar_order=ar_order,
+        sustained_tail=sustained_tail,
     )
     return result.value if result.value is not None else 0.0
 

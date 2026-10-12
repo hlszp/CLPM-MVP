@@ -87,6 +87,120 @@ class ConfidenceLevel(StrEnum):
     E = "E"  # valid_rate < 0.20 → INCONCLUSIVE
 
 
+# ---------------------------------------------------------------------------
+# P3-08a 公共契约枚举（D0+P3-08a 契约草案 §1/§2/§6，2026-10-11）
+#
+# 命名空间约定（草案 O-3 定稿，同名 assessmentState 不混用）：
+# - 评估侧：``MetricAssessmentState``（三值）只落
+#   ``MetricResult.details["assessmentState"]`` 及其 JSON 投影
+#   （record payload ``metricsSemantic.{code}.assessmentState``）；
+# - 诊断侧：算子八态 assessmentState（POSITIVE/NEGATIVE/NOT_APPLICABLE/
+#   INSUFFICIENT_DATA/ERROR/NOT_RUN/CANCELLED/LEGACY_UNVERIFIABLE）是
+#   ``OperatorResult`` 的版本化增量字段；run 级科学结论键为
+#   ``judgementStatus``（五值）——键名本身即命名空间分隔；
+# - 两域枚举**分立定义、禁止共用同一 enum 类型**；跨域/快照序列化禁止
+#   裸键，必须落在限定容器内（metricsSemantic.* / assessmentMeta.* /
+#   operators[].*）。共同覆盖结构可复用，不混用枚举（10§4.5）。
+# 诊断侧八态枚举的代码载体归 P3-01（唯一写入权），本文件只登记约定。
+# ---------------------------------------------------------------------------
+
+
+class MetricAssessmentState(StrEnum):
+    """评估指标证据状态（三值，10§3.1/11§3 已冻结）。
+
+    落点 ``MetricResult.details.assessmentState``（优先）与 record payload
+    ``metricsSemantic``；**不写入只允许 COMPLETED/FAILED 的账本 status 列**。
+
+    - COMPLETE：必要分项证据完整，value 可作为完整结果消费；
+    - PARTIAL：必要分项存在无法消除的状态区间——P 不可完整评估，展示
+      可用分项与范围，不对剩余权重重新归一化；
+    - UNASSESSABLE：缺必要证据（如缺动态证据的正式 T/F），value=null
+      （兼容期 INCONCLUSIVE 语义保留）；参考分（referenceScore）非空
+      不改变本状态。
+    """
+
+    COMPLETE = "COMPLETE"
+    PARTIAL = "PARTIAL"
+    UNASSESSABLE = "UNASSESSABLE"
+
+
+class RosterMembershipClass(StrEnum):
+    """评估名册 E 六类互斥归类（10§3.6.2/11§3 已冻结）。
+
+    守恒等式：E = scorable + incomplete + failed + cancelled + pending + missing。
+    每回路按选定窗/profile 取唯一归类；缺数据、缺动态、失败、取消、尚未
+    计算都不从 E 删去（EA-D01）。消费方为 08d 名册统计（本批只冻结值域）。
+    """
+
+    SCORABLE = "scorable"
+    INCOMPLETE = "incomplete"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+    PENDING = "pending"
+    MISSING = "missing"
+
+
+#: E 六类原因细分标签码表（草案 O-4 定稿；开放注册制——新增码只加不改，
+#: 消费时作为标签另报，**不进入** E 六类守恒等式本身，10§3.6.2）
+ROSTER_CLASS_REASON_CODES: dict[str, frozenset[str]] = {
+    "scorable": frozenset({"COMPLETE_P_WITH_FULL_EVIDENCE"}),
+    "incomplete": frozenset(
+        {
+            "INCOMPLETE_P_EVIDENCE_INSUFFICIENT",  # 已完成但 P 证据不足/不可判定
+            "INCOMPLETE_REQUIRED_SUBMETRIC_NULL",  # 必需分项 null（如必要 F 缺动态）
+        }
+    ),
+    "failed": frozenset({"FAILED_TASK_ERROR", "FAILED_TASK_TIMEOUT"}),
+    "cancelled": frozenset({"CANCELLED_BY_USER", "CANCELLED_BY_SYSTEM", "CANCELLED_BY_SHUTDOWN"}),
+    "pending": frozenset({"PENDING_QUEUED", "PENDING_RUNNING"}),
+    "missing": frozenset({"MISSING_NO_RECORD", "MISSING_NO_TASK"}),
+}
+
+#: 诊断算子 NOT_RUN 的 reasonCode 细分码表（草案 O-4 定稿；08§4.1"保存不同
+#: reasonCode"）。现行 orchestrator 以 executed=False+skip_reason 区分的六种
+#: 情形映射如下；诊断侧算子载体接线归 P3-01（唯一写入权），本表只冻结码值。
+#: NOT_RUN=未选、停用、上游阻断或预算终止；异常属 ERROR 态不在本表。
+OPERATOR_NOT_RUN_REASON_CODES: frozenset[str] = frozenset(
+    {
+        "NOT_SELECTED_GROUP",  # 请求的算子不在所选组（如 fast 组未包含）
+        "DISABLED_BY_CONFIG",  # 配置停用
+        "NOT_SHORTLISTED",  # 细选阶段未选中
+        "UPSTREAM_BLOCKED",  # 上游阻断（含输入信号缺失）
+        "SCOPE_EXCLUDED",  # scope 显式排除
+        "BUDGET_TERMINATED",  # 预算终止（资源不足不是数据不足）
+    }
+)
+
+
+class EngineeringFactProvenance(StrEnum):
+    """工程事实来源三分枚举（草案 §2.5/O-5 定稿；11§2/11§3 已冻结语义）。
+
+    实际限位（已核实，有来源）/默认假设（DEFAULT_0_100）/未知——默认
+    OP=0/100 只说明假设来源，不自动满足真实限位前提。沿 08§3.1 配置来源
+    枚举扩展：TEMPLATE 表示工程模板推导值（有版本可追溯）。
+    """
+
+    ACTUAL = "ACTUAL"  # 已核实（回路工程字段/位号量程等有来源事实）
+    TEMPLATE = "TEMPLATE"  # 工程模板推导（revisionRef 可追溯）
+    DEFAULT = "DEFAULT"  # 默认假设（如 DEFAULT_0_100；不当已核实限位）
+    UNKNOWN = "UNKNOWN"  # 未知（不虚构历史，显式未知态）
+
+
+class ReferenceValueOrigin(StrEnum):
+    """参考值（A 容限/T′ 等）来源枚举（草案 §2.6/O-5 定稿；10§3.4）。
+
+    T′ 手动优先/默认回退且显式标来源；模型法只消费 P3-06 已通过独立终验
+    且工况匹配的模型，不能将粗估 τ 直接注入。A 容限复用 P2-04 工程事实
+    载体（provenance=ENGINEERING_FACT 对应条目）。
+    """
+
+    MANUAL = "MANUAL"  # 用户手工指定（如 loop.ideal_settling_time）
+    DEFAULT = "DEFAULT"  # 类型默认回退
+    ENGINEERING_FACT = "ENGINEERING_FACT"  # P2-04 工程事实载体（含 provenance）
+    VERIFIED_MODEL = "VERIFIED_MODEL"  # P3-06 独立终验通过且工况匹配的模型
+    UNKNOWN = "UNKNOWN"  # 未知（不虚构）
+
+
 # 仅标记但不置 valid=False 的原因码（算法说明 §3.4.3）
 MARK_ONLY_REASONS: frozenset[str] = frozenset(
     {OutlierReason.TS_ANOMALY.value, OutlierReason.HF_NOISE.value}
@@ -168,7 +282,7 @@ class LoopPreprocessConfig:
 
 @dataclass
 class QualitySummary:
-    """数据质量摘要（算法说明 §3.4.2 步骤⑧）。
+    """数据质量摘要（算法说明 §3.4.2 步骤⑧）.
 
     Attributes:
         total_count: 总数据点数
@@ -179,6 +293,14 @@ class QualitySummary:
         bad_rate: 无效率 0~1
         missing_rate: 缺失率 0~1
         good_value_rate: PV 质量码为 Good 的时长占比 0~1（仅 QUALITY_HF 计算）
+        usable_rate: PV 数值可用比例 0~1（``pv_valid`` 口径：越限/坏质量等
+            预处理数值资格判定的交；P3-10a——与 good_value_rate 的 QC Good
+            来源质量分开口径，None=未记录）
+        window_seconds: 请求窗口秒数（P3-08b 半开口径 ``[start, end)``；
+            None=未记录（legacy/旧缓存）。R/Auto/Sat 的分母口径=完整请求
+            窗口秒数，本字段使质量摘要与比率类指标分母可对账）
+        unknown_seconds: 无依据区间秒数（六因+窗口未覆盖；不补时、不缩分母；
+            None=未记录）
     """
 
     total_count: int = 0
@@ -189,6 +311,12 @@ class QualitySummary:
     bad_rate: float = 0.0
     missing_rate: float = 0.0
     good_value_rate: float | None = None
+    # P3-10a（10§3.4 Good 行：QC Good 与 usable 分开，C04-EA3；
+    # 缺省 None=未记录，旧缓存/旧序列化兼容——与 window_seconds 同型增量）
+    usable_rate: float | None = None
+    # P3-08b（契约 §2.1 比率口径字段；增量字段，缺省 None=未记录）
+    window_seconds: float | None = None
+    unknown_seconds: float | None = None
 
 
 @dataclass
@@ -240,6 +368,12 @@ class DataBlock:
     # AD02：数据上下文透传（默认 None=legacy；point 路径携带网格/覆盖/分段
     # 边界，L1/L2 序列化与 BASE 派生一并保留）
     series_context: Any = None
+    # P3-08b（O-2 契约 §2.1）：查询窗口（**含尾**，与 TimeWindow 同语义；
+    # 半开 [start, end) 适配由 metric_calculator/time_axis.py 唯一完成——
+    # 本字段只记请求事实，不做换算）。None=未记录（旧缓存/手工构造），
+    # 时间视图构建回落 series_context 网格或 legacy 口径
+    query_window_start: datetime | None = None
+    query_window_end: datetime | None = None
 
     def __post_init__(self) -> None:
         if not self.point_count and self.timestamps:

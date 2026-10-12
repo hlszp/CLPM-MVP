@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.exceptions import BizError
 from app.tasks.celery_app import celery_app
@@ -94,6 +95,52 @@ def _parse_iso_naive(time_str: str) -> datetime:
 def _now_naive() -> datetime:
     """当前 naive datetime（DB 存储口径，与其他模型一致）."""
     return datetime.now(UTC).replace(tzinfo=None)
+
+
+async def _resolve_tuning_dcs_template(db: AsyncSession, loop_id: str) -> str:
+    """P2-03：整定方案 DCS 模板 revision（绑定 dcs_model → "dcs_model:{id}").
+
+    回路不可得/未绑定 → 显式 ``UNKNOWN_DCS_TEMPLATE``（不伪补标准
+    kp/ti/td；转换消费在 P3-03 完成）。
+    """
+    from app.models.loop import LoopLedger
+
+    try:
+        loop = await db.get(LoopLedger, loop_id)
+    except Exception:  # noqa: BLE001
+        loop = None
+    if loop is not None and getattr(loop, "dcs_model_id", None):
+        return f"dcs_model:{loop.dcs_model_id}"
+    return "UNKNOWN_DCS_TEMPLATE"
+
+
+async def _source_identification_context(
+    db: AsyncSession, source_record_id: str | None
+) -> tuple[dict[str, Any] | None, str | None]:
+    """P2-03：来源辨识记录的窗口与输入包（最终方案沿链可追溯）.
+
+    Returns:
+        ({"tsStart", "tsEnd"} | None, datasetSnapshotId | None)
+        来源缺失/非辨识记录 → (None, None) 显式未知。
+    """
+    if not source_record_id:
+        return None, None
+    from app.models.tuning import TuningRecord
+
+    try:
+        source = await db.get(TuningRecord, source_record_id)
+    except Exception:  # noqa: BLE001
+        return None, None
+    if source is None:
+        return None, None
+    window = None
+    if source.time_window_start is not None and source.time_window_end is not None:
+        window = {
+            "tsStart": source.time_window_start.isoformat(),
+            "tsEnd": source.time_window_end.isoformat(),
+        }
+    snapshot_id = str(source.dataset_snapshot_id) if source.dataset_snapshot_id else None
+    return window, snapshot_id
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +307,7 @@ async def _do_identify(
                     end_time=end_time,
                     candidate_model_types=candidate_model_types,
                     theta_estimate=theta_estimate,
+                    tuning_record_id=record_id,
                 )
             except BizError as exc:
                 # 数据不足/回路不存在等业务失败与算法栈失败同口径：
@@ -281,6 +329,30 @@ async def _do_identify(
             db_record = await db.get(TuningRecord, record_id)
             if db_record is None:
                 raise RuntimeError(f"TuningRecord {record_id} 不存在")
+
+            # P2-03：输入包引用 + DCS 模板 + CalculationContext 载体（辨识链）
+            _input_snapshot = result.get("inputSnapshot") or {}
+            _snapshot_id = _input_snapshot.get("snapshotId")
+            if _snapshot_id:
+                db_record.dataset_snapshot_id = str(_snapshot_id)
+            db_record.dcs_template_revision = (
+                result.get("dcsTemplateRevision") or "UNKNOWN_DCS_TEMPLATE"
+            )
+            db_record.calc_context = {
+                "schemaVersion": "1",
+                "kind": "IDENTIFICATION",
+                "loopId": str(loop_id),
+                "tsStart": start_time,
+                "tsEnd": end_time,
+                "datasetSnapshotId": _snapshot_id,
+                "inputHash": _input_snapshot.get("inputHash"),
+                "algorithmVersion": result.get("algorithmVersion"),
+                # 辨识链不消费全局配置发布（显式 null，不伪补版本）
+                "configRevision": None,
+                "dcsTemplateRevision": db_record.dcs_template_revision,
+                "modelVersionId": None,  # 版本创建后回填（下方成功分支）
+                "inputSnapshotStatus": _input_snapshot.get("status"),
+            }
 
             if result.get("success"):
                 best = result.get("bestModel") or {}
@@ -310,6 +382,8 @@ async def _do_identify(
                     data_window_start=_parse_iso_naive(start_time),
                     data_window_end=_parse_iso_naive(end_time),
                     data_hash=evidence.get("dataHash"),
+                    # P2-03：模型版本绑定实际输入包（独立终验引用可重放的基础）
+                    dataset_snapshot_id=_snapshot_id,
                     condition_summary=result.get("conditionSummary"),
                     metrics=_build_version_metrics(result, evidence),
                     residual_test=_build_version_residual_test(result),
@@ -322,6 +396,10 @@ async def _do_identify(
                 db_record.model_type = model_type
                 # P3-005：不再写 db_record.model_params = params（停止旧参数新写）
                 db_record.process_model_version_id = str(version.id)
+                # P2-03：CalculationContext 回填模型版本（最终方案关联
+                # process_model_version_id；版本行另带 dataset_snapshot_id）
+                if isinstance(db_record.calc_context, dict):
+                    db_record.calc_context["modelVersionId"] = str(version.id)
                 db_record.fitting_score = result.get("fittingScore")
                 db_record.identify_method = result.get("identifyMethod")
                 db_record.confidence_level = result.get("confidenceLevel")
@@ -454,6 +532,7 @@ async def _do_tune_and_simulate(
         authorize_tuning_model,
         tune_pid,
     )
+    from app.services.tuning_algorithms import SIM_BUDGET_ASYNC
     from app.services.tuning_progress import init_progress, update_progress
 
     await init_progress(
@@ -533,6 +612,29 @@ async def _do_tune_and_simulate(
             confidence_reason=provenance[:200],
             identify_method=source_context.identify_method,
         )
+        # P2-03 计算上下文：最终方案关联来源记录（显式重评追加新 record，
+        # 不覆盖既有方案）；冻结参数/窗口/DCS 模板随 calc_context 落库
+        record.source_record_id = source_record_id
+        record.dcs_template_revision = await _resolve_tuning_dcs_template(db, loop_id)
+        _src_window, _src_snapshot = await _source_identification_context(db, source_record_id)
+        record.calc_context = {
+            "schemaVersion": "1",
+            "kind": "TUNING_PROPOSAL",
+            "loopId": str(loop_id),
+            "sourceRecordId": source_record_id,
+            "modelSource": source_context.model_source,
+            "frozenModel": {"modelType": model_type, "modelParams": dict(model_params)},
+            "simulation": {
+                "algorithms": list(algorithms),
+                "durationSeconds": float(sim_duration),
+                "stepSeconds": float(sim_step),
+                "setpointStep": float(setpoint_step),
+                "currentPid": dict(current_pid) if current_pid else None,
+            },
+            "sourceWindow": _src_window,
+            "datasetSnapshotId": _src_snapshot,
+            "dcsTemplateRevision": record.dcs_template_revision,
+        }
         db.add(record)
         await db.commit()
         record_id = str(record.id)
@@ -574,7 +676,7 @@ async def _do_tune_and_simulate(
                 message="多 PID 闭环仿真对比中...",
             )
 
-            # 多 PID 仿真对比
+            # 多 PID 仿真对比（P3-04：异步预算档；墙钟由任务 time_limit 兜底）
             sim_result = _simulate_multi_pid(
                 model_type=model_type,
                 model_params=model_params,
@@ -583,7 +685,18 @@ async def _do_tune_and_simulate(
                 sim_duration=sim_duration,
                 sim_step=sim_step,
                 setpoint_step=setpoint_step,
+                budget=SIM_BUDGET_ASYNC,
             )
+
+            # P3-04：异步结果携带上下文（recordId/taskId/链标识；加性键，
+            # calc_context（B2 冻结链）形状不变，读写两侧兼容）
+            _sim_context = (
+                sim_result.get("simulationContext") if isinstance(sim_result, dict) else None
+            )
+            if isinstance(_sim_context, dict):
+                _sim_context["recordId"] = record_id
+                _sim_context["taskId"] = task_id
+                _sim_context["chain"] = "tune_and_simulate_task"
 
             # 取第一个算法的推荐 PID 作为主结果（兼容旧字段）
             primary = candidates[0] if candidates else {}
@@ -622,6 +735,26 @@ async def _do_tune_and_simulate(
                 "pidCandidates": candidates,
                 "simulationResult": sim_result,
             }
+
+        except SoftTimeLimitExceeded as exc:
+            # P3-04：超时与普通失败显式区分（进度 error 码 + 记录原因）
+            logger.error("整定仿真任务超时（soft time limit）: task_id=%s", task_id)
+            db_record = await db.get(TuningRecord, record_id)
+            if db_record is not None:
+                db_record.status = "INCONCLUSIVE"
+                db_record.confidence_reason = (
+                    f"任务超时（超过软时限）: {exc}；请降低仿真规模或减少候选 PID"
+                )
+                db_record.completed_at = _now_naive()
+                await db.commit()
+
+            await update_progress(
+                task_id,
+                status="FAILED",
+                message=("整定仿真任务超时（超过任务软时限），请降低仿真规模或减少候选 PID"),
+                error="ERR_SIMULATION_TIMEOUT",
+            )
+            raise
 
         except Exception as exc:
             logger.exception("整定仿真任务失败: task_id=%s", task_id)

@@ -16,6 +16,7 @@ import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import { Alert, Button, Card, Table, Tooltip } from 'ant-design-vue';
 
+import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
@@ -108,6 +109,11 @@ const simulateBtnTooltip = computed(() => {
 });
 
 /** P2 IA优化：Toast + 仿真运行封装（G3：点按钮弹 fitness Toast） */
+// W8 绑定语义（P4-02 尾批）：开始仿真按 tuning:simulate 码显隐
+// （种子四角色 == 后端 /tuning/simulate|compare require_perms，零行为变化）
+const { hasPerm } = useClpmRoles();
+const canSimulate = computed(() => hasPerm('tuning:simulate'));
+
 function handleSimulate() {
   ctx.showFitnessToast('simulate');
   ctx.runSimulate();
@@ -129,6 +135,7 @@ function handleSimulate() {
         placement="bottomRight"
       >
         <Button
+          v-if="canSimulate"
           type="primary"
           size="small"
           :loading="ctx.simulating.value"
@@ -139,7 +146,7 @@ function handleSimulate() {
         </Button>
       </Tooltip>
       <Button
-        v-else
+        v-else-if="canSimulate"
         type="primary"
         size="small"
         :loading="ctx.simulating.value"

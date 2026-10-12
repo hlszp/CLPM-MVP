@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -167,7 +167,7 @@ async def _load_stored(db: AsyncSession) -> SysConfig | None:
 @router.get("", response_model=ApiResponse[dict])
 async def get_fitness_dimension_maps(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取三性维度口径合并视图（默认映射 + sys_config 覆盖）."""
     cfg = await _load_stored(db)
@@ -184,7 +184,7 @@ async def get_fitness_dimension_maps(
 async def save_fitness_dimension_maps(
     body: DimensionMapsSaveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """保存维度口径覆盖（仅 ADMIN；resetAll=true 删除配置回退默认）.
 

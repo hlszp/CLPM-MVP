@@ -129,6 +129,63 @@ class TestComputeQualitySummary:
         assert summary.bad_count == 2
 
 
+class TestUnknownSlotMissingRateC04:
+    """C04（04 验收基线 / 台账 CAL-08）：point 网格未知槽缺失口径一致.
+
+    point 网格分支（unknown_slot_count 非 None）expected_count == total，
+    修复前 missing_rate 分母判据 `expected_count > total` 恒 False →
+    missing_count>0 而 missing_rate=0 的口径矛盾；修复后
+    count 与 rate 同源（rate = count / total）。
+    """
+
+    def _grid(self, total: int, unknown: int):
+        validity = {"pv_valid": [True] * total}
+        timestamps = [datetime(2024, 1, 1) + timedelta(seconds=i) for i in range(total)]
+        return compute_quality_summary(
+            validity,
+            timestamps,
+            point_count=total,
+            unknown_slot_count=unknown,
+        )
+
+    def test_100_grid_20_unknown_count_and_rate(self):
+        """C04 主例：100 网格 20 UNKNOWN → count=20 且 rate=0.2（独立手算）."""
+        summary = self._grid(total=100, unknown=20)
+        assert summary.total_count == 100
+        assert summary.missing_count == 20
+        assert summary.missing_rate == 0.2
+
+    def test_zero_unknown_zero_rate(self):
+        """C04 边界：unknown=0 → count=0 且 rate=0.0（无矛盾方向）。"""
+        summary = self._grid(total=100, unknown=0)
+        assert summary.missing_count == 0
+        assert summary.missing_rate == 0.0
+
+    def test_unknown_clamped_to_total(self):
+        """C04 边界：unknown 超过 total → 夹到 count=total、rate=1.0（不自造超额）."""
+        summary = self._grid(total=100, unknown=150)
+        assert summary.missing_count == 100
+        assert summary.missing_rate == 1.0
+
+    def test_legacy_branch_rate_unchanged(self):
+        """C04 对照：legacy 行数差分支（无 unknown_slot_count）数值不变.
+
+        3 点跨 10s、期望 1s → expected=11、missing=8 → rate=8/11≈0.7273
+        （expected≥total 恒成立，修复前后一致）。
+        """
+        validity = {"pv_valid": [True, True, True]}
+        timestamps = [
+            datetime(2024, 1, 1),
+            datetime(2024, 1, 1) + timedelta(seconds=5),
+            datetime(2024, 1, 1) + timedelta(seconds=10),
+        ]
+        summary = compute_quality_summary(
+            validity, timestamps, point_count=3, expected_interval_s=1.0
+        )
+        assert summary.missing_count == 8
+        assert summary.missing_rate == round(8 / 11, 4)
+
+
 # ---------------------------------------------------------------------------
 # compute_consecutive_segments
 # ---------------------------------------------------------------------------

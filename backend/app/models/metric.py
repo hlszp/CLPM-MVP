@@ -132,6 +132,12 @@ class KpiSnapshotHourly(Base):
     source_task_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, comment="来源任务 ID（手动触发时溯源）"
     )
+    # --- P1-05 结果账本：本行对应的不可变 calculation_result_record（存量=迁移归档）---
+    result_record_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_result_record.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -239,6 +245,12 @@ class KpiSnapshotCustom(Base):
     source_task_id: Mapped[str | None] = mapped_column(
         String(36), nullable=True, comment="来源任务 ID（手动触发时溯源）"
     )
+    # --- P1-05 结果账本：本行对应的不可变 calculation_result_record ---
+    result_record_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_result_record.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -292,6 +304,12 @@ class LoopConfidenceLatest(Base):
     metrics: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     updated_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # --- P1-05 结果账本：本行投影的不可变 calculation_result_record ---
+    result_record_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("calculation_result_record.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     __table_args__ = (
         CheckConstraint(

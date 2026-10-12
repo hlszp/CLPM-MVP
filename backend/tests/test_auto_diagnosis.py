@@ -52,13 +52,16 @@ class TestEventTriggerDedup:
         return patch("app.core.db.AsyncSessionLocal", return_value=session_cm)
 
     @pytest.mark.asyncio
-    async def test_dedup_skips_recent_event_run(self) -> None:
+    async def test_dedup_skips_recent_event_run(self, fake_redis) -> None:
         """同回路 6h 内已有 EVENT 诊断 → 防抖跳过（不建任务）。"""
         recent_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=1)
         with self._mock_session(recent_at):
-            with patch(
-                "app.services.task_tracker.create_task", new_callable=AsyncMock
-            ) as mock_create:
+            with (
+                patch("app.services.alert_rule_engine.dispatcher.redis_client", fake_redis),
+                patch(
+                    "app.services.task_tracker.create_task", new_callable=AsyncMock
+                ) as mock_create,
+            ):
                 result = await disp._trigger_diagnosis({"ruleCode": "R1", "dsl": {}}, "loop-1")
         assert result is None
         mock_create.assert_not_awaited()
@@ -68,6 +71,7 @@ class TestEventTriggerDedup:
         """windowSeconds 钳制 [1h, 7d]：1800s → 3600s；trigger_type=EVENT。"""
         with self._mock_session(None):
             with (
+                patch("app.services.alert_rule_engine.dispatcher.redis_client", fake_redis),
                 patch(
                     "app.services.task_tracker.create_task", new_callable=AsyncMock
                 ) as mock_create,
@@ -77,19 +81,25 @@ class TestEventTriggerDedup:
                 # task_tracker.redis_client 走真 Redis（CI 无 7103），定点接管
                 patch("app.services.task_tracker.redis_client", fake_redis),
             ):
+                mock_create.return_value = "task-123"
                 mock_batch.delay.return_value = MagicMock(id="celery-x")
                 rule = {
                     "ruleCode": "R1",
                     "ruleName": "规则一",
                     "dsl": {"condition": {"windowSeconds": 1800}},
                 }
-                await disp._trigger_diagnosis(rule, "loop-1")
+                task_id = await disp._trigger_diagnosis(rule, "loop-1")
         kwargs = mock_batch.delay.call_args.kwargs
         start = datetime.fromisoformat(kwargs["start"])
         end = datetime.fromisoformat(kwargs["end"])
         assert (end - start).total_seconds() == 3600
         assert kwargs["trigger_type"] == "EVENT"
         assert kwargs["triggered_by"] == "alert:R1"
+        # P3-02：统一使用 create_task 返回 ID（run 行 task_id=任务记录 ID）
+        assert task_id == "task-123"
+        assert kwargs["task_id"] == "task-123"
+        create_kwargs = mock_create.call_args.kwargs
+        assert create_kwargs["created_by_id"] == ""
         mock_create.assert_awaited_once()
 
 

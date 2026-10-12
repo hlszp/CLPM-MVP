@@ -222,6 +222,10 @@ class DcsPidStructureItem(CamelModel):
     d_filter_enabled: bool
     d_filter_unit: TimeUnit | None = None
     d_filter_multiplier: bool
+    representation_status: str = Field(
+        "KNOWN",
+        description="PID 表示状态：KNOWN/UNKNOWN（UNKNOWN=显式未知，禁止默认标准表示）",
+    )
     description: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -240,6 +244,13 @@ class DcsPidStructureUpsert(CamelModel):
     d_filter_enabled: bool = Field(False, description="是否启用微分滤波")
     d_filter_unit: TimeUnit | None = Field(None, description="微分滤波单位（启用时必填）")
     d_filter_multiplier: bool = Field(False, description="微分滤波是否为乘法因子")
+    representation_status: str = Field(
+        "KNOWN",
+        pattern="^(KNOWN|UNKNOWN)$",
+        description=(
+            "PID 表示状态（P2-04）：UNKNOWN=该型号 PID 表示显式未知，p/i/d 字段仅占位无转换语义"
+        ),
+    )
     description: str | None = Field(None, max_length=500)
 
     @model_validator(mode="after")

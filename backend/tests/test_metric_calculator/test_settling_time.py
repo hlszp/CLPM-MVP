@@ -63,7 +63,7 @@ class TestSettlingTime:
         calc = SettlingTimeCalculator()
         with (
             patch(
-                "app.services.metric_calculator.settling_time.get_algorithm_params",
+                "app.services.algorithm_config.get_algorithm_params",
                 return_value={"settling_threshold": 0.05, "noise_floor_ratio": 0.05},
             ),
         ):

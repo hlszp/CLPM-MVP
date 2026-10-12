@@ -138,7 +138,7 @@ class LoopLedger(Base):
     )
     # P4 复杂回路分组（RFC 决策点 1 方案 A）：同 complex_loop_group_id 的回路归为一个
     # 物理控制回路（串级/超驰/NooM），节点聚合时按 group 去重（MAIN 代表）。
-    # 两者同时为 NULL = 普通单回路；同时非 NULL = 属于某复杂回路组（见 ck_*_coherence）。
+    # 两者同时为 NULL = 普通单回路；两者同时非 NULL = 属于某复杂回路组（见 ck_*_coherence）。
     complex_loop_group_id: Mapped[str | None] = mapped_column(
         UUID(as_uuid=False),
         nullable=True,
@@ -148,6 +148,31 @@ class LoopLedger(Base):
         String(10),
         nullable=True,
         comment="复杂回路角色：MAIN(主回路,聚合代表) / SUB(副回路)；NULL=普通单回路",
+    )
+    # P2-04（07 号文 §3.3）工程事实：控制作用方向。UNKNOWN 为显式未知态
+    # （未落实前不得假设正/反作用；辨识/整定消费归 P3-03/P3-06）。
+    control_action_direction: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="UNKNOWN",
+        comment="控制作用方向：DIRECT(正作用) / REVERSE(反作用) / UNKNOWN(未知，显式态)",
+    )
+    # P2-04 工程模板关联：TEMPLATE 层覆盖经此映射到回路（影响回路数精确计数）。
+    engineering_template_id: Mapped[str | None] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("engineering_template.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联工程模板 ID；NULL=未关联（TEMPLATE 层对该回路不参与）",
+    )
+    # P2-04 模板引用不可变版本：非空 = pin 到该版本（发布新版不自动改）；
+    # NULL = 跟随模板当前最新版本。
+    engineering_template_version: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+        comment=(
+            "固定引用的模板版本号；NULL=跟随当前最新版本"
+            "（不可变版本语义见 EngineeringTemplateVersion）"
+        ),
     )
 
     __table_args__ = (
@@ -175,11 +200,18 @@ class LoopLedger(Base):
             "OR (complex_loop_group_id IS NOT NULL AND complex_role IS NOT NULL)",
             name="ck_loop_ledger_complex_group_coherence",
         ),
+        # P2-04：控制作用方向显式三态（UNKNOWN 为未知态，非空默认）
+        CheckConstraint(
+            "control_action_direction IN ('DIRECT', 'REVERSE', 'UNKNOWN')",
+            name="ck_loop_ledger_control_action_direction",
+        ),
         UniqueConstraint("tag_name", name="uk_loop_ledger_tag_name"),
         Index("idx_loop_ledger_unit_id", "unit_id"),
         Index("idx_loop_ledger_status", "status"),
         Index("idx_loop_ledger_tag_name", "tag_name"),
         Index("idx_loop_ledger_importance_level", "importance_level"),
+        # P2-04：模板→回路映射查询（TEMPLATE 层影响回路数计数）
+        Index("idx_loop_ledger_engineering_template", "engineering_template_id"),
         # 库中已有（v6p1dcs001 迁移创建），补入元数据避免 autogen 误 DROP
         Index("idx_loop_ledger_dcs_model", "dcs_model_id"),
         # P4：按分组 ID 查询同组回路（聚合去重用）

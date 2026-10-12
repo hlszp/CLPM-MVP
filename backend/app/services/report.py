@@ -169,48 +169,18 @@ async def trigger_report_generation(
     """Trigger report generation via Celery task.
 
     Returns ``{"taskId": ..., "taskType": "REPORT_GENERATE", "status": "PROCESSING", ...}``.
+
+    Raises:
+        BizError: ``ERR_REPORT_GENERATION_NOT_AVAILABLE`` —— IA-12（2026-10-10
+            诚实化）：报表生成尚为占位实现（无真实文件落盘、无下载出口），
+            手动触发明确拒绝，不产出"占位路径 + COMPLETED"的假完成记录。
+            真实文件生成落地（执行包 P7-03）后移除本守卫恢复调度。
     """
-    # If config_id is provided, verify it exists
-    if config_id:
-        result = await db.execute(select(ReportConfig).where(ReportConfig.id == config_id))
-        config = result.scalar_one_or_none()
-        if config is None:
-            raise BizError(
-                code="ERR_REPORT_CONFIG_NOT_FOUND",
-                message="报表配置不存在",
-                status_code=404,
-            )
-        report_period = config.report_period
-
-    period = report_period or "DAILY"
-    task_id = str(uuid4())
-
-    # Dispatch Celery task (imported lazily to avoid circular deps in tests)
-    from app.tasks.report_generator import generate_report_task
-
-    generate_report_task.delay(task_id=task_id, config_id=config_id, report_period=period)
-
-    await _write_audit(
-        db=db,
-        operator=operator,
-        operation_type="REPORT_GENERATE",
-        target_type="report_record",
-        target_id=task_id,
-        before_value=None,
-        after_value=json.dumps(
-            {"taskId": task_id, "configId": config_id, "reportPeriod": period},
-            ensure_ascii=False,
-        ),
+    raise BizError(
+        code="ERR_REPORT_GENERATION_NOT_AVAILABLE",
+        message=("报表生成未开放：当前为预配置阶段（生成实现为占位路径，无真实文件不得标记完成）"),
+        status_code=503,
     )
-    await db.commit()
-
-    return {
-        "taskId": task_id,
-        "taskType": "REPORT_GENERATE",
-        "status": "PROCESSING",
-        "checkUrl": f"/api/v1/reports/tasks/{task_id}",
-        "estimatedSeconds": 30,
-    }
 
 
 # ---------------------------------------------------------------------------

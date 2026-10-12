@@ -19,7 +19,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -28,18 +28,31 @@ from app.models.tuning import TuningRecord
 from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.process_model_migration import get_effective_model_params
 from app.services.tuning_algorithms import (
+    ROBUST_SET_MAX_SIM_DURATION,
+    SIM_BUDGET_SYNC,
+    SIMULATION_ENGINE_VERSION,
     TUNING_ALGORITHM_VERSION,
     TUNING_METHODS_INFO,
     PIDParams,
+    SimulationBudgetError,
+    SimulationError,
+    SimulationNotSupportedError,
+    SimWorkBudget,
+    build_trustworthy_set,
+    get_method_info,
     identify_fopdt,
     identify_ipdt,
     identify_sopdt,
     simulate_closed_loop,
     tune_cohen_coon,
     tune_imc,
+    tune_ipdt_pi,
     tune_lambda,
     tune_simc,
+    tune_sopdt_imc,
     tune_zn,
+    validate_tuning_params,
+    verify_robustness_on_set,
 )
 from app.services.tuning_identification import identify_from_history
 from app.services.tuning_identification.types import ModelType
@@ -49,6 +62,14 @@ logger = logging.getLogger(__name__)
 
 _STEP_MIN_POINTS = 20
 
+#: P3-07：可整定模型结构的必需参数表（与 _model_params_match 同口径）。
+#: FOPDT=五法（§6.3~§6.7）；IPDT=IPDT_PI（R12）；SOPDT=SOPDT_IMC（R13）
+_TUNING_MODEL_REQUIRED_PARAMS: dict[str, tuple[str, ...]] = {
+    "FOPDT": ("K", "tau", "theta"),
+    "IPDT": ("K", "theta"),
+    "SOPDT": ("K", "T1", "T2", "theta"),
+}
+
 
 @dataclass(frozen=True)
 class TuningModelAuthorization:
@@ -56,6 +77,10 @@ class TuningModelAuthorization:
 
     该对象不从 HTTP 请求直接反序列化；调用方必须通过
     :func:`authorize_tuning_model` 构造，避免裸模型参数绕过来源门禁。
+
+    P3-07 加性字段：``model_version_id`` / ``snapshot_id`` /
+    ``final_verification``（来源记录的证据快照摘要——模型级终验结论；
+    读取失败或旧记录无终验装配时为 None，显式未知不伪补）。
     """
 
     model_type: str
@@ -68,6 +93,35 @@ class TuningModelAuthorization:
     confidence_reason: str | None = None
     identify_method: str | None = None
     data_source: str | None = None
+    # P3-07：来源证据摘要（从来源辨识记录的输入包 manifest 读取）
+    model_version_id: str | None = None
+    snapshot_id: str | None = None
+    final_verification: dict[str, Any] | None = None
+
+
+def _read_identification_manifest(record: Any) -> dict[str, Any] | None:
+    """读取来源辨识记录的输入包 manifest（只读证据，不触发重放契约）.
+
+    P3-07：终验结论/重选不确定性从辨识输入包（P2-03 不可变包）的
+    manifest.resultEvidence 读取。读包只取证据摘要，不走
+    ``load_snapshot_for_replay``（重放契约含保留期/构建 digest 校验，
+    属复现场景语义，证据读取不应因代码迭代拒绝）。文件缺失/损坏 →
+    None（显式未知，不伪补）。
+    """
+    snap_id = getattr(record, "dataset_snapshot_id", None)
+    if not snap_id:
+        return None
+    try:
+        import json
+
+        from app.services.calc_snapshot import snapshot_file_paths
+
+        for path in snapshot_file_paths(str(snap_id)):
+            if path.name.endswith(".manifest.json") and path.exists():
+                return json.loads(path.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        logger.debug("辨识输入包 manifest 读取失败（终验/不确定性证据按未知）", exc_info=True)
+    return None
 
 
 def _model_params_match(
@@ -283,6 +337,10 @@ async def authorize_tuning_model(
                 status_code=422,
             )
 
+    # P3-07：来源证据摘要（终验结论等；读取失败按未知 None 不伪补）
+    _manifest = _read_identification_manifest(record)
+    _result_evidence = (_manifest or {}).get("resultEvidence") or {}
+    _final_verification = _result_evidence.get("finalVerification")
     return TuningModelAuthorization(
         model_type=persisted_model_type,
         model_params=dict(persisted_model_params),
@@ -294,6 +352,11 @@ async def authorize_tuning_model(
         confidence_reason=str(record.confidence_reason) if record.confidence_reason else None,
         identify_method=str(record.identify_method) if record.identify_method else None,
         data_source=str(record.data_source) if record.data_source else None,
+        model_version_id=(
+            str(_pmv) if (_pmv := getattr(record, "process_model_version_id", None)) else None
+        ),
+        snapshot_id=str(_dsn) if (_dsn := getattr(record, "dataset_snapshot_id", None)) else None,
+        final_verification=_final_verification if isinstance(_final_verification, dict) else None,
     )
 
 
@@ -775,6 +838,18 @@ def _resample_mode_to_grid(
     }
 
 
+def _dcs_template_revision(loop) -> str:
+    """P2-03：DCS 模板 revision（冻结口径：绑定 dcs_model 时 "dcs_model:{id}"）.
+
+    未绑定 DCS 型号 → 显式 ``UNKNOWN_DCS_TEMPLATE``（P2-04/P3-03 前不伪补
+    标准 kp/ti/td 表示；07 号文 §3.3 红线）。
+    """
+    dcs_model_id = getattr(loop, "dcs_model_id", None)
+    if dcs_model_id:
+        return f"dcs_model:{dcs_model_id}"
+    return "UNKNOWN_DCS_TEMPLATE"
+
+
 async def identify_model_from_history(
     db: AsyncSession,
     loop_id: str,
@@ -782,6 +857,7 @@ async def identify_model_from_history(
     end_time: str,
     candidate_model_types: list[str] | None = None,
     theta_estimate: float | None = None,
+    tuning_record_id: str | None = None,
 ) -> dict[str, Any]:
     """基于历史数据辨识过程对象 G_plant = PV/OP（Phase 2 主路径）.
 
@@ -795,9 +871,13 @@ async def identify_model_from_history(
         end_time: 结束时间（ISO 8601）
         candidate_model_types: 候选模型类型列表，默认 ["FOPDT","SOPDT"]
         theta_estimate: 纯滞后预估值（秒），None 自动估计
+        tuning_record_id: P2-03 输入包创建引用（tuning_record.id；任务层
+            先建占位记录再辨识，包与记录互链；None=无宿主记录不落包）
 
     Returns:
-        辨识结果 dict（含 modelType/params/fittingScore/confidenceLevel 等）
+        辨识结果 dict（含 modelType/params/fittingScore/confidenceLevel 等；
+        P2-03 起附 ``inputSnapshot``={snapshotId,inputHash,status} 或显式
+        SAVE_FAILED 状态——保存失败不阻断辨识，但不可主张完整复现）
 
     Raises:
         BizError: ERR_LOOP_NOT_FOUND / ERR_TUNING_DATA_INSUFFICIENT
@@ -858,6 +938,64 @@ async def identify_model_from_history(
         op_limits=(0.0, 100.0),
     )
 
+    # P3-03 B1-2：回路工程事实（单位域换算与落包共用；解析失败不阻断主链，
+    # unitBasis/工程换算按显式未知处理，不伪补）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        _facts = await resolve_loop_engineering_facts(db, str(loop.id))
+    except Exception:  # noqa: BLE001
+        logger.warning("辨识工程事实解析失败（unitBasis 工程换算按未知，不伪补）", exc_info=True)
+        _facts = None
+    unit_basis = _history_unit_basis(_facts, result)
+
+    # P2-03（DEC-10 类别②：整定/辨识任务落包）：保存完整分析输入不可变包
+    # （不只胜出片段；预处理参数结构化随包）。失败不阻断辨识主链，结果显式
+    # 标 SAVE_FAILED——不可主张完整复现（诚实化原则）。
+    input_snapshot: dict[str, Any] | None = None
+    if tuning_record_id is not None:
+        try:
+            from app.services import calc_snapshot as _cs
+
+            # engineeringFacts 已在上方解析（_facts），此处直接复用
+            snap = await _cs.save_identification_snapshot(
+                db,
+                loop_id=str(loop.id),
+                ts_start=datetime.fromisoformat(start_time.replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                ),
+                ts_end=datetime.fromisoformat(end_time.replace("Z", "+00:00")).replace(tzinfo=None),
+                timestamps_rel=signals["timestamps"],
+                op=op,
+                pv=pv,
+                sp=sp if sp else None,
+                mode=signals.get("mode") or None,
+                sampling_period_seconds=ts,
+                theta_estimate=theta_estimate,
+                candidate_model_types=[mt.value for mt in candidates],
+                result_dict=result.to_dict(),
+                tuning_record_id=tuning_record_id,
+                dcs_template_revision=_dcs_template_revision(loop),
+                valid_rate=signals.get("valid_rate"),
+                point_ctx=signals.get("point_axis"),
+                engineering_facts=_facts,
+            )
+            if snap is not None:
+                input_snapshot = {
+                    "snapshotId": str(snap.id),
+                    "inputHash": snap.input_hash,
+                    "status": "SAVED",
+                }
+        except Exception:  # noqa: BLE001
+            input_snapshot = {"status": "SAVE_FAILED"}
+            logger.warning(
+                "辨识输入包保存失败（loop=%s 窗口 %s~%s），结果不可主张完整复现",
+                loop.tag_name,
+                start_time,
+                end_time,
+                exc_info=True,
+            )
+
     if not result.success:
         return {
             "success": False,
@@ -866,6 +1004,9 @@ async def identify_model_from_history(
             "algorithmVersion": result.algorithm_version,
             "dataPoints": len(pv),
             "validRate": signals["valid_rate"],
+            "inputSnapshot": input_snapshot,
+            "dcsTemplateRevision": _dcs_template_revision(loop),
+            "unitBasis": unit_basis,
         }
 
     # 转换为 API 响应格式
@@ -878,6 +1019,8 @@ async def identify_model_from_history(
     # 周期 = 1/采样频率（Hz）
     _freq = signals["sampling_freq"]
     d["samplingPeriod"] = round(1.0 / _freq, 4) if _freq else None
+    # P3-03 B1-2：K 单位域声明与工程域换算（显式层，见 tuning_units）
+    d["unitBasis"] = unit_basis
 
     # ConfidenceEvaluator 接入：数据质量可信度（基于 valid_rate）
     # 与算法内部可信度（R²+残差+激励）取较低者，确保保守评级
@@ -891,7 +1034,106 @@ async def identify_model_from_history(
         f"algorithm={algo_confidence}(R²={d.get('fittingScore', 0):.1f}%), "
         f"final={final_confidence}"
     )
+    d["inputSnapshot"] = input_snapshot
+    d["dcsTemplateRevision"] = _dcs_template_revision(loop)
     return d
+
+
+def _history_unit_basis(
+    facts: dict[str, Any] | None,
+    result: Any,
+) -> dict[str, Any]:
+    """历史辨识链 K 单位域声明（P3-03 B1-2）.
+
+    历史链输入经 planner 预处理 Step③ 量程归一化（PV/OP 各自 tag 量程
+    → 0~100），K 量纲恒为 %PV/%OP；工程域换算只在 PV/OP tag 量程均已
+    核实（TAG_RANGE）时给出，默认 0~100 假设不冒充工程换算（诚实未知）。
+    """
+    params = None
+    k_value = None
+    if getattr(result, "success", False) and result.best_model is not None:
+        params = result.best_model.params.to_dict()
+        k_value = params.get("K")
+    return _normalized_k_basis(facts, k_value)
+
+
+def _normalized_k_basis(facts: dict[str, Any] | None, k_value: Any) -> dict[str, Any]:
+    """历史链 K（归一化域）单位域声明与工程域换算（``_history_unit_basis`` 的 K 级核心）.
+
+    P3-B2 W5 抽出：保存链冻结 unitBasis 与辨识链共用同一换算口径
+    （tuning_units 唯一仿射入口，不分叉第二套实现）。
+    """
+    from app.services import tuning_units as tu
+
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
+    block = tu.unit_basis_block(
+        tu.BASIS_NORMALIZED,
+        pv_span=pv_span,
+        op_span=op_span,
+        note=(
+            "历史辨识链：预处理 Step③ 量程归一化域（PV/OP 各自 tag 量程→0~100），"
+            "K 量纲为 %PV/%OP；与阶跃实验链（TAG_STORED 域）比较须经换算层"
+        ),
+        k_source=k_value,
+    )
+    if isinstance(k_value, (int, float)) and not isinstance(k_value, bool):
+        if pv_span.source == "TAG_RANGE" and op_span.source == "TAG_RANGE":
+            try:
+                block["kConverted"] = tu.convert_gain(
+                    float(k_value),
+                    tu.normalized_span(),
+                    tu.normalized_span(),
+                    pv_span,
+                    op_span,
+                )
+                block["convertedBasis"] = tu.BASIS_ENGINEERING
+            except tu.UnknownConversion:
+                block["kConvertedUnknownReason"] = "量程事实非法，工程域换算不可执行"
+        else:
+            block["kConvertedUnknownReason"] = (
+                "PV/OP tag 量程未全部核实（默认 0~100 假设），工程域 K 换算不可执行"
+            )
+    return block
+
+
+def _step_unit_basis(facts: dict[str, Any] | None, k_value: float | None) -> dict[str, Any]:
+    """阶跃实验链 K 单位域声明（P3-03 B1-2）.
+
+    阶跃链经波形 API 取 TDengine 点存储**原值域**（与 planner 归一化前
+    同域），K 量纲随存储域；归一化域换算只在 tag 量程已核实时给出。
+    """
+    from app.services import tuning_units as tu
+
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
+    block = tu.unit_basis_block(
+        tu.BASIS_TAG_STORED,
+        pv_span=pv_span,
+        op_span=op_span,
+        note=(
+            "阶跃实验链：波形 API 返回点存储原值域（未经 Step③ 归一化），"
+            "K 量纲为存储域 PV/存储域 OP；与历史辨识链（NORMALIZED_0_100 域）"
+            "比较须经换算层"
+        ),
+        k_source=k_value,
+    )
+    if isinstance(k_value, (int, float)) and not isinstance(k_value, bool):
+        if pv_span.source == "TAG_RANGE" and op_span.source == "TAG_RANGE":
+            try:
+                block["kConverted"] = tu.convert_gain(
+                    float(k_value),
+                    pv_span,
+                    op_span,
+                    tu.normalized_span(),
+                    tu.normalized_span(),
+                )
+                block["convertedBasis"] = tu.BASIS_NORMALIZED
+            except tu.UnknownConversion:
+                block["kConvertedUnknownReason"] = "量程事实非法，归一化域换算不可执行"
+        else:
+            block["kConvertedUnknownReason"] = (
+                "PV/OP tag 量程未全部核实，归一化域 K 换算不可执行（存储域身份未验证）"
+            )
+    return block
 
 
 def _evaluate_data_confidence(valid_rate: float) -> str:
@@ -1128,6 +1370,38 @@ async def identify_model(
             "fitted": result["fitted_pv"],
         }
 
+    # P3-03 B1-2：工程事实（单位域换算；解析失败不阻断，按未知处理）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        _facts = await resolve_loop_engineering_facts(db, str(loop.id))
+    except Exception:  # noqa: BLE001
+        logger.warning("阶跃辨识工程事实解析失败（unitBasis 换算按未知）", exc_info=True)
+        _facts = None
+
+    # P3-03 B1-6：最佳解释模型与可整定模型显式区分（阶跃链辨识单一请求
+    # 结构：解释模型=本模型；P3-07 起 IPDT/SOPDT 专用整定方法已注册
+    # （IPDT_PI/SOPDT_IMC），但其整定前置=模型级终验 PASSED——阶跃链不
+    # 运行终验装配，故可整定角色仍按 FOPDT 口径输出（放开归验收后裁决）
+    tunable = model_type == "FOPDT"
+    model_role = {
+        "bestExplanatory": {"modelType": model_type, "fittingScore": result["fitting_score"]},
+        "tunable": (
+            {"modelType": model_type, "fittingScore": result["fitting_score"], "isBestModel": True}
+            if tunable
+            else None
+        ),
+        "note": (
+            "FOPDT 为当前唯一可整定结构（可整定资格仍须经推荐链可信度门禁）"
+            if tunable
+            else (
+                f"{model_type} 不可整定（可整定角色=终验 PASSED+结构支持；"
+                "P3-07 已注册 IPDT_PI/SOPDT_IMC 专用方法，但其前置为模型级终验"
+                " PASSED——阶跃链不运行终验装配，请走历史辨识链获取终验结论）"
+            )
+        ),
+    }
+
     response = {
         "modelType": model_type,
         "params": params,
@@ -1139,6 +1413,9 @@ async def identify_model(
         "fittedCurve": fitted_curve,
         "tagName": loop.tag_name,
         "mvStep": mv_step,
+        # P3-03 B1-2/B1-6：K 单位域声明与模型角色（字段级，加性键）
+        "unitBasis": _step_unit_basis(_facts, params.get("K")),
+        "modelRole": model_role,
     }
     validation_error = validate_step_identification_result(response)
     if validation_error:
@@ -1370,29 +1647,68 @@ async def tune_pid(
     # source_context 不一致来绕过下面的模型适用性校验。
     model_type = source_context.model_type
 
-    # S3 修复（G21）：整定公式仅定义于 FOPDT。
-    #
-    # 算法说明 §6.3~§6.7（IMC/Lambda/Z-N/Cohen-Coon/SIMC）全部以
-    # G(s) = K·exp(-θs)/(τs+1) 为前提，规格**未定义** SOPDT 整定公式；
-    # 而 SOPDT 的参数契约是 (K, T1, T2, theta)，本就没有 tau（见本文件
-    # _model_params_match 与步骤辨识校验的 required 表）。
-    # 原实现对 SOPDT 静默取 tau=0，实测 SOPDT{K=2,T1=100,T2=30,θ=10} 经 IMC 得
-    # kp=0.1667 / ti=5.0 / td=0.0；同一对象按 τ_eff=T1+T2/2=115 折算应得
-    # kp≈1.7 / ti≈137.5。ti 缩小约 27 倍意味着积分作用被放大 27 倍，
-    # 属可直接引发振荡的整定建议（平台红线：只输出可靠建议）。
-    # 上游规格给出折算口径前 fail-closed，不自造公式。
-    if str(model_type).upper() != "FOPDT":
+    # 模型适用性：注册表驱动（P3-07）。S3 修复（G21）的 fail-closed 语义
+    # 保留——五法（IMC/Lambda/Z-N/Cohen-Coon/SIMC）仍仅适用于 FOPDT
+    # （SOPDT 参数契约无 tau，静默套 FOPDT 公式会放大积分作用 ~27 倍）；
+    # P3-07 新增 IPDT_PI/SOPDT_IMC 专用方法（R12/R13），未注册组合明确拒绝。
+    model_type_u = str(model_type).upper()
+    if model_type_u not in _TUNING_MODEL_REQUIRED_PARAMS:
         raise BizError(
             code="ERR_MODEL_TYPE_NOT_TUNABLE",
             message=(
-                f"整定公式仅定义于 FOPDT 模型（算法说明 §6.3~§6.7），"
-                f"当前模型类型 {model_type} 无对应整定公式"
+                f"不支持的模型类型 {model_type}（可整定结构："
+                f"{'/'.join(_TUNING_MODEL_REQUIRED_PARAMS)}，未支持结构明确拒绝）"
             ),
             status_code=400,
         )
+    _method_info = get_method_info(algorithm)
+    if _method_info:
+        _applicable = {m["applicableModel"] for m in _method_info}
+        if model_type_u not in _applicable:
+            _hint = {
+                "IPDT": "IPDT 请使用专用方法 IPDT_PI（R12 Skogestad IMC 积分规则族）",
+                "SOPDT": "SOPDT 请使用专用方法 SOPDT_IMC（R13 二阶专用 IMC-PID 解析）",
+            }.get(model_type_u, "")
+            raise BizError(
+                code="ERR_MODEL_TYPE_NOT_TUNABLE",
+                message=(
+                    f"整定算法 {algorithm} 仅适用于 {'/'.join(sorted(_applicable))} 模型"
+                    f"（算法说明 §6.3~§6.7 以 FOPDT 为前提），当前模型类型 {model_type}"
+                    + (f"；{_hint}" if _hint else "")
+                ),
+                status_code=400,
+            )
+
+    # P3-07：IPDT/SOPDT 专用整定的终验前置（03 号文验收链
+    # "候选模型→独立终验→整定"；O-D6 未终验模型明确拒绝）。
+    # FOPDT 五法不追加该前置（P3-03 终验收口为 modelRole 展示级语义，
+    # 本批不改既有 FOPDT 推荐链行为）。
+    if model_type_u != "FOPDT":
+        _fv_status = (
+            source_context.final_verification.get("status")
+            if isinstance(source_context.final_verification, dict)
+            else None
+        )
+        if _fv_status is None:
+            raise BizError(
+                code="ERR_TUNING_FINAL_VERIFICATION_REQUIRED",
+                message=(
+                    f"{model_type_u} 专用整定要求来源模型经模型级终验（finalVerification"
+                    "=PASSED）；当前来源未携带终验结论（旧记录/未运行终验装配），拒绝整定"
+                ),
+                status_code=422,
+            )
+        if _fv_status != "PASSED":
+            raise BizError(
+                code="ERR_TUNING_FINAL_VERIFICATION_NOT_PASSED",
+                message=(
+                    f"{model_type_u} 专用整定要求模型级终验通过，当前终验结论为 "
+                    f"{_fv_status}（终验差/未实际验证的模型不进整定链，07§2）"
+                ),
+                status_code=422,
+            )
 
     K = float(model_params.get("K") or 0)
-    tau = float(model_params.get("tau") or 0)
     theta = float(model_params.get("theta") or 0)
 
     if K == 0:
@@ -1402,14 +1718,48 @@ async def tune_pid(
             status_code=400,
         )
 
-    if not (tau > 0 or math.isinf(tau)):
+    tau = float(model_params.get("tau") or 0)
+    if model_type_u == "FOPDT" and not (tau > 0 or math.isinf(tau)):
         raise BizError(
             code="ERR_MODEL_PARAMS_MISSING",
             message="模型参数 tau（时间常数）缺失或非正",
             status_code=400,
         )
+    t1 = float(model_params.get("T1") or 0)
+    t2 = float(model_params.get("T2") or 0)
+    if model_type_u == "SOPDT" and not (t1 > 0 and t2 > 0 and theta >= 0):
+        raise BizError(
+            code="ERR_MODEL_PARAMS_MISSING",
+            message="SOPDT 模型参数 T1/T2（时间常数）缺失或非正，或 theta 非法",
+            status_code=400,
+        )
+    if model_type_u == "IPDT" and theta < 0:
+        raise BizError(
+            code="ERR_MODEL_PARAMS_MISSING",
+            message="IPDT 模型参数 theta（纯滞后）为负",
+            status_code=400,
+        )
 
     params = algorithm_params or {}
+
+    # P2-01 TUN-05：算法参数按注册表校验（服务端统一入口，/tune 与 /tune/matrix
+    # 共用；schema 层已拒绝未知键，此处对**本算法消费的键**做值级校验，
+    # 防止内部调用方/未来通道绕过 schema 直写非法值——矩阵行仅校验自己
+    # 消费的键，跨算法共用键不视为未知。未注册算法（IDENTIFICATION_ONLY/
+    # MANUAL_TUNING 等）不在本入口报参数错，留给下方 ERR_INVALID_ALGORITHM
+    # 分支维持既有错误语义）
+    method = get_method_info(algorithm)
+    if method:
+        consumed = {
+            k: v for k, v in params.items() if k in {p["name"] for p in method[0].get("params", [])}
+        }
+        param_errors = validate_tuning_params(algorithm, consumed)
+        if param_errors:
+            raise BizError(
+                code="ERR_TUNING_PARAM_INVALID",
+                message="；".join(param_errors),
+                status_code=400,
+            )
 
     if algorithm == "IMC":
         pid = tune_imc(K, tau, theta, lambda_ratio=float(params.get("lambdaRatio", 1.0)))
@@ -1429,6 +1779,26 @@ async def tune_pid(
         tau_c_ratio = float(params.get("tauCRatio", 1.0))
         pid = tune_simc(K, tau, theta, tau_c_ratio=tau_c_ratio)
         notes = f"SIMC 整定：τc = {tau_c_ratio} × θ"
+    elif algorithm == "IPDT_PI":
+        # P3-07 R12：IPDT 专用 PI 规则（Skogestad IMC 积分规则族）
+        # λ 停点终裁（2026-10-12）：默认 7.0 与注册表 default 单源一致
+        _lambda_ratio = float(params.get("lambdaRatio", 7.0))
+        pid = tune_ipdt_pi(K, theta, lambda_ratio=_lambda_ratio)
+        notes = (
+            f"IPDT-PI 整定（R12 Skogestad IMC 积分规则族）：λ = {_lambda_ratio} × θ，"
+            f"Ti = 2λ+θ，Kc = (2λ+θ)/(K·(λ+θ)²)；默认 λ=7.0 在宽 CI 可信集合"
+            "（K±5%/θ±10%）下满足 R15 冻结鲁棒指标（GM≥2.0/PM≥30°/超调≤20%），"
+            "调小 λ 超调可能超限，验证器将如实标记不通过"
+        )
+    elif algorithm == "SOPDT_IMC":
+        # P3-07 R13：SOPDT 专用 IMC-PID 解析（一阶 Padé，非降阶）
+        _lambda_ratio = float(params.get("lambdaRatio", 1.0))
+        pid = tune_sopdt_imc(K, t1, t2, theta, lambda_ratio=_lambda_ratio)
+        notes = (
+            f"SOPDT-IMC 整定（R13 二阶专用解析，一阶 Padé）：λ = {_lambda_ratio} × θ，"
+            "Ti = T1+T2+θ/2，Kc = (T1+T2+θ/2)/(K·(λ+θ/2))，"
+            "Td = (T1·T2+θ·(T1+T2)/2)/(T1+T2+θ/2)"
+        )
     else:
         raise BizError(
             code="ERR_INVALID_ALGORITHM",
@@ -1461,6 +1831,24 @@ async def tune_pid(
     result["unitConversion"] = {
         "timeUnit": "seconds",
         "note": "PID 参数时间单位为秒；DCS 若用分钟，ti/td 需除以 60",
+    }
+
+    # P3-07（P-35 来源保存）：建议来源绑定——模型版本/终验结论/整定方法与
+    # 参数版本随建议携带（B2 冻结链兼容：加性键；保存链/展示层按需消费）
+    result["recommendationSource"] = {
+        "modelSource": source_context.model_source,
+        "sourceRecordId": source_context.source_record_id,
+        "modelVersionId": source_context.model_version_id,
+        "datasetSnapshotId": source_context.snapshot_id,
+        "finalVerification": (
+            source_context.final_verification.get("status")
+            if isinstance(source_context.final_verification, dict)
+            else None
+        ),
+        "algorithm": algorithm,
+        "algorithmParams": dict(params),
+        "algorithmVersion": TUNING_ALGORITHM_VERSION,
+        "simulationEngineVersion": SIMULATION_ENGINE_VERSION,
     }
 
     return result
@@ -1552,8 +1940,358 @@ def _compute_max_pid_delta(
 
 
 # ---------------------------------------------------------------------------
+# 鲁棒性验证链（P3-07 R15：整定→可信集合→冻结指标→DCS 转换→来源）
+# ---------------------------------------------------------------------------
+
+
+async def verify_tuning_robustness(
+    db: AsyncSession,
+    *,
+    loop_id: str,
+    model_type: str,
+    model_params: dict[str, Any],
+    algorithm: str,
+    algorithm_params: dict[str, Any] | None = None,
+    recommended_pid: dict[str, Any] | None = None,
+    sim_duration: float = 600.0,
+    sim_step: float = 1.0,
+    setpoint_step: float = 1.0,
+    noise_std: float | None = None,
+    source_record_id: str | None = None,
+    model_source: str | None = None,
+    risk_confirmed: bool = False,
+    source_context: TuningModelAuthorization | None = None,
+) -> dict[str, Any]:
+    """R15 冻结指标的鲁棒验证链（P3-07；03 号文验收链的完整走通入口）.
+
+    链路：候选模型（服务端授权门禁）→ 独立终验（finalVerification=PASSED
+    前置）→ 整定（tune_pid 注册表驱动分派）→ 可信模型集合（P-32：终验
+    通过模型 ± 95% CI 采样 ≤64）→ 正确模型结构反馈仿真（复用 P3-04 分派
+    内核，噪声/负载真实进入反馈，C20-ID/C18-ID）→ DCS 转换（B1 工程事实
+    驱动，未知表示明确拒绝）→ 来源绑定（P-35）。
+
+    明确拒绝（O-D6/P-34，不静默降级）：
+    - 终验结论缺失/未通过 → ERR_TUNING_FINAL_VERIFICATION_*；
+    - OP 限幅未核实（默认 0~100 假设不得冒充实际限位）→
+      ERR_TUNING_OP_LIMITS_UNVERIFIED；
+    - DCS PID 表示未知 → ERR_TUNING_DCS_REPRESENTATION_UNKNOWN。
+
+    Returns:
+        验证报告 dict（frozenThresholds/indicators/overallPass/setBasis/
+        dcsRepresentation/disturbanceResponse/sources/lowSnr 等）。
+    """
+    if source_context is None:
+        source_context = await authorize_tuning_model(
+            db=db,
+            requested_model_type=model_type,
+            requested_model_params=dict(model_params),
+            loop_id=loop_id,
+            source_record_id=source_record_id,
+            model_source=model_source,
+            risk_confirmed=risk_confirmed,
+        )
+    model_type = source_context.model_type
+    model_params = source_context.model_params
+    loop_id = source_context.loop_id or loop_id
+
+    # 链路第 2~3 步：终验前置（对全部结构统一；FOPDT 五法在 tune_pid 内
+    # 不改既有行为，本验证链自身要求终验通过——07§2 验收原文）
+    _fv = source_context.final_verification
+    _fv_status = _fv.get("status") if isinstance(_fv, dict) else None
+    if _fv_status is None:
+        raise BizError(
+            code="ERR_TUNING_FINAL_VERIFICATION_REQUIRED",
+            message=(
+                "鲁棒验证要求来源模型经模型级终验（finalVerification=PASSED）；"
+                "当前来源未携带终验结论（旧记录/未运行终验装配）"
+            ),
+            status_code=422,
+        )
+    if _fv_status != "PASSED":
+        raise BizError(
+            code="ERR_TUNING_FINAL_VERIFICATION_NOT_PASSED",
+            message=f"鲁棒验证要求模型级终验通过，当前终验结论为 {_fv_status}",
+            status_code=422,
+        )
+
+    # 链路第 3 步：整定（注册表驱动分派；IPDT/SOPDT 专用方法 + 终验前置
+    # 在 tune_pid 内生效）。recommended_pid 提供时验证该建议，否则验证
+    # 服务端现算建议。
+    tune_result = await tune_pid(
+        model_type=model_type,
+        model_params=model_params,
+        algorithm=algorithm,
+        algorithm_params=algorithm_params,
+        current_pid=None,
+        loop_id=loop_id,
+        source_context=source_context,
+    )
+    if recommended_pid is not None:
+        pid = PIDParams(
+            kp=float(recommended_pid.get("kp") or 0.0),
+            ti=float(recommended_pid.get("ti") or 0.0),
+            td=float(recommended_pid.get("td") or 0.0),
+        )
+        verified_pid_source = "CALLER_PROVIDED"
+    else:
+        rec = tune_result["recommendedPid"]
+        pid = PIDParams(kp=float(rec["kp"]), ti=float(rec["ti"]), td=float(rec["td"]))
+        verified_pid_source = "SERVER_TUNED"
+
+    # 可信集合来源（P-32）：优先 06c 重选不确定性（覆盖全部方法），其次
+    # P2-015 参数解析 CI；均缺失 → 名义单点集合（显式 setBasis，不伪补宽度）
+    _manifest = None
+    if source_context.source_record_id is not None:
+        record = await db.get(TuningRecord, source_context.source_record_id)
+        _manifest = _read_identification_manifest(record) if record is not None else None
+    _evidence = (_manifest or {}).get("resultEvidence") or {}
+    _reselect = _evidence.get("reselectUncertainty")
+    _param_uq = _evidence.get("uncertainty")
+    ci_bounds: dict[str, Any] | None = None
+    set_basis_source = "NOMINAL_ONLY"
+    set_basis_note = (
+        "来源无参数不确定性证据（重选/解析 CI 均未记录），"
+        "集合退化为名义单点（显式标注，不伪补宽度）"
+    )
+    if isinstance(_reselect, dict) and _reselect.get("status") not in {"NOT_RUN", None}:
+        ci_bounds = {
+            k: v.get("ci95")
+            for k, v in _reselect.items()
+            if isinstance(v, dict) and isinstance(v.get("ci95"), list)
+        }
+        set_basis_source = "RESELECT_UNCERTAINTY"
+        set_basis_note = "06c P-26/R10 重选时滞/结构不确定性（覆盖全部方法）95% 分位区间"
+    elif isinstance(_param_uq, dict) and _param_uq:
+        ci_bounds = {
+            k: v.get("ci95")
+            for k, v in _param_uq.items()
+            if isinstance(v, dict) and isinstance(v.get("ci95"), list)
+        }
+        if ci_bounds:
+            set_basis_source = "PARAMETER_UNCERTAINTY"
+            set_basis_note = "P2-015 解析协方差 95% CI（仅 ARX/CLIVC 方法产出）"
+
+    try:
+        set_build = build_trustworthy_set(model_type, model_params, ci_bounds)
+    except SimulationError as exc:
+        raise _map_simulation_kernel_error(exc) from exc
+
+    # 工程事实：OP 实际限幅（P-34 未核实明确拒绝）+ DCS PID 表示（O-D6）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        facts = await resolve_loop_engineering_facts(db, str(loop_id))
+    except Exception as exc:  # noqa: BLE001
+        raise BizError(
+            code="ERR_TUNING_OP_LIMITS_UNVERIFIED",
+            message=f"回路工程事实解析失败，无法核实 OP 实际限幅：{exc}",
+            status_code=422,
+        ) from exc
+
+    op_limits_info = facts.get("opLimits") or {}
+    if str(op_limits_info.get("provenance") or "") != "ACTUAL":
+        raise BizError(
+            code="ERR_TUNING_OP_LIMITS_UNVERIFIED",
+            message=(
+                "OP 限幅未核实（"
+                f"source={op_limits_info.get('source')}, "
+                f"provenance={op_limits_info.get('provenance')}）——默认 0~100 假设"
+                "不得冒充实际限位；请先在回路工程属性或 OP 位号量程中核实限幅"
+            ),
+            status_code=422,
+        )
+    op_limits = (float(op_limits_info["lower"]), float(op_limits_info["upper"]))
+
+    pid_repr = facts.get("pidRepresentation") or {}
+    from app.services.pid_conversion import (
+        PidRepresentationUnknownError,
+        StandardPid,
+        dcs_pid_from_standard_facts,
+    )
+
+    try:
+        dcs_pid = dcs_pid_from_standard_facts(
+            StandardPid(kp=pid.kp, ti=pid.ti, td=pid.td), pid_repr
+        )
+        dcs_section = {
+            "status": "KNOWN",
+            "modelCode": pid_repr.get("modelCode"),
+            "pType": pid_repr.get("pType"),
+            "iUnit": pid_repr.get("iUnit"),
+            "dUnit": pid_repr.get("dUnit"),
+            "dcsPid": dcs_pid.to_dict(),
+            "dcsTemplateRevision": pid_repr.get("dcsTemplateRevision"),
+        }
+    except PidRepresentationUnknownError as exc:
+        raise BizError(
+            code="ERR_TUNING_DCS_REPRESENTATION_UNKNOWN",
+            message=f"DCS PID 表示未知，链路 DCS 转换步骤不可执行（明确拒绝）：{exc}",
+            status_code=422,
+        ) from exc
+
+    # 集体验证（R15 冻结指标；正确模型结构反馈仿真内置于内核）
+    try:
+        report = verify_robustness_on_set(
+            model_type,
+            set_build["members"],
+            pid,
+            op_limits=op_limits,
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+        )
+    except SimulationError as exc:
+        raise _map_simulation_kernel_error(exc) from exc
+
+    # 扰动响应证据（C20-ID/C18-ID：噪声与负载实际进入反馈使 OP 变化）——
+    # 名义成员上一次含噪+负载仿真与无扰动仿真对照（确定性种子）
+    _noise = 0.05 if noise_std is None else float(noise_std)
+    try:
+        _clean = simulate_closed_loop(
+            model_type,
+            model_params,
+            pid,
+            pid,
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+            disturbance_type="none",
+            op_limits=op_limits,
+            budget=SimWorkBudget(
+                max_duration_seconds=ROBUST_SET_MAX_SIM_DURATION,
+                max_steps=SIM_BUDGET_SYNC.max_steps,
+                max_candidates=1,
+                max_substeps_per_step=SIM_BUDGET_SYNC.max_substeps_per_step,
+                max_total_integration_steps=SIM_BUDGET_SYNC.max_total_integration_steps,
+            ),
+        )
+        _noisy = simulate_closed_loop(
+            model_type,
+            model_params,
+            pid,
+            pid,
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+            disturbance_type="step",
+            disturbance_amplitude=0.5,
+            noise_std=_noise,
+            op_limits=op_limits,
+            budget=SimWorkBudget(
+                max_duration_seconds=ROBUST_SET_MAX_SIM_DURATION,
+                max_steps=SIM_BUDGET_SYNC.max_steps,
+                max_candidates=1,
+                max_substeps_per_step=SIM_BUDGET_SYNC.max_substeps_per_step,
+                max_total_integration_steps=SIM_BUDGET_SYNC.max_total_integration_steps,
+            ),
+        )
+        _op_clean = _clean["recommendedResponse"]["op"]
+        _op_noisy = _noisy["recommendedResponse"]["op"]
+        _op_std = float(np.std(_op_noisy[1:]))
+        _max_delta = float(np.max(np.abs(np.array(_op_noisy[1:]) - np.array(_op_clean[1:]))))
+        disturbance_response = {
+            "noiseStd": _noise,
+            "noiseSeed": 42,
+            "loadStepAmplitude": 0.5,
+            "opStdWithNoise": round(_op_std, 6),
+            "maxOpDifferenceVsClean": round(_max_delta, 6),
+            "opVariesWithNoiseOrLoad": bool(_max_delta > 0.0),
+            "note": "噪声进入反馈通道、负载阶跃进入对象输入（P3-04 扰动通道）",
+        }
+    except SimulationError as exc:
+        disturbance_response = {"status": "FAILED", "reason": str(exc)}
+
+    # S1-b 知悉传递：低 SNR 档显式"不承诺参数级精度"标注如实带入建议层
+    low_snr = None
+    _pp = (_manifest or {}).get("preprocess")
+    if not isinstance(_pp, dict) or not _pp.get("lowSnr"):
+        _pp = ((_manifest or {}).get("searchAudit") or {}).get("preprocessing")
+    _low = _pp.get("lowSnr") if isinstance(_pp, dict) else None
+    if isinstance(_low, dict):
+        low_snr = {
+            "mode": _low.get("mode"),
+            "snrDb": _low.get("snrDb"),
+            "thresholdDb": _low.get("thresholdDb"),
+            "disclaimer": (
+                "来源辨识数据信噪比低于最低承诺档下界：模型参数带不承诺参数级精度，"
+                "建议结合工程判断谨慎实施（S1-b 知悉传递，如实标注不承诺）"
+            ),
+        }
+
+    report.update(
+        {
+            "loopId": str(loop_id),
+            "modelType": model_type,
+            "algorithm": algorithm,
+            "verifiedPid": {"kp": pid.kp, "ti": pid.ti, "td": pid.td},
+            "verifiedPidSource": verified_pid_source,
+            "setBasis": {
+                "source": set_basis_source,
+                "note": set_basis_note,
+                "bounds": set_build["bounds"],
+                "freeKeys": set_build["freeKeys"],
+                "fixedKeys": set_build["fixedKeys"],
+                "memberCount": set_build["memberCount"],
+            },
+            "opLimits": {
+                "lower": op_limits[0],
+                "upper": op_limits[1],
+                "source": op_limits_info.get("source"),
+                "provenance": op_limits_info.get("provenance"),
+                "unit": op_limits_info.get("unit"),
+            },
+            "dcsRepresentation": dcs_section,
+            "disturbanceResponse": disturbance_response,
+            "lowSnrDisclaimer": low_snr,
+            "finalVerification": _fv,
+            "sources": {
+                "modelSource": source_context.model_source,
+                "sourceRecordId": source_context.source_record_id,
+                "modelVersionId": source_context.model_version_id,
+                "datasetSnapshotId": source_context.snapshot_id,
+                "algorithmVersion": TUNING_ALGORITHM_VERSION,
+                "simulationEngineVersion": SIMULATION_ENGINE_VERSION,
+                "algorithmParams": dict(algorithm_params or {}),
+            },
+        }
+    )
+    return report
+
+
+# ---------------------------------------------------------------------------
 # 闭环仿真
 # ---------------------------------------------------------------------------
+
+
+def _map_simulation_kernel_error(exc: Exception) -> Exception:
+    """仿真内核异常 → API 语义异常（P3-04：预算/不支持明确拒绝，不静默降级）。"""
+    if isinstance(exc, SimulationBudgetError):
+        return BizError(
+            code="ERR_TUNING_SIMULATION_BUDGET_EXCEEDED",
+            message=str(exc),
+            status_code=400,
+            data={
+                "requested": exc.requested,
+                "limits": exc.limits,
+                "suggestion": (
+                    "降低仿真时长/增大步长/减少候选 PID，或改用异步整定任务"
+                    "（POST /tuning/identify/history 或工作台异步链，预算更宽且可取消）"
+                ),
+            },
+        )
+    if isinstance(exc, SimulationNotSupportedError):
+        return BizError(
+            code="ERR_TUNING_SIMULATION_MODEL_NOT_SUPPORTED",
+            message=str(exc),
+            status_code=400,
+        )
+    if isinstance(exc, SimulationError):
+        return BizError(
+            code="ERR_TUNING_SIMULATION_INVALID_PARAMS",
+            message=str(exc),
+            status_code=400,
+        )
+    return exc
 
 
 async def run_simulation(
@@ -1564,13 +2302,24 @@ async def run_simulation(
     sim_duration: float = 600.0,
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
-    disturbance_type: str = "step",
+    disturbance_type: str = "none",
     pid_candidates: list[dict[str, Any]] | None = None,
+    *,
+    disturbance_amplitude: float | None = None,
+    disturbance_time: float | None = None,
 ) -> dict[str, Any]:
-    """闭环仿真（Phase 2 扩展多 PID 对比）。
+    """闭环仿真（Phase 2 扩展多 PID 对比；P3-04 扰动真实施加 + 同步预算）。
 
     Args:
-        pid_candidates: 多组候选 PID（每项含 label/kp/ti/td），向后兼容。
+        pid_candidates: 多组候选 PID（每项含 label/kp/ti/td），向后兼容；
+            参数相对差 <1%（B-12）的候选去重标记、不重复仿真。
+        disturbance_type: none/step（step=负载阶跃扰动真实进入对象输入）。
+        disturbance_amplitude/disturbance_time: step 扰动幅值/施加时刻（秒）。
+
+    Raises:
+        BizError: ERR_TUNING_SIMULATION_BUDGET_EXCEEDED（超同步预算，引导异步）/
+            ERR_TUNING_SIMULATION_MODEL_NOT_SUPPORTED（未知模型/IPDT 缺 K）/
+            ERR_TUNING_SIMULATION_INVALID_PARAMS（非法扰动参数等）。
     """
     current = PIDParams(
         kp=float(current_pid.get("kp", 0)),
@@ -1596,17 +2345,23 @@ async def run_simulation(
             )
             candidates_tuples.append((label, pid))
 
-    result = simulate_closed_loop(
-        model_type=model_type,
-        model_params=model_params,
-        current_pid=current,
-        recommended_pid=recommended,
-        sim_duration=sim_duration,
-        sim_step=sim_step,
-        setpoint_step=setpoint_step,
-        disturbance_type=disturbance_type,
-        pid_candidates=candidates_tuples,
-    )
+    try:
+        result = simulate_closed_loop(
+            model_type=model_type,
+            model_params=model_params,
+            current_pid=current,
+            recommended_pid=recommended,
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+            disturbance_type=disturbance_type,
+            pid_candidates=candidates_tuples,
+            disturbance_amplitude=disturbance_amplitude,
+            disturbance_time=disturbance_time,
+            budget=SIM_BUDGET_SYNC,
+        )
+    except SimulationError as exc:
+        raise _map_simulation_kernel_error(exc) from exc
 
     return result
 
@@ -1619,14 +2374,25 @@ def _simulate_multi_pid(
     sim_duration: float = 600.0,
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
+    disturbance_type: str = "none",
+    *,
+    disturbance_amplitude: float | None = None,
+    disturbance_time: float | None = None,
+    budget: SimWorkBudget | None = None,
 ) -> dict[str, Any]:
-    """多 PID 闭环仿真对比（Phase 2.3，供 Celery 任务调用）.
+    """多 PID 闭环仿真对比（Phase 2.3，供 Celery 任务与 /compare 调用）.
 
     与 run_simulation 的区别：current_pid 可选，pid_candidates 为必传；
-    返回完整仿真结果含 candidateResponses。
+    返回完整仿真结果含 candidateResponses（P3-04 起含 simulationContext
+    与每候选 deduplicated/duplicateOf 去重标记）。
 
     Args:
         pid_candidates: 候选 PID 列表（每项含 label/kp/ti/td/algorithm）
+        budget: 工作量预算（缺省 SIM_BUDGET_SYNC 同步口径；异步任务链
+            传 SIM_BUDGET_ASYNC，墙钟由 Celery time_limit 兜底）
+
+    Raises:
+        BizError: 同 run_simulation（预算/不支持/参数明确拒绝）。
     """
     # 若无 current_pid，用第一个候选作为"当前"基准
     if current_pid is None and pid_candidates:
@@ -1655,29 +2421,192 @@ def _simulate_multi_pid(
         )
         candidates_tuples.append((label, pid))
 
-    return simulate_closed_loop(
-        model_type=model_type,
-        model_params=model_params,
-        current_pid=PIDParams(
-            kp=float(current_pid.get("kp", 0)),
-            ti=float(current_pid.get("ti", 0)),
-            td=float(current_pid.get("td", 0)),
-        ),
-        recommended_pid=PIDParams(
-            kp=float(recommended_pid.get("kp", 0)),
-            ti=float(recommended_pid.get("ti", 0)),
-            td=float(recommended_pid.get("td", 0)),
-        ),
-        sim_duration=sim_duration,
-        sim_step=sim_step,
-        setpoint_step=setpoint_step,
-        pid_candidates=candidates_tuples or None,
-    )
+    try:
+        return simulate_closed_loop(
+            model_type=model_type,
+            model_params=model_params,
+            current_pid=PIDParams(
+                kp=float(current_pid.get("kp", 0)),
+                ti=float(current_pid.get("ti", 0)),
+                td=float(current_pid.get("td", 0)),
+            ),
+            recommended_pid=PIDParams(
+                kp=float(recommended_pid.get("kp", 0)),
+                ti=float(recommended_pid.get("ti", 0)),
+                td=float(recommended_pid.get("td", 0)),
+            ),
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+            disturbance_type=disturbance_type,
+            pid_candidates=candidates_tuples or None,
+            disturbance_amplitude=disturbance_amplitude,
+            disturbance_time=disturbance_time,
+            budget=budget or SIM_BUDGET_SYNC,
+        )
+    except SimulationError as exc:
+        raise _map_simulation_kernel_error(exc) from exc
 
 
 # ---------------------------------------------------------------------------
 # 整定任务管理
 # ---------------------------------------------------------------------------
+
+#: W5：currentPid 三元组读取涉及的 PID tag 角色
+_PID_RUNTIME_ROLES = ("PID_P", "PID_I", "PID_D")
+
+#: W5：标准 PID 转换依据的引擎版本标识（B1 pid_conversion 工程事实驱动入口）
+_PID_CONVERSION_ENGINE = "PID_CONVERSION_FACTS_V1"
+
+
+def _frozen_unit_basis(
+    facts: dict[str, Any] | None,
+    k_value: Any,
+    identify_method: str | None,
+) -> dict[str, Any]:
+    """W5：保存链冻结模型 K 单位域（tuning_units 换算层接入）.
+
+    按来源辨识记录的链路声明单位域并给出跨域换算（kConverted）或诚实未知：
+    - HISTORICAL_* → 归一化域（与历史辨识链 ``_normalized_k_basis`` 同源）；
+    - STEP_* → 存储原值域（与阶跃辨识链 ``_step_unit_basis`` 同源）；
+    - 无来源方法（MANUAL 人工模型）→ 单位域未声明，诚实 UNKNOWN
+      （工程师自证，平台不冒充辨识链 provenance）。
+    """
+    from app.services import tuning_units as tu
+
+    method = str(identify_method or "")
+    if method.startswith("STEP_"):
+        return _step_unit_basis(facts, k_value)
+    if method.startswith("HISTORICAL_"):
+        return _normalized_k_basis(facts, k_value)
+    pv_span, op_span = tu.spans_from_engineering_facts(facts)
+    return tu.unit_basis_block(
+        "UNKNOWN",
+        pv_span=pv_span,
+        op_span=op_span,
+        note="人工模型：单位域未声明（无辨识链 provenance，K 量纲由工程师自证）",
+        k_source=k_value,
+    )
+
+
+async def _current_pid_snapshot(
+    db: AsyncSession,
+    loop: LoopLedger,
+    facts: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """W5：保存链 currentPid 三元组快照（标准形式 / 原始表示 / 转换依据）.
+
+    服务端读取回路 PID_P/PID_I/PID_D 实时值（Redis 优先、tag.current_value
+    兜底——与回路详情 runtimeParams 同口径），经工程事实 ``pidRepresentation``
+    驱动的 ``pid_conversion.standard_pid_from_facts``（B1 入口，单源复用）
+    转换为标准形式（Kp 无量纲 / Ti、Td 秒）。
+
+    诚实化原则：未知 DCS 表示不默认标准 kp/ti/td（显式 REPRESENTATION_UNKNOWN）；
+    转换数值异常（如 PB=0 除零）显式 CONVERSION_ERROR；实时值缺失显式
+    UNAVAILABLE——一律不伪造标准形式。
+
+    Returns:
+        {"status": KNOWN|REPRESENTATION_UNKNOWN|CONVERSION_ERROR|UNAVAILABLE,
+         "standard": {kp,ti,td}|None, "raw": {p,i,d}|None,
+         "representation": {...}, "conversion": {...}|None,
+         "readAt": str|None, "reason": str|None}
+    """
+    from app.models.loop import LoopTagMapping
+    from app.models.tag import TagRegistry
+    from app.services.pid_conversion import (
+        DcsPid,
+        PidRepresentationUnknownError,
+        standard_pid_from_facts,
+    )
+
+    pid_repr = (facts or {}).get("pidRepresentation") or {}
+
+    result = await db.execute(
+        select(LoopTagMapping, TagRegistry)
+        .join(TagRegistry, LoopTagMapping.tag_id == TagRegistry.id)
+        .where(
+            LoopTagMapping.loop_id == str(loop.id),
+            LoopTagMapping.tag_role.in_(_PID_RUNTIME_ROLES),
+        )
+    )
+    role_tag: dict[str, TagRegistry] = {m.tag_role: t for m, t in result.all()}
+
+    # Redis 实时缓存（失败/无缓存回退 tag.current_value，与回路详情同口径）
+    cached: dict[str, dict] = {}
+    tag_names = [t.tag_name for t in role_tag.values() if t.tag_name]
+    if tag_names:
+        try:
+            from app.services.data_source.realtime_subscriber import get_subscriber
+
+            for item in await get_subscriber().get_cached_values(tag_names):
+                tc = item.get("tagCode")
+                if tc:
+                    cached[tc] = item
+        except Exception:  # noqa: BLE001
+            logger.warning("保存链读取 PID 实时缓存失败（回退 tag.current_value）")
+
+    def _role_value(role: str) -> tuple[float | None, Any]:
+        tag = role_tag.get(role)
+        if tag is None:
+            return None, None
+        item = cached.get(tag.tag_name) if tag.tag_name else None
+        read_at = item.get("collectTime") if item else None
+        if item is not None:
+            try:
+                return float(item.get("value")), read_at
+            except (TypeError, ValueError):
+                pass
+        value = getattr(tag, "current_value", None)
+        try:
+            return (float(value) if value is not None else None), read_at
+        except (TypeError, ValueError):
+            return None, read_at
+
+    p_val, read_p = _role_value("PID_P")
+    i_val, read_i = _role_value("PID_I")
+    d_val, _ = _role_value("PID_D")
+    read_at = max((x for x in (read_p, read_i) if x is not None), default=None)
+
+    snapshot: dict[str, Any] = {
+        "status": "UNAVAILABLE",
+        "standard": None,
+        "raw": None,
+        "representation": pid_repr or None,
+        "conversion": None,
+        "readAt": str(read_at) if read_at is not None else None,
+        "reason": None,
+    }
+    if p_val is None or i_val is None:
+        snapshot["reason"] = (
+            "回路未绑定 PID_P/PID_I 位号或无实时值，无法形成当前 PID 快照（不伪造）"
+        )
+        return snapshot
+
+    snapshot["raw"] = {"p": p_val, "i": i_val, "d": d_val}
+    try:
+        standard = standard_pid_from_facts(
+            DcsPid(p=p_val, i=i_val, d=d_val if d_val is not None else 0.0), pid_repr
+        )
+    except PidRepresentationUnknownError as exc:
+        snapshot["status"] = "REPRESENTATION_UNKNOWN"
+        snapshot["reason"] = str(exc)
+        return snapshot
+    except ValueError as exc:
+        snapshot["status"] = "CONVERSION_ERROR"
+        snapshot["reason"] = f"DCS 私有表示转标准 PID 数值异常：{exc}"
+        return snapshot
+    snapshot["status"] = "KNOWN"
+    snapshot["standard"] = standard.to_dict()
+    snapshot["conversion"] = {
+        "engine": _PID_CONVERSION_ENGINE,
+        "modelId": pid_repr.get("modelId"),
+        "modelCode": pid_repr.get("modelCode"),
+        "pType": pid_repr.get("pType"),
+        "iUnit": pid_repr.get("iUnit"),
+        "dUnit": pid_repr.get("dUnit"),
+        "dcsTemplateRevision": pid_repr.get("dcsTemplateRevision"),
+    }
+    return snapshot
 
 
 async def create_tuning_task(
@@ -1687,27 +2616,137 @@ async def create_tuning_task(
     model_params: dict[str, Any],
     algorithm: str,
     recommended_pid: dict[str, Any],
-    current_pid: dict[str, Any] | None = None,
-    fitting_score: float | None = None,
+    *,
+    model_source: str | None,
+    source_record_id: str | None = None,
+    risk_confirmed: bool = False,
     simulation_result: dict[str, Any] | None = None,
     status: str = "SIMULATED",
     created_by: str | None = None,
-    # Phase 2.2 新增字段
-    identify_method: str | None = None,
-    data_source: str | None = None,
-    confidence_level: str | None = None,
-    confidence_reason: str | None = None,
-    excitation_score: float | None = None,
-    residual_test_passed: bool | None = None,
-    pid_candidates: dict[str, Any] | None = None,
-    candidate_results: dict[str, Any] | None = None,
-    # V62-P3-007 人工实施清单（2026-10-04 P0 修复：此前 current_pid 收参后丢弃）
-    rollback_pid: dict[str, Any] | None = None,
     risk_assessment: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """创建整定任务记录。"""
-    # 校验回路
+    """保存最终选定整定方案（P3-B2 W4：服务端校验冻结，G2-INC-c 闭合）.
+
+    与推荐链（/tune /simulate /compare）和异步任务链
+    （``_do_tune_and_simulate``）共用同一授权门禁
+    ``authorize_tuning_model``——同回路（跨回路引用拒绝）、来源可访问性
+    （伪造/过期来源拒绝）、模型绑定一致（请求参数须与服务端持久化辨识
+    记录逐项一致）。冻结语义（保存→落库→回读不漂移，与 G2-INC-a 同源）：
+
+    - 模型类型/参数：授权后一律取服务端持久化值（process_model_version 优先），
+      并随 ``process_model_version_id`` 绑定模型版本身份；
+    - 来源元数据（identify_method/data_source/confidence*/fitting_score 等）：
+      从来源辨识记录服务端派生；MANUAL 人工模型全部置空（诚实标记人工，
+      不冒充算法输出）；
+    - 辨识时间窗 / 输入包引用 / DCS 模板：随来源记录冻结入列与 calc_context；
+    - currentPid（W5）：服务端读取回路实时 PID 原始值并经工程事实转换为
+      标准形式（Kp/Ti/Td 秒），三元组（标准/原始/转换依据）冻结入
+      calc_context；未知 DCS 表示不默认标准 kp/ti/td。
+
+    旧协议（``model_source`` 缺省的裸模型保存）显式拒绝，与推荐链
+    "旧版裸模型请求已停止放行"同口径。
+    """
+    if model_source is None:
+        raise BizError(
+            code="ERR_TUNING_SOURCE_REQUIRED",
+            message="最终方案保存必须声明模型来源（modelSource）；旧版裸模型保存已停止放行",
+            status_code=400,
+        )
+
     loop = await _get_loop(db, loop_id)
+
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=model_type,
+        requested_model_params=dict(model_params),
+        loop_id=str(loop.id),
+        source_record_id=source_record_id,
+        model_source=model_source,
+        risk_confirmed=risk_confirmed,
+    )
+    # 授权后模型以服务端持久化值为准（客户端请求参数已通过逐项一致性校验）
+    model_type = source_context.model_type
+    model_params = dict(source_context.model_params)
+
+    # SIMULATED 状态必须有仿真证据（服务端 /compare 输出形态），拒绝"声称已仿真"
+    if str(status) == "SIMULATED":
+        candidate_responses = (
+            simulation_result.get("candidateResponses")
+            if isinstance(simulation_result, dict)
+            else None
+        )
+        if not (isinstance(candidate_responses, list) and candidate_responses):
+            raise BizError(
+                code="ERR_TUNING_SIMULATION_EVIDENCE_REQUIRED",
+                message=(
+                    "SIMULATED 状态的最终方案必须携带含 candidateResponses 的仿真证据"
+                    "（服务端 /tuning/compare 输出）"
+                ),
+                status_code=400,
+            )
+
+    # 来源辨识记录（authorize 已验证存在；session 身份映射内复用）
+    source_record = None
+    if source_record_id is not None:
+        source_record = await db.get(TuningRecord, source_record_id)
+
+    if source_record is not None:
+        identify_method = source_record.identify_method
+        data_source = source_record.data_source
+        confidence_level = source_record.confidence_level
+        confidence_reason = source_record.confidence_reason
+        excitation_score = source_record.excitation_score
+        residual_test_passed = source_record.residual_test_passed
+        fitting_score = source_record.fitting_score
+        model_version_id = (
+            str(source_record.process_model_version_id)
+            if source_record.process_model_version_id
+            else None
+        )
+        source_snapshot_id = (
+            str(source_record.dataset_snapshot_id) if source_record.dataset_snapshot_id else None
+        )
+        source_window = {
+            "tsStart": source_record.time_window_start.isoformat()
+            if source_record.time_window_start
+            else None,
+            "tsEnd": source_record.time_window_end.isoformat()
+            if source_record.time_window_end
+            else None,
+        }
+        time_window_start = source_record.time_window_start
+        time_window_end = source_record.time_window_end
+    else:
+        # MANUAL 人工模型：来源元数据全部置空（诚实标记，不冒充算法输出）
+        identify_method = None
+        data_source = None
+        confidence_level = None
+        confidence_reason = None
+        excitation_score = None
+        residual_test_passed = None
+        fitting_score = None
+        model_version_id = None
+        source_snapshot_id = None
+        source_window = None
+        time_window_start = None
+        time_window_end = None
+
+    # 工程事实（单位域/DCS 模板/currentPid 转换依据共用一次解析；失败按未知）
+    try:
+        from app.services.engineering_facts import resolve_loop_engineering_facts
+
+        facts = await resolve_loop_engineering_facts(db, str(loop.id))
+    except Exception:  # noqa: BLE001
+        logger.warning("保存链工程事实解析失败（unitBasis/currentPid 按显式未知，不伪补）")
+        facts = None
+
+    pid_repr = (facts or {}).get("pidRepresentation") or {}
+    dcs_revision = pid_repr.get("dcsTemplateRevision") or _dcs_template_revision(loop)
+
+    # W5：currentPid 三元组 + K 单位域冻结
+    pid_snapshot = await _current_pid_snapshot(db, loop, facts)
+    standard_current_pid = pid_snapshot.get("standard")
+    unit_basis = _frozen_unit_basis(facts, model_params.get("K"), identify_method)
 
     record = TuningRecord(
         id=str(uuid4()),
@@ -1720,21 +2759,39 @@ async def create_tuning_task(
         fitting_score=fitting_score,
         status=status,
         created_by=created_by,
-        # Phase 2.2 元数据
         identify_method=identify_method,
         data_source=data_source,
         confidence_level=confidence_level,
         confidence_reason=confidence_reason,
         excitation_score=excitation_score,
         residual_test_passed=residual_test_passed,
-        pid_candidates=pid_candidates,
-        candidate_results=candidate_results,
-        # V62-P3-007：人工实施清单落库（回退方案缺省=实施前参数）
-        current_pid=dict(current_pid) if current_pid else None,
-        rollback_pid=(
-            dict(rollback_pid) if rollback_pid else dict(current_pid) if current_pid else None
-        ),
+        # 人工实施清单：当前/回退 PID = 服务端标准形式快照（未知/缺失时 None，
+        # 不伪造 naive kp/ti/td）
+        current_pid=dict(standard_current_pid) if standard_current_pid else None,
+        rollback_pid=dict(standard_current_pid) if standard_current_pid else None,
         risk_assessment=risk_assessment,
+        # W4 冻结身份（与异步 TUNING_PROPOSAL 链同字段口径）
+        source_record_id=source_record_id,
+        process_model_version_id=model_version_id,
+        dcs_template_revision=str(dcs_revision),
+        time_window_start=time_window_start,
+        time_window_end=time_window_end,
+        calc_context={
+            "schemaVersion": "1",
+            "kind": "TUNING_PROPOSAL",
+            "savedVia": "WORKBENCH_FINAL_SELECTION",
+            "loopId": str(loop.id),
+            "sourceRecordId": source_record_id,
+            "modelSource": source_context.model_source,
+            "modelVersionId": model_version_id,
+            "frozenModel": {"modelType": model_type, "modelParams": dict(model_params)},
+            "sourceWindow": source_window,
+            "datasetSnapshotId": source_snapshot_id,
+            "dcsTemplateRevision": str(dcs_revision),
+            "unitBasis": unit_basis,
+            "currentPid": pid_snapshot,
+            "riskConfirmed": bool(risk_confirmed),
+        },
     )
     db.add(record)
     await db.commit()
@@ -1836,6 +2893,57 @@ async def get_tuning_task_detail(db: AsyncSession, task_id: str) -> dict[str, An
     return _record_to_dict(
         row[0], row[1], include_detail=True, model_params_override=effective_params
     )
+
+
+async def cancel_tuning_task(task_id: str, *, db: AsyncSession | None = None) -> dict[str, Any]:
+    """取消异步整定任务（P3-04：取消语义明确化——进度 CANCELLED + 记录终态落定）。
+
+    - Celery 侧：PENDING/STARTED 状态 revoke(terminate=True, SIGTERM)；
+    - 进度侧：tuning_progress/TaskTracker 同步 CANCELLED（V62-P1-013 链路）；
+    - 记录侧：该 task_id 名下仍处 RUNNING 的 TuningRecord 落定 INCONCLUSIVE，
+      confidence_reason 显式"用户主动取消"（状态机无 CANCELLED 枚举，不新增
+      DB 约束/迁移，以原因字段区分取消与失败——实现裁量，交接登记）。
+
+    Returns:
+        {"taskId": ..., "status": "CANCELLED"|既有终态}。
+    """
+    from celery.result import AsyncResult
+
+    from app.services.tuning_progress import update_progress
+    from app.tasks.celery_app import celery_app
+
+    result = AsyncResult(task_id, app=celery_app)
+    if result.state not in ("PENDING", "RUNNING", "STARTED"):
+        # 已终态（SUCCESS/FAILED/REVOKED）不可取消
+        return {"taskId": task_id, "status": result.state}
+
+    result.revoke(terminate=True, signal="SIGTERM")
+    await update_progress(
+        task_id,
+        status="CANCELLED",
+        message="用户主动取消",
+    )
+
+    # 记录终态落定：RUNNING → INCONCLUSIVE（原因显式"用户取消"）
+    if db is not None:
+        cancel_rows = (
+            await db.execute(
+                update(TuningRecord)
+                .where(TuningRecord.task_id == task_id, TuningRecord.status == "RUNNING")
+                .values(
+                    status="INCONCLUSIVE",
+                    confidence_reason="任务已取消（用户主动取消）",
+                    completed_at=func.now(),
+                )
+            )
+        ).rowcount
+        if cancel_rows:
+            await db.commit()
+            logger.info(
+                "取消整定任务 %s：落定 %d 条 RUNNING 记录为 INCONCLUSIVE", task_id, cancel_rows
+            )
+
+    return {"taskId": task_id, "status": "CANCELLED"}
 
 
 async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
@@ -1978,6 +3086,8 @@ def _record_to_dict(
     effective_params = (
         model_params_override if model_params_override is not None else record.model_params
     )
+    # P3-B2 W4/W5：冻结上下文（旧记录无 calc_context → None，诚实不伪补）
+    calc_ctx = record.calc_context if isinstance(record.calc_context, dict) else {}
     data: dict[str, Any] = {
         "id": str(record.id),
         "loopId": str(record.loop_id),
@@ -2012,6 +3122,19 @@ def _record_to_dict(
         if record.time_window_start
         else None,
         "timeWindowEnd": record.time_window_end.isoformat() if record.time_window_end else None,
+        # P3-B2 W4/W5：来源身份与冻结上下文（加性键；旧记录为 None）
+        "sourceRecordId": str(record.source_record_id) if record.source_record_id else None,
+        "dcsTemplateRevision": record.dcs_template_revision,
+        "modelSource": calc_ctx.get("modelSource"),
+        "unitBasis": calc_ctx.get("unitBasis"),
+        "currentPidContext": calc_ctx.get("currentPid"),
+        # P3-04：仿真验证状态（加性键）——无仿真结果显式"未验证"，
+        # 不以空白/占位数据冒充仿真结论（诚实化原则）
+        "simulationStatus": (
+            "SIMULATED"
+            if isinstance(record.simulation_result, dict) and record.simulation_result
+            else "NOT_SIMULATED"
+        ),
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result
@@ -2030,6 +3153,7 @@ __all__ = [
     "run_simulation",
     "_simulate_multi_pid",
     "create_tuning_task",
+    "cancel_tuning_task",
     "list_tuning_tasks",
     "get_tuning_task_detail",
     "get_tuning_history_stats",

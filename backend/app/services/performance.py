@@ -36,6 +36,7 @@ from app.models.plant_node import PlantNode
 from app.models.sys_config import SysConfig
 from app.models.tracker import ActionTracker
 from app.schemas.performance import WeightSumValidator
+from app.services.algorithm_config import validate_metric_threshold
 
 logger = logging.getLogger(__name__)
 
@@ -164,9 +165,11 @@ async def update_metric_config(
     校验：
     - 指标必须存在（ERR_METRIC_NOT_FOUND）
     - weight 变更后，6 大 KPI 启用指标权重总和必须为 100（ERR_METRIC_WEIGHT_SUM）
+    - P2-01 CFG-04：threshold 结构校验（注册表指标走算法参数严格校验，
+      展示类指标走宽松结构校验），坏结构在写库前原子拒绝（ERR_PARAM_INVALID）
 
     Raises:
-        BizError: ERR_METRIC_NOT_FOUND / ERR_METRIC_WEIGHT_SUM
+        BizError: ERR_METRIC_NOT_FOUND / ERR_METRIC_WEIGHT_SUM / ERR_PARAM_INVALID
     """
     result = await db.execute(select(MetricConfig).where(MetricConfig.id == metric_id))
     config = result.scalar_one_or_none()
@@ -176,6 +179,17 @@ async def update_metric_config(
             message="指标配置不存在",
             status_code=404,
         )
+
+    # P2-01 CFG-04：threshold 原子校验（在任意字段变更/审计写入之前，
+    # 坏结构直接拒绝，不产生半更新状态）
+    if threshold is not None:
+        threshold_errors = validate_metric_threshold(config.metric_code, threshold)
+        if threshold_errors:
+            raise BizError(
+                code="ERR_PARAM_INVALID",
+                message="；".join(threshold_errors),
+                status_code=400,
+            )
 
     before = _metric_config_to_dict(config)
     before_json = json.dumps(before, ensure_ascii=False, default=str)
@@ -1720,6 +1734,9 @@ async def _build_snapshot_conditions(
 
     注意：性能等级（grade）筛选不在此处——等级由"每回路最新一条快照"的
     score 派生，必须在 latestOnly 窗口取数之后应用（见 list_loop_snapshots）。
+    G3-R02（14 号文 §3）起 status/confidence 同理：latestOnly 模式下调用方
+    传 None（对最新代表后置筛选），历史模式（latestOnly=False）保持行级
+    预过滤（历史搜索口径）。
 
     Returns:
         (conditions, need_loop_join) — need_loop_join 表示子查询是否需要
@@ -1782,6 +1799,77 @@ async def _build_snapshot_conditions(
     return conditions, need_loop_join
 
 
+# ---------------------------------------------------------------------------
+# G3-R01（14 号文 §2）：快照行 → record payload 语义链路解释
+# ---------------------------------------------------------------------------
+
+#: 语义链路状态（KpiSnapshotListItem.semanticLinkStatus 值域）
+SEMANTIC_LINK_AVAILABLE = "AVAILABLE"
+SEMANTIC_LINK_NOT_TRACEABLE = "NOT_TRACEABLE"
+SEMANTIC_LINK_BROKEN = "BROKEN"
+SEMANTIC_LINK_UNLINKED = "UNLINKED"
+
+#: 判定"新 profile 应有语义"的默认正式档位（与 assessment_profile.LEGACY_V2 对齐，
+# 避免服务层 import 循环——策略表 LEGACY_V2 为唯一 legacy 档位名）
+_LEGACY_PROFILE_ID = "LEGACY_V2"
+
+
+def resolve_semantic_link(payload: Any) -> tuple[dict[str, Any] | None, str]:
+    """record payload → (该 record 自己的 metricsSemantic 原样, 链路状态).
+
+    G3-R01 语义解释器（读端唯一实现，不造第二份解释）：
+    - ``metricsSemantic`` 为非空 dict → AVAILABLE，原样透出（键=指标 DB 列名
+      + ``__composite__``，即账本 payload 顶层 ``composite`` 同一对象）；
+    - 缺失/损坏时按 ``assessmentContext.assessmentProfile`` 分流：
+      非 legacy 档位 → BROKEN（新 profile 应有语义而缺失=断链暴露，
+      不静默回退 legacy）；否则 → NOT_TRACEABLE（legacy 历史不可追溯）；
+    - assessmentContext 缺失/损坏（profile 不可判定）→ NOT_TRACEABLE
+      （诚实口径：无法断定新档期望，recordId 已透出可下钻）。
+
+    调用方（endpoints/performance.py）负责 record 缺行/缺指针 → UNLINKED。
+    """
+    if not isinstance(payload, dict):
+        return None, SEMANTIC_LINK_UNLINKED
+    semantic = payload.get("metricsSemantic")
+    if isinstance(semantic, dict) and semantic:
+        return semantic, SEMANTIC_LINK_AVAILABLE
+    ctx = payload.get("assessmentContext")
+    profile = ctx.get("assessmentProfile") if isinstance(ctx, dict) else None
+    if profile is not None and profile != _LEGACY_PROFILE_ID:
+        return None, SEMANTIC_LINK_BROKEN
+    return None, SEMANTIC_LINK_NOT_TRACEABLE
+
+
+async def load_snapshot_record_payloads(
+    db: AsyncSession,
+    snapshots: list[Any],
+) -> dict[str, dict[str, Any] | None]:
+    """按快照行 result_record_id 批量读 record payload（精确身份，无时间匹配）.
+
+    Returns:
+        {record_id: payload}；指针指向但 record 不可读的 id 不含在结果中
+        （调用方按 UNLINKED 防御处理）。
+    """
+    from app.models.calculation_result import CalculationResultRecord
+
+    record_ids = {
+        str(snap.result_record_id)
+        for snap in snapshots
+        if getattr(snap, "result_record_id", None) is not None
+    }
+    if not record_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(
+                CalculationResultRecord.id,
+                CalculationResultRecord.payload,
+            ).where(CalculationResultRecord.id.in_(record_ids))
+        )
+    ).all()
+    return {str(r.id): (r.payload if isinstance(r.payload, dict) else None) for r in rows}
+
+
 async def _build_grade_condition(db: AsyncSession, grade: str):
     """构建性能等级筛选条件（基于当前生效的定级阈值）.
 
@@ -1821,6 +1909,11 @@ async def get_grade_distribution(
     等级判定使用 sys_config 当前生效的定级阈值（与前端等级卡片一致），
     score 为 NULL 计入 INCONCLUSIVE。
 
+    G3-R02（14 号文 §3）：最新代表按**业务窗口时序**选择（ts_start DESC），
+    status 不参与优先级——昨日 SUCCESS 不抢占今日 INCONCLUSIVE；
+    status/confidence 筛选是对"最新代表"的后置筛选（不能先删不足行又挑
+    旧成功），与快照列表 latestOnly=True 保持 lockstep 口径。
+
     Returns:
         {"EXCELLENT": n, "GOOD": n, "FAIR": n, "WARNING": n, "POOR": n,
          "INCONCLUSIVE": n, "total": n,
@@ -1832,20 +1925,23 @@ async def get_grade_distribution(
         plant_node_ids=plant_node_ids,
         start=start,
         end=end,
-        status_filter=status_filter,
-        confidence_level=confidence_level,
+        # G3-R02：status/confidence 后置到最新代表上筛选（口径同列表 latestOnly）
+        status_filter=None,
+        confidence_level=None,
         loop_tag_name=loop_tag_name,
     )
     thresholds = await _load_grading_thresholds(db)
 
-    # 子查询：每个回路最新一条快照（优先非 INCONCLUSIVE，口径同快照列表 latestOnly）
+    # 子查询：每个回路最新一条快照（业务窗口时序优先，status 不参与优先级，
+    # 稳定键破平局；hourly 表 UNIQUE(loop_id, ts_start) 下平局不可达，防御性）
     rn_col = (
         func.row_number()
         .over(
             partition_by=KpiSnapshotHourly.loop_id,
             order_by=[
-                case((KpiSnapshotHourly.status != "INCONCLUSIVE", 0), else_=1).asc(),
                 KpiSnapshotHourly.ts_start.desc(),
+                KpiSnapshotHourly.ts_end.desc(),
+                KpiSnapshotHourly.id.desc(),
             ],
         )
         .label("rn")
@@ -1854,6 +1950,8 @@ async def get_grade_distribution(
         KpiSnapshotHourly.id.label("snap_id"),
         KpiSnapshotHourly.score.label("score"),
         KpiSnapshotHourly.ts_start.label("ts_start"),
+        KpiSnapshotHourly.status.label("status"),
+        KpiSnapshotHourly.confidence_level.label("confidence_level"),
         KpiSnapshotHourly.fitness_level.label("fitness_level"),
         # 三性分离（R5）：COALESCE 旧快照 NULL → fitness_level（默认映射下等价）
         func.coalesce(KpiSnapshotHourly.assess_level, KpiSnapshotHourly.fitness_level).label(
@@ -1904,6 +2002,17 @@ async def get_grade_distribution(
             agg_exprs.append(_lv_col(col, lv).label(f"{prefix}_{lv}"))
 
     agg_stmt = select(*agg_exprs).where(latest_subq.c.rn == 1)
+    # G3-R02：status/confidence 为"最新代表"后置筛选（口径同列表 latestOnly；
+    # 昨日 SUCCESS 不因筛选伪装今日代表——先选代表再筛值）
+    rep_filters = []
+    if status_filter:
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if statuses:
+            rep_filters.append(latest_subq.c.status.in_(statuses))
+    if confidence_level:
+        rep_filters.append(latest_subq.c.confidence_level == confidence_level)
+    if rep_filters:
+        agg_stmt = agg_stmt.where(*rep_filters)
     row = (await db.execute(agg_stmt)).one()
 
     total = int(row.total or 0)
@@ -2129,14 +2238,19 @@ async def list_loop_snapshots(
         plant_node_ids: 装置 ID 列表过滤（LoopLedger.unit_id）；None=不按装置过滤
         start: 起始时间（按 ts_start 过滤）；None=默认近 30 天
         end: 结束时间（按 ts_start 过滤）；None=当前时间
-        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL，逗号分隔多值）
-        confidence_level: 可信度等级过滤（A/B/C/D/E）
+        status_filter: 状态过滤（SUCCESS/INCONCLUSIVE/PARTIAL，逗号分隔多值）。
+            G3-R02（14 号文 §3）：latest_only=True 时为"最新代表结果"后置筛选
+            （回路最新代表处于该状态才入选；昨日 SUCCESS 不因筛选伪装今日代表）；
+            latest_only=False 时为行级历史搜索（逐行过滤，行为不变）
+        confidence_level: 可信度等级过滤（A/B/C/D/E）。latest_only 语义同
+            status_filter（最新代表后置筛选 / 历史行级过滤分开）
         loop_tag_name: 回路编号模糊匹配（ILIKE %keyword%）
         grade: 性能等级筛选（EXCELLENT/GOOD/FAIR/WARNING/POOR/INCONCLUSIVE），
             按当前定级阈值在服务端过滤；latest_only=True 时按"每回路最新一条"
             快照的 score 判定（与 /grade-distribution 及前端等级卡片口径一致）；
             None=不按等级筛选（向后兼容）
-        latest_only: True=每个回路只返回最新一条评估记录（默认）；
+        latest_only: True=每个回路只返回最新一条评估记录（默认，按业务窗口
+            时序 ts_start DESC 选择，status 不参与优先级——G3-R02）；
             False=返回所有快照（用于历史趋势/诊断历史）
         page: 页码（1-based）
         page_size: 每页条数
@@ -2159,11 +2273,22 @@ async def list_loop_snapshots(
         plant_node_ids=plant_node_ids,
         start=start,
         end=end,
-        status_filter=status_filter,
-        confidence_level=confidence_level,
+        # G3-R02（14 号文 §3）：latestOnly 模式下 status/confidence 是对
+        # "最新代表结果"的后置筛选（不能先删失败/不足行又挑旧成功），
+        # 不进窗口取数域；历史模式（latest_only=False）保持行级预过滤（历史搜索）
+        status_filter=status_filter if not latest_only else None,
+        confidence_level=confidence_level if not latest_only else None,
         loop_tag_name=loop_tag_name,
         include_inactive=True,
     )
+    # G3-R02：latestOnly 模式的代表后置筛选（status/confidence/grade 同级）
+    representative_filters: list = []
+    if latest_only and status_filter:
+        statuses = [s.strip() for s in status_filter.split(",") if s.strip()]
+        if statuses:
+            representative_filters.append(KpiSnapshotHourly.status.in_(statuses))
+    if latest_only and confidence_level:
+        representative_filters.append(KpiSnapshotHourly.confidence_level == confidence_level)
 
     # 来源筛选（整合方案 B3，仅作用于小时快照表；MANUAL_CUSTOM 走 custom 查询）
     if source_filter:
@@ -2189,19 +2314,20 @@ async def list_loop_snapshots(
         grade_cond = await _build_grade_condition(db, grade)
 
     if latest_only:
-        # 使用窗口函数取每个回路最新一条评估记录
-        # 优先返回非 INCONCLUSIVE（有实际评估结果）的记录；
-        # 如果某回路只有 INCONCLUSIVE 记录，则返回最新的 INCONCLUSIVE。
-        # 实现：按 loop_id 分组，先按 status 优先级排序（SUCCESS/PARTIAL 优先于 INCONCLUSIVE），
-        # 再按 ts_start DESC，取 rn=1。
+        # 使用窗口函数取每个回路最新一条评估记录（G3-R02，14 号文 §3）：
+        # 先确定查询对象（scope/UTC 窗口/base_conditions），再按**业务窗口时序**
+        # 选最新结果（ts_start DESC）——status 不参与优先级，昨日 SUCCESS 不
+        # 抢占今日 INCONCLUSIVE/null；同窗多版本按稳定键破平局（hourly 表
+        # UNIQUE(loop_id, ts_start) 下同窗双行不可达，纯防御；指定 record 身份
+        # 读取走结果账本详情端点，不经本投影选择）。
         rn_col = (
             func.row_number()
             .over(
                 partition_by=KpiSnapshotHourly.loop_id,
                 order_by=[
-                    # CASE: status != 'INCONCLUSIVE' 排在前面
-                    case((KpiSnapshotHourly.status != "INCONCLUSIVE", 0), else_=1).asc(),
                     KpiSnapshotHourly.ts_start.desc(),
+                    KpiSnapshotHourly.ts_end.desc(),
+                    KpiSnapshotHourly.id.desc(),
                 ],
             )
             .label("rn")
@@ -2227,12 +2353,15 @@ async def list_loop_snapshots(
             .where(latest_subq.c.rn == 1)
         )
         # 等级筛选作用于"每回路最新一条"的 score（与前端等级卡片口径一致）：
-        # 先窗口取最新，再按等级过滤，total 与 /grade-distribution 对应桶一致
+        # 先窗口取最新，再按等级过滤，total 与 /grade-distribution 对应桶一致。
+        # G3-R02：status/confidence 同为最新代表后置筛选（语义与 grade 一致）
         if grade_cond is not None:
             stmt = stmt.where(grade_cond)
+        if representative_filters:
+            stmt = stmt.where(*representative_filters)
         stmt = stmt.order_by(*latest_order)
 
-        if grade_cond is not None:
+        if grade_cond is not None or representative_filters:
             # count：对筛选后的最新快照集合计数（口径与列表一致）
             count_stmt = select(func.count()).select_from(
                 stmt.with_only_columns(KpiSnapshotHourly.id).order_by(None).subquery()

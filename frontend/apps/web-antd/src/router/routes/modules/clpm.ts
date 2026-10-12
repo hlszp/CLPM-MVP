@@ -13,13 +13,7 @@ const routes: RouteRecordRaw[] = [
     path: '/workbench',
     redirect: '/cockpit',
     meta: {
-      authority: [
-        'ADMIN',
-        'EXPERT',
-        'IC_ENGINEER',
-        'PE_ENGINEER',
-        'SPONSOR',
-      ],
+      authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       hideInMenu: true,
       title: '运维工作台（已并入驾驶舱）',
     },

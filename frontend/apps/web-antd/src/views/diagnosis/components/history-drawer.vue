@@ -13,6 +13,7 @@ import { Drawer, Empty, Spin } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { getDiagnosisRunsApi } from '#/api/diagnosis';
+import { JUDGEMENT_LABELS, judgementOf } from '#/views/diagnosis/components/assessment-labels';
 
 import { CATEGORY_META } from '../constants';
 
@@ -30,6 +31,11 @@ const total = ref(0);
 const PAGE_SIZE = 50;
 
 /** naive UTC → 本地时间（对齐断流时段修复口径：补 Z 解析） */
+/** 历史条目主分类空值 → 科学结论标签（P3-D6 08-B；历史 run → 历史覆盖未验证） */
+function historyJudgementLabel(rec: { assessment?: DiagnosisApi.RunListItem['assessment'] }): string {
+  return JUDGEMENT_LABELS[judgementOf(rec.assessment)];
+}
+
 function fmtLocal(naiveUtc?: null | string): string {
   if (!naiveUtc) return '—';
   const withZ = /[Zz]|[+-]\d{2}:?\d{2}$/.test(naiveUtc)
@@ -100,7 +106,7 @@ function catColor(record: DiagnosisApi.RunListItem): string {
               }}</span>
             </div>
             <div class="diag-history__cat" :style="{ color: catColor(rec) }">
-              {{ rec.primaryCategoryLabel ?? '未判定' }}
+              {{ rec.primaryCategoryLabel ?? historyJudgementLabel(rec) }}
               <span class="diag-history__conf">
                 置信度
                 {{

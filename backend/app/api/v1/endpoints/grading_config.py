@@ -7,7 +7,10 @@
 - ``grading_thresholds.current`` — 当前定级阈值配置（含 version 字段）
 - ``grading_thresholds.history`` — 历史版本列表（含生效/失效时间）
 
-国标默认定级（对齐 GB/T 44693.2-2024 §6.3 / FDS v5.1 §5.2.4）：
+产品默认定级（FDS v5.1 §5.2.4）。
+注意：默认分界 90/80/60/40 与 GB/T 44693.2-2024 表 D.1（90/80/70/60）不一致，
+差异登记见《系统改造优化-2026-10-10》P0-02 冻结文档 §1.2（DEC-02⑤a 修注释、
+⑤b 裁决暂维持现值）：
     - 1 级 EXCELLENT (≥90)   绿色 #52c41a
     - 2 级 GOOD     (80-90)  蓝色 #1890ff
     - 3 级 FAIR     (60-80)  黄色 #faad14
@@ -20,7 +23,7 @@
 - GET  /api/v1/configs/grading-thresholds/history    — 版本历史
 - POST /api/v1/configs/grading-thresholds/{version}/rollback — 回滚到指定版本
 
-设计依据：FDS v5.1 §5.2.4, GB/T 44693.2-2024 §6.3, UIUX v5.3 ⑥
+设计依据：FDS v5.1 §5.2.4, UIUX v5.3 ⑥（GB/T 对齐声明按 DEC-02⑤a 移除）
 """
 
 from __future__ import annotations
@@ -34,7 +37,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_roles
+from app.api.deps import require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.audit import SysAuditLog
@@ -61,7 +64,7 @@ _KEY_DESC = "5 级性能定级阈值配置（JSON）"
 _KEY_DESC_HISTORY = "定级阈值历史版本列表（JSON 数组）"
 
 # ---------------------------------------------------------------------------
-# 国标默认定级阈值（对齐 GB/T 44693.2-2024 §6.3 / FDS v5.1 §5.2.4）
+# 产品默认定级阈值（FDS v5.1；分界与 GB/T 表 D.1 不一致，见 P0-02 冻结文档 §1.2）
 # ---------------------------------------------------------------------------
 
 DEFAULT_GRADING_THRESHOLDS: list[dict] = [
@@ -388,13 +391,13 @@ async def _commit_or_rollback(db: AsyncSession, action: str) -> None:
 @router.get("", response_model=ApiResponse[GradingThresholdSchema])
 async def get_grading_thresholds(
     db: AsyncSession = Depends(get_db),
-    _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER")),
+    _: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """获取当前生效的 5 级性能定级阈值.
 
     若未配置过，返回国标默认阈值。
 
-    设计依据：FDS v5.1 §5.2.4, GB/T 44693.2-2024 §6.3
+    设计依据：FDS v5.1 §5.2.4（GB/T 对齐声明按 DEC-02⑤a 移除）
     """
     thresholds = await _load_current_thresholds(db)
     return success(data=thresholds.model_dump())
@@ -409,7 +412,7 @@ async def get_grading_thresholds(
 async def save_grading_thresholds(
     body: GradingThresholdSaveRequest,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """更新 5 级性能定级阈值（仅 ADMIN，保存为新版本并立即生效）.
 
@@ -421,7 +424,7 @@ async def save_grading_thresholds(
     - level 1 的 maxScore 必须为 100
     - level 5 的 minScore 必须为 0
 
-    设计依据：FDS v5.1 §5.2.4, GB/T 44693.2-2024 §6.3
+    设计依据：FDS v5.1 §5.2.4（GB/T 对齐声明按 DEC-02⑤a 移除）
     """
     # 校验阈值完整性与一致性
     _validate_thresholds(body.thresholds)
@@ -453,6 +456,7 @@ async def save_grading_thresholds(
 async def get_grading_threshold_history(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_roles("ADMIN")),
+    _perm: SysUser = Depends(require_perms("config:view")),
 ) -> dict:
     """查询定级阈值版本历史（仅 ADMIN）.
 
@@ -488,7 +492,7 @@ async def get_grading_threshold_history(
 async def rollback_grading_thresholds(
     version: int,
     db: AsyncSession = Depends(get_db),
-    user: SysUser = Depends(require_roles("ADMIN")),
+    user: SysUser = Depends(require_perms("metric-config:manage")),
 ) -> dict:
     """回滚到指定历史版本（仅 ADMIN，回滚生成新版本号保留追溯链）.
 

@@ -326,6 +326,28 @@ class TestAggregateNodeSnapshotLevelWeighting:
 
         db.execute = AsyncMock(side_effect=_execute)
 
+        from types import SimpleNamespace as _NS
+
+        _snaps = {
+            "loop-001": _NS(
+                status="SUCCESS",
+                score=Decimal("80"),
+                fast_rate=Decimal("80"),
+                result_record_id=None,
+            ),
+            "loop-002": _NS(
+                status="SUCCESS",
+                score=Decimal("80"),
+                fast_rate=Decimal("80"),
+                result_record_id=None,
+            ),
+            "loop-003": _NS(
+                status="SUCCESS",
+                score=Decimal("80"),
+                fast_rate=Decimal("80"),
+                result_record_id=None,
+            ),
+        }
         with (
             patch(
                 "app.services.node_performance.collect_descendant_loop_ids",
@@ -340,6 +362,17 @@ class TestAggregateNodeSnapshotLevelWeighting:
                     "total_count": 3,
                     "read_at": "2026-06-22T08:00:00Z",
                 },
+            ),
+            patch(
+                "app.services.node_performance._load_roster_inputs",
+                return_value=(
+                    ["loop-001", "loop-002", "loop-003"],
+                    0,
+                    _snaps,
+                    set(),
+                    {},
+                    {k: Decimal("1.0") for k in _snaps},
+                ),
             ),
         ):
             result = await aggregate_node_snapshot(
@@ -380,6 +413,17 @@ class TestAggregateNodeSnapshotLevelWeighting:
 
         db.execute = AsyncMock(side_effect=_execute)
 
+        from types import SimpleNamespace as _NS
+
+        _snaps = {
+            lid: _NS(
+                status="SUCCESS",
+                score=Decimal("75"),
+                fast_rate=Decimal("75"),
+                result_record_id=None,
+            )
+            for lid in ("loop-001", "loop-002")
+        }
         with (
             patch(
                 "app.services.node_performance.collect_descendant_loop_ids",
@@ -388,6 +432,17 @@ class TestAggregateNodeSnapshotLevelWeighting:
             patch(
                 "app.services.node_performance.query_realtime_auto_rate",
                 return_value=None,
+            ),
+            patch(
+                "app.services.node_performance._load_roster_inputs",
+                return_value=(
+                    ["loop-001", "loop-002"],
+                    0,
+                    _snaps,
+                    set(),
+                    {},
+                    {k: Decimal("1.0") for k in _snaps},
+                ),
             ),
         ):
             result = await aggregate_node_snapshot(

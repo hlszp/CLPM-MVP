@@ -253,6 +253,8 @@ class ConfidenceEvaluator:
     def compute_composite_score(
         metric_results: dict[str, MetricResult],
         weights: dict[str, float] | None = None,
+        *,
+        assessment_profile: str | None = None,
     ) -> MetricResult:
         """计算综合评分 P = (A·a + F·f + S·s)/(a+f+s) × R（算法说明 §4.10）.
 
@@ -261,6 +263,11 @@ class ConfidenceEvaluator:
                 至少含 accuracy_rate/fast_rate/stability_rate/effective_auto_rate
             weights: 权重配置 ``{accuracy_rate: a, fast_rate: f, stability_rate: s}``；
                 None 时使用默认权重
+            assessment_profile: 评估 profile（P3-09a）。None/LEGACY_V2=legacy
+                行为（golden 基线）；CANDIDATE_V3_RC1=新语义：P 检查必要分项
+                ``details.assessmentState``，必要 F 仅参考时 P 不完整
+                （value=None + PARTIAL + 可用分项展示，不重分配剩余权重），
+                details 附每指标独立分子与权重和（08d 分项独立聚合消费）。
 
         Returns:
             综合评分 MetricResult：
@@ -279,6 +286,9 @@ class ConfidenceEvaluator:
             权重为 0 的核心指标不参与评分公式（如逻辑型 a=0），不要求其存在。
             核心指标 D 级时保留评分，details 增加 low_confidence_inputs 标注。
         """
+        if assessment_profile == "CANDIDATE_V3_RC1":
+            return ConfidenceEvaluator._compute_composite_score_v3(metric_results, weights)
+
         w = weights if weights else DEFAULT_WEIGHTS
         a = float(w.get("accuracy_rate", 0.0))
         f = float(w.get("fast_rate", 0.0))
@@ -435,8 +445,18 @@ class ConfidenceEvaluator:
 
         # 可信度统一 Phase 2（P2-3）：综合评分可信度 = 回路级可信度。
         # 各指标可信度已统一为回路级（P2-2），不再需要 _min_confidence 取最低。
-        # accuracy_rate 必存在（前面已校验核心指标非 INCONCLUSIVE），直接读取。
-        confidence = metric_results["accuracy_rate"].confidence_level
+        # CAL-01 修复（P1-01）：零权重核心指标不要求存在（LOGIC a=0 时
+        # accuracy_rate 键可整体缺失，:340-342 必需性检查已跳过），此处不得
+        # 无条件下标 metric_results["accuracy_rate"]——按 accuracy > fast >
+        # stability > R 顺序取首个存在的结果读取回路级可信度（同一回路的
+        # 各指标可信度同值，来源选择不影响结果），避免 KeyError。
+        confidence_ref = (
+            metric_results.get("accuracy_rate")
+            or metric_results.get("fast_rate")
+            or metric_results.get("stability_rate")
+            or r_result
+        )
+        confidence = confidence_ref.confidence_level if confidence_ref else ConfidenceLevel.E.value
 
         # D 级输入保留评分，但标注低可信度输入（评审决策口径）
         low_confidence_inputs = [
@@ -476,6 +496,197 @@ class ConfidenceEvaluator:
             confidence_level=confidence,
             lineage=lineage,
             details=details,
+        )
+
+    # ------------------------------------------------------------------
+    # P3-09a：新 profile（CANDIDATE_V3_RC1）综合评分
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _composite_confidence_ref(
+        metric_results: dict[str, MetricResult], r_result: MetricResult | None
+    ) -> MetricResult | None:
+        """按 accuracy > fast > stability > R 顺序取首个存在的结果（可信度引用）."""
+        return (
+            metric_results.get("accuracy_rate")
+            or metric_results.get("fast_rate")
+            or metric_results.get("stability_rate")
+            or r_result
+        )
+
+    @staticmethod
+    def _component_state(result: MetricResult | None) -> tuple[str | None, str | None]:
+        """必要分项状态：(value, assessmentState)——评估三值命名空间（O-3）."""
+        if result is None:
+            return None, "MISSING"
+        state = (result.details or {}).get("assessmentState")
+        return result.value, (state if isinstance(state, str) else None)
+
+    @classmethod
+    def _compute_composite_score_v3(
+        cls,
+        metric_results: dict[str, MetricResult],
+        weights: dict[str, float] | None,
+    ) -> MetricResult:
+        """新 profile 综合评分（10§3.1/§3.6；EA-D02 采纳口径）.
+
+        语义：
+        - R（折扣因子）缺失/E 级 → P=UNASSESSABLE（value=None）；
+        - 必要分项（权重>0）value=None / E 级 / assessmentState ∈
+          {PARTIAL, UNASSESSABLE} → **P 不完整**：value=None +
+          assessmentState=PARTIAL + 可用分项展示，不重分配剩余权重
+          （必要 F 仅参考值时即落入此分支——INT-02 前半：P 可评分 0）；
+        - F 权重=0 时不强加 F 要求（按该 profile 实际必需分项判断）；
+        - 全部完整 → P=基础分×R，assessmentState=COMPLETE；
+        - details 附每指标独立分子与权重和（``metricComponents``/
+          ``weightSum``，08d 分项独立聚合消费：装置到全厂合并分子与权重和，
+          不平均各装置百分比）+ 参考构成（``referenceComposition``）。
+        """
+        w = weights if weights else DEFAULT_WEIGHTS
+        a = float(w.get("accuracy_rate", 0.0))
+        f = float(w.get("fast_rate", 0.0))
+        s = float(w.get("stability_rate", 0.0))
+        r_result = metric_results.get(DISCOUNT_METRIC_CODE)
+        r_value = r_result.value if r_result else None
+
+        confidence_ref = cls._composite_confidence_ref(metric_results, r_result)
+        confidence = confidence_ref.confidence_level if confidence_ref else ConfidenceLevel.E.value
+        lineage = (
+            confidence_ref.lineage
+            if confidence_ref and confidence_ref.lineage
+            else DataLineage(algorithm_version=ALGORITHM_VERSION)
+        )
+
+        # R 缺失/E 级 → 整体不可评估
+        if (
+            r_result is None
+            or r_result.value is None
+            or r_result.confidence_level == ConfidenceLevel.E.value
+        ):
+            return MetricResult(
+                metric_code="composite_score",
+                value=None,
+                confidence_level=confidence,
+                lineage=lineage,
+                details={
+                    "reason": "effective_auto_rate INCONCLUSIVE",
+                    "assessmentState": "UNASSESSABLE",
+                },
+            )
+
+        # 每指标独立分子/权重和 + 必要性检查（状态矩阵）
+        components: dict[str, dict] = {}
+        incomplete: list[dict] = []
+        available: list[str] = []
+        weighted_sum = 0.0
+        active_weight = 0.0
+        for code, weight in (("accuracy_rate", a), ("fast_rate", f), ("stability_rate", s)):
+            result = metric_results.get(code)
+            value, state = cls._component_state(result)
+            entry: dict = {
+                "weight": weight,
+                "value": float(value) if value is not None else None,
+                "assessmentState": state,
+            }
+            if weight <= 0:
+                # 零权重：保留计数不贡献均分（10§3.6.3），不参与必要性检查
+                entry["eta"] = None
+                entry["weightedNumerator"] = 0.0
+                components[code] = entry
+                continue
+            if (
+                result is None
+                or value is None
+                or result.confidence_level == ConfidenceLevel.E.value
+                or state in ("PARTIAL", "UNASSESSABLE")
+            ):
+                # 不完整分项：原因细分（F 仅参考 → referenceOnly）
+                reason_detail: dict = {}
+                if code == "fast_rate" and result is not None:
+                    det = result.details or {}
+                    if det.get("referenceScore") is not None:
+                        reason_detail = {
+                            "referenceOnly": True,
+                            "referenceScore": det.get("referenceScore"),
+                            "referencePolicy": det.get("referencePolicy"),
+                        }
+                    else:
+                        reason_detail = {"reason": det.get("reason")}
+                incomplete.append({"metric": code, "assessmentState": state, **reason_detail})
+                components[code] = entry
+                continue
+            eta = max(0.0, min(1.0, value / 100.0))  # type: ignore[operator]
+            entry["eta"] = round(eta, 6)
+            entry["weightedNumerator"] = round(weight * eta, 6)
+            weighted_sum += weight * eta
+            active_weight += weight
+            available.append(code)
+            components[code] = entry
+
+        total_weight = a + f + s
+        fr_result = metric_results.get("fast_rate")
+        fr_details = (fr_result.details or {}) if fr_result is not None else {}
+        if f <= 0:
+            fast_composition = "ZERO_WEIGHT"  # 不强加 F 要求（EA-D02）
+        elif components.get("fast_rate", {}).get("assessmentState") == "COMPLETE":
+            fast_composition = "FORMAL"
+        elif fr_details.get("referenceScore") is not None:
+            fast_composition = "REFERENCE_ONLY"
+        else:
+            fast_composition = "NOT_AVAILABLE"
+        reference_composition = {"fastRate": fast_composition}
+
+        base_details: dict = {
+            "effective_auto_rate": r_value,
+            "weights": {"a": a, "f": f, "s": s},
+            "metricComponents": components,
+            "weightSum": round(total_weight, 6),
+            "referenceComposition": reference_composition,
+        }
+
+        # 必要分项不完整 → P 不完整（不重分配剩余权重）
+        if incomplete:
+            return MetricResult(
+                metric_code="composite_score",
+                value=None,
+                confidence_level=confidence,
+                lineage=lineage,
+                details={
+                    **base_details,
+                    "reason": "core metric incomplete",
+                    "assessmentState": "PARTIAL",
+                    "incompleteComponents": incomplete,
+                    "availableComponents": available,
+                },
+            )
+
+        if total_weight <= 0:
+            return MetricResult(
+                metric_code="composite_score",
+                value=None,
+                confidence_level=confidence,
+                lineage=lineage,
+                details={
+                    **base_details,
+                    "reason": "zero_total_weight",
+                    "assessmentState": "UNASSESSABLE",
+                },
+            )
+
+        base_score = weighted_sum / total_weight * 100.0
+        r_norm = max(0.0, min(1.0, r_value / 100.0))  # type: ignore[operator]
+        score = round(max(0.0, min(100.0, base_score * r_norm)), 2)
+        return MetricResult(
+            metric_code="composite_score",
+            value=score,
+            confidence_level=confidence,
+            lineage=lineage,
+            details={
+                **base_details,
+                "base_score": round(base_score, 2),
+                "weightedNumerator": round(weighted_sum, 6),
+                "assessmentState": "COMPLETE",
+            },
         )
 
 
