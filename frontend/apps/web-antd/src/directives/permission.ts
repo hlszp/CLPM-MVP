@@ -81,8 +81,12 @@ function checkAccessible(binding: DirectiveBinding<PermissionValue>): boolean {
 
   const values = Array.isArray(value) ? value : [value];
   // 有任一角色或权限即显示：角色名走精确匹配，权限码走通配匹配
+  // 防御：非字符串成员（Set/数字/对象等脏值）只走角色精确匹配，
+  // 不进权限码通配链（hasPermission 对非字符串调 .split 会崩组件树）
   return values.some(
-    (v) => userRolesSet.has(v) || hasPermission(userCodesSet, v),
+    (v) =>
+      userRolesSet.has(v) ||
+      (typeof v === 'string' && hasPermission(userCodesSet, v)),
   );
 }
 
