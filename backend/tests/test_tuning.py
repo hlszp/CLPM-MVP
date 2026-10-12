@@ -381,13 +381,16 @@ class TestTuningAPI:
         data = resp.json()
         assert data["code"] == "0"
         methods = data["data"]
-        assert len(methods) == 5
+        # P3-07：注册表新增 IPDT_PI/SOPDT_IMC 专用方法（R12/R13），5→7
+        assert len(methods) == 7
         codes = [m["code"] for m in methods]
         assert "IMC" in codes
         assert "LAMBDA" in codes
         assert "ZN" in codes
         assert "COHEN_COON" in codes
         assert "SIMC" in codes
+        assert "IPDT_PI" in codes
+        assert "SOPDT_IMC" in codes
 
     def test_tune_pid_api(self, client) -> None:
         """PID 整定 API。"""

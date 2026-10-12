@@ -44,6 +44,7 @@ from app.schemas.tuning import (
     ModelIdentifyHistoryRequest,
     ModelIdentifyRequest,
     ModelIdentifyResult,
+    RobustVerifyRequest,
     SimulateRequest,
     SimulationResult,
     TaskProgress,
@@ -77,6 +78,7 @@ from app.services.tuning import (
     preview_identify_segments,
     run_simulation,
     tune_pid,
+    verify_tuning_robustness,
 )
 from app.services.tuning_batch import (
     get_tuning_batch_detail,
@@ -366,9 +368,10 @@ async def tune_matrix_endpoint(
 ) -> dict:
     """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
 
-    IMC/LAMBDA/ZN/COHEN_COON/SIMC 5 算法一次全算；单算法失败不阻断，
-    该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计日志——
-    审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
+    适用算法一次全算（P3-07 起注册表驱动：FOPDT=IMC/LAMBDA/ZN/
+    COHEN_COON/SIMC 五法；IPDT=IPDT_PI；SOPDT=SOPDT_IMC）；单算法失败
+    不阻断，该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计
+    日志——审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
     """
     # T4 修复：矩阵端点原漏装 fitness 门禁（/tune 有），补齐口径
     await _ensure_tuning_fitness(db, body.loopId)
@@ -381,8 +384,20 @@ async def tune_matrix_endpoint(
         model_source=body.modelSource,
         risk_confirmed=body.riskConfirmed,
     )
+    # P3-07：矩阵算法清单注册表驱动——按模型结构取适用方法
+    # （FOPDT=五法；IPDT=IPDT_PI；SOPDT=SOPDT_IMC）
+    from app.services.tuning_algorithms import TUNING_METHODS_INFO as _METHODS
+
+    _model_u = str(source_context.model_type).upper()
+    algorithms = tuple(m["code"] for m in _METHODS if m.get("applicableModel") == _model_u) or (
+        "IMC",
+        "LAMBDA",
+        "ZN",
+        "COHEN_COON",
+        "SIMC",
+    )
     rows: list[dict[str, Any]] = []
-    for algo in ("IMC", "LAMBDA", "ZN", "COHEN_COON", "SIMC"):
+    for algo in algorithms:
         try:
             result = await tune_pid(
                 model_type=source_context.model_type,
@@ -400,6 +415,56 @@ async def tune_matrix_endpoint(
             logger.warning("整定矩阵 %s 算法计算失败: %s", algo, exc)
             rows.append({"algorithm": algo, "ok": False, "error": str(exc)})
     return success(data={"rows": rows})
+
+
+# 路径命名对齐 test_security_dcs_pid_no_write 计算类白名单（含 "tune"，
+# 与 /tune、/tune/matrix 同族；REWORK D1-① 修复，原 /robustness/verify）
+@router.post("/tune/robustness", response_model=ApiResponse[dict])
+async def robustness_verify_endpoint(
+    body: RobustVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:tune")),
+) -> dict:
+    """整定建议鲁棒性验证（P3-07 R15 冻结指标；ADMIN/IC_ENGINEER/EXPERT）。
+
+    在可信模型集合（终验通过模型 ± 参数 95% CI 采样，≤64 成员）上验证
+    同一建议：GM≥2.0 / PM≥30° / 超调≤20% / OP 实际限幅；含噪声/负载
+    扰动响应证据与 DCS 表示转换。未知 DCS 表示、未核实 OP 限位、终验
+    未通过模型明确拒绝（O-D6/P-34）。
+    """
+    await _ensure_tuning_fitness(db, body.loopId)
+    data = await verify_tuning_robustness(
+        db,
+        loop_id=body.loopId,
+        model_type=body.modelType,
+        model_params=body.modelParams.model_dump(exclude_none=True),
+        algorithm=body.algorithm,
+        algorithm_params=body.algorithmParams,
+        recommended_pid=body.recommendedPid.model_dump() if body.recommendedPid else None,
+        sim_duration=body.simDuration,
+        sim_step=body.simStep,
+        setpoint_step=body.setpointStep,
+        noise_std=body.noiseStd,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="TUNE_ROBUSTNESS_VERIFY",
+        target_type="Loop",
+        target_id=str(body.loopId),
+        after_value=(
+            f"algorithm={body.algorithm}, modelType={data.get('modelType')}, "
+            f"overallPass={str(data.get('overallPass')).lower()}, "
+            f"setMembers={data.get('setBasis', {}).get('memberCount')}"
+        ),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
+    return success(data=data)
 
 
 # ---------------------------------------------------------------------------

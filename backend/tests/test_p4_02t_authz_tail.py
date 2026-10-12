@@ -112,12 +112,14 @@ class TestTailEndpointWiring:
         return (_BACKEND / f"app/api/v1/endpoints/{rel}").read_text()
 
     def test_tuning_pure_code_replacement(self) -> None:
-        """tuning.py 9 写端点纯码等价替换（无 require_roles 残留）+
+        """tuning.py 10 写端点纯码等价替换（P3-07 增 /tune/robustness；无 require_roles 残留）+
         verification/data GET 挂 tuning:view（原 get_current_user 五角色 → 零变化）。"""
         src = self._text("tuning.py")
         assert 'require_perms("tuning:identify")' in src
         assert src.count('require_perms("tuning:identify")') == 3  # identify/history/segments
-        assert src.count('require_perms("tuning:tune")') == 2  # tune + tune/matrix
+        # P3-07 REWORK 授权更新（验收 D1-②）：新增 /tune/robustness 端点接入
+        # tuning:tune 权限（整定语义正当扩展），计数 2→3
+        assert src.count('require_perms("tuning:tune")') == 3  # tune/matrix/robustness
         assert src.count('require_perms("tuning:simulate")') == 2  # simulate + compare
         assert 'require_perms("tuning:task-create")' in src
         assert 'require_perms("tuning:task-manage")' in src

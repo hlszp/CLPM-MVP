@@ -32,7 +32,8 @@ ModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 # 历史辨识支持的模型类型（P2-008：IPDT 差分辨识链已接入历史路径）
 HistoryModelType = Literal["FOPDT", "SOPDT", "IPDT"]
 
-# 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC
+# 整定算法：IMC/LAMBDA/ZN/COHEN_COON/SIMC（FOPDT 五法）+
+# IPDT_PI/SOPDT_IMC（P3-07：IPDT/SOPDT 专用方法，注册于 TUNING_METHODS_INFO）
 # V62-P3-006：新增 IDENTIFICATION_ONLY——纯辨识记录不再用 IMC 占位
 # MANUAL_TUNING：矩阵第 6 行"手动整定"——参数由工程师手工设定，不经算法计算
 TuningAlgorithm = Literal[
@@ -41,6 +42,8 @@ TuningAlgorithm = Literal[
     "ZN",
     "COHEN_COON",
     "SIMC",
+    "IPDT_PI",
+    "SOPDT_IMC",
     "IDENTIFICATION_ONLY",
     "MANUAL_TUNING",
 ]
@@ -265,7 +268,7 @@ class TuningRisk(CamelModel):
 
 
 class TuneResult(CamelModel):
-    """PID 整定结果（V62-P3-007 含人工实施清单字段）。"""
+    """PID 整定结果（V62-P3-007 含人工实施清单字段）."""
 
     algorithm: TuningAlgorithm
     recommendedPid: PidParams
@@ -278,6 +281,11 @@ class TuneResult(CamelModel):
     rollbackPid: PidParams | None = Field(None, description="回退 PID 值（实施失败时恢复）")
     unitConversion: dict[str, Any] | None = Field(
         None, description="单位转换说明（如时间单位秒↔分、量程转换）"
+    )
+    # P3-07（P-35 来源保存）：建议来源绑定——模型版本/终验结论/整定方法与
+    # 参数版本随建议携带（B2 冻结链兼容：加性键）
+    recommendationSource: dict[str, Any] | None = Field(
+        None, description="建议来源绑定（模型来源/版本/终验结论/方法与参数版本）"
     )
 
 
@@ -312,6 +320,50 @@ class TuneMatrixRequest(CamelModel):
         """
         if self.algorithmParams:
             errors = validate_tuning_params(None, self.algorithmParams)
+            if errors:
+                raise ValueError("；".join(errors))
+        return self
+
+
+class RobustVerifyRequest(CamelModel):
+    """POST /tuning/tune/robustness 请求体（P3-07 R15 鲁棒验证链入口）.
+
+    对服务端已验证来源的模型 + 整定建议，在可信模型集合（终验通过模型
+    ± 参数 95% CI 采样，≤64 成员）上按 R15 冻结指标（GM≥2.0/PM≥30°/
+    超调≤20%/OP 实际限幅）验证；未知 DCS 表示、未核实 OP 限位、终验
+    未通过的模型明确拒绝（O-D6/P-34）。
+    """
+
+    loopId: str
+    modelType: ModelType
+    modelParams: ModelParams
+    algorithm: TuningAlgorithm
+    algorithmParams: dict[str, Any] | None = Field(
+        None, description="算法参数（如 lambdaRatio）；按方法注册表校验"
+    )
+    recommendedPid: PidParams | None = Field(
+        None,
+        description="待验证建议 PID；缺省=按 algorithm+algorithmParams 服务端现算",
+    )
+    simDuration: float = Field(
+        600.0, ge=1.0, le=600.0, description="集合单成员仿真时长（秒，B-11 冻结 ≤600）"
+    )
+    simStep: float = Field(1.0, gt=0.0, le=600.0, description="仿真步长（秒）")
+    setpointStep: float = Field(1.0, description="设定值阶跃幅值")
+    noiseStd: float | None = Field(
+        None, ge=0.0, description="扰动响应证据的测量噪声标准差（缺省 0.05）"
+    )
+    sourceRecordId: str | None = Field(None, description="模型辨识记录 ID")
+    modelSource: ModelSource | None = Field(
+        None, description="模型来源；旧请求可解析但不会绕过服务端安全门禁"
+    )
+    riskConfirmed: bool = Field(False, description="C 级辨识结果风险确认（与推荐链同门禁）")
+
+    @model_validator(mode="after")
+    def _validate_algorithm_params(self) -> RobustVerifyRequest:
+        """P2-01 TUN-05：algorithmParams 按方法注册表校验（与 TuneRequest 同源）."""
+        if self.algorithmParams:
+            errors = validate_tuning_params(self.algorithm, self.algorithmParams)
             if errors:
                 raise ValueError("；".join(errors))
         return self
