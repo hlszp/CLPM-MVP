@@ -1379,10 +1379,19 @@ async def get_nodes_overview(
     db: AsyncSession,
     start: datetime,
     end: datetime,
+    unit_ids: list[str] | None = None,
 ) -> dict:
-    """全厂总览：所有启用 KPI 评估的节点最新快照汇总。"""
+    """全厂总览：所有启用 KPI 评估的节点最新快照汇总。
+
+    P5 批 α（聚合收窄，P4-03 验收登记立卡项）：unit_ids 非空时仅统计
+    范围内节点（数据范围节点集，None=ALL 全厂口径）——NODE_SUBTREE
+    放开配置后范围用户不再暴露域外节点。
+    """
     # 查询所有 is_kpi_enabled 的节点
-    node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
+    node_stmt = select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
+    if unit_ids is not None:
+        node_stmt = node_stmt.where(PlantNode.id.in_(unit_ids))
+    node_result = await db.execute(node_stmt)
     enabled_nodes = node_result.scalars().all()
 
     if not enabled_nodes:

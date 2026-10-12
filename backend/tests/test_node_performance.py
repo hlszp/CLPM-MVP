@@ -999,3 +999,94 @@ class TestNodeScoreToStatus:
     )
     def test_score_to_status(self, score, expected):
         assert _score_to_status(score) == expected
+
+
+# ===========================================================================
+# P5 批 α：nodes overview 聚合收窄（unit_ids 范围节点集，P4-03 立卡项）
+# ===========================================================================
+
+
+class TestP5NodesOverviewScopeNarrowing:
+    """get_nodes_overview unit_ids 收窄：SQL 过滤 + 域外节点不进总览（越权反例）."""
+
+    @staticmethod
+    def _compile(stmt) -> str:
+        return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    @pytest.mark.asyncio
+    async def test_收窄时节点查询SQL含IN过滤(self):
+        """SQL 级：unit_ids 非空 → plant_node.id IN 过滤；None → 无过滤."""
+        db = AsyncMock()
+        captured: list = []
+
+        node = MagicMock()
+        node.id = "node-A"
+        node.name = "装置A"
+        node.type = "UNIT"
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [node]
+
+        async def _capture(stmt, *args, **kwargs):
+            captured.append(stmt)
+            if len(captured) == 1:
+                return node_result
+            result = MagicMock()
+            result.all.return_value = []
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        start, end = datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0)
+        await get_nodes_overview(db, start, end, unit_ids=["node-A", "node-A2"])
+        narrowed_sql = self._compile(captured[0])
+        assert "plant_node.id IN" in narrowed_sql
+
+        captured.clear()
+        await get_nodes_overview(db, start, end)
+        broad_sql = self._compile(captured[0])
+        assert "plant_node.id IN" not in broad_sql
+
+    @pytest.mark.asyncio
+    async def test_越权反例_域外节点不进总览(self):
+        """数据级反例：SQL 返回范围内节点集，域外装置 B 不出现在 nodes/分布."""
+        db = AsyncMock()
+
+        def _mk(nid, name):
+            n = MagicMock()
+            n.id = nid
+            n.name = name
+            n.type = "UNIT"
+            return n
+
+        in_scope = _mk("node-A", "装置A")
+        node_result = MagicMock()
+        node_result.scalars.return_value.all.return_value = [in_scope]
+        snap_calls: list = []
+
+        def _snap_row(nid, status):
+            r = MagicMock()
+            r.plant_node_id = nid
+            r.score = 80.0
+            r.auto_loop_ratio = 0.9
+            r.realtime_auto_rate = 0.9
+            r.steady_rate = 0.8
+            r.effective_auto_rate = 0.7
+            r.loop_count = 10
+            r.status = status
+            r.ts_start = datetime(2026, 6, 24, 8, 0, 0)
+            r.assessment_stats = None
+            return r
+
+        async def _capture(stmt, *args, **kwargs):
+            snap_calls.append(stmt)
+            if len(snap_calls) == 1:
+                return node_result
+            result = MagicMock()
+            result.all.return_value = [_snap_row("node-A", "SUCCESS")]
+            return result
+
+        db.execute = AsyncMock(side_effect=_capture)
+        start, end = datetime(2026, 6, 24, 8, 0, 0), datetime(2026, 6, 24, 9, 0, 0)
+        data = await get_nodes_overview(db, start, end, unit_ids=["node-A"])
+        assert data["totalNodes"] == 1
+        assert [n["plantNodeId"] for n in data["nodes"]] == ["node-A"]  # 域外 B 缺席
+        assert "node-B" not in {n["plantNodeId"] for n in data["nodes"]}

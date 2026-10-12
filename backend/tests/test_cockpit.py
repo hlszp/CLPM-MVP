@@ -367,3 +367,115 @@ class TestNaiveUtcWindows:
         now = datetime.now(UTC).replace(tzinfo=None)
         out = await _query_window_weighted_avg(db, now, now)
         assert out == {"score": None, "auto_rate": None}
+
+
+# ===========================================================================
+# P5 批 α：聚合收窄（unit_ids 范围节点集，P4-03 验收登记立卡项）
+# ===========================================================================
+
+
+class TestOverviewScopeNarrowing:
+    """build_overview unit_ids 收窄：各统计块按范围过滤 + 缓存 key 隔离 + 越权反例."""
+
+    @staticmethod
+    def _compile(stmt) -> str:
+        return str(stmt.compile(compile_kwargs={"literal_binds": True}))
+
+    @pytest.mark.asyncio
+    async def test_收窄时loopTotal与漏斗SQL含unit过滤(self):
+        """越权反例（SQL 级）：NODE_SUBTREE 范围下统计 SQL 按范围节点集过滤."""
+        from app.services.cockpit_overview import _active_loop_ids
+
+        narrowed = self._compile(_active_loop_ids(["uA1", "uA2"]))
+        assert "loop_ledger.unit_id IN" in narrowed
+        broad = self._compile(_active_loop_ids())
+        assert "unit_id IN" not in broad
+
+        # loopTotal 计数语句同样收窄（_build_overview 内联构造，经行为验证）
+        db = AsyncMock()
+        captured: list = []
+
+        async def _capture_scalar(stmt, *a, **kw):
+            captured.append(stmt)
+            return 7
+
+        db.scalar = AsyncMock(side_effect=_capture_scalar)
+        with (
+            patch.multiple("app.services.cockpit_overview", **_overview_patches()),
+            patch("app.services.performance.get_grade_distribution", AsyncMock(return_value={})),
+        ):
+            await build_overview(db, window="24h", unit_ids=["uA1", "uA2"])
+        loop_total_sql = self._compile(captured[0])
+        assert "loop_ledger.unit_id IN" in loop_total_sql
+
+    @pytest.mark.asyncio
+    async def test_收窄时GLOBAL预计算行不被消费(self):
+        """范围口径 score/autoRate 来自范围内窗口加权均值，非全厂 GLOBAL 行."""
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=5)
+        global_row_spy = AsyncMock(return_value=_summary_row(99.0, 0.99, 999))
+        with (
+            patch.multiple(
+                "app.services.cockpit_overview",
+                **_overview_patches(
+                    _query_global_summary_row=global_row_spy,
+                    _query_window_weighted_avg=AsyncMock(
+                        side_effect=[
+                            {"score": 61.0, "auto_rate": 66.0},
+                            {"score": 60.0, "auto_rate": 65.0},
+                        ]
+                    ),
+                ),
+            ),
+            patch("app.services.performance.get_grade_distribution", AsyncMock(return_value={})),
+        ):
+            data = await build_overview(db, window="24h", unit_ids=["uA1"])
+        global_row_spy.assert_not_called()  # 全厂行不得进入范围口径
+        assert data["kpi"]["score"] == 61.0
+        assert data["kpi"]["autoRate"] == 66.0
+        assert data["kpi"]["scoreDelta"] == 1.0
+
+    @pytest.mark.asyncio
+    async def test_缓存key含范围hash_跨范围不共用(self):
+        """聚合缓存 key 隔离：ALL/范围A/范围B 三 key 互异."""
+        from app.services.agg_cache import cached_agg
+
+        keys: list[str] = []
+        orig = cached_agg
+
+        async def _spy(key, builder, ttl=60.0):
+            keys.append(key)
+            return await orig(key, builder, ttl=ttl)
+
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=0)
+        with (
+            patch("app.services.agg_cache.cached_agg", _spy),
+            patch.multiple("app.services.cockpit_overview", **_overview_patches()),
+            patch("app.services.performance.get_grade_distribution", AsyncMock(return_value={})),
+        ):
+            await build_overview(db, window="24h")
+            await build_overview(db, window="24h", unit_ids=["uA1"])
+            await build_overview(db, window="24h", unit_ids=["uB1"])
+
+        assert len(keys) == 3
+        assert keys[0].endswith(":all:r0")
+        assert keys[1] != keys[2] and keys[1] != keys[0] and keys[2] != keys[0]
+        hash_a = keys[1].split(":")[2]
+        hash_b = keys[2].split(":")[2]
+        assert hash_a != "all" and hash_b != "all" and hash_a != hash_b
+
+    @pytest.mark.asyncio
+    async def test_等级分布按plant_node_ids收窄(self):
+        """get_grade_distribution 收到 plant_node_ids=范围集（域外回路不进分布）."""
+        db = AsyncMock()
+        db.scalar = AsyncMock(return_value=0)
+        grade_dist = AsyncMock(return_value={})
+        with (
+            patch.multiple("app.services.cockpit_overview", **_overview_patches()),
+            patch("app.services.performance.get_grade_distribution", grade_dist),
+        ):
+            await build_overview(db, window="24h", unit_ids=["uA1", "uA2"])
+        assert grade_dist.call_count == 2  # 当前窗 + 上一窗
+        for call in grade_dist.call_args_list:
+            assert call.kwargs.get("plant_node_ids") == ["uA1", "uA2"]

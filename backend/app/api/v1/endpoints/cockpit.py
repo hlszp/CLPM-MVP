@@ -35,16 +35,18 @@ async def get_cockpit_overview(
     window: str = Query("24h", pattern="^(24h|7d|30d)$", description="时间窗口：24h/7d/30d"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("portal:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """驾驶舱总览：KPI 指标带（评分/自控率/回路数/劣化/待办/预警）+ 闭环治理漏斗。
 
     环比口径：当前窗口 vs 上一等长窗口（unit_kpi_summary 加权均值）。
     部分失败容错：单块异常返回空/None，不阻断其余块。
-    P4-03 登记残留：全厂聚合口径，NODE_SUBTREE 范围未收窄（聚合服务
-    cockpit_overview 不支持 unit 过滤；范围用户暂见全厂口径数字，
-    收窄需聚合服务改造，移交后续批裁决）。
+    P5 批 α（聚合收窄）：NODE_SUBTREE 范围按授权节点集收窄——各统计块
+    仅计范围内回路，score/autoRate 取范围内窗口加权均值（ALL 仍消费
+    GLOBAL 预计算行）；缓存 key 含范围 hash，跨范围不共用聚合缓存。
     """
-    data = await build_overview(db, window=window)
+    unit_ids = None if scope.is_all else sorted(scope.allowed_node_ids)
+    data = await build_overview(db, window=window, unit_ids=unit_ids)
     return success(data=data)
 
 
