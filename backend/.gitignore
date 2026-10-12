@@ -36,3 +36,4 @@ openapi.json
 # Runtime logs (benchmark / spike cleaning / simulator)
 logs/
 ---
+backend/data/calc-snapshots/

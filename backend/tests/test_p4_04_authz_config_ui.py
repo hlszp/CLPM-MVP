@@ -39,7 +39,9 @@ class TestEffectiveAccessEndpoint:
         import asyncio
 
         # mock DB：revision 查询返回 None（=0，未播种），scope 查询返回 None
-        mock_db.execute = AsyncMock(side_effect=[_scalar_result(None), _scalar_result(None)])
+        # P4-03 合并后授权链新增查询（policy guard/revision 比对）——
+        # 固定序列被耗尽（StopIteration）；按需函数恒供 None（无自定义策略→默认矩阵）
+        mock_db.execute = AsyncMock(side_effect=lambda *a, **k: _scalar_result(None))
         with mock_current_user(TEST_USERS["ic_engineer"]):
             resp = client.get(
                 "/api/v1/auth/effective-access",
@@ -68,7 +70,11 @@ class TestEffectiveAccessEndpoint:
         scope_row = MagicMock()
         scope_row.scope_type = "NODE_SUBTREE"
         scope_row.node_id = "node-0001"
-        mock_db.execute = AsyncMock(side_effect=[_scalar_result(7), _scalar_result(scope_row)])
+        # 同上：首查 revision=7，其后（P4-03 新增查询）恒供 scope_row 语义
+        # 的默认——改用序列+尾部按需函数混合
+        mock_db.execute = AsyncMock(
+            side_effect=[_scalar_result(7)] + [_scalar_result(scope_row)] * 20
+        )
         with mock_current_user(TEST_USERS["pe_engineer"]):
             resp = client.get(
                 "/api/v1/auth/effective-access",
@@ -82,7 +88,9 @@ class TestEffectiveAccessEndpoint:
 
     def test_sponsor_zero_write_structural(self, client, mock_db) -> None:
         """SPONSOR 有效动作不含写码（零写红线在解释视图中同样成立）。"""
-        mock_db.execute = AsyncMock(side_effect=[_scalar_result(None), _scalar_result(None)])
+        # P4-03 合并后授权链新增查询（policy guard/revision 比对）——
+        # 固定序列被耗尽（StopIteration）；按需函数恒供 None（无自定义策略→默认矩阵）
+        mock_db.execute = AsyncMock(side_effect=lambda *a, **k: _scalar_result(None))
         with mock_current_user(TEST_USERS["sponsor"]):
             resp = client.get(
                 "/api/v1/auth/effective-access",
@@ -97,7 +105,9 @@ class TestEffectiveAccessEndpoint:
 
     def test_admin_pages_contain_permissions_page(self, client, mock_db) -> None:
         """ADMIN 页面码含授权配置页（page:system.permissions，protected）。"""
-        mock_db.execute = AsyncMock(side_effect=[_scalar_result(None), _scalar_result(None)])
+        # P4-03 合并后授权链新增查询（policy guard/revision 比对）——
+        # 固定序列被耗尽（StopIteration）；按需函数恒供 None（无自定义策略→默认矩阵）
+        mock_db.execute = AsyncMock(side_effect=lambda *a, **k: _scalar_result(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/auth/effective-access",
