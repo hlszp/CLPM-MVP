@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from celery import Task
+from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.exceptions import BizError
 from app.tasks.celery_app import celery_app
@@ -531,6 +532,7 @@ async def _do_tune_and_simulate(
         authorize_tuning_model,
         tune_pid,
     )
+    from app.services.tuning_algorithms import SIM_BUDGET_ASYNC
     from app.services.tuning_progress import init_progress, update_progress
 
     await init_progress(
@@ -674,7 +676,7 @@ async def _do_tune_and_simulate(
                 message="多 PID 闭环仿真对比中...",
             )
 
-            # 多 PID 仿真对比
+            # 多 PID 仿真对比（P3-04：异步预算档；墙钟由任务 time_limit 兜底）
             sim_result = _simulate_multi_pid(
                 model_type=model_type,
                 model_params=model_params,
@@ -683,7 +685,18 @@ async def _do_tune_and_simulate(
                 sim_duration=sim_duration,
                 sim_step=sim_step,
                 setpoint_step=setpoint_step,
+                budget=SIM_BUDGET_ASYNC,
             )
+
+            # P3-04：异步结果携带上下文（recordId/taskId/链标识；加性键，
+            # calc_context（B2 冻结链）形状不变，读写两侧兼容）
+            _sim_context = (
+                sim_result.get("simulationContext") if isinstance(sim_result, dict) else None
+            )
+            if isinstance(_sim_context, dict):
+                _sim_context["recordId"] = record_id
+                _sim_context["taskId"] = task_id
+                _sim_context["chain"] = "tune_and_simulate_task"
 
             # 取第一个算法的推荐 PID 作为主结果（兼容旧字段）
             primary = candidates[0] if candidates else {}
@@ -722,6 +735,26 @@ async def _do_tune_and_simulate(
                 "pidCandidates": candidates,
                 "simulationResult": sim_result,
             }
+
+        except SoftTimeLimitExceeded as exc:
+            # P3-04：超时与普通失败显式区分（进度 error 码 + 记录原因）
+            logger.error("整定仿真任务超时（soft time limit）: task_id=%s", task_id)
+            db_record = await db.get(TuningRecord, record_id)
+            if db_record is not None:
+                db_record.status = "INCONCLUSIVE"
+                db_record.confidence_reason = (
+                    f"任务超时（超过软时限）: {exc}；请降低仿真规模或减少候选 PID"
+                )
+                db_record.completed_at = _now_naive()
+                await db.commit()
+
+            await update_progress(
+                task_id,
+                status="FAILED",
+                message=("整定仿真任务超时（超过任务软时限），请降低仿真规模或减少候选 PID"),
+                error="ERR_SIMULATION_TIMEOUT",
+            )
+            raise
 
         except Exception as exc:
             logger.exception("整定仿真任务失败: task_id=%s", task_id)

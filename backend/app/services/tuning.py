@@ -19,7 +19,7 @@ from typing import Any
 from uuid import uuid4
 
 import numpy as np
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -28,9 +28,14 @@ from app.models.tuning import TuningRecord
 from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
 from app.services.process_model_migration import get_effective_model_params
 from app.services.tuning_algorithms import (
+    SIM_BUDGET_SYNC,
     TUNING_ALGORITHM_VERSION,
     TUNING_METHODS_INFO,
     PIDParams,
+    SimulationBudgetError,
+    SimulationError,
+    SimulationNotSupportedError,
+    SimWorkBudget,
     get_method_info,
     identify_fopdt,
     identify_ipdt,
@@ -1789,6 +1794,37 @@ def _compute_max_pid_delta(
 # ---------------------------------------------------------------------------
 
 
+def _map_simulation_kernel_error(exc: Exception) -> Exception:
+    """仿真内核异常 → API 语义异常（P3-04：预算/不支持明确拒绝，不静默降级）。"""
+    if isinstance(exc, SimulationBudgetError):
+        return BizError(
+            code="ERR_TUNING_SIMULATION_BUDGET_EXCEEDED",
+            message=str(exc),
+            status_code=400,
+            data={
+                "requested": exc.requested,
+                "limits": exc.limits,
+                "suggestion": (
+                    "降低仿真时长/增大步长/减少候选 PID，或改用异步整定任务"
+                    "（POST /tuning/identify/history 或工作台异步链，预算更宽且可取消）"
+                ),
+            },
+        )
+    if isinstance(exc, SimulationNotSupportedError):
+        return BizError(
+            code="ERR_TUNING_SIMULATION_MODEL_NOT_SUPPORTED",
+            message=str(exc),
+            status_code=400,
+        )
+    if isinstance(exc, SimulationError):
+        return BizError(
+            code="ERR_TUNING_SIMULATION_INVALID_PARAMS",
+            message=str(exc),
+            status_code=400,
+        )
+    return exc
+
+
 async def run_simulation(
     model_type: str,
     model_params: dict[str, Any],
@@ -1797,13 +1833,24 @@ async def run_simulation(
     sim_duration: float = 600.0,
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
-    disturbance_type: str = "step",
+    disturbance_type: str = "none",
     pid_candidates: list[dict[str, Any]] | None = None,
+    *,
+    disturbance_amplitude: float | None = None,
+    disturbance_time: float | None = None,
 ) -> dict[str, Any]:
-    """闭环仿真（Phase 2 扩展多 PID 对比）。
+    """闭环仿真（Phase 2 扩展多 PID 对比；P3-04 扰动真实施加 + 同步预算）。
 
     Args:
-        pid_candidates: 多组候选 PID（每项含 label/kp/ti/td），向后兼容。
+        pid_candidates: 多组候选 PID（每项含 label/kp/ti/td），向后兼容；
+            参数相对差 <1%（B-12）的候选去重标记、不重复仿真。
+        disturbance_type: none/step（step=负载阶跃扰动真实进入对象输入）。
+        disturbance_amplitude/disturbance_time: step 扰动幅值/施加时刻（秒）。
+
+    Raises:
+        BizError: ERR_TUNING_SIMULATION_BUDGET_EXCEEDED（超同步预算，引导异步）/
+            ERR_TUNING_SIMULATION_MODEL_NOT_SUPPORTED（未知模型/IPDT 缺 K）/
+            ERR_TUNING_SIMULATION_INVALID_PARAMS（非法扰动参数等）。
     """
     current = PIDParams(
         kp=float(current_pid.get("kp", 0)),
@@ -1829,17 +1876,23 @@ async def run_simulation(
             )
             candidates_tuples.append((label, pid))
 
-    result = simulate_closed_loop(
-        model_type=model_type,
-        model_params=model_params,
-        current_pid=current,
-        recommended_pid=recommended,
-        sim_duration=sim_duration,
-        sim_step=sim_step,
-        setpoint_step=setpoint_step,
-        disturbance_type=disturbance_type,
-        pid_candidates=candidates_tuples,
-    )
+    try:
+        result = simulate_closed_loop(
+            model_type=model_type,
+            model_params=model_params,
+            current_pid=current,
+            recommended_pid=recommended,
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+            disturbance_type=disturbance_type,
+            pid_candidates=candidates_tuples,
+            disturbance_amplitude=disturbance_amplitude,
+            disturbance_time=disturbance_time,
+            budget=SIM_BUDGET_SYNC,
+        )
+    except SimulationError as exc:
+        raise _map_simulation_kernel_error(exc) from exc
 
     return result
 
@@ -1852,14 +1905,25 @@ def _simulate_multi_pid(
     sim_duration: float = 600.0,
     sim_step: float = 1.0,
     setpoint_step: float = 1.0,
+    disturbance_type: str = "none",
+    *,
+    disturbance_amplitude: float | None = None,
+    disturbance_time: float | None = None,
+    budget: SimWorkBudget | None = None,
 ) -> dict[str, Any]:
-    """多 PID 闭环仿真对比（Phase 2.3，供 Celery 任务调用）.
+    """多 PID 闭环仿真对比（Phase 2.3，供 Celery 任务与 /compare 调用）.
 
     与 run_simulation 的区别：current_pid 可选，pid_candidates 为必传；
-    返回完整仿真结果含 candidateResponses。
+    返回完整仿真结果含 candidateResponses（P3-04 起含 simulationContext
+    与每候选 deduplicated/duplicateOf 去重标记）。
 
     Args:
         pid_candidates: 候选 PID 列表（每项含 label/kp/ti/td/algorithm）
+        budget: 工作量预算（缺省 SIM_BUDGET_SYNC 同步口径；异步任务链
+            传 SIM_BUDGET_ASYNC，墙钟由 Celery time_limit 兜底）
+
+    Raises:
+        BizError: 同 run_simulation（预算/不支持/参数明确拒绝）。
     """
     # 若无 current_pid，用第一个候选作为"当前"基准
     if current_pid is None and pid_candidates:
@@ -1888,24 +1952,31 @@ def _simulate_multi_pid(
         )
         candidates_tuples.append((label, pid))
 
-    return simulate_closed_loop(
-        model_type=model_type,
-        model_params=model_params,
-        current_pid=PIDParams(
-            kp=float(current_pid.get("kp", 0)),
-            ti=float(current_pid.get("ti", 0)),
-            td=float(current_pid.get("td", 0)),
-        ),
-        recommended_pid=PIDParams(
-            kp=float(recommended_pid.get("kp", 0)),
-            ti=float(recommended_pid.get("ti", 0)),
-            td=float(recommended_pid.get("td", 0)),
-        ),
-        sim_duration=sim_duration,
-        sim_step=sim_step,
-        setpoint_step=setpoint_step,
-        pid_candidates=candidates_tuples or None,
-    )
+    try:
+        return simulate_closed_loop(
+            model_type=model_type,
+            model_params=model_params,
+            current_pid=PIDParams(
+                kp=float(current_pid.get("kp", 0)),
+                ti=float(current_pid.get("ti", 0)),
+                td=float(current_pid.get("td", 0)),
+            ),
+            recommended_pid=PIDParams(
+                kp=float(recommended_pid.get("kp", 0)),
+                ti=float(recommended_pid.get("ti", 0)),
+                td=float(recommended_pid.get("td", 0)),
+            ),
+            sim_duration=sim_duration,
+            sim_step=sim_step,
+            setpoint_step=setpoint_step,
+            disturbance_type=disturbance_type,
+            pid_candidates=candidates_tuples or None,
+            disturbance_amplitude=disturbance_amplitude,
+            disturbance_time=disturbance_time,
+            budget=budget or SIM_BUDGET_SYNC,
+        )
+    except SimulationError as exc:
+        raise _map_simulation_kernel_error(exc) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -2355,6 +2426,57 @@ async def get_tuning_task_detail(db: AsyncSession, task_id: str) -> dict[str, An
     )
 
 
+async def cancel_tuning_task(task_id: str, *, db: AsyncSession | None = None) -> dict[str, Any]:
+    """取消异步整定任务（P3-04：取消语义明确化——进度 CANCELLED + 记录终态落定）。
+
+    - Celery 侧：PENDING/STARTED 状态 revoke(terminate=True, SIGTERM)；
+    - 进度侧：tuning_progress/TaskTracker 同步 CANCELLED（V62-P1-013 链路）；
+    - 记录侧：该 task_id 名下仍处 RUNNING 的 TuningRecord 落定 INCONCLUSIVE，
+      confidence_reason 显式"用户主动取消"（状态机无 CANCELLED 枚举，不新增
+      DB 约束/迁移，以原因字段区分取消与失败——实现裁量，交接登记）。
+
+    Returns:
+        {"taskId": ..., "status": "CANCELLED"|既有终态}。
+    """
+    from celery.result import AsyncResult
+
+    from app.services.tuning_progress import update_progress
+    from app.tasks.celery_app import celery_app
+
+    result = AsyncResult(task_id, app=celery_app)
+    if result.state not in ("PENDING", "RUNNING", "STARTED"):
+        # 已终态（SUCCESS/FAILED/REVOKED）不可取消
+        return {"taskId": task_id, "status": result.state}
+
+    result.revoke(terminate=True, signal="SIGTERM")
+    await update_progress(
+        task_id,
+        status="CANCELLED",
+        message="用户主动取消",
+    )
+
+    # 记录终态落定：RUNNING → INCONCLUSIVE（原因显式"用户取消"）
+    if db is not None:
+        cancel_rows = (
+            await db.execute(
+                update(TuningRecord)
+                .where(TuningRecord.task_id == task_id, TuningRecord.status == "RUNNING")
+                .values(
+                    status="INCONCLUSIVE",
+                    confidence_reason="任务已取消（用户主动取消）",
+                    completed_at=func.now(),
+                )
+            )
+        ).rowcount
+        if cancel_rows:
+            await db.commit()
+            logger.info(
+                "取消整定任务 %s：落定 %d 条 RUNNING 记录为 INCONCLUSIVE", task_id, cancel_rows
+            )
+
+    return {"taskId": task_id, "status": "CANCELLED"}
+
+
 async def get_tuning_history_stats(db: AsyncSession) -> dict[str, Any]:
     """整定历史统计。"""
     # 2026-10-10 停用回路裁决：统计一律排除停用回路（无 join 查询统一用
@@ -2537,6 +2659,13 @@ def _record_to_dict(
         "modelSource": calc_ctx.get("modelSource"),
         "unitBasis": calc_ctx.get("unitBasis"),
         "currentPidContext": calc_ctx.get("currentPid"),
+        # P3-04：仿真验证状态（加性键）——无仿真结果显式"未验证"，
+        # 不以空白/占位数据冒充仿真结论（诚实化原则）
+        "simulationStatus": (
+            "SIMULATED"
+            if isinstance(record.simulation_result, dict) and record.simulation_result
+            else "NOT_SIMULATED"
+        ),
     }
     if include_detail:
         data["simulationResult"] = record.simulation_result
@@ -2555,6 +2684,7 @@ __all__ = [
     "run_simulation",
     "_simulate_multi_pid",
     "create_tuning_task",
+    "cancel_tuning_task",
     "list_tuning_tasks",
     "get_tuning_task_detail",
     "get_tuning_history_stats",
