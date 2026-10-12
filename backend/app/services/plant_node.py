@@ -297,6 +297,29 @@ async def update_plant_node(
                 status_code=409,
             )
 
+    # P4-03：父节点改挂=节点归属策略变更者（改变 NODE_SUBTREE 范围语义）——
+    # guard 排他锁 + NODE_REBIND 入账（固定锁序 guard→对象）
+    guard_rev = None
+    if change_parent and new_parent != node.parent_id:
+        from app.services.authz_scope import (
+            domain_guard_enabled,
+            lock_guard_for_update,
+            record_domain_policy_change,
+        )
+
+        if domain_guard_enabled():
+            guard_rev = await lock_guard_for_update(db)
+            await record_domain_policy_change(
+                db,
+                current_revision=guard_rev,
+                operation="NODE_REBIND",
+                operator=operator,
+                reason="节点改挂（父节点变更，影响 NODE_SUBTREE 数据范围语义）",
+                target=str(node.id),
+                before={"parentId": str(node.parent_id) if node.parent_id else None},
+                after={"parentId": new_parent},
+            )
+
     node.name = name
     node.type = new_type
     if change_parent:

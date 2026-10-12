@@ -118,9 +118,13 @@ class TestDbDrivenAuthorizer:
         assert "loop:view" in second
 
     async def test_revision_zero_falls_back_to_seed(self, db_path_env) -> None:
-        """账本空（P4-01 迁移未应用）→ ROLE_SEED 兜底（行为等价旧静态链）。"""
+        """账本空（P4-01 迁移未应用）→ ROLE_SEED 兜底（行为等价旧静态链）。
+
+        P4-03 起 revision 读 policy_publication_guard 行（缺失→账本 max 兜底），
+        mock 序列 = [guard 行, 账本 max] 均空 → 0。
+        """
         db = AsyncMock()
-        db.execute = AsyncMock(side_effect=[_rev_result(None)])
+        db.execute = AsyncMock(side_effect=[_rev_result(None), _rev_result(None)])
         codes = await rt.get_role_codes(db, "IC_ENGINEER")  # type: ignore[arg-type]
         assert codes == az.ROLE_SEED["IC_ENGINEER"]
 

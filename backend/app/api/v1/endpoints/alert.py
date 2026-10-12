@@ -38,12 +38,13 @@ from __future__ import annotations
 
 import logging
 from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms, require_roles
+from app.api.deps import get_current_user, get_scope_ctx, require_perms, require_roles
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.alert import (
@@ -261,8 +262,9 @@ async def list_events_endpoint(
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("alert:view")),
+    scope: Any = Depends(get_scope_ctx),
 ) -> dict:
-    """获取预警事件列表（分页+筛选）。
+    """获取预警事件列表（分页+筛选；P4-03 按关联 loop/node 范围过滤）。
 
     startTime/endTime 归一为 naive UTC（alert_event 时间戳列为 timestamp
     without time zone；asyncpg 不接受 aware 与 naive 混比）。
@@ -282,6 +284,7 @@ async def list_events_endpoint(
         end_time=endTime,
         limit=limit,
         offset=offset,
+        scope_node_ids=scope.intersect_node_ids([plantNodeId] if plantNodeId is not None else None),
     )
     return success(data=data)
 

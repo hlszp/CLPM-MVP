@@ -33,7 +33,7 @@ from sqlalchemy import delete as sa_delete
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_perms, require_roles
+from app.api.deps import get_scope_ctx, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.models.diagnosis_run import DiagnosisRun
@@ -43,6 +43,12 @@ from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.task import TaskType
 from app.services import diagnosis_insights
+from app.services.authz_scope import (
+    ScopeContext,
+    ensure_loop_in_scope,
+    ensure_loops_in_scope,
+    scoped_loop_ids,
+)
 from app.services.diagnosis_operators import list_operators
 from app.services.diagnosis_operators.classification import get_confidence_definitions
 from app.services.diagnosis_system_actions import (
@@ -247,13 +253,16 @@ async def trigger_diagnosis(
     body: TriggerDiagnosisBody,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("diagnosis:trigger")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """发起诊断：即时校验 → TaskTracker 建单 → Celery 异步执行。"""
+    """发起诊断：即时校验 → TaskTracker 建单 → Celery 异步执行（P4-03 批量跨 scope 拒绝）。"""
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
     loop_ids = [str(x) for x in body.loopIds]
     if not loop_ids:
         raise BizError(code="ERR_PARAM", message="loopIds 不能为空", status_code=400)
+    # P4-03：批量校验全部对象在范围内（越界整体拒绝，通用拒绝不列对象）
+    await ensure_loops_in_scope(db, scope, loop_ids, action="发起诊断")
     if len(loop_ids) > 50:
         raise BizError(code="ERR_PARAM", message="单次诊断回路数不超过 50", status_code=400)
 
@@ -365,6 +374,17 @@ async def trigger_diagnosis(
         ts_start=start.isoformat(),
         ts_end=end.isoformat(),
     )
+    # P4-03：人工任务主体绑定（subjectId/action/object scope/policyRevision
+    # 随任务传递；提交前复核与提交栅栏见 authz_task_fence）
+    from app.services.authz_task_fence import snapshot_task_subject
+
+    _subject = await snapshot_task_subject(
+        db,
+        user_id=str(user.id),
+        role=str(user.role),
+        action="diagnosis:trigger",
+        loop_ids=loop_ids,
+    )
     celery_result = run_diagnosis_batch.delay(
         loop_ids=loop_ids,
         start=start.isoformat(),
@@ -373,6 +393,10 @@ async def trigger_diagnosis(
         operator_group=body.operatorGroup,
         triggered_by=user.username,
         operators=selected_ops or None,
+        subject_user_id=_subject.subject_user_id,
+        subject_role=_subject.subject_role,
+        subject_action=_subject.action,
+        policy_revision=_subject.policy_revision,
     )
     from app.services.task_tracker import set_celery_task_ids
 
@@ -388,6 +412,7 @@ async def trigger_diagnosis(
 async def list_diagnosis_runs(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("diagnosis:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
     loopId: str | None = Query(None),
     category: str | None = Query(None),
     severity: str | None = Query(None),
@@ -399,8 +424,12 @@ async def list_diagnosis_runs(
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=200),
 ) -> dict:
-    """诊断记录列表（分页，按创建时间倒序）。"""
+    """诊断记录列表（分页，按创建时间倒序；P4-03 按回路 scope 过滤）。"""
     conditions = []
+    # P4-03：诊断记录按回路 scope 过滤（ALL=None 不过滤；NODE_SUBTREE=范围内回路）
+    _scoped = await scoped_loop_ids(db, scope)
+    if _scoped is not None:
+        conditions.append(DiagnosisRun.loop_id.in_(_scoped))
     if loopId:
         conditions.append(DiagnosisRun.loop_id == loopId)
     if category:
@@ -446,14 +475,23 @@ async def list_diagnosis_runs(
     return success({"items": items, "total": total, "page": page, "pageSize": pageSize})
 
 
+async def _ensure_run_loop_in_scope(
+    db: AsyncSession, scope: ScopeContext, loop_id: str | None
+) -> None:
+    """P4-03：诊断记录按其回路归属执行数据范围（越界通用拒绝）."""
+    if loop_id:
+        await ensure_loop_in_scope(db, scope, str(loop_id))
+
+
 @router.post("/runs/{run_id}/review", response_model=ApiResponse[dict])
 async def review_diagnosis_run(
     run_id: str,
     body: ReviewRunBody,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("diagnosis:review")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """人工复核诊断结论（§9.3 复核闭环）。
+    """人工复核诊断结论（§9.3 复核闭环；P4-03 越界拒绝）。
 
     - 复核结论：多选原因分类（与诊断分类同域 8 类），至少 1 项
     - 复核意见：≤500 字可选
@@ -473,6 +511,7 @@ async def review_diagnosis_run(
     ).scalar_one_or_none()
     if row is None:
         raise BizError(code="ERR_NOT_FOUND", message=f"诊断记录不存在: {run_id}", status_code=404)
+    await _ensure_run_loop_in_scope(db, scope, row.loop_id)
 
     row.review_status = "REVIEWED"
     row.review_results = body.reviewResults
@@ -982,8 +1021,9 @@ async def get_diagnosis_run(
     run_id: str,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("diagnosis:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """单次诊断完整详情。"""
+    """单次诊断完整详情（P4-03 越界拒绝）。"""
     row = (
         await db.execute(
             select(DiagnosisRun, LoopLedger.tag_name)
@@ -994,6 +1034,7 @@ async def get_diagnosis_run(
     if row is None:
         raise BizError(code="ERR_NOT_FOUND", message="诊断记录不存在", status_code=404)
     run, tag_name = row
+    await _ensure_run_loop_in_scope(db, scope, run.loop_id)
     return success(_run_to_detail(run, tag_name))
 
 

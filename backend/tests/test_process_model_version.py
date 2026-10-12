@@ -89,12 +89,14 @@ def test_orm_has_38_tables() -> None:
     + 评估发布代际登记（assessment_release_registry，
     P3-08a 迁移 p308arele01，2026-10-12）= 72
     + 授权目录四表（sys_permission / sys_role_permission / sys_user_scope /
-    sys_authz_policy，P4-01 迁移 p401authz01，2026-10-11）= 76。
+    sys_authz_policy，P4-01 迁移 p401authz01，2026-10-11）= 76
+    + 授权发布栅栏行（policy_publication_guard，P4-03 迁移 p403scope01，
+    2026-10-12）= 77。
 
     注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
     整体下线时移除，表计数曾从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 76
+    assert len(Base.metadata.tables) == 77
 
 
 def test_partial_unique_index_current_exists() -> None:

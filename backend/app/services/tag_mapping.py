@@ -193,6 +193,32 @@ async def update_loop_tags(
         ensure_ascii=False,
     )
 
+    # P4-03：tag 改绑=策略变更者（tag 可见性经绑定关系解析，改绑即改可见集）
+    # ——guard 排他锁 + TAG_REBIND 入账（固定锁序 guard→对象；单测环境短路，
+    # 真实链路由集成测试覆盖，与 loop/plant_node/user 域外变更者同口径）
+    from app.services.authz_scope import (
+        domain_guard_enabled,
+        lock_guard_for_update,
+        record_domain_policy_change,
+    )
+
+    if domain_guard_enabled():
+        guard_rev = await lock_guard_for_update(db)
+        await record_domain_policy_change(
+            db,
+            current_revision=guard_rev,
+            operation="TAG_REBIND",
+            operator=operator,
+            reason=f"回路 {loop.tag_name} tag 关联更新（影响按归属解析的 tag 可见性）",
+            target=str(loop_id),
+            before={
+                "roles": {
+                    role: (str(m.tag_id) if m else None) for role, m in existing_mappings.items()
+                }
+            },
+            after={"roles": {role: tid for role, tid in role_tag_map.items() if tid is not None}},
+        )
+
     # 删除现有关联
     await db.execute(delete(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
 
@@ -256,6 +282,10 @@ async def update_loop_tags(
         after_value=after_json,
     )
     await db.commit()
+    # loop.updated_at 由列 onupdate=now() 在 flush 时以 SQL 表达式生成——
+    # 该类属性 flush 后处于过期态，commit 后直接读取会触发同步 IO
+    # （async 下 MissingGreenlet，真实 DB 才暴露）。显式异步 refresh 取回。
+    await db.refresh(loop)
 
     # 绑定关系变更可能改变 is_linked 订阅集合：通知实时订阅 Leader 刷新（免重启生效）
     from app.services.data_source.realtime_subscriber import notify_subscription_changed

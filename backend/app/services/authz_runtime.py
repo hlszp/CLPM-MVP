@@ -29,10 +29,10 @@ from __future__ import annotations
 import logging
 import os
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.authz import SysAuthzPolicy, SysRolePermission
+from app.models.authz import SysRolePermission
 from app.services.authz_catalog import CATALOG, ROLE_SEED
 
 logger = logging.getLogger(__name__)
@@ -72,18 +72,19 @@ def reset_runtime_cache() -> None:
 
 
 async def _read_revision(db: AsyncSession) -> int:
-    """当前策略 revision。
+    """当前策略 revision（P4-03 起读 policy_publication_guard 行）.
 
-    - 账本空（未播种/迁移未应用）→ 0（回退 ROLE_SEED）；
+    - guard 行缺失（P4-03 迁移未应用）→ 回退账本 max；账本空（未播种）
+      → 0（回退 ROLE_SEED）；
+    - guard revision 覆盖授权域与域外策略变更者（节点归属/tag 改绑/用户
+      状态/令牌撤销）——矩阵缓存对域外变更多 reload 一次无害（正确性优先）；
     - 标量形态异常（单测 mock DB 返回用户对象等）→ 视为无账本（0），
       与旧静态链行为一致；真实 DB 连接错误原样抛出（fail-closed）。
     """
-    result = await db.execute(select(func.max(SysAuthzPolicy.revision)))
-    raw = result.scalar_one_or_none()
-    if raw is None:
-        return 0
+    from app.services.authz_scope import read_guard_revision
+
     try:
-        return int(raw)
+        return await read_guard_revision(db)
     except (TypeError, ValueError):
         return 0
 

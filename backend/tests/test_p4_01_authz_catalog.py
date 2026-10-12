@@ -244,10 +244,11 @@ class TestRevisionConflict:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(3),  # get_current_revision
+                _scalar_result(3),  # lock_guard_for_update（P4-03 起替代裸读 revision）
                 _grants_rows(["loop:view"]),  # get_role_grants before
                 None,  # delete
                 None,  # insert
+                None,  # set_guard_revision UPDATE（P4-03）
             ]
         )
         db.commit = AsyncMock(

@@ -435,6 +435,7 @@ async def list_loops(
     db: AsyncSession,
     plant_node_id: str | None = None,
     control_mode: str | None = None,
+    scope_node_ids: list[str] | None = None,
     is_active: bool | None = None,
     status: str | None = None,
     keyword: str | None = None,
@@ -478,6 +479,10 @@ async def list_loops(
         monitor_status = None
 
     conditions = []
+    # P4-03：数据范围与筛选取交集（scope_node_ids 由端点解析：
+    # ALL=None 不加条件；NODE_SUBTREE=范围节点集，与 plant_node_id 筛选 AND）
+    if scope_node_ids is not None:
+        conditions.append(LoopLedger.unit_id.in_(scope_node_ids))
     if plant_node_id:
         # 递归获取所有子孙节点 ID，包含自身
         all_node_ids = await _get_descendant_node_ids(db, plant_node_id)
@@ -1631,6 +1636,27 @@ async def update_loop(
 
     if description is not None:
         loop.description = description
+    if unit_id is not None and unit_id != str(loop.unit_id or ""):
+        # P4-03：回路改挂单元=节点归属策略变更者（改变该回路/其 tag 的 scope
+        # 归属）——guard 排他锁 + NODE_REBIND 入账（固定锁序 guard→对象）
+        from app.services.authz_scope import (
+            domain_guard_enabled,
+            lock_guard_for_update,
+            record_domain_policy_change,
+        )
+
+        if domain_guard_enabled():
+            _guard_rev = await lock_guard_for_update(db)
+            await record_domain_policy_change(
+                db,
+                current_revision=_guard_rev,
+                operation="NODE_REBIND",
+                operator=operator,
+                reason=f"回路 {loop.tag_name} 改挂单元（影响数据范围归属）",
+                target=str(loop_id),
+                before={"unitId": str(loop.unit_id) if loop.unit_id else None},
+                after={"unitId": unit_id},
+            )
     if unit_id is not None:
         loop.unit_id = unit_id
     if score_weights is not None:

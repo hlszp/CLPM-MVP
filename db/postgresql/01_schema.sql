@@ -502,6 +502,8 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_hourly (
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     -- P1-05 结果账本投影指针（迁移 p105resledger01）
     result_record_id    UUID,
+    -- 节点名册/可评分统计（迁移 p3d608ds01，P3-08d；旧行 NULL=历史不可追溯）
+    assessment_stats    JSONB,
     CONSTRAINT fk_kpi_node_snapshot_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
     CONSTRAINT fk_kpi_node_snapshot_hourly_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_node_snapshot_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
@@ -1837,6 +1839,15 @@ CREATE TABLE IF NOT EXISTS handling_order (
     kpi_after     JSONB,
     tuning_record_id UUID,
     cancel_reason VARCHAR(200),
+    -- P3-05 实施记录与验证证据（迁移 p305evd001，DEC-06）：
+    -- implemented_at=实际实施时刻（与 submitted_at 补录分离）；
+    -- closure_evidence=闭环证据三分类；actual_rollback_confirmed 独立于 verify_result
+    implemented_at TIMESTAMP,
+    closure_evidence VARCHAR(32),
+    actual_rollback_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    rollback_confirmed_at TIMESTAMP,
+    rollback_confirmed_by VARCHAR(64),
+    rollback_note VARCHAR(200),
     status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
@@ -1847,7 +1858,10 @@ CREATE TABLE IF NOT EXISTS handling_order (
         ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
          'UTILIZATION', 'RECONFIG', 'OTHER')),
     CONSTRAINT ck_handling_order_verify_result CHECK
-        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
+        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE')),
+    CONSTRAINT ck_handling_order_closure_evidence CHECK
+        (closure_evidence IS NULL OR closure_evidence IN
+         ('MANUAL_CONFIRMATION', 'DATA_VERIFIED', 'COMPARABLE_CONDITION_VERIFIED'))
 );
 COMMENT ON TABLE handling_order IS '处置工单（处置模块 v2.0：排程-执行-验证-闭环执行载体）';
 CREATE INDEX IF NOT EXISTS idx_handling_order_status  ON handling_order (status, updated_at DESC);
@@ -2708,7 +2722,7 @@ CREATE TABLE IF NOT EXISTS sys_authz_policy (
     after_value JSONB,
     rollback_of INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
-    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION')),
+    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION', 'NODE_REBIND', 'TAG_REBIND', 'USER_STATE', 'TOKEN_REVOKE')),
     CONSTRAINT uq_sys_authz_policy_rollback_of UNIQUE (rollback_of)
 );
 CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_operation ON sys_authz_policy (operation);
@@ -2718,6 +2732,16 @@ COMMENT ON TABLE sys_permission IS '页面码/动作码目录（P4-01；无机�
 COMMENT ON TABLE sys_role_permission IS '五角色授权矩阵（P4-01）';
 COMMENT ON TABLE sys_user_scope IS '用户数据范围 ALL/NODE_SUBTREE（P4-01；消费在 P4-03）';
 COMMENT ON TABLE sys_authz_policy IS '授权策略版本账本（P4-01；不可变追加式）';
+
+-- P4-03（迁移 p403scope01 同批）：单一 policy_publication_guard 行——全部授权
+-- 相关变更（角色授权/用户scope/禁用/令牌撤销/节点归属/tag改绑）先取该行排他锁
+-- 并递增 revision；任务提交/WS 发送批取同一行共享锁再读主体策略（栅栏）。
+CREATE TABLE IF NOT EXISTS policy_publication_guard (
+    id INTEGER PRIMARY KEY,
+    revision INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE policy_publication_guard IS '授权发布栅栏行（P4-03；单行 id=1，排他/共享锁序列化策略变更与提交/发送）';
 
 -- =============================================================================
 -- 脚本结束

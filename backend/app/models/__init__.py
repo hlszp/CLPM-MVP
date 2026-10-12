@@ -17,6 +17,7 @@ from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.assessment_release import AssessmentReleaseRegistry  # P3-08a
 from app.models.audit import SysAuditLog
 from app.models.authz import (  # P4-01
+    PolicyPublicationGuard,
     SysAuthzPolicy,
     SysPermission,
     SysRolePermission,
@@ -94,6 +95,7 @@ __all__ = [
     "SysPermission",
     "SysRolePermission",
     "SysUserScope",
+    "PolicyPublicationGuard",
     "Base",
     "LoopHealthFlag",
     "TimestampMixin",

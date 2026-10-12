@@ -662,6 +662,7 @@ async def list_events(
     end_time: datetime | None = None,
     limit: int = 50,
     offset: int = 0,
+    scope_node_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """事件分页查询。
 
@@ -669,6 +670,8 @@ async def list_events(
     ARCHIVED 等多值，前端 Tab 化后一次拉全"已确认"侧全部状态）。
     plant_node_id 为装置-单元节点 ID，按 loop_ledger.unit_id 子树过滤
     （未挂单元的回路不属于任何装置，会被排除）。
+    scope_node_ids（P4-03）：数据范围节点集（None=ALL 不过滤；list=范围内
+    回路的事件，与 plant_node_id 筛选 AND）。
     """
     stmt = (
         select(AlertEvent, LoopLedger.tag_name, AlertRule.rule_name)
@@ -685,6 +688,14 @@ async def list_events(
     count_stmt = count_stmt.where(
         AlertEvent.loop_id.in_(select(LoopLedger.id).where(active_filter))
     )
+
+    # P4-03：预警事件按其关联 loop/node 过滤（数据范围）
+    if scope_node_ids is not None:
+        scope_filter = LoopLedger.unit_id.in_(scope_node_ids)
+        stmt = stmt.where(scope_filter)
+        count_stmt = count_stmt.where(
+            AlertEvent.loop_id.in_(select(LoopLedger.id).where(scope_filter))
+        )
 
     if loop_id:
         stmt = stmt.where(AlertEvent.loop_id == loop_id)

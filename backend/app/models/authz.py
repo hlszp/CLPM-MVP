@@ -157,6 +157,29 @@ class SysUserScope(Base):
     )
 
 
+class PolicyPublicationGuard(Base):
+    """单一 ``policy_publication_guard`` 行（P4-03，01§3.5 末段冻结）.
+
+    统一序列化全部授权相关变更（角色授权、用户 scope/禁用、令牌撤销、
+    节点归属和 tag 改绑）：变更事务先取该行 **排他锁**（FOR UPDATE）并
+    递增 revision；人工任务提交/WS 发送批先取同一行 **共享锁**（FOR SHARE）
+    再读取主体策略——并发撤权与提交/发送按 guard 获得顺序线性化。
+
+    固定锁顺序：guard → 主体（sys_user/sys_user_scope）→ 对象（矩阵行/
+    plant_node/loop_tag_mapping）。``revision`` 与 ``sys_authz_policy`` 账本
+    对齐推进（每次 guard 推进必有对应账本行，operation 枚举含非授权域的
+    节点/tag 改绑与用户状态/令牌撤销变更）。
+    """
+
+    __tablename__ = "policy_publication_guard"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, server_default=func.now(), onupdate=func.now()
+    )
+
+
 class SysAuthzPolicy(Base):
     """授权策略版本账本（不可变追加式；模式复用 P2-02 config_publication）.
 
@@ -164,7 +187,10 @@ class SysAuthzPolicy(Base):
       主键唯一约束并发兜底（并发双写恰一方成功）
     - ``operation``: SEED（初始种子）/ ROLE_GRANT（角色矩阵更新）/
       USER_SCOPE（用户 scope 更新）/ ROLLBACK（回退逆操作）/
-      CATALOG_EXTENSION（目录基线扩展，P4-02 起随迁移追加，不可回退）
+      CATALOG_EXTENSION（目录基线扩展，P4-02 起随迁移追加，不可回退）；
+      P4-03 起新增影响有效授权/数据范围的域外变更：NODE_REBIND（节点归属/
+      回路 unit 改挂）/ TAG_REBIND（tag 改绑）/ USER_STATE（用户禁用/启用）/
+      TOKEN_REVOKE（令牌撤销）——均先取 guard 排他锁再入账
     - ``before_value``/``after_value``: 审计信封（JSONB 快照 + 原因/作用域）
     - ``rollback_of``: ROLLBACK 行指向被回退的源 revision；同一 revision
       不允许二次回退（防重复逆操作震荡）
@@ -188,7 +214,8 @@ class SysAuthzPolicy(Base):
 
     __table_args__ = (
         CheckConstraint(
-            "operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION')",
+            "operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION', "
+            "'NODE_REBIND', 'TAG_REBIND', 'USER_STATE', 'TOKEN_REVOKE')",
             name="ck_sys_authz_policy_operation",
         ),
         UniqueConstraint("rollback_of", name="uq_sys_authz_policy_rollback_of"),
@@ -198,6 +225,7 @@ class SysAuthzPolicy(Base):
 
 
 __all__ = [
+    "PolicyPublicationGuard",
     "SysAuthzPolicy",
     "SysPermission",
     "SysRolePermission",

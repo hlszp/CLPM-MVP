@@ -31,7 +31,7 @@ from pydantic import Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import get_current_user, get_scope_ctx, require_perms
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS, _run_to_summary
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -52,6 +52,7 @@ from app.schemas.report import (
     ReportOverviewData,
 )
 from app.services.alert_stats import build_alert_statistics
+from app.services.authz_scope import ScopeContext, scoped_plant_node_id
 from app.services.data_quality_stats import build_data_quality_stats
 from app.services.handling_stats import (
     _load_subtree_unit_ids,
@@ -232,8 +233,10 @@ async def get_report_overview(
     startDate: str | None = Query(None, description="起始日期 YYYY-MM-DD"),
     endDate: str | None = Query(None, description="结束日期 YYYY-MM-DD"),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """管理总览聚合（P3：S1/S2/S3 自适应填充，锁定配置优先）。"""
+    """管理总览聚合（P3：S1/S2/S3 自适应填充，锁定配置优先；P4-03 范围交集）。"""
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     if not start or not end:
         start, end = default_report_window()
@@ -257,8 +260,10 @@ async def get_report_diagnosis_statistics(
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """诊断统计（基于 DiagnosisRun 表，不复用旧 DiagnosisResult 导出）。"""
+    """诊断统计（基于 DiagnosisRun 表，不复用旧 DiagnosisResult 导出；P4-03 范围交集）。"""
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     data = await get_diagnosis_statistics(
         db, start_date=start, end_date=end, plant_node_id=plantNodeId
@@ -277,14 +282,16 @@ async def get_report_benefit(
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标）。
+    """收益报告：整定前后 KPI 对比、自控率提升曲线、装置标杆（仅技术指标；P4-03 范围交集）。
 
     P2-3（方案 §5.2）：响应向后兼容增加整定执行区块字段——tuningExecution
     （算法/状态分布 + 回滚率 + 平均拟合度）/ fittingDistribution（四桶）/
     latestBatchScatter（最近已完成批次前后散点）。整定模块禁用时本端点
     不受影响（历史归档口径）。
     """
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     data = await get_benefit(db, start_date=start, end_date=end, plant_node_id=plantNodeId)
     return success(data=data)
@@ -303,14 +310,16 @@ async def get_report_benefit_orders(
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """逐工单前后对比明细（P2-4，方案 §5.3；R1 自持直读 handling_order）。
+    """逐工单前后对比明细（P2-4，方案 §5.3；R1 自持直读 handling_order；P4-03 范围交集）。
 
     仅返回 CLOSED 且 kpi_before/kpi_after 快照非空的工单（verified_at 归窗，
     装置下钻），行内含 orderNo/回路/actionType/kpiBefore/kpiAfter/
     verifyResult/verifiedAt——逐单举证"这一单到底有没有效"。处置/整定模块
     禁用时本端点不受影响（历史归档口径）。
     """
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     data = await get_benefit_orders(
         db,
@@ -380,13 +389,15 @@ async def get_report_data_quality(
     startDate: str | None = Query(None, description="起始日期 YYYY-MM-DD"),
     endDate: str | None = Query(None, description="结束日期 YYYY-MM-DD"),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """数据质量报告聚合（P1-1，方案 §4.1）。
+    """数据质量报告聚合（P1-1，方案 §4.1；P4-03 范围交集）。
 
     只依赖基础模块数据（loop_ledger / kpi_snapshot_hourly /
     loop_confidence_latest），可插拔模块全拔时
     仍完整可用；未传时间窗默认近 30 天。
     """
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     data = await build_data_quality_stats(db, start=start, end=end, plant_node_id=plantNodeId)
     return success(data=data)
@@ -525,6 +536,7 @@ async def get_report_alert_statistics(
     startDate: str | None = Query(None, description="起始日期 YYYY-MM-DD"),
     endDate: str | None = Query(None, description="结束日期 YYYY-MM-DD"),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
     severity: str | None = Query(None, description="INFO/WARN/ERROR/CRITICAL"),
     status: str | None = Query(
         None, description="ACTIVE/ACKNOWLEDGED/RESOLVED/SUPPRESSED/ARCHIVED"
@@ -535,6 +547,7 @@ async def get_report_alert_statistics(
     监控为基础模块数据（alert_event/alert_rule/alert_suppression），任何
     模块组合下完整可用；未传时间窗默认近 30 天（triggered_at 半开区间）。
     """
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     data = await build_alert_statistics(
         db,
@@ -559,14 +572,16 @@ async def get_report_handling_statistics(
     startDate: str | None = Query(None),
     endDate: str | None = Query(None),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """处置报告统计（R1 自持：直读 handling_order/loop_action_item）。
+    """处置报告统计（R1 自持：直读 handling_order/loop_action_item；P4-03 范围交集）。
 
     与 /handling/statistics 共用 handling_stats.build_handling_statistics
     单一实现；支持时间范围（工单 created_at 半开区间，闭环数按 verified_at
     归窗，驳回率按 suggested_at 归窗）与装置下钻（WITH RECURSIVE 子树）。
     处置模块禁用时本端点不受影响（历史归档口径）。
     """
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     data = await build_handling_statistics(
         db, months=months, start=start, end=end, plant_node_id=plantNodeId
@@ -589,13 +604,15 @@ async def get_report_diagnosis_runs(
     plantNodeId: str | None = Query(None),
     category: str | None = Query(None),
     severity: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """诊断报告明细（R1 自持：直读 diagnosis_run，统计口径 SUCCESS/PARTIAL）。
+    """诊断报告明细（R1 自持：直读 diagnosis_run，统计口径 SUCCESS/PARTIAL；P4-03 范围交集）。
 
     行结构复用 diagnosis_v2._run_to_summary 契约（前端零改动渲染）；
     支持时间范围、装置下钻（plantNodeId，修复报告页明细装置筛选失效 P-07）、
     分类与严重度筛选。诊断模块禁用时本端点不受影响（历史归档口径）。
     """
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     conditions = _report_run_conditions(start, end, category, severity)
     conditions += await _report_run_plant_condition(db, plantNodeId)
@@ -635,8 +652,10 @@ async def export_report_diagnosis_runs(
     plantNodeId: str | None = Query(None),
     category: str | None = Query(None),
     severity: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> PlainTextResponse:
-    """诊断报告明细 CSV 导出（列定义与 /diagnosis/export 对齐，≤5000 行）。"""
+    """诊断报告明细 CSV 导出（列定义与 /diagnosis/export 对齐，≤5000 行；P4-03 范围交集）。"""
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     start, end = _parse_date_range(startDate, endDate)
     conditions = _report_run_conditions(start, end, category, severity)
     conditions += await _report_run_plant_condition(db, plantNodeId)
@@ -720,8 +739,10 @@ async def get_stage_lock_endpoint(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """读取当前自动判定阶段 + 锁定状态（全角色可读）。"""
+    """读取当前自动判定阶段 + 锁定状态（全角色可读；P4-03 范围交集）。"""
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     lock_info = await get_stage_lock(db)
     maturity = await determine_maturity_stage(db, plant_node_id=plantNodeId)
     data = ReportStageLockState(
@@ -740,8 +761,10 @@ async def put_stage_lock_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("system:report-config")),
     plantNodeId: str | None = Query(None),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """设置/解除阶段锁定（仅 ADMIN）。传 stage=null 解除锁定。"""
+    """设置/解除阶段锁定（仅 ADMIN；P4-03 范围交集）。传 stage=null 解除锁定。"""
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     if body.stage is not None and body.stage not in ("S1", "S2", "S3"):
         raise BizError(
             code="ERR_REPORT_STAGE_INVALID",

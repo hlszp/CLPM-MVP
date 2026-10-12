@@ -20,13 +20,14 @@ M1 skeleton：除 A-10/A-12 外返回结构完整的空数据，标注 TODO: M2 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import get_current_user, get_scope_ctx, require_perms
 from app.core.db import get_db
 from app.core.event_bus import mark_read
 from app.models.module_plugin import ModulePlugin
@@ -52,8 +53,9 @@ router = APIRouter(prefix="/workbench", tags=["workbench"])
 async def get_scope_tree(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
+    scope: Any = Depends(get_scope_ctx),
 ) -> dict:
-    """返回可选范围列表：全厂 + 工厂 + 装置。
+    """返回可选范围列表：全厂 + 工厂 + 装置（P4-03：仅范围内节点）。
 
     每条记录：{id, node_id, name, type, parent_id, parent_source_id}
     - id = plant_node.source_node_id（整数，与 workbench_window_summary.scope_id 对齐）
@@ -79,6 +81,11 @@ async def get_scope_tree(
         )
     )
     nodes = [dict(row._mapping) for row in result.all()]
+    # P4-03：范围选择器仅暴露范围内节点（ALL 不加条件；NODE_SUBTREE 按
+    # 节点集过滤——范围外装置不出现在选择器，杜绝显式请求越界范围）
+    allowed = getattr(scope, "allowed_node_ids", None)
+    if allowed is not None:
+        nodes = [n for n in nodes if n.get("node_id") in allowed]
     return success(data=nodes)
 
 
@@ -112,17 +119,25 @@ async def get_overview(
     window: str = Query("24h", description="时间窗口：24h/7d/30d"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(get_current_user),
+    scope: Any = Depends(get_scope_ctx),
 ) -> dict:
     """A-01 工作台总览：三窗口 KPI + 装置/单元排名 + Pareto/根因 + 处置漏斗。
 
     G-总览填充：读 workbench_window_summary 预计算表 + MV-02/MV-03 + diagnosis_run
     聚合（A3 迁 v2，旧 DiagnosisTag 读方已退役，见 14 号方案）。
     部分失败容错：单块异常返回空/None，不阻断其余块。
+    P4-03：数据范围与请求范围取交集（NODE_SUBTREE → unit_ids 注入各块；
+    roots 块与缓存 key 均含授权 hash——全厂缓存不越界）。
     """
     from app.services.workbench_overview import build_overview
 
+    _unit_ids = sorted(scope.allowed_node_ids) if getattr(scope, "allowed_node_ids", None) else None
     data = await build_overview(
-        db, scope_type=scopeType, scope_id=scopeId, window=normalize_window(window)
+        db,
+        scope_type=scopeType,
+        scope_id=scopeId,
+        window=normalize_window(window),
+        unit_ids=_unit_ids,
     )
     return success(data=data)
 

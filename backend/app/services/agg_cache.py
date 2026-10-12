@@ -27,6 +27,26 @@ from typing import Any
 _TTL_SECONDS = 60.0
 _REDIS_PREFIX = "agg_cache:"
 
+
+async def policy_revision_suffix(db: Any) -> str:
+    """P4-03：缓存 key 的 policyRevision 后缀（guard revision 变化即换 key）.
+
+    单测环境（CLPM_TEST_MODE=1）/读取异常 → "r0"（key 稳定，不触碰 mock DB；
+    真实链路 revision 推进自然失效旧缓存，旧 key 按 TTL 过期——"权限/数据/
+    配置更新失效"）。
+    """
+    import os
+
+    if os.environ.get("CLPM_TEST_MODE") == "1":
+        return "r0"
+    try:
+        from app.services.authz_scope import read_guard_revision
+
+        return f"r{await read_guard_revision(db)}"
+    except Exception:  # noqa: BLE001 —— 读取失败不阻断聚合（缓存退化旧口径）
+        return "r0"
+
+
 # Redis 层开关（默认开启；测试进程在 conftest 顶部关闭以隔离 mock 数据）
 REDIS_LAYER_ENABLED = True
 

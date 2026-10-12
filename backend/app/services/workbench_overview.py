@@ -530,7 +530,9 @@ async def _query_pareto(db: AsyncSession) -> list[dict[str, Any]]:
     return [dict(r._mapping) for r in result.all()]
 
 
-async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
+async def _query_roots(
+    db: AsyncSession, top_n: int = ROOTS_TOP_N, unit_ids: list[str] | None = None
+) -> list[Any]:
     """diagnosis_run symptom_tags 标签聚合 Top N（近 30d 检出 + PENDING 子计数）。
 
     口径（14 号方案阶段 A3）：旧 diagnosis_tag 按 tag_code 聚合迁 v2 引擎——
@@ -541,9 +543,18 @@ async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
     窗口起点用参数化 naive UTC（PG 会话时区 +8，勿裸用 now()）。
     """
     since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+    # P4-03：数据范围过滤（unit_ids=None=ALL 全厂；NODE_SUBTREE=范围内回路）
+    _scope_cond = ""
+    _params: dict[str, Any] = {"since": since, "top_n": top_n}
+    if unit_ids:
+        _scope_cond = (
+            "AND r.loop_id IN "
+            "(SELECT id FROM loop_ledger WHERE unit_id = ANY(CAST(:unit_ids AS uuid[])))"
+        )
+        _params["unit_ids"] = list(unit_ids)
     result = await db.execute(
         text(
-            """
+            f"""
             SELECT kv.key AS tag_code,
                    count(*) AS count,
                    count(*) FILTER (WHERE r.review_status = 'PENDING') AS active_count,
@@ -553,12 +564,13 @@ async def _query_roots(db: AsyncSession, top_n: int = ROOTS_TOP_N) -> list[Any]:
             WHERE r.status = 'SUCCESS'
               AND r.created_at >= :since
               AND kv.value->>'detected' = 'true'
+              {_scope_cond}
             GROUP BY kv.key
             ORDER BY count DESC
             LIMIT :top_n
             """
         ),
-        {"since": since, "top_n": top_n},
+        _params,
     )
     return [dict(r._mapping) for r in result.all()]
 
@@ -640,20 +652,37 @@ def _scope_id_int(scope_type: str, scope_id: int | None) -> int:
     return int(scope_id)
 
 
+def _unit_ids_hash(unit_ids: list[str] | None) -> str:
+    """P4-03：授权节点集合 hash（缓存 key 隔离——不同范围不共用聚合缓存）。"""
+    import hashlib
+
+    if not unit_ids:
+        return "all"
+    return hashlib.sha1("\n".join(sorted(unit_ids)).encode()).hexdigest()[:12]
+
+
 async def build_overview(
     db: AsyncSession,
     scope_type: str = "GLOBAL",
     scope_id: int | None = None,
     window: str = "24h",
+    unit_ids: list[str] | None = None,
 ) -> dict[str, Any]:
     """组装 A-01 总览六块。部分失败容错：单块异常不阻断其余块。
 
     2026-10-03：60s TTL 短缓存（agg_cache），同参聚合 60s 内直接复用。
+    P4-03：unit_ids=数据范围节点集（None=ALL）；缓存 key 含授权节点集合
+    hash + policyRevision——跨范围不共用全厂缓存，策略/拓扑变更自然换 key。
     """
-    from app.services.agg_cache import cached_agg
+    from app.services.agg_cache import cached_agg, policy_revision_suffix
 
-    key = f"workbench-overview:{scope_type}:{scope_id or 0}:{window}"
-    return await cached_agg(key, lambda: _build_overview_impl(db, scope_type, scope_id, window))
+    rev = await policy_revision_suffix(db)
+    key = (
+        f"workbench-overview:{scope_type}:{scope_id or 0}:{window}:{_unit_ids_hash(unit_ids)}:{rev}"
+    )
+    return await cached_agg(
+        key, lambda: _build_overview_impl(db, scope_type, scope_id, window, unit_ids=unit_ids)
+    )
 
 
 async def _build_overview_impl(
@@ -661,8 +690,9 @@ async def _build_overview_impl(
     scope_type: str = "GLOBAL",
     scope_id: int | None = None,
     window: str = "24h",
+    unit_ids: list[str] | None = None,
 ) -> dict[str, Any]:
-    """实际聚合（由 build_overview 的短缓存包装）。"""
+    """实际聚合（由 build_overview 的短缓存包装）；P4-03 unit_ids=范围节点集。"""
     sid = _scope_id_int(scope_type, scope_id)
     overview: dict[str, Any] = {
         "scope": {"type": scope_type, "id": scope_id},
@@ -754,11 +784,12 @@ async def _build_overview_impl(
     # 长于总览 60s 缓存，且由 refresh-workbench-mv Beat（5min）预热写 Redis，
     # API 路径常态命中、不再实时展开
     try:
-        from app.services.agg_cache import cached_agg
+        from app.services.agg_cache import cached_agg, policy_revision_suffix
 
+        _rev = await policy_revision_suffix(db)
         root_rows = await cached_agg(
-            "workbench-roots:30d",
-            lambda: _query_roots(db, ROOTS_TOP_N),
+            f"workbench-roots:30d:{_unit_ids_hash(unit_ids)}:{_rev}",
+            lambda: _query_roots(db, ROOTS_TOP_N, unit_ids=unit_ids),
             ttl=330,
         )
         overview["roots"] = shape_roots(root_rows, ROOTS_TOP_N)
