@@ -10,7 +10,7 @@
 import type { MetricApi } from '#/api/metric';
 import type { KpiSnapshotItem } from '#/api/metric';
 
-import { computed, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 import {
   Badge,
@@ -22,7 +22,8 @@ import {
 } from 'ant-design-vue';
 
 import { getLoopSnapshotsApi } from '#/api/metric';
-import { ClpmInfoTip } from '#/components/clpm';
+import { ClpmInfoTip, ClpmLoadErrorAlert } from '#/components/clpm';
+import { useLatestRequest } from '#/composables/use-latest-request';
 import {
   LOOP_TYPE_LABEL_MAP,
   useLoopPalettes,
@@ -34,6 +35,7 @@ import {
   CONFIDENCE_COLOR_MAP,
   CONFIDENCE_LABEL_MAP,
   CONTROL_TYPE_MAP,
+  describeRequestError,
   DETAIL_HISTORY_COLUMNS,
   formatFullTime,
   formatNumber,
@@ -154,39 +156,68 @@ function scoreColor(val: null | number | undefined): string {
   return useScoreColor(val, props.gradingThresholds).color.value;
 }
 
-/** 历史快照子表（最近 10 条；原 loadDrawerHistory 逻辑搬移） */
+/** 历史快照子表（最近 10 条；原 loadDrawerHistory 逻辑搬移）
+ *  G3-R03（14 号文 §4）：区分 loading/成功空/成功有值/error——失败显式
+ *  原因+重试，不冒充空态；useLatestRequest 竞态守卫（切换回路/关闭
+ *  组件后迟到响应不写入）。 */
 const history = ref<KpiSnapshotItem[]>([]);
 const historyLoading = ref(false);
+/** 历史加载失败原因（null=最近一次成功；失败不清空已有数据冒充空态） */
+const historyError = ref<null | string>(null);
+
+const historyGuard = useLatestRequest<string>();
+
+const historyErrorText = computed(() =>
+  historyError.value ? `历史快照加载失败：${historyError.value}` : '',
+);
 
 async function loadHistory(loopId: string) {
+  historyGuard.bump(loopId);
   historyLoading.value = true;
-  try {
-    const result = await getLoopSnapshotsApi({
-      loopId,
-      latestOnly: false,
-      page: 1,
-      pageSize: 10,
-    });
-    history.value = result.items || [];
-  } catch {
-    history.value = [];
-  } finally {
-    historyLoading.value = false;
-  }
+  await historyGuard.run(async (_signal, capturedEpoch) => {
+    try {
+      const result = await getLoopSnapshotsApi({
+        loopId,
+        latestOnly: false,
+        page: 1,
+        pageSize: 10,
+      });
+      if (!historyGuard.guard(loopId, capturedEpoch)) return;
+      history.value = result.items || [];
+      historyError.value = null;
+    } catch (error) {
+      if (!historyGuard.guard(loopId, capturedEpoch)) return;
+      // G3-R03：失败保留既有数据并显式报错，不置空冒充"暂无数据"
+      historyError.value = describeRequestError(error);
+    } finally {
+      if (historyGuard.guard(loopId, capturedEpoch)) historyLoading.value = false;
+    }
+  });
+}
+
+function retryHistory() {
+  if (props.record?.loopId) loadHistory(props.record.loopId);
 }
 
 watch(
   () => [props.record?.loopId, props.withHistory] as const,
   ([loopId, withHistory]) => {
+    // 切换目标：失效在途响应（旧回路迟到数据不写入）并重置历史状态
+    historyGuard.bump(loopId ?? null);
+    history.value = [];
+    historyError.value = null;
+    historyLoading.value = false;
     if (withHistory && loopId) {
-      history.value = [];
       loadHistory(loopId);
-    } else {
-      history.value = [];
     }
   },
   { immediate: true },
 );
+
+// 组件关闭：递增代次使迟到响应 guard 全拒（不污染新实例）
+onBeforeUnmount(() => {
+  historyGuard.cancelAll();
+});
 </script>
 
 <template>
@@ -451,6 +482,13 @@ watch(
     <!-- 历史快照子表（该回路最近 10 条评估记录；withHistory=false 时不渲染） -->
     <template v-if="withHistory !== false">
       <div class="mb-2 mt-4 text-sm font-medium">历史快照（最近 10 条）</div>
+      <!-- G3-R03：加载失败显式原因+重试，不冒充空态 -->
+      <ClpmLoadErrorAlert
+        v-if="historyError && !historyLoading"
+        :error="true"
+        :error-text="historyErrorText"
+        @retry="retryHistory"
+      />
       <Table
         :columns="DETAIL_HISTORY_COLUMNS"
         :data-source="history"
@@ -530,6 +568,15 @@ watch(
               }}
             </Tag>
           </template>
+        </template>
+        <!-- G3-R03：空态与错误态分开——HTTP 成功 0 条才显示"暂无记录" -->
+        <template #emptyText>
+          <span v-if="historyError" class="text-xs text-red-400">
+            历史快照加载失败，无法确认该回路是否有评估记录（请重试）
+          </span>
+          <span v-else class="text-xs text-gray-400">
+            该回路暂无历史评估记录
+          </span>
         </template>
       </Table>
     </template>

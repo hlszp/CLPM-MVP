@@ -218,3 +218,58 @@ export function getMetricValue(
   const value = (record as unknown as Record<string, unknown>)[dataIndex];
   return typeof value === 'number' ? value : undefined;
 }
+
+/**
+ * G3-R03（14 号文 §4）：请求错误 → 用户可读失败原因
+ *
+ * 两个历史入口（可信度详情/性能详情历史子表）共用，错误态展示显式原因，
+ * 不把失败冒充"暂无记录"。错误形状对齐 requestClient 抛出链：
+ * HTTP 非 2xx/3xx 为 axios error（response.status / response.data.message）；
+ * HTTP 200 但业务 code!=0 时 defaultResponseInterceptor 抛"展开 response
+ * 的对象"（status=200 + data.message）。超时无 response（code=ECONNABORTED）。
+ * abort 取消不会到达此处——组件侧每次发起前 bump 代次，被取消的响应
+ * 先被 guard 拒绝丢弃。
+ */
+export function describeRequestError(error: unknown): string {
+  const err = error as null | {
+    code?: unknown;
+    message?: unknown;
+    response?: {
+      data?: { message?: unknown };
+      status?: number;
+    };
+  };
+  const status = err?.response?.status;
+  const bizMessage =
+    typeof err?.response?.data?.message === 'string'
+      ? err.response.data.message
+      : '';
+
+  if (status === 403) {
+    return '无权限访问（403），请确认当前账号权限';
+  }
+  if (status === 422) {
+    return `请求被拒绝（422）${bizMessage ? `：${bizMessage}` : '：参数校验失败'}`;
+  }
+  if (typeof status === 'number' && status >= 500) {
+    return `服务异常（${status}），请稍后重试`;
+  }
+  if (typeof status === 'number' && status !== 200) {
+    return `请求失败（${status}）${bizMessage ? `：${bizMessage}` : ''}`;
+  }
+  if (status === 200) {
+    // 业务错误（HTTP 成功但 code!=0）：展示后端 message
+    const msg =
+      bizMessage || (typeof err?.message === 'string' ? err.message : '');
+    return msg ? `请求失败：${msg}` : '请求失败（业务错误）';
+  }
+  // 无 HTTP 状态：超时（axios ECONNABORTED + timeout）或网络异常
+  if (
+    err?.code === 'ECONNABORTED' ||
+    /timeout/i.test(typeof err?.message === 'string' ? err.message : '')
+  ) {
+    return '请求超时，请稍后重试';
+  }
+  const msg = typeof err?.message === 'string' ? err.message : '';
+  return msg ? `请求失败：${msg}` : '网络异常或请求失败，请稍后重试';
+}
