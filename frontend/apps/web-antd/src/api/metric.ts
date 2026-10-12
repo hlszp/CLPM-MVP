@@ -1618,10 +1618,19 @@ export interface MetricsSemantic {
 /** 回路小时指标快照列表项（24 字段 + loopTagName） */
 export interface KpiSnapshotItem {
   /**
-   * P3-08a 语义明细（可选增量键；loop 级 API 当前不携带——读端
-   * 条件式消费：出现时区分正式/参考值与 compositeState）。
+   * P3-08a 语义明细（G3-R01 起由 /performance/loops/snapshots 按行透出：
+   * 该行自己 result_record 的 payload.metricsSemantic 原样，键=指标 DB
+   * 列名 + __composite__——与账本 payload 顶层 composite 为同一对象）。
    */
   metricsSemantic?: MetricsSemantic | null;
+  /** G3-R01：本行对应的不可变结果账本 record 身份 */
+  resultRecordId?: null | string;
+  /**
+   * G3-R01 语义链路状态：AVAILABLE=携带完整语义；NOT_TRACEABLE=legacy 无
+   * 语义（历史不可追溯）；BROKEN=新 profile 缺语义（断链暴露）；
+   * UNLINKED=快照行无账本链接
+   */
+  semanticLinkStatus?: null | string;
   loopId: null | string;
   loopTagName: null | string;
   /** 评估来源（整合方案 B3）：SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL */

@@ -106,15 +106,18 @@ const gradeUnavailableReason = computed(() => {
   return '';
 });
 
-// ===== R02-2（P3-D6b）：快速率正式/参考分行 =====
+// ===== R02-2（P3-D6b，G3-R01 接通）：快速率正式/参考分行 =====
 // record 携带 metricsSemantic.fast_rate 语义时拆"正式 F / 参考分"两行
-// （参考行加徽标）；未携带（当前 loop 级 API 不返回该键）按原单值渲染。
-const fastReferenceScore = computed<null | number>(() => {
-  const raw = props.record.metricsSemantic?.fast_rate?.details?.referenceScore;
-  return typeof raw === 'number' ? raw : null;
-});
+// （参考行加徽标）；未携带（legacy 行）按原单值渲染。
+// G3-R01 正式优先互斥守卫（08d 口径）：正式值在场（含真实 0 分）时残留
+// referenceScore 不展示、不重复计参考——正式 0 是有效正式分。
 const fastFormalValue = computed<null | number>(() => {
   const raw = props.record.metricsSemantic?.fast_rate?.value;
+  return typeof raw === 'number' ? raw : null;
+});
+const fastReferenceScore = computed<null | number>(() => {
+  if (fastFormalValue.value !== null) return null;
+  const raw = props.record.metricsSemantic?.fast_rate?.details?.referenceScore;
   return typeof raw === 'number' ? raw : null;
 });
 /** 参考分行注记（R02-1：参考值不进等级，单独注记） */
@@ -123,6 +126,28 @@ const fastReferenceNote = computed(() =>
     ? ''
     : `快速性参考分 ${fastReferenceScore.value}% · 动态证据不足（静稳规则），不参与定级`,
 );
+
+// ===== G3-R01：语义链路状态（legacy 不可追溯 vs 新 profile 断链分开） =====
+const SEMANTIC_LINK_LABELS: Record<string, { text: string; tone: string }> = {
+  AVAILABLE: { text: '完整语义可追溯', tone: 'success' },
+  NOT_TRACEABLE: {
+    text: '历史不可追溯（该记录无完整语义明细）',
+    tone: 'default',
+  },
+  UNLINKED: {
+    text: '历史不可追溯（快照行未关联结果账本）',
+    tone: 'default',
+  },
+  BROKEN: {
+    text: '语义断链：该记录为新评估档位但缺少语义明细（链路缺陷，请上报）',
+    tone: 'error',
+  },
+};
+const semanticLink = computed(() => {
+  const status = props.record.semanticLinkStatus ?? null;
+  if (status === null) return null;
+  return SEMANTIC_LINK_LABELS[status] ?? { text: status, tone: 'default' };
+});
 
 /** 评分颜色（原页面 scoreColor 判定链） */
 function scoreColor(val: null | number | undefined): string {
@@ -282,8 +307,9 @@ watch(
             :detail="KPI_TERM_EXPLANATIONS.responseScore?.detail"
           />
         </template>
-        <!-- R02-2：有语义（metricsSemantic.fast_rate.referenceScore）时拆
-             "正式 F / 参考分"两行，参考行加徽标；未携带语义按原单值渲染 -->
+        <!-- R02-2：有语义（metricsSemantic.fast_rate.referenceScore 且无正式值）
+             时拆"正式 F / 参考分"两行，参考行加徽标；正式值（含 0 分）在场
+             优先单值渲染；未携带语义按原单值渲染 -->
         <template v-if="fastReferenceScore !== null">
           <div>
             <span class="text-gray-500">正式 F：</span>
@@ -302,7 +328,12 @@ watch(
           </div>
         </template>
         <template v-else>
-          {{ formatNumber(record.fastRate, '%') }}
+          {{
+            formatNumber(
+              fastFormalValue !== null ? fastFormalValue : record.fastRate,
+              '%',
+            )
+          }}
         </template>
       </DescriptionsItem>
       <DescriptionsItem>
@@ -399,6 +430,21 @@ watch(
       </DescriptionsItem>
       <DescriptionsItem label="算法版本">
         {{ record.algorithmVersion || '—' }}
+      </DescriptionsItem>
+      <!-- G3-R01：语义链路状态（legacy 不可追溯 / 新 profile 断链分开显示） -->
+      <DescriptionsItem label="评估语义">
+        <Tag v-if="semanticLink" :color="semanticLink.tone" class="m-0">
+          {{ semanticLink.text }}
+        </Tag>
+        <span v-else class="text-gray-400">—</span>
+        <Tooltip
+          v-if="semanticLink"
+          :title="`语义明细来源：不可变结果账本 record ${
+            record.resultRecordId || '（未关联）'
+          }；legacy 记录无完整语义属历史口径，新档位记录缺语义为链路缺陷`"
+        >
+          <span class="ml-1 cursor-help text-xs text-gray-400">?</span>
+        </Tooltip>
       </DescriptionsItem>
     </Descriptions>
 
