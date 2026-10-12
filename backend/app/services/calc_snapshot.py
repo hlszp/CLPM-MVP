@@ -1243,6 +1243,9 @@ async def save_identification_snapshot(
             "spExogeneity": evidence.get("spExogeneity"),
             "finalEventTest": evidence.get("finalEventTest"),
             "reselectUncertainty": evidence.get("reselectUncertainty"),
+            # G3-APP（14 号文 §5，S1-b 消费链）：低 SNR 显式不承诺标注
+            # （含 joint 胜出路径的聚合 SNR 记录；None=当时未触发不伪补）
+            "lowSnr": evidence.get("lowSnr"),
             # P3-03 终验节点加性键（模型级终验结论四态+依据链；
             # None=未运行终验装配/旧结果，不伪补）
             "finalVerification": evidence.get("finalVerification"),

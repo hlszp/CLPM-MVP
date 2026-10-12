@@ -1727,6 +1727,43 @@ def identify_from_history(
                 best_r.preprocessing["segmentCatalog"] = segment_catalog
                 best_r.preprocessing["windowSearch"] = _public_window_search(window_search_audit)
 
+                # P3-S1 已知局限①修补（G3-APP，14 号文 §5.2）：joint 早退分支
+                # 补低 SNR 标注——本分支 return 在单窗路径 SNR 估计块之前，
+                # 逐窗胜者已由内层单窗调用标注（evidence+preprocessing），
+                # 但 joint 胜出候选不经单窗估计/标注代码（无标注、外层
+                # preprocessing.lowSnr 缺失）。此处按 joint 段块聚合 SNR
+                # （ΣS/ΣN，_estimate_snr_db_segments——不跨 gap 拼接谱估计）
+                # 补齐与单窗成功路径同款的标注（evidence.low_snr + reason
+                # code + 候选 reason 段 + preprocessing.lowSnr；只标注不
+                # 封顶不拒绝，S1-b 裁决口径不变）。
+                if joint_best is not None and best_r.best_model is joint_best:
+                    _joint_snr = _estimate_snr_db_segments(
+                        [y_raw[s["start"] : s["end"]] for s in joint_audit.get("segments", [])],
+                        ts,
+                    )
+                    if _joint_snr is not None and _joint_snr < _LOW_SNR_ANNOTATION_DB:
+                        _joint_low_snr_record = {
+                            "mode": "PARAM_ACCURACY_UNCOMMITTED",
+                            "snrDb": round(_joint_snr, 2),
+                            "thresholdDb": _LOW_SNR_ANNOTATION_DB,
+                            "basis": "WELCH_PSD_NOISE_FLOOR_JOINT_AGGREGATE",
+                            "note": (
+                                f"多窗共同估计（{len(joint_audit.get('segments', []))} 段堆叠）"
+                                f"聚合信噪比实测 {_joint_snr:.1f}dB 低于参数级精度承诺下界"
+                                f"（{_LOW_SNR_ANNOTATION_DB:g}dB，逐段功率 ΣS/ΣN 聚合），"
+                                "显式不承诺参数级精度（S1-b 裁决：10dB 档转不承诺档）"
+                            ),
+                        }
+                        if joint_best.evidence is None:
+                            joint_best.evidence = ModelEvidence()
+                        joint_best.evidence.low_snr = _joint_low_snr_record
+                        joint_best.evidence.reason_codes.append("LOW_SNR_PARAM_UNCOMMITTED")
+                        joint_best.reason = (
+                            f"{joint_best.reason}, "
+                            f"LOW_SNR_PARAM_UNCOMMITTED(snr≈{_joint_snr:.1f}dB)"
+                        )
+                        best_r.preprocessing["lowSnr"] = _joint_low_snr_record
+
                 # P3-06c 终局装配（外层）：P-24 独立事件终验 + P-26 重选不确定性
                 if best_r.best_model is not None:
                     if joint_best is not None:
@@ -2828,15 +2865,14 @@ def _check_nonparam_consistency(
     return True, ""
 
 
-def _estimate_snr_db(y: np.ndarray, ts: float) -> float | None:
-    """P3-S1（S1 裁决·低 SNR 档）：模型无关信噪比估计（Welch PSD 噪底拆分）.
+def _estimate_snr_powers(y: np.ndarray, ts: float) -> tuple[float, float] | None:
+    """P3-S1（S1 裁决·低 SNR 档）：Welch PSD 噪底拆分——返回 (signal, noise) 功率.
 
     噪底 = y 功率谱上 1/3 频带（远离典型过程带宽）的中位单边 PSD；
     噪声全带功率 = 噪底 × 奈奎斯特带宽；信号功率 = 总功率 − 噪声功率。
     白量测噪声假设下与 O-A1 oracle 的 SNR 定义（σ_信号/σ_噪声）同口径；
     有色噪声/宽带过程动态下为保守近似（估计仅驱动"不承诺"标注，不影响
-    任何数值门禁）。谱能量不高于噪底（近稳态）时按下界 −30dB 记。
-    None = 数据过短无法估计（不标注）。
+    任何数值门禁）。None = 数据过短无法估计（不标注）。
     """
     n = len(y)
     nperseg = min(n, 256)
@@ -2852,10 +2888,45 @@ def _estimate_snr_db(y: np.ndarray, ts: float) -> float | None:
         return None
     noise_power = floor * nyq
     total_power = float(np.mean(pyy)) * nyq
-    signal_power = total_power - noise_power
+    return total_power - noise_power, noise_power
+
+
+def _estimate_snr_db(y: np.ndarray, ts: float) -> float | None:
+    """P3-S1：单序列 SNR（dB）——功率拆分的 dB 包装；近稳态（信号功率
+    不高于噪底）按下界 −30dB 记。"""
+    powers = _estimate_snr_powers(y, ts)
+    if powers is None:
+        return None
+    signal_power, noise_power = powers
     if signal_power <= 0.0:
         return -30.0
     return 10.0 * math.log10(signal_power / noise_power)
+
+
+def _estimate_snr_db_segments(ys: list[np.ndarray], ts: float) -> float | None:
+    """G3-APP（14 号文 §5.2，S1 已知局限①修补）：多段聚合 SNR（dB）.
+
+    joint（P-22 段块堆叠）胜出模型的估计输入是多个互不重叠动态窗——
+    SNR 按逐段 (signal, noise) 功率聚合 ΣS/ΣN（与段块堆叠回归的信息
+    聚合语义一致）；**禁止跨 gap 拼接后整段谱估计**（拼接处物理不连续
+    会人为抬高噪底高估 SNR）。全部段过短（无法估计）→ None 不标注；
+    聚合信号功率不高于噪底 → 与单序列口径一致按下界 −30dB 记。
+    """
+    total_signal = 0.0
+    total_noise = 0.0
+    any_estimated = False
+    for seg in ys:
+        powers = _estimate_snr_powers(seg, ts)
+        if powers is None:
+            continue
+        any_estimated = True
+        total_signal += max(powers[0], 0.0)
+        total_noise += powers[1]
+    if not any_estimated or total_noise <= 0.0:
+        return None
+    if total_signal <= 0.0:
+        return -30.0
+    return 10.0 * math.log10(total_signal / total_noise)
 
 
 def _u_near_white(
