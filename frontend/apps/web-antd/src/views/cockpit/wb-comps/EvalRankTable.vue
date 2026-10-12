@@ -1,49 +1,78 @@
 <script setup lang="ts">
 /**
- * 性能评估 · 装置/单元综合排名表（原型对齐 1:1 · Row2 c7）
+ * 性能评估 · 装置×单元综合排名树（原型对齐 · Row2 c7；2026-10-12 R2 改造）
  *
- * 复刻原型 renderEval() Row2 左：
- * - 头部：标题 + 副标题 + 装置/单元 seg 切换 + 导出图标
- * - 表格列（plant 视图）：# / 装置 / 评分(+进度条) / 环比 / 参评 / 严重告警 / 超期 / 24h 趋势 / 主要失分
- * - 表格列（unit 视图）：# / 单元 / 所属装置 / 评分(+进度条) / 环比 / 24h 趋势
- * - 排名色块：1=红 / 2=橙 / 3=浅绿 / 4+=深绿
- * - 评分进度条：width = score/0.9 %；色阶随排名色块
+ * R2 改造（用户裁决）：装置+单元同一列表树形展示——装置行可展开/折叠
+ * 下属单元行（默认展开，交互参照总览页 device-rank-bars 两级树），
+ * 移除原「装置/单元」seg 按钮切换。
+ *
+ * - 数据：props plants（view=plant 行）+ units（view=unit 行）+ nodeTree，
+ *   经 buildAssessmentRankTree 组树（纯函数，单测覆盖）
+ * - 表格列（统一）：# / 装置（含可折叠单元行）/ 评分(+进度条) / 环比 /
+ *   参评 / 严重告警 / 超期 / 24h 趋势 / 主要失分
+ * - 装置行 rank 徽章色块：1=红 / 2=橙 / 3=浅绿 / 4+=深绿（风险优先=升序）；
+ *   单元行 rank 为装置内序（小号中性徽章，不与全厂排名色块混淆）；
+ *   单元行告警/超期/失分后端未聚合 → 显示 "—"（不显示伪 0）
  * - sparkline 无动画（复用 Spark.vue）；delta<0 红 否则绿
  * - 失分 tag 可点击 → 跨 Tab 切诊断（emit lose-click）
  * - 底部汇总：全厂合计 N/M 参评 · 不可评 X 条
  */
+import type { CockpitApi } from '#/api/cockpit';
 import type { WorkbenchApi } from '#/api/workbench';
 
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 
+import { buildAssessmentRankTree } from '../utils/assessment-rank-tree';
 import Spark from './Spark.vue';
 import { useCockpitDrill } from './use-drill';
 
 const props = defineProps<{
-  ranking?: WorkbenchApi.AssessmentRankRow[];
+  /** node-tree（层级归组用；null=接口失败，走 parent_name 兜底） */
+  nodeTree?: CockpitApi.NodeTreeNode[] | null;
+  /** 装置行（view=plant） */
+  plants?: WorkbenchApi.AssessmentRankRow[];
+  /** 单元行（view=unit） */
   total?: number;
-  view: WorkbenchApi.AssessmentView;
+  units?: WorkbenchApi.AssessmentRankRow[];
 }>();
 
-const emit = defineEmits<{
-  loseClick: [tag: string];
-  'update:view': [view: WorkbenchApi.AssessmentView];
-}>();
+const emit = defineEmits<{ loseClick: [tag: string] }>();
 
 const { drill } = useCockpitDrill();
 
 /**
- * 追溯矩阵 §3 下钻：行点击 → 回路绩效明细（装置口径）。
- * 行 id 为 source_node_id；FACTORY/AREA 可经 scopeTree 解析 plantNodeId，
- * UNIT 视图行解析不到则不带（避免错口径）。
+ * 追溯矩阵 §3 下钻：行点击 → 回路绩效清单（行名口径）。
+ * 迁移版无范围选择器（恒 GLOBAL），清单为全厂口径、标题注明行名。
  */
 function onRowClick(r: WorkbenchApi.AssessmentRankRow) {
-  // D3 弹窗化：行点击 → 回路性能清单弹窗。迁移版无范围选择器（恒 GLOBAL，
-  // scopeTree 为空，原 resolvePlantNodeId 恒解析不到），清单为全厂口径、标题注明行名。
+  // D3 弹窗化：行点击 → 回路性能清单弹窗（全厂口径、标题注明行名）
   void drill({ kind: 'loops', sortOrder: 'desc', title: `${r.name} · 回路性能清单（全厂口径）` });
 }
 
-const rows = computed(() => props.ranking ?? []);
+const groups = computed(() =>
+  buildAssessmentRankTree(props.nodeTree, props.plants, props.units),
+);
+
+// 折叠态（默认全展开；同 device-rank-bars 逐装置折叠）
+const collapsed = ref(new Set<number | string>());
+
+function groupKey(id: null | number | undefined, name: string): number | string {
+  return id ?? `name:${name}`;
+}
+
+function isCollapsed(key: number | string): boolean {
+  return collapsed.value.has(key);
+}
+
+function toggleCollapse(key: number | string) {
+  const next = new Set(collapsed.value);
+  if (next.has(key)) {
+    next.delete(key);
+  } else {
+    next.add(key);
+  }
+  collapsed.value = next;
+}
 
 function rankColor(rank: number): string {
   if (rank === 1) return '#D93025';
@@ -61,7 +90,9 @@ function sparkColor(delta: null | number): string {
   return delta != null && delta < 0 ? '#D93025' : '#2E7D32';
 }
 
-const evaluated = computed(() => rows.value.reduce((s, r) => s + (r.loop_count || 0), 0));
+const evaluated = computed(() =>
+  groups.value.reduce((s, g) => s + (g.plant.loop_count || 0), 0),
+);
 const totalAll = computed(() => props.total ?? evaluated.value);
 const notEvaluated = computed(() => Math.max(0, totalAll.value - evaluated.value));
 
@@ -76,32 +107,8 @@ function onLose(tag: string) {
     <div class="flex flex-none items-center gap-2 border-b ckwb-border px-3 py-1.5">
       <span class="inline-block h-3.5 w-1 rounded-sm bg-[var(--ck-accent)]"></span>
       <span class="text-xs font-medium ckwb-text">装置综合排名</span>
-      <span class="text-[10px] ckwb-text-3">按综合评分升序 · 风险优先</span>
+      <span class="text-[10px] ckwb-text-3">装置×单元 · 按评分升序 · 风险优先</span>
       <div class="ml-auto flex items-center gap-2">
-        <div class="flex gap-0.5 rounded bg-[#EEF2F7] p-0.5">
-          <button
-            class="rounded px-2 py-0.5 text-[11px] transition-none"
-            :class="
-              view === 'plant'
-                ? 'ckwb-panel font-semibold ckwb-accent shadow-sm'
-                : 'ckwb-text-2'
-            "
-            @click="emit('update:view', 'plant')"
-          >
-            装置
-          </button>
-          <button
-            class="rounded px-2 py-0.5 text-[11px] transition-none"
-            :class="
-              view === 'unit'
-                ? 'ckwb-panel font-semibold ckwb-accent shadow-sm'
-                : 'ckwb-text-2'
-            "
-            @click="emit('update:view', 'unit')"
-          >
-            单元
-          </button>
-        </div>
         <span
           class="cursor-pointer ckwb-text-3"
           title="导出当前排名视图（演示）"
@@ -124,142 +131,169 @@ function onLose(tag: string) {
         <thead class="sticky top-0 z-10 ckwb-panel">
           <tr class="border-b ckwb-border text-[10px] ckwb-text-3">
             <th class="w-7 py-1 text-center font-normal">#</th>
-            <template v-if="view === 'plant'">
-              <th class="py-1 text-left font-normal">装置</th>
-              <th class="py-1 text-left font-normal">评分</th>
-              <th class="w-10 py-1 text-center font-normal">环比</th>
-              <th class="w-12 py-1 text-center font-normal">参评</th>
-              <th class="w-12 py-1 text-center font-normal">严重告警</th>
-              <th class="w-10 py-1 text-center font-normal">超期</th>
-              <th class="w-[76px] py-1 text-center font-normal">24h 趋势</th>
-              <th class="py-1 text-left font-normal">主要失分</th>
-            </template>
-            <template v-else>
-              <th class="py-1 text-left font-normal">单元</th>
-              <th class="py-1 text-left font-normal">所属装置</th>
-              <th class="py-1 text-left font-normal">评分</th>
-              <th class="w-10 py-1 text-center font-normal">环比</th>
-              <th class="w-[76px] py-1 text-center font-normal">24h 趋势</th>
-            </template>
+            <th class="py-1 text-left font-normal">装置 / 单元</th>
+            <th class="py-1 text-left font-normal">评分</th>
+            <th class="w-10 py-1 text-center font-normal">环比</th>
+            <th class="w-12 py-1 text-center font-normal">参评</th>
+            <th class="w-12 py-1 text-center font-normal">严重告警</th>
+            <th class="w-10 py-1 text-center font-normal">超期</th>
+            <th class="w-[76px] py-1 text-center font-normal">24h 趋势</th>
+            <th class="py-1 text-left font-normal">主要失分</th>
           </tr>
         </thead>
         <tbody>
-          <tr
-            v-for="r in rows"
-            :key="r.id ?? r.name"
-            class="cursor-pointer border-b ckwb-border last:border-0 ckwb-hover"
-            title="点击查看该装置回路绩效明细"
-            @click="onRowClick(r)"
-          >
-            <!-- # -->
-            <td class="py-1.5 text-center">
-              <span
-                class="inline-flex h-5 w-5 items-center justify-center rounded text-[11px] font-semibold text-white"
-                :style="{ backgroundColor: rankColor(r.rank) }"
-                >{{ r.rank }}</span
-              >
-            </td>
-            <template v-if="view === 'plant'">
-              <td class="py-1.5 text-left">
-                <div class="font-medium ckwb-text">{{ r.name }}</div>
-                <div class="text-[10px] ckwb-text-3">2 单元</div>
+          <template v-for="g in groups" :key="groupKey(g.plant.id, g.plant.name)">
+            <!-- 装置行 -->
+            <tr
+              class="cursor-pointer border-b ckwb-border ckwb-hover"
+              :title="`点击查看该装置回路绩效明细（${g.units.length} 个单元，点击左侧箭头折叠/展开）`"
+              @click="onRowClick(g.plant)"
+            >
+              <td class="py-1.5 text-center">
+                <span
+                  class="inline-flex h-5 w-5 items-center justify-center rounded text-[11px] font-semibold text-white"
+                  :style="{ backgroundColor: rankColor(g.plant.rank) }"
+                  >{{ g.plant.rank }}</span
+                >
               </td>
               <td class="py-1.5 text-left">
-                <b class="text-sm ckwb-text">{{ r.score != null ? r.score.toFixed(2) : '—' }}</b>
+                <div class="flex items-center gap-1">
+                  <button
+                    type="button"
+                    class="flex h-3.5 w-3.5 flex-none items-center justify-center border-none bg-transparent p-0 text-[11px] leading-none ckwb-text-3 transition-transform"
+                    :class="{ 'rotate-0': isCollapsed(groupKey(g.plant.id, g.plant.name)), 'rotate-90': !isCollapsed(groupKey(g.plant.id, g.plant.name)) }"
+                    :title="isCollapsed(groupKey(g.plant.id, g.plant.name)) ? '展开单元' : '折叠单元'"
+                    @click.stop="toggleCollapse(groupKey(g.plant.id, g.plant.name))"
+                  >
+                    ›
+                  </button>
+                  <div>
+                    <div class="font-medium ckwb-text">{{ g.plant.name }}</div>
+                    <div class="text-[10px] ckwb-text-3">{{ g.units.length }} 单元</div>
+                  </div>
+                </div>
+              </td>
+              <td class="py-1.5 text-left">
+                <b class="text-sm ckwb-text">{{ g.plant.score != null ? g.plant.score.toFixed(2) : '—' }}</b>
                 <div class="mt-0.5 h-1 w-[90px] overflow-hidden rounded bg-[#EEF2F7]">
                   <i
                     class="block h-full rounded"
                     :style="{
-                      width: `${scoreBarWidth(r.score)}%`,
-                      backgroundColor: rankColor(r.rank),
+                      width: `${scoreBarWidth(g.plant.score)}%`,
+                      backgroundColor: rankColor(g.plant.rank),
                     }"
                   ></i>
                 </div>
               </td>
               <td class="py-1.5 text-center">
                 <span
-                  v-if="r.delta != null"
+                  v-if="g.plant.delta != null"
                   class="font-mono text-[11px] font-medium"
-                  :style="{ color: r.delta < 0 ? '#D93025' : '#2E7D32' }"
-                  >{{ r.delta < 0 ? '▼' : '▲' }}{{ Math.abs(r.delta).toFixed(2) }}</span
+                  :style="{ color: g.plant.delta < 0 ? '#D93025' : '#2E7D32' }"
+                  >{{ g.plant.delta < 0 ? '▼' : '▲' }}{{ Math.abs(g.plant.delta).toFixed(2) }}</span
                 >
                 <span v-else class="ckwb-text-3">—</span>
               </td>
-              <td class="py-1.5 text-center font-mono ckwb-text-2">{{ r.join ?? '—' }}</td>
+              <td class="py-1.5 text-center font-mono ckwb-text-2">{{ g.plant.join ?? '—' }}</td>
               <td class="py-1.5 text-center">
                 <span
-                  v-if="r.alarm_count > 0"
+                  v-if="g.plant.alarm_count > 0"
                   class="inline-block rounded bg-[#FDECEA] px-1.5 text-[10.5px] text-[#C5221F]"
-                  >{{ r.alarm_count }}</span
+                  >{{ g.plant.alarm_count }}</span
                 >
                 <span v-else class="ckwb-text-3">—</span>
               </td>
               <td class="py-1.5 text-center">
                 <span
-                  v-if="r.overdue_tasks > 0"
+                  v-if="g.plant.overdue_tasks > 0"
                   class="inline-block rounded bg-[#FEF3E2] px-1.5 text-[10.5px] text-[#B45309]"
-                  >{{ r.overdue_tasks }}</span
+                  >{{ g.plant.overdue_tasks }}</span
                 >
                 <span v-else class="ckwb-text-3">—</span>
               </td>
               <td class="py-1 text-center">
                 <Spark
-                  :points="r.sparkline"
-                  :color="sparkColor(r.delta)"
+                  :points="g.plant.sparkline"
+                  :color="sparkColor(g.plant.delta)"
                   :width="72"
                   :height="20"
                 />
               </td>
               <td class="py-1.5 text-left">
                 <span
-                  v-for="t in r.lose_factors"
+                  v-for="t in g.plant.lose_factors"
                   :key="t"
                   class="mr-1 cursor-pointer rounded bg-[#FDECEA] px-1.5 text-[10.5px] text-[#C5221F] hover:bg-[#F9D9D6]"
                   @click.stop="onLose(t)"
                   >{{ t }}</span
                 >
-                <span v-if="r.lose_factors.length === 0" class="ckwb-text-3">—</span>
+                <span v-if="g.plant.lose_factors.length === 0" class="ckwb-text-3">—</span>
               </td>
-            </template>
-            <template v-else>
-              <td class="py-1.5 text-left font-medium ckwb-text">{{ r.name }}</td>
-              <td class="py-1.5 text-left ckwb-text-2">{{ r.parent_name ?? '—' }}</td>
-              <td class="py-1.5 text-left">
-                <b class="text-[13.5px] ckwb-text">{{ r.score != null ? r.score.toFixed(2) : '—' }}</b>
+            </tr>
+            <!-- 单元行（装置内序，默认展开） -->
+            <template
+              v-for="u in g.units"
+              :key="`u-${u.id ?? u.name}`"
+            >
+              <tr
+                v-show="!isCollapsed(groupKey(g.plant.id, g.plant.name))"
+                class="cursor-pointer border-b ckwb-border last:border-0 ckwb-hover"
+                title="点击查看该单元回路绩效明细"
+                @click="onRowClick(u)"
+              >
+              <td class="py-1 text-center">
+                <span
+                  class="inline-flex h-4 w-4 items-center justify-center rounded text-[10px] font-medium ckwb-text-2 bg-[#EEF2F7]"
+                  >{{ u.rank }}</span
+                >
+              </td>
+              <td class="py-1 text-left">
+                <div class="pl-5 text-[11.5px] ckwb-text-2">{{ u.name }}</div>
+              </td>
+              <td class="py-1 text-left">
+                <b class="text-[13px] ckwb-text">{{ u.score != null ? u.score.toFixed(2) : '—' }}</b>
                 <div class="mt-0.5 h-1 w-[70px] overflow-hidden rounded bg-[#EEF2F7]">
                   <i
                     class="block h-full rounded"
                     :style="{
-                      width: `${scoreBarWidth(r.score)}%`,
-                      backgroundColor: rankColor(r.rank),
+                      width: `${scoreBarWidth(u.score)}%`,
+                      backgroundColor: rankColor(u.rank),
                     }"
                   ></i>
                 </div>
               </td>
-              <td class="py-1.5 text-center">
+              <td class="py-1 text-center">
                 <span
-                  v-if="r.delta != null"
+                  v-if="u.delta != null"
                   class="font-mono text-[11px] font-medium"
-                  :style="{ color: r.delta < 0 ? '#D93025' : '#2E7D32' }"
-                  >{{ r.delta < 0 ? '▼' : '▲' }}{{ Math.abs(r.delta).toFixed(2) }}</span
+                  :style="{ color: u.delta < 0 ? '#D93025' : '#2E7D32' }"
+                  >{{ u.delta < 0 ? '▼' : '▲' }}{{ Math.abs(u.delta).toFixed(2) }}</span
                 >
                 <span v-else class="ckwb-text-3">—</span>
               </td>
+              <td class="py-1 text-center font-mono ckwb-text-2">{{ u.loop_count || '—' }}</td>
+              <td class="py-1 text-center">
+                <span class="ckwb-text-3" title="单元级暂未聚合告警计数">—</span>
+              </td>
+              <td class="py-1 text-center">
+                <span class="ckwb-text-3" title="单元级暂未聚合超期计数">—</span>
+              </td>
               <td class="py-1 text-center">
                 <Spark
-                  :points="r.sparkline"
-                  :color="sparkColor(r.delta)"
+                  :points="u.sparkline"
+                  :color="sparkColor(u.delta)"
                   :width="72"
                   :height="20"
                 />
               </td>
+              <td class="py-1 text-left">
+                <span class="ckwb-text-3" title="单元级失分归因暂未聚合">—</span>
+              </td>
+              </tr>
             </template>
-          </tr>
-          <tr v-if="rows.length === 0">
-            <td
-              :colspan="view === 'plant' ? 9 : 6"
-              class="py-6 text-center text-xs ckwb-text-3"
-            >
+          </template>
+          <tr v-if="groups.length === 0">
+            <td colspan="9" class="py-6 text-center text-xs ckwb-text-3">
               暂无排名数据
             </td>
           </tr>

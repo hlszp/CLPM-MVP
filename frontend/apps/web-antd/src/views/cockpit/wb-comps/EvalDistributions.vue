@@ -92,6 +92,10 @@ const modeSegs = computed<Seg[]>(() =>
 const levelPaths = computed(() => segs2paths(levelSegs.value));
 const modePaths = computed(() => segs2paths(modeSegs.value));
 
+// R2（2026-10-12）：控制模式分布为后端实时口径补数——无数据时诚实空态
+// （不画空饼冒充有数据），等级分布为快照口径（有参评即有分布）
+const modeEmpty = computed(() => modeSegs.value.every((s) => (s.count || 0) <= 0));
+
 const evaluatedNum = computed(() => props.evaluated ?? 0);
 const totalNum = computed(() => props.total ?? 0);
 
@@ -205,10 +209,16 @@ function onLevelLegend(label: string) {
         </div>
       </div>
 
-      <!-- 控制模式 -->
+      <!-- 控制模式（实时口径，R2 补数接通） -->
       <div class="flex min-w-0 flex-1 flex-col items-center">
-        <div class="mb-1 text-[11px] ckwb-text-2">控制模式分布</div>
-        <svg :width="SIZE" :height="SIZE" :viewBox="`0 0 ${SIZE} ${SIZE}`" class="block">
+        <div class="mb-1 text-[11px] ckwb-text-2">控制模式分布<span class="ckwb-text-3">（实时）</span></div>
+        <svg
+          v-if="!modeEmpty"
+          :width="SIZE"
+          :height="SIZE"
+          :viewBox="`0 0 ${SIZE} ${SIZE}`"
+          class="block"
+        >
           <path
             v-for="p in modePaths"
             :key="p.key"
@@ -218,6 +228,14 @@ function onLevelLegend(label: string) {
             stroke-width="0.5"
           />
         </svg>
+        <!-- 诚实空态：无实时模式数据不画空饼 -->
+        <div
+          v-else
+          class="flex items-center justify-center text-[10.5px] ckwb-text-3"
+          :style="{ width: `${SIZE}px`, height: `${SIZE}px` }"
+        >
+          暂无控制模式数据
+        </div>
         <div class="mt-0.5 text-[10.5px] font-medium ckwb-text-2">
           <span class="tabular-nums">{{ totalNum }}</span> 回路
         </div>

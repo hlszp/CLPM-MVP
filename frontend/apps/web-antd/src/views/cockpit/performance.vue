@@ -6,13 +6,17 @@
  * 页内联动全部改为舱内摘要弹窗（use-drill），不跳管理后台。
  * 布局对齐原 tab（12 列网格 3 行）。
  *
- * 数据流：A-02 getWorkbenchAssessmentApi（view 联动）；时间窗由驾驶舱顶栏
- * 三 pill 驱动（cockpit store → 桥接 workbench store 供 scopeParams）。
+ * 数据流：A-02 getWorkbenchAssessmentApi；R2（2026-10-12）排名区改树形
+ * （装置×单元同列表）：并行请求 plant+unit 两视图 + node-tree 组树，
+ * 不再有视图按钮切换；时间窗由驾驶舱顶栏三 pill 驱动（cockpit store →
+ * 桥接 workbench store 供 scopeParams）。
  */
+import type { CockpitApi } from '#/api/cockpit';
 import type { WorkbenchApi } from '#/api/workbench';
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 
+import { getCockpitNodeTreeApi } from '#/api/cockpit';
 import { getWorkbenchAssessmentApi } from '#/api/workbench';
 import { useCockpitStore } from '#/store/cockpit';
 import { useWorkbenchStore } from '#/store/workbench';
@@ -35,7 +39,9 @@ const theme = computed(() => cockpitStore.theme);
 const { drill } = useCockpitDrill();
 
 const assessment = ref<null | WorkbenchApi.AssessmentResult>(null);
-const view = ref<WorkbenchApi.AssessmentView>('plant');
+/** R2 树形排名：unit 视图行 + node-tree（与 plant 视图并行拉取） */
+const unitAssessment = ref<WorkbenchApi.AssessmentRankRow[]>([]);
+const nodeTree = ref<CockpitApi.NodeTreeNode[] | null>(null);
 const loading = ref(false);
 const errorMsg = ref<null | string>(null);
 
@@ -50,14 +56,21 @@ async function loadAssessment() {
   loading.value = true;
   errorMsg.value = null;
   try {
-    const res = await getWorkbenchAssessmentApi({
-      ...store.scopeParams,
-      view: view.value,
-    });
-    assessment.value = res;
+    // R2：plant 视图为主数据（summary/heatmap/trend 与视图无关），
+    // unit 视图行 + node-tree 仅用于排名区组树
+    const [plantRes, unitRes, treeRes] = await Promise.all([
+      getWorkbenchAssessmentApi({ ...store.scopeParams, view: 'plant' }),
+      getWorkbenchAssessmentApi({ ...store.scopeParams, view: 'unit' }),
+      getCockpitNodeTreeApi().catch(() => null),
+    ]);
+    assessment.value = plantRes;
+    unitAssessment.value = unitRes?.ranking ?? [];
+    nodeTree.value = treeRes ?? null;
   } catch (error) {
     errorMsg.value = error instanceof Error ? error.message : '评估数据加载失败';
     assessment.value = null;
+    unitAssessment.value = [];
+    nodeTree.value = null;
   } finally {
     loading.value = false;
     store.markRefreshed();
@@ -84,9 +97,6 @@ watch(
   () => store.scopeParams,
   () => void loadAssessment(),
 );
-
-// 视图切换（装置/单元）独立触发
-watch(view, () => void loadAssessment());
 
 // 顶栏手动刷新联动本页
 watch(
@@ -126,15 +136,15 @@ function onLoseClick(_tag: string) {
         <EvalSummary :summary="summary" />
       </div>
 
-      <!-- Row 2: 装置/单元排名 + 单元×指标热力 -->
+      <!-- Row 2: 装置×单元树形排名 + 单元×指标热力 -->
       <div class="grid min-h-0 flex-1 grid-cols-12 gap-2">
         <div class="col-span-7 min-h-0">
           <EvalRankTable
-            :ranking="ranking"
+            :node-tree="nodeTree"
+            :plants="ranking"
+            :units="unitAssessment"
             :total="total"
-            :view="view"
             @lose-click="onLoseClick"
-            @update:view="view = $event"
           />
         </div>
         <div class="col-span-5 min-h-0">

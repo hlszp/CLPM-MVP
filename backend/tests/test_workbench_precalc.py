@@ -23,6 +23,7 @@ from app.services.workbench_precalc import (
     floor_grid,
     score_to_status,
     shape_level_dist,
+    shape_mode_dist,
 )
 
 
@@ -211,3 +212,42 @@ class TestUpsertRowScoreNull:
         # score 原样透传 None（原实现兜底 0.0）；status 判 INCONCLUSIVE
         assert compiled.params["score"] is None
         assert compiled.params["status"] == "INCONCLUSIVE"
+
+
+class TestShapeModeDist:
+    """控制模式分布 shaper（2026-10-12 R2 补数）：顺序/标签/颜色/零段剔除。"""
+
+    def test_order_and_default_labels(self) -> None:
+        out = shape_mode_dist({0: 2, 1: 5, 2: 1})
+        assert [d["label"] for d in out] == ["自动", "串级", "手动"]
+        assert [d["count"] for d in out] == [5, 1, 2]
+        # 配色来自 constants.mode.MODE_CHART_COLORS
+        assert out[0]["color"] == "#52c41a"  # AUTO
+        assert out[2]["color"] == "#d4380d"  # MANUAL
+
+    def test_unknown_bucket(self) -> None:
+        out = shape_mode_dist({None: 3, 1: 4})
+        assert out[-1]["label"] == "未知"
+        assert out[-1]["count"] == 3
+        assert out[-1]["color"] == "#C9D6E8"
+
+    def test_zero_counts_omitted_and_empty(self) -> None:
+        assert shape_mode_dist({1: 0, None: 0}) == []
+        assert shape_mode_dist({}) == []
+
+    def test_config_labels_override(self) -> None:
+        out = shape_mode_dist({1: 1}, labels={1: "自动模式"})
+        assert out[0]["label"] == "自动模式"
+
+    def test_unmapped_raw_key_merges_into_unknown(self) -> None:
+        """D2（验收 REWORK）：未映射 raw 键（∉StandardMode）并入未知段不丢弃。"""
+        out = shape_mode_dist({9: 1, 1: 2})
+        assert [d["label"] for d in out] == ["自动", "未知"]
+        assert [d["count"] for d in out] == [2, 1]
+
+    def test_unmapped_key_and_none_bucket_merge(self) -> None:
+        """未映射键与"无实时值"未知桶合并计数。"""
+        out = shape_mode_dist({None: 2, 7: 1, 0: 3})
+        labels = {d["label"]: d["count"] for d in out}
+        assert labels["未知"] == 3
+        assert labels["手动"] == 3

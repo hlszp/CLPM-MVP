@@ -16,6 +16,22 @@ import zlib
 FALLBACK_BASE = 0x40000000
 FALLBACK_MASK = 0x3FFFFFFF
 
+# 合法窗口键（与 WorkbenchWindowSummary.WINDOWS / workbench_precalc.WINDOWS 对齐）
+WINDOWS: tuple[str, ...] = ("24h", "7d", "30d")
+
+
+def normalize_window(window: object) -> str:
+    """窗口参数归一化（2026-10-12 R2 巡检项：大小写容错）.
+
+    ``window_w`` 列存小写键（24h/7d/30d），传入 ``24H``/`` 7D `` 等变体时
+    此前直接落空查询（所有块 NOT_COMPUTED）。此处统一 strip + lower，
+    未识别值原样透传（下游自然查空，行为不变，不虚构窗口）。
+    """
+    if not isinstance(window, str):
+        return "24h"
+    w = window.strip().lower()
+    return w if w in WINDOWS else window  # type: ignore[return-value]
+
 
 def node_scope_id(source_node_id: object, node_uuid: str) -> int:
     """节点 → scope_id（与 workbench_window_summary.scope_id 的 integer 列对齐）。"""

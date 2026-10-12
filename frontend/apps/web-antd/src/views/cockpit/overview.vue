@@ -17,10 +17,11 @@ import type { RankSelection } from './utils/score-rank';
  *   节点联动) | 六维绩效雷达(32%，随选中节点联动，高度=趋势行)
  * - 行2：单元平稳率(26%) | 单元自控率柏拉图(1fr) | 适用性L0~L4环形图(32%)
  *
- * 联动协议（2026-10-10）：排名区点击装置/单元行 → selection（RankSelection）
- * 由本页持有：趋势面板与雷达面板消费 plant_node.id 刷新；再点同行取消选中
- * （趋势回全厂口径，雷达回空态提示）。处置待办 5 态胶囊与预警事件流两区
- * 块已按修订移除（KPI 卡待办/预警点击弹窗仍保留）。
+ * 联动协议（2026-10-10；R2 2026-10-12 修订）：排名区点击装置/单元行 →
+ * selection（RankSelection）由本页持有：趋势面板与雷达面板消费
+ * plant_node.id 刷新；再点同行取消选中（趋势/雷达回退全厂根节点口径，
+ * 不再空态）。处置待办 5 态胶囊与预警事件流两区块已按修订移除
+ * （KPI 卡待办/预警点击弹窗仍保留）。
  *
  * 交互铁律：纯查看零操作——所有点击仅打开舱内深度弹窗，
  * 无写操作按钮、无后台跳转链接（唯一后台入口为顶栏「管理后台」）。
@@ -29,6 +30,7 @@ import type { RankSelection } from './utils/score-rank';
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 import { getAlertEventsApi } from '#/api/alert';
+import { getCockpitNodeTreeApi } from '#/api/cockpit';
 import { getHandlingOrdersApi } from '#/api/handling';
 import { getRankingApi } from '#/api/metric';
 import { useCockpitStore } from '#/store/cockpit';
@@ -56,8 +58,32 @@ const theme = computed(() => cockpitStore.theme);
 
 // ---------------------------------------------------------------------------
 // 排名区选中态（2026-10-10 联动修订）：趋势 + 雷达共享
+// R2（2026-10-12）：未选中时趋势/雷达回退全厂根节点（FACTORY 快照），
+// 不再空态等待点击；排名区仍可点击装置/单元行切换，再点取消回全厂。
 // ---------------------------------------------------------------------------
 const selection = ref<null | RankSelection>(null);
+
+/** 全厂根节点（node-tree 的 FACTORY 层；加载失败保持 null=回退旧空态） */
+const factorySelection = ref<null | RankSelection>(null);
+
+async function loadFactoryNode() {
+  try {
+    const tree = await getCockpitNodeTreeApi();
+    const root = (tree ?? []).find((n) => n.type === 'FACTORY');
+    if (root) {
+      factorySelection.value = {
+        type: 'FACTORY',
+        name: root.name,
+        nodeId: root.nodeId,
+      };
+    }
+  } catch {
+    factorySelection.value = null;
+  }
+}
+
+/** 趋势/雷达消费的节点：选中行优先，未选中回退全厂根 */
+const panelNode = computed(() => selection.value ?? factorySelection.value);
 
 function onRankSelect(payload: null | RankSelection) {
   selection.value = payload;
@@ -99,6 +125,7 @@ function reloadAll() {
 let autoTimer: null | ReturnType<typeof setInterval> = null;
 
 onMounted(() => {
+  void loadFactoryNode();
   // 5min 自动刷新：暂停时保持定时器但跳过拉取
   autoTimer = setInterval(() => {
     if (!cockpitStore.autoRefreshPaused) reloadStatic();
@@ -348,8 +375,8 @@ function onKpiCardClick(key: KpiCardKey) {
         :selected="selection"
         @select="onRankSelect"
       />
-      <TrendPanel ref="trendPanelRef" class="block-trend" :node="selection" />
-      <NodeRadarPanel ref="radarPanelRef" class="block-radar" :node="selection" />
+      <TrendPanel ref="trendPanelRef" class="block-trend" :node="panelNode" />
+      <NodeRadarPanel ref="radarPanelRef" class="block-radar" :node="panelNode" />
       <UnitSteadyBars ref="steadyBarsRef" class="block-steady" />
       <UnitAutoPareto ref="autoParetoRef" class="block-pareto" />
       <FitnessDonut ref="fitnessDonutRef" class="block-donut" />
