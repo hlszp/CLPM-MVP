@@ -220,6 +220,12 @@ class ModelEvidence:
     # P3-06c（P-26/R10）：重选时滞/结构的重复估计不确定性（48 次重选全链、
     # 参数分布直接取分位，覆盖全部方法）；None=未运行（数据不足门槛未过）
     reselect_uncertainty: dict[str, Any] | None = None
+    # P3-S1（S1 裁决·低 SNR 档，2026-10-12）：数据信噪比估计低于最低承诺
+    # 档下界（20dB，实施参数）时的显式"不承诺参数级精度"标注记录
+    # （mode=PARAM_ACCURACY_UNCOMMITTED + snrDb/thresholdDb/basis）；
+    # None=估计未触发或该路径未覆盖（多窗编排外层/preprocessing 级记录
+    # 见 preprocessing.lowSnr；登记于 P3-S1 落地交接）
+    low_snr: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -255,6 +261,8 @@ class ModelEvidence:
             "jointEstimate": self.joint_estimate,
             "finalEventTest": self.final_event_test,
             "reselectUncertainty": self.reselect_uncertainty,
+            # P3-S1 加性字段（低 SNR 显式不承诺标注；缺省 None=未触发）
+            "lowSnr": self.low_snr,
         }
 
 

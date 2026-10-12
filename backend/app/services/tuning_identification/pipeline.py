@@ -14,6 +14,7 @@ import re
 from typing import Any, Final
 
 import numpy as np
+from scipy import signal as sps
 
 from app.services.tuning_identification.armax import identify_armax
 from app.services.tuning_identification.arx import identify_arx
@@ -85,6 +86,13 @@ _R2_RESIDUAL_NEGLIGIBLE = 0.999
 _OCCAM_R2_RELATIVE_GAIN = 0.05
 # P2-005：Welch 相干辅助门禁阈值（低于此值提示弱线性/低信噪比，封顶可信度 C）
 _LOW_COHERENCE_THRESHOLD = 0.3
+# P3-S1（S1 裁决·低 SNR 档，2026-10-12 DEC 追加裁决区）+ **S1-b（方案 a：
+# 10dB 档转"不承诺"档）**：数据信噪比估计低于参数级精度承诺下界（20dB）
+# 时显式标注"不承诺参数级精度"——只标注，不封顶可信度、不拒绝辨识
+# （不承诺档不进参数级门禁）。S1 初值 10dB，S1-b 承诺边界上移至 20dB
+# （10~20dB 场景 SOPDT 参数输出带标注；实测值入 snrDb 字段）。门槛为
+# **实施参数**（登记于 P3-S1 落地交接），非 S1 冻结容差值。
+_LOW_SNR_ANNOTATION_DB = 20.0
 # P2-019：坏点清洗参数
 _MAX_INTERP_GAP = 5  # 连续 NaN < 此值时线性插值；≥ 此值按大缺口取最长段
 
@@ -1855,6 +1863,27 @@ def identify_from_history(
         if detrend_note:
             preprocess_notes.append(detrend_note)
     u_exc_probe, y_exc_probe = u_raw.copy(), y_raw.copy()
+    # P3-S1：低 SNR 显式不承诺标注——估计用**滤波前**副本（低通会压低
+    # 噪底使 SNR 系统性高估）；只标注，不封顶可信度、不拒绝辨识。
+    low_snr_record: dict[str, Any] | None = None
+    low_snr_note = ""
+    snr_db_est = _estimate_snr_db(y_exc_probe, ts)
+    if snr_db_est is not None and snr_db_est < _LOW_SNR_ANNOTATION_DB:
+        low_snr_record = {
+            "mode": "PARAM_ACCURACY_UNCOMMITTED",
+            "snrDb": round(snr_db_est, 2),
+            "thresholdDb": _LOW_SNR_ANNOTATION_DB,
+            "basis": "WELCH_PSD_NOISE_FLOOR",
+            "note": (
+                f"数据信噪比实测 {snr_db_est:.1f}dB 低于参数级精度承诺下界"
+                f"（{_LOW_SNR_ANNOTATION_DB:g}dB），显式不承诺参数级精度"
+                "（S1-b 裁决：10dB 档转不承诺档）"
+            ),
+        }
+        low_snr_note = (
+            f"；低信噪比（实测 {snr_db_est:.1f}dB < {_LOW_SNR_ANNOTATION_DB:g}dB），"
+            "显式不承诺参数级精度"
+        )
     # P3-06c（P-21）：SP 滤波前副本——外生性三条件检测消费物理原始信号
     # （lead-lag 结构是回路的物理性质；低通滤波使 ΔSP/ΔOP 双侧互相关同时
     # 抬高，锁步不对称性被破坏——实测外生场景滤波后 u_leads 可达 0.74）
@@ -2534,9 +2563,13 @@ def identify_from_history(
             _sp_note = f"；CLIVC 适用条件不满足（{sp_exogeneity_record['verdict']}，C19-ID3）"
         if preprocess_structured is not None and sp_exogeneity_record is not None:
             preprocess_structured["spExogeneity"] = sp_exogeneity_record
+        # P3-S1：失败路径同样携带低 SNR 显式不承诺标注（记录不随候选全灭
+        # 丢失；诚实化原则——深低 SNR 裸失败不解释原因不可接受）
+        if low_snr_record is not None and preprocess_structured is not None:
+            preprocess_structured["lowSnr"] = low_snr_record
         return IdentificationResult(
             success=False,
-            reason=f"{_fail_note}所有算法/阶次辨识均失败{_sp_note}",
+            reason=f"{_fail_note}所有算法/阶次辨识均失败{_sp_note}{low_snr_note}",
             theta_source=theta_source,
             preprocessing=preprocess_structured,
         )
@@ -2566,9 +2599,11 @@ def identify_from_history(
     # 整体可信度检查
     if best.confidence == AlgorithmConfidenceLevel.INCONCLUSIVE:
         _fail_note = f"{preprocess_note}; " if preprocess_note else ""
+        if low_snr_record is not None and preprocess_structured is not None:
+            preprocess_structured["lowSnr"] = low_snr_record
         return IdentificationResult(
             success=False,
-            reason=f"{_fail_note}辨识可信度不足：{best.reason}",
+            reason=f"{_fail_note}辨识可信度不足：{best.reason}{low_snr_note}",
             candidates=results,
             theta_source=theta_source,
             preprocessing=preprocess_structured,
@@ -2594,6 +2629,17 @@ def identify_from_history(
     # P0-2：记录去均值偏置量（增量模型的零位基准，供结果审计追溯）
     offset_note = f"去均值偏置 PV={y_mean:.6g}, OP={u_mean:.6g}"
     best.reason = f"{best.reason}; {offset_note}" if best.reason else offset_note
+
+    # P3-S1：低 SNR 显式不承诺标注（成功路径）——evidence 结构化记录 +
+    # reason code；只标注不封顶（低 SNR 档不进参数级门禁，S1 裁决）
+    if low_snr_record is not None:
+        if best.evidence is None:
+            best.evidence = ModelEvidence()
+        best.evidence.low_snr = low_snr_record
+        best.evidence.reason_codes.append("LOW_SNR_PARAM_UNCOMMITTED")
+        best.reason = f"{best.reason}, LOW_SNR_PARAM_UNCOMMITTED(snr≈{snr_db_est:.1f}dB)"
+        if preprocess_structured is not None:
+            preprocess_structured["lowSnr"] = low_snr_record
 
     _ok_note = f"{preprocess_note}; " if preprocess_note else ""
     return IdentificationResult(
@@ -2775,6 +2821,36 @@ def _check_nonparam_consistency(
     if ratio < 0.1 or ratio > 10.0:
         return False, "MAGNITUDE_MISMATCH"
     return True, ""
+
+
+def _estimate_snr_db(y: np.ndarray, ts: float) -> float | None:
+    """P3-S1（S1 裁决·低 SNR 档）：模型无关信噪比估计（Welch PSD 噪底拆分）.
+
+    噪底 = y 功率谱上 1/3 频带（远离典型过程带宽）的中位单边 PSD；
+    噪声全带功率 = 噪底 × 奈奎斯特带宽；信号功率 = 总功率 − 噪声功率。
+    白量测噪声假设下与 O-A1 oracle 的 SNR 定义（σ_信号/σ_噪声）同口径；
+    有色噪声/宽带过程动态下为保守近似（估计仅驱动"不承诺"标注，不影响
+    任何数值门禁）。谱能量不高于噪底（近稳态）时按下界 −30dB 记。
+    None = 数据过短无法估计（不标注）。
+    """
+    n = len(y)
+    nperseg = min(n, 256)
+    if nperseg < 32:
+        return None
+    f, pyy = sps.welch(y - float(np.mean(y)), fs=1.0 / ts, nperseg=nperseg)
+    n_f = len(f)
+    if n_f < 12:
+        return None
+    floor = float(np.median(pyy[2 * n_f // 3 :]))
+    nyq = 0.5 / ts
+    if floor <= 0.0:
+        return None
+    noise_power = floor * nyq
+    total_power = float(np.mean(pyy)) * nyq
+    signal_power = total_power - noise_power
+    if signal_power <= 0.0:
+        return -30.0
+    return 10.0 * math.log10(signal_power / noise_power)
 
 
 def _u_near_white(
