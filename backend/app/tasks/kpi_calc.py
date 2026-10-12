@@ -54,7 +54,7 @@ from app.services.diagnosis_operators.gate import evaluate_gate
 from app.services.loop_fitness import compute_fitness
 from app.services.metric_calculator import get_calculator
 from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
-from app.tasks.celery_app import AsyncTask, celery_app
+from app.tasks.celery_app import PRIORITY_NIGHTLY, AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -69,6 +69,12 @@ ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
 # FastAPI 余量远低于 max_connections=100；TDengine REST 池同步扩至 16
 # （tdengine_native._max_size）。
 CONCURRENCY = 12
+
+# P5-02（批 β）：KPI 写链暂态重试上限对齐 P0-02 冻结 v2 §2.2 推荐默认——
+# 同 logicalRunId 最多 3 次 attempt（首跑 + 2 重试；DEC-10 用户裁决"全部按
+# 推荐"）。原 max_retries=3（合计 4 次）超出冻结口径，收口为 2。第 3 次
+# attempt 仍失败 → 追加 status=FAILED 不可变终态 record（本文件接线）。
+KPI_MAX_RETRIES = 2
 
 # ---------------------------------------------------------------------------
 # v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
@@ -138,7 +144,12 @@ _LAYER2_DEPENDENCIES: dict[str, list[str]] = {
     bind=True,
     base=AsyncTask,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
+    # P5-02：max_retries 3→2（合计 3 次 attempt，P0-02 冻结 v2 §2.2 推荐
+    # 默认，DEC-10 裁决）；移除固定 countdown=60 使 retry_backoff 真正生效
+    # （原固定 countdown 恒 60s，指数退避配置形同虚设——批 β"退避"项收口）。
+    # 装饰器级 max_retries（Task 类属性）：retry() 未显式传参时按类属性判
+    # 定耗尽，与 attempt_no/final_attempt 判定（is_final_attempt）同一数值源。
+    max_retries=KPI_MAX_RETRIES,
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
@@ -156,7 +167,9 @@ def calculate_hourly_kpi(
 ) -> dict:
     """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
 
-    失败自动重试 3 次，指数退避。
+    失败自动重试（合计 3 次 attempt，指数退避）；每次 attempt 落
+    ``calculation_result_attempt`` 日志行，终末尝试的失败回路追加
+    ``status=FAILED`` 终态 record（P5-02，G2 遗留③）。
     Beat 自动触发（task_id=None）时创建 TaskRecord（triggered_by=system），
     使定时任务也出现在「自动任务」页面；API 手动触发（task_id 非 None）
     时复用 API 层已创建的记录，避免同一计算产生两条任务记录。
@@ -168,38 +181,75 @@ def calculate_hourly_kpi(
         ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
         task_id: 可选，API 手动触发时传入的已创建任务记录 ID
     """
+    import os
+
     logger.info(
         "KPI 计算任务开始, celery_id=%s, ts_start=%s, task_id=%s",
         self.request.id,
         ts_start,
         task_id,
     )
-    try:
-        result = self.run_async(
-            _do_hourly_with_tracking(
-                ts_start=ts_start, task_id=task_id, logical_run_id=self.request.id
+    attempt_no = result_ledger.derive_attempt_no(self.request)
+    final_attempt = result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES)
+
+    async def _body() -> dict:
+        try:
+            return await _do_hourly_with_tracking(
+                ts_start=ts_start,
+                task_id=task_id,
+                logical_run_id=self.request.id,
+                attempt_no=attempt_no,
+                final_attempt=final_attempt,
             )
-        )
-        logger.info("KPI 计算任务完成: %s", result)
-        return result
-    except HourlyWindowBusy:
-        # 互斥锁抢占失败必须原样抛出（2026-09-24 修复）：
-        # 旧实现把它当普通异常吞掉并立刻"回退直接计算"，等于在同一窗口
-        # 无锁并发重跑全量批次，与持锁者互相覆盖 UPSERT 结果，
-        # 同时 TaskRecord=FAILED 而 Celery=SUCCESS，G30 的整改意图被绕过。
-        raise
-    except Exception as exc:
-        # task_tracker 不可用时回退到直接计算（无任务跟踪）
-        logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
-        ts_start_dt = _parse_ts_start(ts_start)
-        return self.run_async(
-            _do_calculate(
+        except HourlyWindowBusy:
+            # 互斥锁抢占失败必须原样抛出（2026-09-24 修复）：
+            # 旧实现把它当普通异常吞掉并立刻"回退直接计算"，等于在同一窗口
+            # 无锁并发重跑全量批次，与持锁者互相覆盖 UPSERT 结果，
+            # 同时 TaskRecord=FAILED 而 Celery=SUCCESS，G30 的整改意图被绕过。
+            raise
+        except Exception as exc:
+            # task_tracker 不可用时回退到直接计算（无任务跟踪）
+            logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
+            ts_start_dt = _parse_ts_start(ts_start)
+            return await _do_calculate(
                 ts_start=ts_start_dt,
                 source="MANUAL_STANDARD" if task_id else "SCHEDULED",
                 source_task_id=task_id,
                 logical_run_id=self.request.id,
+                final_attempt=final_attempt,
             )
+
+    # P5-02：整任务体包 attempt 日志（开始/收尾各一行；busy/回退路径同覆盖）
+    result = self.run_async(
+        _attempt_log_wrap(
+            _body, logical_run_id=self.request.id, attempt_no=attempt_no, worker_pid=os.getpid()
         )
+    )
+    logger.info("KPI 计算任务完成: %s", result)
+    return result
+
+
+async def _attempt_log_wrap(coro_fn, *, logical_run_id, attempt_no: int, worker_pid=None):
+    """P5-02 attempt 日志包装：开始/收尾各一行（best-effort，不阻断主链）.
+
+    成功 → finish（error=None）；异常 → finish（错误摘要）后原样抛出。
+    logical_run_id 为空（无账本身份的调用方）时直接透传，不落日志。
+    """
+    if logical_run_id:
+        await result_ledger.start_calculation_attempt(
+            str(logical_run_id), attempt_no, worker_pid=worker_pid
+        )
+    try:
+        result = await coro_fn()
+    except Exception as exc:
+        if logical_run_id:
+            await result_ledger.finish_calculation_attempt(
+                str(logical_run_id), attempt_no, error=exc
+            )
+        raise
+    if logical_run_id:
+        await result_ledger.finish_calculation_attempt(str(logical_run_id), attempt_no)
+    return result
 
 
 def _parse_ts_start(ts_start: str | None) -> datetime | None:
@@ -272,6 +322,8 @@ async def _do_hourly_with_tracking(
     ts_start: str | None = None,
     task_id: str | None = None,
     logical_run_id: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
 ) -> dict:
     """执行每小时 KPI 计算并维护任务跟踪记录.
 
@@ -284,6 +336,11 @@ async def _do_hourly_with_tracking(
 
     logical_run_id（P1-05 结果账本）：Celery 任务级逻辑运行身份，重试
     复用同一 task id → 同一 logicalRunId → 账本 record 幂等复用。
+
+    P5-02 attempt 日志与 FAILED 终态：attempt 日志由 Celery 壳层
+    ``_attempt_log_wrap`` 统一落（本函数自身不写 attempt 行）；
+    attempt_no/final_attempt 透传 ``_do_calculate``，终末尝试的失败回路
+    在批内追加 status=FAILED 终态 record。
     """
     from app.core.redis import redis_client
     from app.schemas.task import TaskStatus, TaskType
@@ -356,6 +413,7 @@ async def _do_hourly_with_tracking(
                 source="MANUAL_STANDARD" if task_id else "SCHEDULED",
                 source_task_id=task_id,
                 logical_run_id=logical_run_id,
+                final_attempt=final_attempt,
             )
             await task_tracker.update_status(
                 task_id,
@@ -384,29 +442,42 @@ async def _do_hourly_with_tracking(
 
 @celery_app.task(
     name="app.tasks.kpi_calc.calculate_loop_kpi",
+    bind=True,
     base=AsyncTask,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
+    # P5-02：3 次 attempt 上限（P0-02 冻结 v2 §2.2）+ 真指数退避（去固定 countdown）
+    max_retries=KPI_MAX_RETRIES,
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
 )
-def calculate_loop_kpi(loop_id: str, ts_start: str | None = None) -> dict:
+def calculate_loop_kpi(self: AsyncTask, loop_id: str, ts_start: str | None = None) -> dict:
     """单回路 KPI 计算（可手动触发）。"""
     logger.info("单回路 KPI 计算, loop_id=%s", loop_id)
-    return AsyncTask().run_async(_do_calculate_single_loop(loop_id, ts_start))
+    return AsyncTask().run_async(
+        _do_calculate_single_loop(
+            loop_id,
+            ts_start,
+            attempt_no=result_ledger.derive_attempt_no(self.request),
+            final_attempt=result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES),
+            celery_task_id=self.request.id,
+        )
+    )
 
 
 @celery_app.task(
     name="app.tasks.kpi_calc.calculate_custom_loop_kpi",
+    bind=True,
     base=AsyncTask,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
+    # P5-02：3 次 attempt 上限（P0-02 冻结 v2 §2.2）+ 真指数退避（去固定 countdown）
+    max_retries=KPI_MAX_RETRIES,
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
 )
 def calculate_custom_loop_kpi(
+    self: AsyncTask,
     task_id: str,
     loop_id: str,
     ts_start: str,
@@ -420,19 +491,31 @@ def calculate_custom_loop_kpi(
         ts_start,
         ts_end,
     )
-    return AsyncTask().run_async(_do_calculate_custom_loop(task_id, loop_id, ts_start, ts_end))
+    return AsyncTask().run_async(
+        _do_calculate_custom_loop(
+            task_id,
+            loop_id,
+            ts_start,
+            ts_end,
+            attempt_no=result_ledger.derive_attempt_no(self.request),
+            final_attempt=result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES),
+        )
+    )
 
 
 @celery_app.task(
     name="app.tasks.kpi_calc.calculate_custom_batch_kpi",
+    bind=True,
     base=AsyncTask,
     autoretry_for=(Exception,),
-    retry_kwargs={"max_retries": 3, "countdown": 60},
+    # P5-02：3 次 attempt 上限（P0-02 冻结 v2 §2.2）+ 真指数退避（去固定 countdown）
+    max_retries=KPI_MAX_RETRIES,
     retry_backoff=True,
     retry_backoff_max=600,
     retry_jitter=True,
 )
 def calculate_custom_batch_kpi(
+    self: AsyncTask,
     task_id: str,
     loop_ids: list[str],
     ts_start: str,
@@ -446,7 +529,16 @@ def calculate_custom_batch_kpi(
         ts_start,
         ts_end,
     )
-    return AsyncTask().run_async(_do_calculate_custom_batch(task_id, loop_ids, ts_start, ts_end))
+    return AsyncTask().run_async(
+        _do_calculate_custom_batch(
+            task_id,
+            loop_ids,
+            ts_start,
+            ts_end,
+            attempt_no=result_ledger.derive_attempt_no(self.request),
+            final_attempt=result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES),
+        )
+    )
 
 
 def _on_prewarm_failure(
@@ -553,9 +645,11 @@ from celery.schedules import crontab  # noqa: E402
 # 默认计算周期（秒）— 可被 EngineRule EVAL_CALC_CYCLE 覆盖
 _DEFAULT_CALC_CYCLE_SECONDS = 3600.0
 
+# P5-02：定时批量走夜间优先级（options.priority，Redis broker 分桶消费）
 _beat_entry = {
     "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
     "schedule": crontab(minute=0, hour="*"),  # 每小时 0 分触发（默认值，beat_init 时从 DB 覆盖）
+    "options": {"priority": PRIORITY_NIGHTLY},
 }
 
 # 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
@@ -569,11 +663,13 @@ _existing_beat["kpi-calc-hourly"] = _beat_entry
 _existing_beat["node-kpi-daily"] = {
     "task": "app.tasks.kpi_calc.calculate_daily_kpi",
     "schedule": crontab(hour=0, minute=5),
+    "options": {"priority": PRIORITY_NIGHTLY},
 }
 # 节点级月聚合：每月 1 日 00:10 执行（聚合上一个月的数据）
 _existing_beat["node-kpi-monthly"] = {
     "task": "app.tasks.kpi_calc.calculate_monthly_kpi",
     "schedule": crontab(hour=0, minute=10, day_of_month=1),
+    "options": {"priority": PRIORITY_NIGHTLY},
 }
 celery_app.conf.beat_schedule = _existing_beat
 celery_app.conf.timezone = "Asia/Shanghai"
@@ -633,6 +729,8 @@ def _apply_rules_to_schedule(rules: dict, sender: object = None) -> None:
             entry_conf = {
                 "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
                 "schedule": schedule_expr,
+                # P5-02：定时批量夜间优先级（与静态 _beat_entry 同口径）
+                "options": {"priority": PRIORITY_NIGHTLY},
             }
             if _sched is not None:
                 # Scheduler.Entry 即 ScheduleEntry 类（首参就是 name，无 self
@@ -843,6 +941,10 @@ async def _run_batch_loop_calculations(
     save_input_snapshot: bool = False,
     pinned_config: dict | None = None,
     release_context: dict | None = None,
+    runtime_overrides: dict | None = None,
+    template_keys: dict[str, str] | None = None,
+    failed_source_ids: set[str] | None = None,
+    final_attempt: bool = False,
 ) -> list[dict | None | Exception]:
     """Run loop KPI calculations with shared bounded-concurrency orchestration.
 
@@ -861,6 +963,12 @@ async def _run_batch_loop_calculations(
             解析注入算子。None=未固定，沿用内容摘要口径+当前缓存）。
         release_context: P3-08a 任务边界固定的评估发布上下文（上线清单
             六要素；None=未解析，不写 manifest 发布节/assessmentContext）。
+        runtime_overrides: P5-02 批级共享运行时阈值（fitness/KPI 观测覆盖
+            率）；批内回路级元数据 IO 归零（入口一次预载，全批共享）。
+        template_keys: P5-02 批级预载模板键映射（TEMPLATE 层五层解析）。
+        final_attempt: P5-02 终末尝试（Celery 重试耗尽前的最后一跑）——
+            True 时失败回路追加 status=FAILED 不可变终态 record（G2 遗留③
+            重试终点）；False 时暂态失败只留 attempt 日志，等待 Celery 重试。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -868,6 +976,11 @@ async def _run_batch_loop_calculations(
     op_limits_map = {
         str(loop_id): (cfg["op_lower"], cfg["op_upper"]) for loop_id, cfg in loop_configs.items()
     }
+    # 终末失败回路的 FAILED record configRevision（与同批 COMPLETED record
+    # 同输入同 digest：批级共享 runtime_overrides 后两分支值恒等）
+    failed_record_revision = _batch_runtime_config_revision(
+        runtime_overrides, type_weights, pinned_config
+    )
 
     def _is_conn_exhausted(exc: Exception) -> bool:
         """PG 连接数耗尽（多窗口批并发峰值瞬时挤爆，与回路自身无关）。"""
@@ -915,11 +1028,46 @@ async def _run_batch_loop_calculations(
                         save_input_snapshot=save_input_snapshot,
                         pinned_config=pinned_config,
                         release_context=release_context,
+                        runtime_overrides=runtime_overrides,
+                        template_keys=template_keys,
+                        failed_source_ids=failed_source_ids,
                     )
                     await worker_db.commit()
                     return result
-                except Exception:
+                except Exception as exc:
                     await worker_db.rollback()
+                    if final_attempt:
+                        # P5-02（G2 遗留③）终末尝试仍失败 → 追加 status=FAILED
+                        # 不可变终态 record（payload 含最终错误摘要）。暂态尝试
+                        # （final_attempt=False）不落终态，等待 Celery 重试；
+                        # 同键已有 record（此前尝试成功）时复用不重写（幂等）。
+                        try:
+                            await result_ledger.append_failed_result_record(
+                                worker_db,
+                                logical_run_id=logical_run_id
+                                or result_ledger.derive_loop_logical_run_id(
+                                    ts_start,
+                                    custom_task_id=custom_task_id,
+                                    source=source,
+                                    source_task_id=source_task_id,
+                                ),
+                                object_kind=result_ledger.OBJECT_KIND_LOOP,
+                                object_id=str(loop.id),
+                                ts_start=ts_start,
+                                ts_end=ts_end,
+                                algorithm_version=ALGORITHM_VERSION,
+                                config_revision=failed_record_revision,
+                                error=exc,
+                            )
+                            await worker_db.commit()
+                        except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                            logger.warning(
+                                "终末失败 record 追加失败（回路 %s 窗口 %s~%s）",
+                                loop.tag_name,
+                                ts_start,
+                                ts_end,
+                                exc_info=True,
+                            )
                     raise
                 finally:
                     if on_completed is not None:
@@ -1039,6 +1187,7 @@ async def _do_calculate(
     source: str = "SCHEDULED",
     source_task_id: str | None = None,
     logical_run_id: str | None = None,
+    final_attempt: bool = False,
 ) -> dict:
     """执行全量 KPI 计算的实际 async 逻辑。
 
@@ -1051,6 +1200,8 @@ async def _do_calculate(
         total_windows: 总窗口数，用于细粒度进度计算。
         logical_run_id: P1-05 结果账本逻辑运行身份；None 时按
             (source, source_task_id, 窗口) 确定性推导（兜底，保持重试幂等）。
+        final_attempt: P5-02 终末尝试标记（终末失败回路追加 FAILED 终态
+            record；暂态失败只留 attempt 日志等 Celery 重试）。
     """
     from app.core.db import AsyncSessionLocal
 
@@ -1109,6 +1260,26 @@ async def _do_calculate(
         # P3-08a：任务边界固定评估发布上下文（六要素；批内所有 record/包共用）
         release_ctx = await _resolve_task_release_context(db)
 
+        # P5-02 批量元信息预载（批级 3 次查询，回路级 0 次）：fitness 阈值 +
+        # KPI 观测覆盖率阈值 + TEMPLATE 层模板键，全批共享同一快照。
+        # 原逐回路口径：1000 回路 × (fitness LIKE 查询 + 单键查询 [+ 模板键
+        # 查询]) = 2000~3000 次同参数重复 IO；现批级常数 2~3 次。
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        template_keys = await _batch_load_template_keys(db, pinned_config, loops)
+        # P5-02 显式重评链门：一次窗口级查询判定本窗 FAILED 前身对象集
+        # （常见空集 → 逐 record 落库零 sourceRecordId 解析查询）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[str(lp.id) for lp in loops]
+        )
+        logger.info(
+            "[批量元信息预载] 回路=%d fitness键=%d 观测阈值=%s 模板键=%d"
+            "（批级共享，回路级元数据 IO=0）",
+            len(loops),
+            len(runtime_overrides.get("fitness") or {}),
+            runtime_overrides.get("kpiMinObservedRatio"),
+            len(template_keys or {}),
+        )
+
     loops_count = len(loops)
 
     # 注：原 L2 命中率检查 + 兜底预热已废止。计算阶段由 DataPlanner 按需取数：
@@ -1141,6 +1312,10 @@ async def _do_calculate(
         on_completed=_on_completed if task_id else None,
         pinned_config=pinned_config,
         release_context=release_ctx,
+        runtime_overrides=runtime_overrides,
+        template_keys=template_keys,
+        failed_source_ids=failed_source_ids,
+        final_attempt=final_attempt,
     )
     t_calc_elapsed = time.perf_counter() - t_calc_start
     logger.info(
@@ -1159,8 +1334,10 @@ async def _do_calculate(
     # 不再落到"当前系统时间上一小时"（原无参 delay() 固定当前窗，
     # 与回路级窗口不一致）。
     try:
-        calculate_node_kpi_hourly.delay(
-            ts_start=ts_start_dt.isoformat(), ts_end=ts_end_dt.isoformat()
+        # P5-02：级联聚合走夜间优先级（批量类；事件/人工优先级高于本类）
+        calculate_node_kpi_hourly.apply_async(
+            kwargs={"ts_start": ts_start_dt.isoformat(), "ts_end": ts_end_dt.isoformat()},
+            priority=PRIORITY_NIGHTLY,
         )
         logger.info(
             "已触发节点级 KPI 聚合任务（回路级计算完成后级联，窗口 %s~%s）",
@@ -1180,8 +1357,20 @@ async def _do_calculate(
     }
 
 
-async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -> dict:
-    """单回路 KPI 计算。"""
+async def _do_calculate_single_loop(
+    loop_id: str,
+    ts_start: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
+    celery_task_id: str | None = None,
+) -> dict:
+    """单回路 KPI 计算。
+
+    P5-02：celery_task_id 非空时 logicalRunId 由其确定性推导（Celery retry
+    复用同一 task id → 重试幂等，与 P1-05 契约"Celery 任务链路用 task id"
+    对齐；此前每次调用（含重试）新 uuid4，重试不幂等）。attempt_no/
+    final_attempt 为 attempt 日志与终末 FAILED 终态接线参数。
+    """
     from app.core.db import AsyncSessionLocal
 
     async with AsyncSessionLocal() as db:
@@ -1212,19 +1401,68 @@ async def _do_calculate_single_loop(loop_id: str, ts_start: str | None = None) -
 
         type_weights = await get_loop_type_weights_map(db)
 
-        data_planner = _build_data_planner(db)
-        snap = await _calculate_loop_kpi(
-            db=db,
-            loop=loop,
-            metric_configs=metric_configs,
-            ts_start=ts_start_dt,
-            ts_end=ts_end_dt,
-            data_planner=data_planner,
-            type_weights=type_weights,
-            source="MANUAL_STANDARD",
-            # P1-05：手动单回路触发即显式重评 → 每次调用新 logicalRunId
-            logical_run_id=str(uuid4()),
+        # P5-02 批级（此处=任务级）共享运行时阈值；无 celery 身份的直调方
+        # （benchmark 等）传 attempt_no=None → 不落 attempt 日志，行为不变
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        # P1-05/P5-02：Celery 链路 task id 推导（重试幂等）；直调方每次新 uuid4
+        logical_run_id = (
+            result_ledger.derive_loop_logical_run_id(ts_start_dt, celery_task_id=celery_task_id)
+            if celery_task_id
+            else str(uuid4())
         )
+        # P5-02 显式重评链门（REWORK-D1 补接）：单回路手动重算恰是显式重评
+        # 最典型入口（FAILED 后手动重算）——对象域 1 次门查询判定本回路是否
+        # 存在 FAILED 前身（空集 → 落库零 sourceRecordId 解析查询），对齐
+        # 批路径与 custom_loop 门控口径（P0-02 冻结 v2 §2.2）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[loop_id]
+        )
+
+        async def _compute() -> dict | None:
+            data_planner = _build_data_planner(db)
+            return await _calculate_loop_kpi(
+                db=db,
+                loop=loop,
+                metric_configs=metric_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                data_planner=data_planner,
+                type_weights=type_weights,
+                source="MANUAL_STANDARD",
+                logical_run_id=logical_run_id,
+                runtime_overrides=runtime_overrides,
+                failed_source_ids=failed_source_ids,
+            )
+
+        try:
+            if attempt_no is not None:
+                snap = await _attempt_log_wrap(
+                    _compute, logical_run_id=logical_run_id, attempt_no=attempt_no
+                )
+            else:
+                snap = await _compute()
+        except Exception as exc:
+            await db.rollback()
+            if final_attempt:
+                # P5-02（G2 遗留③）：终末尝试失败 → FAILED 不可变终态 record
+                try:
+                    await result_ledger.append_failed_result_record(
+                        db,
+                        logical_run_id=logical_run_id,
+                        object_kind=result_ledger.OBJECT_KIND_LOOP,
+                        object_id=loop_id,
+                        ts_start=ts_start_dt,
+                        ts_end=ts_end_dt,
+                        algorithm_version=ALGORITHM_VERSION,
+                        config_revision=_batch_runtime_config_revision(
+                            runtime_overrides, type_weights, None
+                        ),
+                        error=exc,
+                    )
+                    await db.commit()
+                except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                    logger.warning("终末失败 record 追加失败（回路 %s）", loop_id, exc_info=True)
+            raise
         await db.commit()
         return snap or {"loopId": loop_id, "status": "FAILED"}
 
@@ -1234,6 +1472,8 @@ async def _do_calculate_custom_loop(
     loop_id: str,
     ts_start: str,
     ts_end: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
 ) -> dict:
     """自定义任务单回路 KPI 计算（支持用户指定时间窗，P1 #12）。
 
@@ -1241,6 +1481,9 @@ async def _do_calculate_custom_loop(
     - 支持用户指定 ts_end（非默认 1 小时窗口）
     - ts_end 为 None 时使用 EngineRule 的 cycle_minutes
     - 写入 kpi_snapshot_custom（通过 custom_task_id 参数路由）
+
+    P5-02：attempt_no/final_attempt 为 attempt 日志与终末 FAILED 终态接线
+    参数（同 logicalRunId=custom task id 推导，Celery 重试幂等）。
 
     Args:
         task_id: 自定义任务 ID
@@ -1285,24 +1528,72 @@ async def _do_calculate_custom_loop(
         # P2-03/G2-INC-a：任务边界固定完整配置快照 + 显式人工评估落包（DEC-10 类别③）
         pinned_config = await _pin_task_config(db)
         release_ctx = await _resolve_task_release_context(db)
-        data_planner = _build_data_planner(db)
-        snap = await _calculate_loop_kpi(
-            db=db,
-            loop=loop,
-            metric_configs=metric_configs,
-            ts_start=ts_start_dt,
-            ts_end=ts_end_dt,
-            data_planner=data_planner,
-            type_weights=type_weights,
-            custom_task_id=task_id,
-            # P1-05：同一自定义任务重跑幂等复用 record；新任务=新逻辑运行
-            logical_run_id=result_ledger.derive_loop_logical_run_id(
-                ts_start_dt, custom_task_id=task_id
-            ),
-            save_input_snapshot=True,
-            pinned_config=pinned_config,
-            release_context=release_ctx,
+        # P5-02 任务级共享运行时阈值 + 模板键（单回路=批次规模 1，同批口径）
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        template_keys = await _batch_load_template_keys(db, pinned_config, [loop])
+        # P1-05：同一自定义任务重跑幂等复用 record；新任务=新逻辑运行
+        logical_run_id = result_ledger.derive_loop_logical_run_id(
+            ts_start_dt, custom_task_id=task_id
         )
+        # P5-02 显式重评链门（对象域 1 次查询；空集零逐 record 查询）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[loop_id]
+        )
+
+        async def _compute() -> dict | None:
+            data_planner = _build_data_planner(db)
+            return await _calculate_loop_kpi(
+                db=db,
+                loop=loop,
+                metric_configs=metric_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                data_planner=data_planner,
+                type_weights=type_weights,
+                custom_task_id=task_id,
+                logical_run_id=logical_run_id,
+                save_input_snapshot=True,
+                pinned_config=pinned_config,
+                release_context=release_ctx,
+                runtime_overrides=runtime_overrides,
+                template_keys=template_keys,
+                failed_source_ids=failed_source_ids,
+            )
+
+        try:
+            if attempt_no is not None:
+                snap = await _attempt_log_wrap(
+                    _compute, logical_run_id=logical_run_id, attempt_no=attempt_no
+                )
+            else:
+                snap = await _compute()
+        except Exception as exc:
+            await db.rollback()
+            if final_attempt:
+                # P5-02（G2 遗留③）：终末尝试失败 → FAILED 不可变终态 record
+                try:
+                    await result_ledger.append_failed_result_record(
+                        db,
+                        logical_run_id=logical_run_id,
+                        object_kind=result_ledger.OBJECT_KIND_LOOP,
+                        object_id=loop_id,
+                        ts_start=ts_start_dt,
+                        ts_end=ts_end_dt,
+                        algorithm_version=ALGORITHM_VERSION,
+                        config_revision=_batch_runtime_config_revision(
+                            runtime_overrides, type_weights, pinned_config
+                        ),
+                        error=exc,
+                    )
+                    await db.commit()
+                except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                    logger.warning(
+                        "终末失败 record 追加失败（回路 %s 任务 %s）",
+                        loop_id,
+                        task_id,
+                        exc_info=True,
+                    )
+            raise
         await db.commit()
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
 
@@ -1312,8 +1603,14 @@ async def _do_calculate_custom_batch(
     loop_ids: list[str],
     ts_start: str,
     ts_end: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
 ) -> dict:
-    """批量自定义评估任务（复用标准任务的批量预加载 + 并发处理）。"""
+    """批量自定义评估任务（复用标准任务的批量预加载 + 并发处理）。
+
+    P5-02：attempt_no/final_attempt 为 attempt 日志与终末 FAILED 终态接线
+    参数（logicalRunId=custom task id 推导，Celery 重试幂等）。
+    """
     from app.core.db import AsyncSessionLocal
     from app.services.engine_rule_loader import get_engine_rule_loader
     from app.services.loop_config import get_loop_type_weights_map
@@ -1354,6 +1651,20 @@ async def _do_calculate_custom_batch(
 
         loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
 
+        # P2-03/G2-INC-a：显式人工批量评估任务边界固定完整配置快照（DEC-10 类别③）
+        pinned_config = await _pin_task_config(db)
+        # P5-02 批量元信息预载（批级 2~3 次查询，回路级 0 次；口径同 _do_calculate）
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        template_keys = await _batch_load_template_keys(db, pinned_config, loops)
+        # P5-02 显式重评链门（同标准批口径）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[str(lp.id) for lp in loops]
+        )
+        # P1-05：同一自定义任务（含 Celery 重试）幂等复用 record
+        batch_logical_run_id = result_ledger.derive_loop_logical_run_id(
+            ts_start_dt, custom_task_id=task_id
+        )
+
         t_prewarm_start = time.perf_counter()
         prewarm_result = await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
         t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
@@ -1365,31 +1676,46 @@ async def _do_calculate_custom_batch(
             t_prewarm_elapsed,
         )
 
+        async def _run_batch() -> list:
+            t0 = time.perf_counter()
+            r = await _run_batch_loop_calculations(
+                loops=loops,
+                loop_configs=loop_configs,
+                metric_configs=metric_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                type_weights=type_weights,
+                custom_task_id=task_id,
+                logical_run_id=batch_logical_run_id,
+                save_input_snapshot=True,
+                pinned_config=pinned_config,
+                release_context=await _resolve_task_release_context(db),
+                runtime_overrides=runtime_overrides,
+                template_keys=template_keys,
+                failed_source_ids=failed_source_ids,
+                final_attempt=final_attempt,
+            )
+            logger.info(
+                "自定义批量计算: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+                len(loops),
+                CONCURRENCY,
+                time.perf_counter() - t0,
+                (time.perf_counter() - t0) / max(len(loops), 1),
+            )
+            return r
+
         t_calc_start = time.perf_counter()
-        results = await _run_batch_loop_calculations(
-            loops=loops,
-            loop_configs=loop_configs,
-            metric_configs=metric_configs,
-            ts_start=ts_start_dt,
-            ts_end=ts_end_dt,
-            type_weights=type_weights,
-            custom_task_id=task_id,
-            # P1-05：同一自定义任务（含 Celery 重试）幂等复用 record
-            logical_run_id=result_ledger.derive_loop_logical_run_id(
-                ts_start_dt, custom_task_id=task_id
-            ),
-            # P2-03/G2-INC-a：显式人工批量评估落包 + 任务边界固定完整配置快照（DEC-10 类别③）
-            save_input_snapshot=True,
-            pinned_config=await _pin_task_config(db),
-            release_context=await _resolve_task_release_context(db),
-        )
+        if attempt_no is not None:
+            results = await _attempt_log_wrap(
+                _run_batch, logical_run_id=batch_logical_run_id, attempt_no=attempt_no
+            )
+        else:
+            results = await _run_batch()
         t_calc_elapsed = time.perf_counter() - t_calc_start
         logger.info(
-            "自定义批量计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+            "自定义批量计算完成(含 attempt 日志): loops=%d, elapsed=%.3fs",
             len(loops),
-            CONCURRENCY,
             t_calc_elapsed,
-            t_calc_elapsed / max(len(loops), 1),
         )
         summary = _summarize_batch_results(results)
         # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
@@ -1644,6 +1970,89 @@ async def _load_fitness_sys_configs(db) -> dict[str, str] | None:
         return None
 
 
+async def _load_batch_runtime_overrides(db) -> dict:
+    """P5-02 批量元信息预载：任务边界一次性加载批级共享运行时阈值.
+
+    消除每回路重复元数据 IO（03 号文 P5-02 验收："1000 回路不出现每指标
+    重复元数据 IO"）——原 ``_calculate_loop_kpi`` 逐回路调
+    ``_load_fitness_sys_configs``（``key LIKE 'fitness.%'``）与
+    ``_load_kpi_min_observed_ratio``（单键查询），1000 回路 = 2000 次同
+    参数重复查询；现批级 2 次，批内所有回路共享同一快照。
+
+    **等价基线（10 号文）**：值与逐回路读取完全同源（同一 session、同一
+    查询、同一解析函数），批内固定消费与 G2-INC-a"任务边界固定配置快照"
+    纪律一致——运行中发布变更不再于批中途换值（更正确，非语义变更）；
+    ``configRevision`` 摘要输入恒等 → 分值/参考状态不变。
+
+    Returns:
+        ``{"fitness": dict | None, "kpiMinObservedRatio": float | None}``
+    """
+    return {
+        "fitness": await _load_fitness_sys_configs(db),
+        "kpiMinObservedRatio": await _load_kpi_min_observed_ratio(db),
+    }
+
+
+def _batch_runtime_config_revision(
+    runtime_overrides: dict | None, type_weights: dict | None, pinned_config: dict | None
+) -> str:
+    """批级 configRevision（终末失败回路的 FAILED record 用）.
+
+    与 ``_calculate_loop_kpi`` 内逐回路计算同输入同 digest：批级共享
+    runtime_overrides 后，typeWeights/fitness 两分支值恒等 → 摘要恒等，
+    FAILED record 的 configRevision 与同批 COMPLETED record 同源同构。
+    """
+    fitness = (runtime_overrides or {}).get("fitness") or {}
+    revision = result_ledger.config_revision_digest(
+        {"typeWeights": type_weights or {}, "fitness": fitness}
+    )
+    pinned_revision = pinned_config.get("configRevision") if pinned_config else None
+    if pinned_revision is not None:
+        revision = f"rev:{pinned_revision}:{revision.removeprefix('digest:')}"
+    return revision
+
+
+async def _batch_load_template_keys(
+    db, pinned_config: dict | None, loops: list[LoopLedger]
+) -> dict[str, str] | None:
+    """P5-02 批量预载工程模板键（TEMPLATE 层五层解析用）.
+
+    原 ``_resolve_loop_pinned_params`` 在 pinned 快照含 TEMPLATE 覆盖时
+    逐回路查一次 engineering_template（1000 回路=1000 次）；现批级 1 次
+    查询产出 ``{template_id: template_key}`` 共享。查不到的模板键 = None
+    （与逐回路 ``scalar_one_or_none`` 缺行行为等价：TEMPLATE 层不参与）。
+
+    无 TEMPLATE 覆盖 / 无模板绑定回路 / 查询失败 → None（调用方回落
+    逐回路 legacy 查询，行为不变）。
+    """
+    overrides = (pinned_config or {}).get("overrides") or {}
+    if not any(str(k).startswith("TEMPLATE|") for k in overrides):
+        return None
+    template_ids = {
+        str(tid)
+        for tid in (getattr(loop, "engineering_template_id", None) for loop in loops)
+        if tid
+    }
+    if not template_ids:
+        return None
+    try:
+        from sqlalchemy import select as _select
+
+        from app.models.engineering_template import EngineeringTemplate
+
+        rows = (
+            await db.execute(
+                _select(EngineeringTemplate.id, EngineeringTemplate.template_key).where(
+                    EngineeringTemplate.id.in_(template_ids)
+                )
+            )
+        ).all()
+        return {str(row[0]): row[1] for row in rows}
+    except Exception:  # noqa: BLE001 — 批级失败回落逐回路口径
+        logger.warning("批级模板键预载失败（回落逐回路查询）", exc_info=True)
+        return None
+
+
 async def _pin_task_config(db) -> dict | None:
     """G2-INC-a：任务边界固定完整五层有效配置（不只 revision 号）.
 
@@ -1709,21 +2118,24 @@ def _release_context_with_actuals(
 
 
 async def _resolve_loop_pinned_params(
-    db, pinned_config: dict, loop: LoopLedger
+    db,
+    pinned_config: dict,
+    loop: LoopLedger,
+    template_keys: dict[str, str] | None = None,
 ) -> tuple[dict[tuple[str, str], dict], dict[str, dict]]:
     """在固定快照上解析该回路的五层有效参数（G2-INC-a，per-loop）.
 
-    TEMPLATE 层 scope（template_key）仅当快照含 TEMPLATE 覆盖时查一次
-    engineering_template（无覆盖=该层不参与，跳过查询）；NODE=loop.unit_id、
-    LOOP=loop.id 直接取回路行属性。
+    TEMPLATE 层 scope（template_key）仅当快照含 TEMPLATE 覆盖时解析：
+    P5-02 起优先消费批级预载的 ``template_keys`` 映射（``_batch_load_
+    template_keys`` 一次查询批内共享，1000 回路 1000 次查询→1 次；
+    键缺失=TEMPLATE 层不参与，与逐回路 scalar_one_or_none 缺行等价）；
+    映射不可得（None，批级查询失败/独立调用方）时回落逐回路查询。
+    NODE=loop.unit_id、LOOP=loop.id 直接取回路行属性。
 
     Returns:
         (params_map, scope)：params_map 键 (metric_code, control_type) 值为
         五层展开有效值；scope 为实际解析作用域（随包记录供审计/重放核对）。
     """
-    from sqlalchemy import select as _select
-
-    from app.models.engineering_template import EngineeringTemplate
     from app.services.config_publish import resolve_loop_params_map
 
     template_key: str | None = None
@@ -1731,21 +2143,29 @@ async def _resolve_loop_pinned_params(
     if any(str(k).startswith("TEMPLATE|") for k in overrides):
         template_id = getattr(loop, "engineering_template_id", None)
         if template_id:
-            try:
-                row = (
-                    await db.execute(
-                        _select(EngineeringTemplate.template_key).where(
-                            EngineeringTemplate.id == str(template_id)
+            if template_keys is not None:
+                # P5-02 批级预载映射（含"确无此键"=模板行不存在 → None）
+                template_key = template_keys.get(str(template_id))
+            else:
+                from sqlalchemy import select as _select
+
+                from app.models.engineering_template import EngineeringTemplate
+
+                try:
+                    row = (
+                        await db.execute(
+                            _select(EngineeringTemplate.template_key).where(
+                                EngineeringTemplate.id == str(template_id)
+                            )
                         )
+                    ).scalar_one_or_none()
+                    template_key = row
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "回路 %s 模板键解析失败（TEMPLATE 层覆盖不参与本次解析）",
+                        loop.id,
+                        exc_info=True,
                     )
-                ).scalar_one_or_none()
-                template_key = row
-            except Exception:  # noqa: BLE001
-                logger.warning(
-                    "回路 %s 模板键解析失败（TEMPLATE 层覆盖不参与本次解析）",
-                    loop.id,
-                    exc_info=True,
-                )
     scope = {
         "templateKey": template_key,
         "nodeId": str(loop.unit_id) if getattr(loop, "unit_id", None) else None,
@@ -1776,6 +2196,9 @@ async def _calculate_loop_kpi(
     save_input_snapshot: bool = False,
     pinned_config: dict | None = None,
     release_context: dict[str, Any] | None = None,
+    runtime_overrides: dict | None = None,
+    template_keys: dict[str, str] | None = None,
+    failed_source_ids: set[str] | None = None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -1829,6 +2252,11 @@ async def _calculate_loop_kpi(
         logical_run_id: 结果账本逻辑运行身份（批次级，None=上下文推导）
         save_input_snapshot: 保存不可变输入包（DEC-10 范围控制，默认关）
         pinned_config: 任务边界固定的完整配置快照（P2-02 pin；None=未固定）
+        runtime_overrides: P5-02 批级共享运行时阈值（fitness 阈值 + KPI 观测
+            覆盖率阈值，``_load_batch_runtime_overrides`` 产物）；None=独立
+            调用方（benchmark 等），本函数内回落逐回路加载（兼容口径）。
+        template_keys: P5-02 批级预载的 ``{template_id: template_key}`` 映射
+            （五层解析 TEMPLATE 层）；None=回落逐回路查询（兼容口径）。
 
     Returns:
         快照字典，包含 status 字段
@@ -1838,12 +2266,18 @@ async def _calculate_loop_kpi(
     control_type = _loop_type_to_control_type(loop.loop_type)
     time_window = TimeWindow(start=ts_start, end=ts_end)
 
-    # P2: 预加载 fitness 阈值配置（sys_config 中 fitness.* 前缀）
-    fitness_sys_configs: dict[str, str] | None = None
-    try:
-        fitness_sys_configs = await _load_fitness_sys_configs(db)
-    except Exception:  # noqa: BLE001
-        fitness_sys_configs = None  # 使用默认阈值
+    # P2: fitness 阈值配置（sys_config 中 fitness.* 前缀）。
+    # P5-02 批量元信息预载：批级 runtime_overrides 优先（同批所有回路共享
+    # 同一快照，等价基线：值与逐回路读取同源同值 → configRevision/分值不变）；
+    # None（独立调用方）时回落逐回路查询。
+    if runtime_overrides is not None:
+        fitness_sys_configs = runtime_overrides.get("fitness")
+    else:
+        fitness_sys_configs = None
+        try:
+            fitness_sys_configs = await _load_fitness_sys_configs(db)
+        except Exception:  # noqa: BLE001
+            fitness_sys_configs = None  # 使用默认阈值
 
     # P1-05 结果账本：实际消费配置内容摘要作为 configRevision；P2-03 起叠加
     # P2-02 任务边界固定的全局持久 revision（格式 rev:{n}:{digest16}，任务中
@@ -1862,7 +2296,7 @@ async def _calculate_loop_kpi(
     if pinned_config is not None:
         try:
             pinned_params, pinned_resolve_meta = await _resolve_loop_pinned_params(
-                db, pinned_config, loop
+                db, pinned_config, loop, template_keys=template_keys
             )
         except Exception:  # noqa: BLE001
             logger.warning("回路 %s 五层参数解析失败（回落当前缓存口径）", loop.id, exc_info=True)
@@ -1903,6 +2337,8 @@ async def _calculate_loop_kpi(
         # P3-08a：语义明细与发布上下文随 record payload 入账本（幂等 setdefault，
         # 早退分支 metrics_semantic=None → _persist_snapshot 跳过写键）
         kwargs.setdefault("metrics_semantic", metrics_semantic)
+        # P5-02 显式重评链门（批级判定集合；None=未判定不解析）
+        kwargs.setdefault("failed_source_ids", failed_source_ids)
         # REWORK-D2：assessmentContext 回填任务实际 configRevision/paramsSource
         # （与包 manifest.source 同源，重放语义比较 identity 域两侧恒等）
         kwargs.setdefault(
@@ -2268,7 +2704,11 @@ async def _calculate_loop_kpi(
     # 覆盖率不足即降级 INCONCLUSIVE（与 gate_failed 同一处置口径：score=None、
     # 可信度 E、原因写进 fitness_detail）。
     if status == "SUCCESS":
-        min_observed_ratio = await _load_kpi_min_observed_ratio(db)
+        # P5-02 批级共享（runtime_overrides 优先；None=独立调用方回落逐回路查询）
+        if runtime_overrides is not None:
+            min_observed_ratio = runtime_overrides.get("kpiMinObservedRatio")
+        else:
+            min_observed_ratio = await _load_kpi_min_observed_ratio(db)
         if min_observed_ratio is not None:
             observed_ratio = _observed_ratio_from_bundles(bundles)
             if observed_ratio is not None and observed_ratio < min_observed_ratio:
@@ -3690,20 +4130,36 @@ async def _persist_snapshot(
     # metrics_semantic=None（早退分支）不写键（诚实口径：无指标语义可存）
     metrics_semantic = kwargs.pop("metrics_semantic", None)
     assessment_context = kwargs.pop("assessment_context", None)
+    # P5-02 显式重评链门（批级 loop_ids_with_failed_records 产物）：
+    # None=未判定（直调方/兼容口径，不解析）；集合命中本回路才做单条
+    # FAILED 前身点查（常见空集路径零额外查询）
+    failed_source_ids = kwargs.pop("failed_source_ids", None)
     if status == "INCONCLUSIVE" and kwargs.get("confidence_level") is None:
         kwargs["confidence_level"] = "E"
 
     # --- P1-05：先追加不可变 record（幂等），再切换投影 ---
     try:
+        record_logical_run_id = logical_run_id or result_ledger.derive_loop_logical_run_id(
+            ts_start,
+            custom_task_id=custom_task_id,
+            source=kwargs.get("source"),
+            source_task_id=kwargs.get("source_task_id"),
+        )
+        source_record_hint: str | None = None
+        if failed_source_ids is not None and loop_id in failed_source_ids:
+            # P5-02（G2 遗留③）：同窗 FAILED 前身存在 → 新 COMPLETED record
+            # 的 sourceRecordId 指向最近一条失败证据（不覆盖）
+            source_record_hint = await result_ledger.latest_failed_source_id(
+                db,
+                logical_run_id=record_logical_run_id,
+                object_kind=result_ledger.OBJECT_KIND_LOOP,
+                object_id=loop_id,
+                ts_start=ts_start,
+                ts_end=ts_end,
+            )
         record = await result_ledger.append_result_record(
             db,
-            logical_run_id=logical_run_id
-            or result_ledger.derive_loop_logical_run_id(
-                ts_start,
-                custom_task_id=custom_task_id,
-                source=kwargs.get("source"),
-                source_task_id=kwargs.get("source_task_id"),
-            ),
+            logical_run_id=record_logical_run_id,
             object_kind=result_ledger.OBJECT_KIND_LOOP,
             object_id=loop_id,
             ts_start=ts_start,
@@ -3711,6 +4167,7 @@ async def _persist_snapshot(
             algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
             config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
             dataset_snapshot_id=dataset_snapshot_id,
+            source_record_id=source_record_hint,
             payload={
                 "snapshotStatus": status,
                 "customTaskId": custom_task_id,

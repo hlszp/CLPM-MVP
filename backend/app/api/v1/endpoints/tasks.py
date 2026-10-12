@@ -742,6 +742,7 @@ async def trigger_standard_evaluation(
 
     设计依据：IDS §2.7.6.1, PRD §4.3.7.A
     """
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.kpi_calc import calculate_hourly_kpi
 
     task_id = str(uuid4())
@@ -754,7 +755,10 @@ async def trigger_standard_evaluation(
     # 触发 Celery 任务（P1 #11: 透传 body.tsStart，None 时取上一个完整计算周期）
     # 透传 task_id 复用本记录（避免 Celery 侧重复建记录的双写问题）；
     # 手动触发与整点 Beat 的小时窗互斥由 calculate_hourly_kpi 内 SETNX 锁保证
-    celery_result = calculate_hourly_kpi.delay(ts_start=body.tsStart, task_id=task_id)
+    # P5-02：人工触发走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+    celery_result = calculate_hourly_kpi.apply_async(
+        kwargs={"ts_start": body.tsStart, "task_id": task_id}, priority=PRIORITY_MANUAL
+    )
     celery_task_id = celery_result.id
 
     # 任务时间窗（2026-10-03 修复：body.tsStart 缺省时推导上一完整小时，
@@ -862,14 +866,16 @@ async def trigger_custom_evaluation(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.kpi_calc import calculate_custom_batch_kpi
 
     task_id = str(uuid4())
     now = _now_iso()
 
     try:
-        celery_result = calculate_custom_batch_kpi.delay(
-            task_id, body.loopIds, body.tsStart, body.tsEnd
+        # P5-02：人工自定义批量走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+        celery_result = calculate_custom_batch_kpi.apply_async(
+            args=[task_id, body.loopIds, body.tsStart, body.tsEnd], priority=PRIORITY_MANUAL
         )
     except Exception:
         # 投递失败：回滚已占用的槽位（任务记录尚未创建）
@@ -1119,11 +1125,15 @@ async def start_task(
         loop_ids = []
 
     # 触发 Celery 任务（skip_existing=创建时勾选的补差模式，默认全量覆盖）
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.kpi_calc import backfill_kpi_range
 
     skip_existing = data.get("skip_existing") == "1"
-    celery_result = backfill_kpi_range.delay(
-        ts_start, ts_end, loop_ids=loop_ids, task_id=task_id, skip_existing=skip_existing
+    # P5-02：人工回算走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+    celery_result = backfill_kpi_range.apply_async(
+        args=[ts_start, ts_end],
+        kwargs={"loop_ids": loop_ids, "task_id": task_id, "skip_existing": skip_existing},
+        priority=PRIORITY_MANUAL,
     )
 
     # 更新任务状态为 RUNNING

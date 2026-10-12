@@ -98,6 +98,43 @@ class CalculationResultRecord(Base):
     )
 
 
+class CalculationResultAttempt(Base):
+    """计算尝试日志（P5-02，G2 遗留③；P0-02 冻结 v2 §2.2 现成稿）.
+
+    暂态重试只写本表日志，不落终态 record；第 3 次 attempt（首跑+2 重试，
+    DEC-10 按推荐裁决）仍失败才追加 ``status=FAILED`` 不可变终态 record。
+
+    ``logical_run_id`` **不设外键**（与冻结稿字面"FK"的显式偏差，已登记）：
+    record 表的 logical_run_id 非唯一（一个批次逻辑运行覆盖 N 条对象 record），
+    PostgreSQL 外键要求被引用列唯一；且 attempt 行必须在**尚无任何 record**
+    时即可写入（暂态失败先于首次成功落库正是本表主场景）。以
+    ``(logical_run_id, attempt_no)`` 唯一约束保证重投递幂等。
+    """
+
+    __tablename__ = "calculation_result_attempt"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    logical_run_id: Mapped[str] = mapped_column(UUID(as_uuid=False), nullable=False)
+    # attempt 序号：1=首跑，2/3=重试（对齐 Celery request.retries + 1）
+    attempt_no: Mapped[int] = mapped_column(nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # 失败分类：异常类名（成功完成时为 NULL）
+    error_class: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    worker_pid: Mapped[int | None] = mapped_column(String(32), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint("logical_run_id", "attempt_no", name="uq_calc_attempt_run_no"),
+        Index("idx_calc_attempt_logical_run_id", "logical_run_id"),
+        {"comment": "计算尝试日志（暂态重试不落终态，P5-02 G2遗留③）"},
+    )
+
+
 class CalculationResultLegacyMap(Base):
     """旧投影表行 ID → 结果账本 recordId 映射（迁移归档产物，兼容读）."""
 
@@ -125,6 +162,7 @@ class CalculationResultLegacyMap(Base):
 
 
 __all__ = [
+    "CalculationResultAttempt",
     "CalculationResultLegacyMap",
     "CalculationResultRecord",
     "LEGACY_TABLE_HOURLY",

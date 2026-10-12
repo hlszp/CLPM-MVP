@@ -43,6 +43,7 @@ class TestTriggerDiagnosis:
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             mock_celery.delay.return_value = MagicMock(id="celery-1")
+            mock_celery.apply_async.return_value = MagicMock(id="celery-1")
             db = client.app.dependency_overrides.get("_db")  # noqa: F841
             from app.core.db import get_db
 
@@ -61,7 +62,7 @@ class TestTriggerDiagnosis:
         assert body["data"]["accepted"] == 1
         assert body["data"]["taskId"]
         # delay 参数：ISO 时间窗 + task_id 透传
-        kwargs = mock_celery.delay.call_args.kwargs
+        kwargs = mock_celery.apply_async.call_args.kwargs["kwargs"]
         assert kwargs["loop_ids"] == [LOOP_ID]
         assert kwargs["task_id"] == body["data"]["taskId"]
         assert kwargs["operator_group"] == "full"
@@ -73,6 +74,7 @@ class TestTriggerDiagnosis:
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             mock_celery.delay.return_value = MagicMock(id="celery-1")
+            mock_celery.apply_async.return_value = MagicMock(id="celery-1")
             from app.core.db import get_db
 
             mock_db = MagicMock()
@@ -89,7 +91,7 @@ class TestTriggerDiagnosis:
                 },
             )
         assert resp.status_code == 200
-        kwargs = mock_celery.delay.call_args.kwargs
+        kwargs = mock_celery.apply_async.call_args.kwargs["kwargs"]
         assert kwargs["operators"] == ["quality_code_rules", "sensor_fault"]
 
     def test_trigger_custom_window_strips_timezone(self, client, fake_redis) -> None:
@@ -103,6 +105,7 @@ class TestTriggerDiagnosis:
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             mock_celery.delay.return_value = MagicMock(id="celery-1")
+            mock_celery.apply_async.return_value = MagicMock(id="celery-1")
             from app.core.db import get_db
 
             mock_db = MagicMock()
@@ -122,7 +125,7 @@ class TestTriggerDiagnosis:
                 },
             )
         assert resp.status_code == 200
-        kwargs = mock_celery.delay.call_args.kwargs
+        kwargs = mock_celery.apply_async.call_args.kwargs["kwargs"]
         assert kwargs["start"] == "2026-08-17T02:00:00"
         assert kwargs["end"] == "2026-08-17T04:00:00"
 
@@ -980,6 +983,7 @@ class TestTriggerTitleConvention:
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
             mock_celery.delay.return_value = MagicMock(id="celery-1")
+            mock_celery.apply_async.return_value = MagicMock(id="celery-1")
             from app.core.db import get_db
 
             mock_db = MagicMock()

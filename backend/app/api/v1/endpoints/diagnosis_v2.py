@@ -256,6 +256,7 @@ async def trigger_diagnosis(
     scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """发起诊断：即时校验 → TaskTracker 建单 → Celery 异步执行（P4-03 批量跨 scope 拒绝）。"""
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
     loop_ids = [str(x) for x in body.loopIds]
@@ -385,18 +386,22 @@ async def trigger_diagnosis(
         action="diagnosis:trigger",
         loop_ids=loop_ids,
     )
-    celery_result = run_diagnosis_batch.delay(
-        loop_ids=loop_ids,
-        start=start.isoformat(),
-        end=end.isoformat(),
-        task_id=task_id,
-        operator_group=body.operatorGroup,
-        triggered_by=user.username,
-        operators=selected_ops or None,
-        subject_user_id=_subject.subject_user_id,
-        subject_role=_subject.subject_role,
-        subject_action=_subject.action,
-        policy_revision=_subject.policy_revision,
+    celery_result = run_diagnosis_batch.apply_async(
+        kwargs={
+            "loop_ids": loop_ids,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "task_id": task_id,
+            "operator_group": body.operatorGroup,
+            "triggered_by": user.username,
+            "operators": selected_ops or None,
+            "subject_user_id": _subject.subject_user_id,
+            "subject_role": _subject.subject_role,
+            "subject_action": _subject.action,
+            "policy_revision": _subject.policy_revision,
+        },
+        # P5-02：人工触发走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+        priority=PRIORITY_MANUAL,
     )
     from app.services.task_tracker import set_celery_task_ids
 
