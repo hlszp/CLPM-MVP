@@ -1745,6 +1745,7 @@ def identify_from_history(
                             )
                         ]
                     _apply_closed_loop_finalization(
+                        result=best_r,
                         best=best_r.best_model,
                         u_full=u_raw,
                         y_full=y_raw,
@@ -2609,11 +2610,26 @@ def identify_from_history(
             preprocessing=preprocess_structured,
         )
 
+    # P0-2：记录去均值偏置量（增量模型的零位基准，供结果审计追溯）
+    offset_note = f"去均值偏置 PV={y_mean:.6g}, OP={u_mean:.6g}"
+    best.reason = f"{best.reason}; {offset_note}" if best.reason else offset_note
+
+    _ok_note = f"{preprocess_note}; " if preprocess_note else ""
+    _result = IdentificationResult(
+        success=True,
+        best_model=best,
+        candidates=results,
+        reason=f"{_ok_note}辨识成功（{offset_note}）",
+        theta_source=theta_source,
+        preprocessing=preprocess_structured,
+    )
     # P3-06c 终局装配（外层、选模后只降不升）：P-24 独立动态事件终验 +
     # P-26/R10 重选时滞-结构不确定性（重选链路消费选定窗数据=胜出模型的
-    # 估计输入，ARX 级成本覆盖全部方法）
+    # 估计输入，ARX 级成本覆盖全部方法）；P3-03 终验节点：模型级终验结论
+    # + 最佳解释/可整定终验分离（final_verification 装配，见函数 docstring）
     if not _internal_call and u_full_arr is not None and y_full_arr is not None:
         _apply_closed_loop_finalization(
+            result=_result,
             best=best,
             u_full=u_full_arr,
             y_full=y_full_arr,
@@ -2625,11 +2641,6 @@ def identify_from_history(
             ts=ts,
             lowpass_meta=lowpass_meta,
         )
-
-    # P0-2：记录去均值偏置量（增量模型的零位基准，供结果审计追溯）
-    offset_note = f"去均值偏置 PV={y_mean:.6g}, OP={u_mean:.6g}"
-    best.reason = f"{best.reason}; {offset_note}" if best.reason else offset_note
-
     # P3-S1：低 SNR 显式不承诺标注（成功路径）——evidence 结构化记录 +
     # reason code；只标注不封顶（低 SNR 档不进参数级门禁，S1 裁决）
     if low_snr_record is not None:
@@ -2641,15 +2652,7 @@ def identify_from_history(
         if preprocess_structured is not None:
             preprocess_structured["lowSnr"] = low_snr_record
 
-    _ok_note = f"{preprocess_note}; " if preprocess_note else ""
-    return IdentificationResult(
-        success=True,
-        best_model=best,
-        candidates=results,
-        reason=f"{_ok_note}辨识成功（{offset_note}）",
-        theta_source=theta_source,
-        preprocessing=preprocess_structured,
-    )
+    return _result
 
 
 def _compute_data_hash(u: np.ndarray, y: np.ndarray, ts: float) -> str:
@@ -4063,8 +4066,111 @@ def _reselect_uncertainty(
     return record
 
 
+def _summarize_final_verification(
+    evidence: ModelEvidence,
+    cross_window: dict | None = None,
+) -> dict[str, Any]:
+    """P3-03 终验节点：模型级终验结论（四态 + 依据链）.
+
+    消费 06a finalTest（尾部 20% 终验段）与 06c finalEventTest（独立动态
+    事件终验）**双通道**合成模型级四态；06c 跨窗稳定性（P-25）与重选
+    不确定性（P-26）作为依据链记录（不改变四态——它们各有独立的可信度
+    语义）。合成规则（保守，只降不升；07§2"训练好、终验差的模型不得
+    晋升"）：
+
+    - 任一通道 FAILED → FAILED（任一终验通道失败即模型级失败）；
+    - 否则任一通道 PASSED → PASSED（至少一个终验通道实际验证通过且
+      无失败通道）；
+    - 否则有通道运行且全部 NO_DYNAMICS → NO_DYNAMICS（终验未实际验证
+      到动态，不伪称通过）；
+    - 否则（无通道实际运行）→ NOT_RUN。
+
+    Args:
+        evidence: 候选证据（final_test/final_event_test/reselect_uncertainty）。
+        cross_window: 跨窗稳定性记录（preprocessing.multiWindow.
+            crossWindowStability；单窗/无多窗编排时 None）。
+    """
+    ft = evidence.final_test if isinstance(evidence.final_test, dict) else None
+    fe = evidence.final_event_test if isinstance(evidence.final_event_test, dict) else None
+    ft_status = ft.get("status") if ft else None
+    fe_status = fe.get("status") if fe else None
+    statuses = [s for s in (ft_status, fe_status) if s is not None]
+    if FINAL_TEST_FAILED in statuses:
+        status = FINAL_TEST_FAILED
+    elif FINAL_TEST_PASSED in statuses:
+        status = FINAL_TEST_PASSED
+    elif FINAL_TEST_NO_DYNAMICS in statuses:
+        status = FINAL_TEST_NO_DYNAMICS
+    else:
+        status = FINAL_TEST_NOT_RUN
+    basis: list[str] = []
+    if ft:
+        basis.append(
+            f"finalTest: {ft_status}(r2={ft.get('r2')}, n={ft.get('n')}, "
+            f"ptpRange={ft.get('ptpRange')}；终验段独立自由仿真，不参与选模)"
+        )
+    else:
+        basis.append("finalTest: 未运行（短数据 70/30 分割无终验段或未记录）")
+    if fe:
+        basis.append(
+            f"finalEventTest: {fe_status}(r2={fe.get('r2')}, "
+            f"nrmse={fe.get('nrmse')}≤{fe.get('nrmseThreshold')}, "
+            f"eventId={fe.get('eventId')}；与选模用窗不重叠的独立事件，不参与选模)"
+        )
+    else:
+        basis.append("finalEventTest: 未运行（无与选模用窗不重叠的独立事件）")
+    cw_view: dict[str, Any] | None = None
+    if isinstance(cross_window, dict):
+        cw_view = {
+            "stable": bool(cross_window.get("stable")),
+            "maxRelativeDeviation": cross_window.get("maxRelativeDeviation"),
+            "threshold": cross_window.get("threshold"),
+        }
+        basis.append(
+            f"crossWindowStability: {'stable' if cw_view['stable'] else 'UNSTABLE'}"
+            f"(maxRelativeDeviation={cw_view['maxRelativeDeviation']}"
+            f"≤{cw_view['threshold']}；P-25 跨窗稳定性，超差另有可信度封顶)"
+        )
+    ru = evidence.reselect_uncertainty if isinstance(evidence.reselect_uncertainty, dict) else None
+    ru_view: dict[str, Any] | None = None
+    if ru is not None:
+        theta_rec = ru.get("theta") if isinstance(ru.get("theta"), dict) else {}
+        theta_ci = (theta_rec or {}).get("ci95")
+        ru_view = {"status": ru.get("status"), "nRepetitions": ru.get("nRepetitions")}
+        basis.append(
+            f"reselectUncertainty: {ru.get('status')}"
+            f"(nRepetitions={ru.get('nRepetitions')}, θ ci95={theta_ci}；"
+            "P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)"
+        )
+    return {
+        "status": status,
+        "channels": {
+            "finalTest": (
+                {"status": ft_status, "r2": ft.get("r2"), "n": ft.get("n")} if ft else None
+            ),
+            "finalEventTest": (
+                {
+                    "status": fe_status,
+                    "r2": fe.get("r2"),
+                    "nrmse": fe.get("nrmse"),
+                    "eventId": fe.get("eventId"),
+                }
+                if fe
+                else None
+            ),
+        },
+        "crossWindowStability": cw_view,
+        "reselectUncertainty": ru_view,
+        "basis": basis,
+        "note": (
+            "P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）"
+        ),
+    }
+
+
 def _apply_closed_loop_finalization(
     *,
+    result: IdentificationResult,
     best: CandidateModel,
     u_full: np.ndarray,
     y_full: np.ndarray,
@@ -4076,11 +4182,23 @@ def _apply_closed_loop_finalization(
     ts: float,
     lowpass_meta: dict | None,
 ) -> None:
-    """P3-06c 终局装配（外层调用）：P-24 独立事件终验 + P-26 重选不确定性.
+    """P3-06c 终局装配（外层调用）+ P3-03 终验节点装配.
 
-    直接变更胜出候选（best）：事件终验失败 → 封顶 C + reason code；
-    重选不确定性记录入 evidence.reselectUncertainty。终验不参与选模
-    （发生在选模之后，只降不升）。
+    P3-06c（既有）：P-24 独立事件终验 + P-26 重选不确定性——直接变更胜出
+    候选（best）：事件终验失败 → 封顶 C + reason code；重选不确定性记录入
+    evidence.reselectUncertainty。终验不参与选模（发生在选模之后，只降
+    不升）。
+
+    P3-03 终验节点（新增）：
+    - 模型级终验结论：消费 06a finalTest + 06c finalEventTest（+跨窗稳定
+      性/重选不确定性入依据链）合成四态 + 依据链，挂 best.evidence.
+      finalVerification；模型级 FAILED 防御性保底封顶 C（通道级已各自
+      封顶，此处幂等兜底）。
+    - 终验分离（最佳解释 vs 可整定）：可整定候选（≠胜出模型，B1 结构
+      选择）独立运行 P-24 事件终验并汇总**自己的**终验结论——modelRole
+      的可整定判定=终验通过+结构支持。可整定候选的终验失败只记证据
+      （final_verification/reason codes），不改其可信度与排序（终验不
+      参与选择，07§6）。
     """
     if best.evidence is None:
         best.evidence = ModelEvidence()
@@ -4110,6 +4228,37 @@ def _apply_closed_loop_finalization(
         best.evidence.reselect_uncertainty = reselect
     # sp_full 仅为口径完整性保留（终验消费 OP/PV；SP 事件目录已含 SP 变更）
     _ = sp_full
+    # ── P3-03 终验节点：模型级终验结论 + 最佳解释/可整定终验分离 ──
+    cross_window = ((result.preprocessing or {}).get("multiWindow") or {}).get(
+        "crossWindowStability"
+    )
+    best.evidence.final_verification = _summarize_final_verification(best.evidence, cross_window)
+    if best.evidence.final_verification.get("status") == FINAL_TEST_FAILED:
+        # 防御性保底（通道级 FINAL_TEST_FAILED/FINAL_EVENT_FAILED 已各自
+        # 封顶；此处对模型级合成态幂等兜底，C19-ID2 只降不升）
+        best.confidence = _cap_confidence(best.confidence, AlgorithmConfidenceLevel.C)
+    tunable_cand = result.select_tunable_candidate()
+    if tunable_cand is not None and tunable_cand is not best:
+        if tunable_cand.evidence is None:
+            tunable_cand.evidence = ModelEvidence()
+        try:
+            tun_ev = _final_event_test(
+                u_full, y_full, events, qualified, selection_windows, tunable_cand, ts, lowpass_meta
+            )
+        except Exception:
+            tun_ev = None
+            logger.debug("可整定候选独立事件终验失败（不阻断主链）", exc_info=True)
+        if tun_ev is not None:
+            tunable_cand.evidence.final_event_test = tun_ev
+            if tun_ev["status"] == FINAL_TEST_FAILED:
+                # 只记证据不改可信度（终验不参与选择/排序，07§6；modelRole
+                # 判定层按 final_verification 挡住可整定输出）
+                tunable_cand.evidence.reason_codes.append("FINAL_EVENT_FAILED")
+            elif tun_ev["status"] == FINAL_TEST_NO_DYNAMICS:
+                tunable_cand.evidence.reason_codes.append("FINAL_EVENT_NO_DYNAMICS")
+        tunable_cand.evidence.final_verification = _summarize_final_verification(
+            tunable_cand.evidence, cross_window
+        )
 
 
 def _delay_candidate_grid(d_max: int, cap: int | None = None) -> tuple[list[int], bool]:
