@@ -34,6 +34,7 @@ from app.contracts.data_types import (
     QualitySummary,
     TagGroup,
 )
+from app.tasks.celery_app import PRIORITY_NIGHTLY
 from app.tasks.kpi_calc import (
     _ALL_METRIC_CODES_DB,
     _CALCULATOR_TO_DB_METRIC_CODE,
@@ -1042,8 +1043,10 @@ class TestDoCalculate:
         assert result["ts_start"] == "2026-06-24T05:00:00"
         assert result["ts_end"] == "2026-06-24T06:00:00"
         # 级联节点聚合显式携带原窗（历史窗，而非当前系统时间上一小时）
-        mock_node_task.delay.assert_called_once_with(
-            ts_start="2026-06-24T05:00:00", ts_end="2026-06-24T06:00:00"
+        # P5-02：派发改 apply_async（夜间优先级，Redis 队列分桶）
+        mock_node_task.apply_async.assert_called_once_with(
+            kwargs={"ts_start": "2026-06-24T05:00:00", "ts_end": "2026-06-24T06:00:00"},
+            priority=PRIORITY_NIGHTLY,
         )
 
 

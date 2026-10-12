@@ -369,6 +369,7 @@ class TestScheduledEntry:
         loops = ["l1", "l2"]
         celery_mock = MagicMock()
         celery_mock.delay.return_value = MagicMock(id="celery-s1")
+        celery_mock.apply_async.return_value = MagicMock(id="celery-s1")
         create_mock = AsyncMock(return_value="task-S77")
         set_ids_mock = AsyncMock()
         patches = [
@@ -417,7 +418,7 @@ class TestScheduledEntry:
             finally:
                 for p in patches:
                     p.stop()
-        kwargs = celery_mock.delay.call_args.kwargs
+        kwargs = celery_mock.apply_async.call_args.kwargs["kwargs"]
         assert kwargs["task_id"] == "task-S77"
         assert kwargs["trigger_type"] == "SCHEDULED"
         assert create_mock.call_args.kwargs["created_by_id"] == ""  # SYSTEM 不冒充个人
@@ -441,7 +442,8 @@ class TestScheduledEntry:
         assert second.get("skippedRound") is True
         assert second["dispatched"] == 0
         create_mock.assert_awaited_once()
-        assert celery_mock.delay.call_count == 1
+        # P5-02：派发渠道 apply_async（夜间优先级）
+        assert celery_mock.apply_async.call_count == 1
 
 
 class TestEventDispatchGuard:
@@ -458,6 +460,7 @@ class TestEventDispatchGuard:
             create_mock.side_effect = create_side_effect
         celery_mock = MagicMock()
         celery_mock.delay.return_value = MagicMock(id="celery-e1")
+        celery_mock.apply_async.return_value = MagicMock(id="celery-e1")
         patches = [
             patch("app.services.alert_rule_engine.dispatcher.redis_client", fake_redis),
             patch("app.core.db.AsyncSessionLocal", MagicMock(return_value=cm)),
@@ -492,7 +495,7 @@ class TestEventDispatchGuard:
         assert first == "task-E9"
         assert second is None  # 占位未夺得 → 跳过
         create_mock.assert_awaited_once()
-        kwargs = celery_mock.delay.call_args.kwargs
+        kwargs = celery_mock.apply_async.call_args.kwargs["kwargs"]
         assert kwargs["task_id"] == "task-E9"
         assert create_mock.call_args.kwargs["created_by_id"] == ""  # SYSTEM 身份
 

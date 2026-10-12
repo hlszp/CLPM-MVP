@@ -82,14 +82,14 @@ class TestEventTriggerDedup:
                 patch("app.services.task_tracker.redis_client", fake_redis),
             ):
                 mock_create.return_value = "task-123"
-                mock_batch.delay.return_value = MagicMock(id="celery-x")
+                mock_batch.apply_async.return_value = MagicMock(id="celery-x")
                 rule = {
                     "ruleCode": "R1",
                     "ruleName": "规则一",
                     "dsl": {"condition": {"windowSeconds": 1800}},
                 }
                 task_id = await disp._trigger_diagnosis(rule, "loop-1")
-        kwargs = mock_batch.delay.call_args.kwargs
+        kwargs = mock_batch.apply_async.call_args.kwargs["kwargs"]
         start = datetime.fromisoformat(kwargs["start"])
         end = datetime.fromisoformat(kwargs["end"])
         assert (end - start).total_seconds() == 3600

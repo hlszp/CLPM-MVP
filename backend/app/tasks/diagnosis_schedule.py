@@ -187,6 +187,7 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
         return {"level": level, "total": len(loop_ids), "dispatched": 0, "skipped": len(skipped)}
 
     from app.services.diagnosis_titles import next_diagnosis_title
+    from app.tasks.celery_app import PRIORITY_NIGHTLY
     from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
     # 同轮派发占位（Beat 重启/双发不重复派发同轮批次）
@@ -219,14 +220,18 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
             ts_start=start.isoformat(),
             ts_end=end.isoformat(),
         )
-        celery_result = run_diagnosis_batch.delay(
-            loop_ids=batch,
-            start=start.isoformat(),
-            end=end.isoformat(),
-            task_id=task_id,
-            operator_group="full",
-            triggered_by="schedule",
-            trigger_type="SCHEDULED",
+        celery_result = run_diagnosis_batch.apply_async(
+            kwargs={
+                "loop_ids": batch,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "task_id": task_id,
+                "operator_group": "full",
+                "triggered_by": "schedule",
+                "trigger_type": "SCHEDULED",
+            },
+            # P5-02：夜间/定时批量走夜间优先级（Redis 队列分桶：事件9>人工5>夜间1）
+            priority=PRIORITY_NIGHTLY,
         )
         await set_celery_task_ids(task_id, [celery_result.id])
         task_ids.append(task_id)

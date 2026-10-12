@@ -140,8 +140,8 @@ class TestTriggerDiagnosis:
         assert data["tasks"][0]["loopId"] == "00000000-0000-0000-0000-000000000201"
         assert data["tasks"][0]["status"] == "PENDING"
         assert data["tasks"][0]["taskId"]  # 非空
-        # Celery 任务应被派发
-        mock_celery.delay.assert_called_once()
+        # Celery 任务应被派发（P5-02：派发渠道 apply_async）
+        mock_celery.apply_async.assert_called_once()
 
     def test_trigger_expert_allowed(self, client, mock_db, fake_redis) -> None:
         """EXPERT 可以触发诊断（2026-10-04 工作台规整 D1：对齐回路工作台剖面四角色）。"""

@@ -1943,9 +1943,13 @@ async def _invalidate_loop_caches(loop_id: str, loop_part: str) -> None:
 
 async def _trigger_kpi_backfill(loop_ids: list[str], ts_start: str, ts_end: str) -> None:
     """触发 KPI 回算任务."""
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.kpi_calc import backfill_kpi_range
 
-    backfill_kpi_range.delay(ts_start, ts_end, loop_ids=loop_ids)
+    # P5-02：导入后回算由用户导入动作引发，走人工优先级（事件9>人工5>夜间1）
+    backfill_kpi_range.apply_async(
+        args=[ts_start, ts_end], kwargs={"loop_ids": loop_ids}, priority=PRIORITY_MANUAL
+    )
     logger.info("已触发 KPI 回算: loops=%d, range=%s~%s", len(loop_ids), ts_start, ts_end)
 
 

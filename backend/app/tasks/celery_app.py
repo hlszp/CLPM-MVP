@@ -22,6 +22,23 @@ from app.core.logging import _request_id_ctx, setup_logging
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# P5-02 队列优先级（03 号文 P5-02 卡："事件/人工/夜间队列优先级+退避，
+# 复用既有 Celery 设施不新增 Worker/Beat"）
+#
+# Redis broker 原生支持单队列消息优先级（kombu priority_steps 0~9，9 最高，
+# queue_order_strategy=priority 为 Redis transport 默认）：default 队列声明
+# max_priority=10 后，按 priority 分桶消费——不新增队列名、不改 worker -Q
+# 参数、不加新 Worker/Beat。投递点经 apply_async(priority=N) 显式分级；
+# 未声明 priority 的既有投递落最低桶（REWORK-D2 更正：kombu
+# PRIORITY_STEPS=[0,3,6,9] 下 default_priority=0 → step 0，与夜间批量
+# 同桶，相对事件/人工让路），行为无回退风险。
+# 数值定稿：Owner 口径（任务书【5】决策点：队列优先级数值→Owner 定稿记录）。
+# ---------------------------------------------------------------------------
+PRIORITY_EVENT = 9  # 事件驱动（预警事件 fast 诊断，排队 P95≤5s 预算）
+PRIORITY_MANUAL = 5  # 人工触发（手动评估/自定义批量/回填/手动诊断）
+PRIORITY_NIGHTLY = 1  # 夜间/定时批量（小时 KPI、日/周诊断、节点级联聚合）
+
 celery_app = Celery(
     "clpm",
     broker=settings.celery_broker_url,
@@ -69,12 +86,15 @@ celery_app.conf.update(
     beat_scheduler="celery.beat.PersistentScheduler",
     beat_schedule_filename="celerybeat-schedule",
     # S2-A6: 死信队列定义
+    # P5-02：default 队列开启 max_priority=10（Redis broker 消息优先级分桶，
+    # EVENT 9 > MANUAL 5 > NIGHTLY 1；见文件头常量说明）
     task_queues=(
-        Queue("default", routing_key="default"),
+        Queue("default", routing_key="default", max_priority=10),
         Queue("dead_letter", routing_key="dead_letter"),
     ),
     task_default_queue="default",
     task_default_routing_key="default",
+    task_queue_max_priority=10,
     # 整改 G32：visibility_timeout 必须**大于任何任务的 time_limit**，否则未 ack
     # 的消息会被 broker 重投给另一个 worker，造成同一任务并发双跑。
     # 原值 9000s（2.5h）的依据是"import_history_data 的 time_limit=7200s（2h）"，

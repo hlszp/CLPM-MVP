@@ -382,6 +382,32 @@ COMMENT ON COLUMN calculation_result_record.status IS '终态：COMPLETED/FAILED
 COMMENT ON COLUMN calculation_result_record.payload IS '完整结果；NODE 记录含 loopRecordIds 与各指标分母';
 COMMENT ON TABLE  calculation_result_legacy_map IS '旧投影表 ID→结果账本 recordId 映射（P1-05 迁移归档）';
 
+-- 8.9b calculation_result_attempt（计算尝试日志，P5-02=G2 遗留③，迁移 p502attm01）
+--   暂态重试只写本表，不落终态 record；第 3 次 attempt 仍失败才追加
+--   status=FAILED 不可变终态 record（P0-02 冻结 v2 §2.2，DEC-10 按推荐）。
+--   logical_run_id 不设外键：record 表该列非唯一（批逻辑运行覆盖 N 对象），
+--   且 attempt 须在尚无 record 时可写（暂态失败先于首次落库正是主场景）。
+CREATE TABLE IF NOT EXISTS calculation_result_attempt (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    logical_run_id      UUID            NOT NULL,
+    attempt_no          INTEGER         NOT NULL,
+    started_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    finished_at         TIMESTAMP,
+    error_class         VARCHAR(200),
+    error_message       VARCHAR(2000),
+    worker_pid          VARCHAR(32),
+    CONSTRAINT uq_calc_attempt_run_no UNIQUE (logical_run_id, attempt_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_attempt_logical_run_id
+    ON calculation_result_attempt (logical_run_id);
+
+COMMENT ON TABLE  calculation_result_attempt IS '计算尝试日志（暂态重试不落终态，P5-02 G2遗留③）';
+COMMENT ON COLUMN calculation_result_attempt.logical_run_id IS '逻辑运行身份（与 record 表同源；无 FK：非唯一且须先于 record 可写）';
+COMMENT ON COLUMN calculation_result_attempt.attempt_no IS '尝试序号：1=首跑，2/3=重试（上限 3 次，DEC-10 冻结）';
+COMMENT ON COLUMN calculation_result_attempt.finished_at IS '尝试结束时间（NULL=进行中）';
+COMMENT ON COLUMN calculation_result_attempt.error_class IS '失败异常类名（成功完成为 NULL）';
+
 -- =============================================================================
 -- 9. kpi_snapshot_hourly (每小时性能评估快照)
 -- =============================================================================

@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.tasks.celery_app import PRIORITY_MANUAL
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------
@@ -401,7 +402,7 @@ class TestStandardTaskEvaluate:
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
-            mock_celery.delay.return_value = _mock_celery_result()
+            mock_celery.apply_async.return_value = _mock_celery_result()
             resp = client.post(
                 "/api/v1/tasks/standard/evaluate",
                 headers={"Authorization": "Bearer fake-token"},
@@ -416,8 +417,10 @@ class TestStandardTaskEvaluate:
         assert data["createdBy"] == "ic_engineer"
         assert data["taskId"]  # non-empty UUID
         # P1 #11: 验证 tsStart 透传给 Celery 任务；task_id 复用 API 层记录（防双写）
-        mock_celery.delay.assert_called_once_with(
-            ts_start="2026-06-22T08:00:00Z", task_id=data["taskId"]
+        # P5-02: 派发改 apply_async（带人工优先级，Redis 队列分桶）
+        mock_celery.apply_async.assert_called_once_with(
+            kwargs={"ts_start": "2026-06-22T08:00:00Z", "task_id": data["taskId"]},
+            priority=PRIORITY_MANUAL,
         )
         # 仅创建一条任务记录（Celery 侧不再重复建记录）
         task_keys = [k for k in task_redis._hashes if k.startswith("task:")]
@@ -429,7 +432,7 @@ class TestStandardTaskEvaluate:
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
             mock_current_user(TEST_USERS["admin"]),
         ):
-            mock_celery.delay.return_value = _mock_celery_result()
+            mock_celery.apply_async.return_value = _mock_celery_result()
             resp = client.post(
                 "/api/v1/tasks/standard/evaluate",
                 headers={"Authorization": "Bearer fake-token"},
@@ -437,9 +440,11 @@ class TestStandardTaskEvaluate:
             )
         assert resp.status_code == 200
         # P1 #11: 未传 tsStart 时 ts_start=None（取上一个完整计算周期）
-        mock_celery.delay.assert_called_once()
-        assert mock_celery.delay.call_args.kwargs["ts_start"] is None
-        assert mock_celery.delay.call_args.kwargs["task_id"]
+        mock_celery.apply_async.assert_called_once()
+        assert mock_celery.apply_async.call_args.kwargs["kwargs"]["ts_start"] is None
+        assert mock_celery.apply_async.call_args.kwargs["kwargs"]["task_id"]
+        # P5-02: 人工优先级
+        assert mock_celery.apply_async.call_args.kwargs["priority"] == PRIORITY_MANUAL
 
     def test_standard_evaluate_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
         """SPONSOR 不能触发评估任务（403）."""
