@@ -220,6 +220,11 @@ class ModelEvidence:
     # P3-06c（P-26/R10）：重选时滞/结构的重复估计不确定性（48 次重选全链、
     # 参数分布直接取分位，覆盖全部方法）；None=未运行（数据不足门槛未过）
     reselect_uncertainty: dict[str, Any] | None = None
+    # P3-03 终验节点（模型级终验结论）：消费 06a finalTest（尾部 20% 终验段）
+    # + 06c finalEventTest（独立事件终验）双通道合成四态 PASSED/FAILED/
+    # NO_DYNAMICS/NOT_RUN + 依据链（跨窗稳定性 P-25/重选不确定性 P-26 入
+    # 链）；None=未运行终验装配（内层调用/旧结果/单元构造，不伪补）
+    final_verification: dict[str, Any] | None = None
 
     def to_dict(self) -> dict[str, Any]:
         """转 dict（摘要，不含原始序列）."""
@@ -255,6 +260,9 @@ class ModelEvidence:
             "jointEstimate": self.joint_estimate,
             "finalEventTest": self.final_event_test,
             "reselectUncertainty": self.reselect_uncertainty,
+            # P3-03 终验节点加性字段（模型级终验结论；缺省 None=未运行终验
+            # 装配，不伪补）
+            "finalVerification": self.final_verification,
         }
 
 
@@ -308,42 +316,72 @@ class IdentificationResult:
     # SOPDT/IPDT 专用方法归 P3-07，未通过前不放开，03 号文 P3-07 边界）
     TUNABLE_MODEL_TYPES: ClassVar[tuple[str, ...]] = ("FOPDT",)
 
-    def _model_role(self) -> dict[str, Any] | None:
-        """最佳解释模型 vs 可整定模型（字段级区分，P3-03 B1-6）.
+    # P3-03 终验节点：可整定判定 = 终验通过（finalVerification.status==PASSED）
+    # + 结构支持（TUNABLE_MODEL_TYPES）——二者缺一不可（03 号文 P3-03
+    # "独立终验连续模型"验收行 + 07§2"训练好、终验差的模型不得晋升"）
+    VERIFICATION_PASSED: ClassVar[str] = "PASSED"
 
-        - bestExplanatory：胜出模型（解释过程动态的最佳候选，可为任意结构）；
-        - tunable：结构上可进整定链的模型（当前仅 FOPDT）——胜出模型本身
-          可整定时即其自身；否则从候选池取最优 FOPDT（按可信度>拟合度），
-          无 FOPDT 候选时为 null。可整定资格仍须经推荐链门禁
-          （authorize_tuning_model 的可信度 A/B/C 确认校验），此处只做
-          结构区分，不替代门禁。
+    @staticmethod
+    def _confidence_rank(level: str) -> int:
+        return {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}.get(level, 0)
+
+    @staticmethod
+    def _verification_status(c: CandidateModel) -> str | None:
+        """候选的模型级终验结论状态；None=未运行终验装配（不伪补）."""
+        fv = c.evidence.final_verification if c.evidence is not None else None
+        return fv.get("status") if isinstance(fv, dict) else None
+
+    def select_tunable_candidate(self) -> CandidateModel | None:
+        """结构支持的可整定候选（P3-03 终验节点与 B1 modelRole 共用选择）.
+
+        胜出模型本身属可整定结构时即其自身；否则从候选池取结构支持的最优
+        候选（按可信度 > 拟合度）。选择**不消费终验结论**（终验不参与
+        选择，07§6）；终验 gate 在 modelRole 判定与终验装配层施加（只降
+        不升——终验失败的候选不出现在可整定输出，但不改选另一个候选）。
         """
         if not self.success or self.best_model is None:
             return None
         best = self.best_model
-        explanatory = {
-            "modelType": best.params.model_type.value,
-            "fittingScore": round(best.fitting_score, 2),
-            "confidence": best.confidence.value,
-        }
         if best.params.model_type.value in self.TUNABLE_MODEL_TYPES:
-            return {
-                "bestExplanatory": explanatory,
-                "tunable": {**explanatory, "isBestModel": True},
-                "note": (
-                    f"胜出模型 {best.params.model_type.value} 为当前唯一可整定结构；"
-                    "可整定资格仍须经推荐链可信度门禁（A/B 放行、C 需确认、D/E 拒绝）"
-                ),
-            }
-        best_tunable = max(
+            return best
+        return max(
             (c for c in self.candidates if c.params.model_type.value in self.TUNABLE_MODEL_TYPES),
             key=lambda c: (
-                {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}.get(c.confidence.value, 0),
+                self._confidence_rank(c.confidence.value),
                 c.fitting_score,
             ),
             default=None,
         )
-        if best_tunable is None:
+
+    def _model_role(self) -> dict[str, Any] | None:
+        """最佳解释模型 vs 可整定模型（字段级区分，P3-03 B1-6 + 终验节点）.
+
+        - bestExplanatory：胜出模型（解释过程动态的最佳候选，可为任意结构）；
+        - tunable：可整定模型——判定语义（P3-03 终验节点定稿）= **终验通过
+          （模型级终验结论 PASSED）+ 结构支持（TUNABLE_MODEL_TYPES）**：
+            - 终验 PASSED → 输出该候选（含其终验结论状态）；
+            - 终验 FAILED/NO_DYNAMICS/NOT_RUN → tunable=None（终验差/未实际
+              验证过的模型不可进整定链，07§2"训练好、终验差不提升可信度"；
+              终验不参与选模故不回取次优候选）；
+            - 终验结论缺失（finalVerification=None——内层调用/旧结果/未经
+              终验装配的构造场景）→ 维持 B1 结构判定并显式标注缺失（不因
+              信息缺失静默拒绝或静默放行）。
+        可整定资格仍须经推荐链门禁（authorize_tuning_model 的可信度
+        A/B/C 确认校验），此处只做结构+终验区分，不替代门禁。
+        """
+        if not self.success or self.best_model is None:
+            return None
+        best = self.best_model
+        best_fv = self._verification_status(best)
+        explanatory = {
+            "modelType": best.params.model_type.value,
+            "fittingScore": round(best.fitting_score, 2),
+            "confidence": best.confidence.value,
+            # P3-03 终验节点：最佳解释模型自身的终验结论（None=未运行装配）
+            "finalVerification": best_fv,
+        }
+        tunable_cand = self.select_tunable_candidate()
+        if tunable_cand is None:
             return {
                 "bestExplanatory": explanatory,
                 "tunable": None,
@@ -353,18 +391,54 @@ class IdentificationResult:
                     "只能作解释模型使用；SOPDT/IPDT 专用整定方法归 P3-07"
                 ),
             }
+        tun_fv = self._verification_status(tunable_cand)
+        if tun_fv is not None and tun_fv != self.VERIFICATION_PASSED:
+            # P3-03 终验节点：结构支持但终验未通过——不可整定（终验不参与
+            # 选模，不回取次优候选；缺信息显式呈现终验状态）
+            return {
+                "bestExplanatory": explanatory,
+                "tunable": None,
+                "note": (
+                    f"结构支持的可整定候选 {tunable_cand.params.model_type.value} 模型级"
+                    f"终验未通过（finalVerification={tun_fv}）——可整定判定=终验通过"
+                    f"+结构支持，二者缺一不可（07§2 训练好、终验差的模型不得晋升；"
+                    "终验不参与选模，不回取次优候选）"
+                ),
+            }
+        tunable_view = {
+            "modelType": tunable_cand.params.model_type.value,
+            "fittingScore": round(tunable_cand.fitting_score, 2),
+            "confidence": tunable_cand.confidence.value,
+            # P3-03 终验节点：可整定候选的终验结论（PASSED 或 None=未运行装配）
+            "finalVerification": tun_fv,
+        }
+        if tunable_cand is best:
+            fv_note = (
+                "；模型级终验通过（PASSED）"
+                if tun_fv == self.VERIFICATION_PASSED
+                else "；终验结论缺失（终验装配未运行，如旧结果/单元构造）"
+            )
+            return {
+                "bestExplanatory": explanatory,
+                "tunable": {**tunable_view, "isBestModel": True},
+                "note": (
+                    f"胜出模型 {best.params.model_type.value} 为当前唯一可整定结构"
+                    f"{fv_note}；可整定资格仍须经推荐链可信度门禁"
+                    "（A/B 放行、C 需确认、D/E 拒绝）"
+                ),
+            }
         return {
             "bestExplanatory": explanatory,
-            "tunable": {
-                "modelType": best_tunable.params.model_type.value,
-                "fittingScore": round(best_tunable.fitting_score, 2),
-                "confidence": best_tunable.confidence.value,
-                "isBestModel": False,
-            },
+            "tunable": {**tunable_view, "isBestModel": False},
             "note": (
                 f"胜出解释模型 {best.params.model_type.value} 不可整定"
                 f"（SOPDT/IPDT 专用方法归 P3-07，未过前不放开）；"
-                f"可整定模型取候选池最优 {best_tunable.params.model_type.value}"
+                f"可整定模型取候选池最优 {tunable_cand.params.model_type.value}"
+                + (
+                    "，模型级终验通过（PASSED）"
+                    if tun_fv == self.VERIFICATION_PASSED
+                    else "；终验结论缺失（终验装配未运行）"
+                )
             ),
         }
 

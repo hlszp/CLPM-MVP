@@ -1158,6 +1158,12 @@ async def save_identification_snapshot(
     事件终验）/``reselectUncertainty``（P-26 重选不确定性）三键；共同
     估计与跨窗稳定性经 ``preprocessing.multiWindow``（已整包保存）承载。
     旧包无这些键=当时未记录，读取不变。
+
+    schemaVersion 1.3 内加性扩展（P3-03 终验节点，只加不改）：
+    ``resultEvidence.finalVerification``（模型级终验结论四态+依据链——
+    06a finalTest + 06c finalEventTest/跨窗稳定性/重选不确定性的模型级
+    汇总；可整定判定=终验通过+结构支持）。旧包无该键=当时未记录，
+    读取不变。
     """
     arrays: dict[str, np.ndarray] = {
         "consumed__ts_rel": np.asarray(timestamps_rel, dtype=np.float64),
@@ -1237,6 +1243,9 @@ async def save_identification_snapshot(
             "spExogeneity": evidence.get("spExogeneity"),
             "finalEventTest": evidence.get("finalEventTest"),
             "reselectUncertainty": evidence.get("reselectUncertainty"),
+            # P3-03 终验节点加性键（模型级终验结论四态+依据链；
+            # None=未运行终验装配/旧结果，不伪补）
+            "finalVerification": evidence.get("finalVerification"),
         },
         "replayContext": {
             "loopId": str(loop_id),
