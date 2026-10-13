@@ -351,7 +351,7 @@ class TestBuildOverview:
         ):
             data = await build_overview(db, scope_type="GLOBAL", scope_id=None, window="24h")
 
-        # 六块顶层键齐全
+        # 六块顶层键齐全（P5-03 ⑥：新增 block_states 块状态账）
         assert set(data.keys()) == {
             "scope",
             "window",
@@ -363,6 +363,7 @@ class TestBuildOverview:
             "roots",
             "alert_events",  # 0930：预警规则引擎真实事件
             "funnel",
+            "block_states",
         }
         assert data["scope"] == {"type": "GLOBAL", "id": None}
         assert data["window"] == "24h"
@@ -380,6 +381,10 @@ class TestBuildOverview:
         assert data["pareto"][0]["root_cause"] == "OSCILLATION"
         # funnel 单块失败 → None，不阻断其余块
         assert data["funnel"] is None
+        # P5-03 ⑥：失败块显式 UNAVAILABLE，其余块 OK
+        assert data["block_states"]["funnel"] == "UNAVAILABLE"
+        assert data["block_states"]["windows"] == "OK"
+        assert data["block_states"]["plants"] == "OK"
 
     @pytest.mark.asyncio
     async def test_全局scope_id归零(self):

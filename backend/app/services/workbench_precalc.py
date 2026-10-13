@@ -26,6 +26,7 @@ GLOBAL/FACTORY/AREA/UNIT × 24h/7d/30d 加权聚合，upsert 到
 
 from __future__ import annotations
 
+import decimal
 import logging
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
@@ -95,6 +96,10 @@ _RATE_NDIGITS = 4
 _RETAIN_ROWS = 64
 # 网格对齐（秒）——与 beat 周期一致
 _GRID_SECONDS = 300
+
+# P5-03 ①：聚合入参的 Decimal 精度（unit_kpi_summary 各率列为 Numeric(5,2)）
+_AGG_CONTEXT = decimal.getcontext().copy()
+_AGG_CONTEXT.prec = 28
 
 
 # ---------------------------------------------------------------------------
@@ -221,6 +226,180 @@ def build_trend_points(
         if agg["score"] is not None:
             points.append({"t": key.isoformat(), "v": agg["score"]})
     return points
+
+
+# ---------------------------------------------------------------------------
+# P5-03 ①：小时可合并统计复用（部分和加法合并）
+# ---------------------------------------------------------------------------
+#
+# 问题：build_and_upsert 每 5min 网格对**每个 scope × 每窗口 × 当前/上一窗**
+# 各执行一次 _query_window_rows（26 节点树 ≈ 156 次/轮，30d 窗行集全量重扫
+# 重聚合）。加权聚合 ``Σ(value×w)/Σ(w)`` 按行可加——先取 (unit, hour) 部分
+# 和（每行 (value×w, w-if-not-null)），窗口/scope 合并退化为部分和的加法：
+# 一个 60d 跨窗单查询装载一次，全部 scope × 窗口 × 环比在内存加法完成。
+#
+# 等价性（03 号文 §8 验收"P1 聚合手算不变"）：
+# - 权重基 = evaluated_loops（与 aggregate_rows 完全一致；**不**改用
+#   kpi_node_snapshot_hourly 的 importance 权重口径——那会改分值）；
+# - 每指标独立"非 NULL 分母"语义逐字保留：den 只累计 m IS NOT NULL 且 w>0
+#   的行权重，num 累计 m×w（w=0 行贡献为 0）；
+# - Decimal 精确加法（优于原 float 逐行累加的次序误差），最终落库前才转
+#   float 并沿用 round(x,3)/round(x/100,4)——单测对同一行集断言
+#   部分和路径 ≡ aggregate_rows 参考实现（抽 3 块对齐手算）；
+# - 数据源恒为已落库小时聚合（unit_kpi_summary），**不触碰原始时序**，
+#   不做任意平均降采样（对原始时序的平均降采样在本模块本就不存在，
+#   本节显式固化为不变量）。
+#
+# 注：kpi_node_snapshot_hourly 也有小时行，但其 assessment_stats 权重基为
+# 重要度权重（score_weight），与 workbench 窗口口径（evaluated_loops）不同
+# ——为保等价**不**作为合并数据源（选型登记见 P5-03 交接）。
+
+
+def _row_hour_partial(row: _RowLike) -> dict[str, tuple[decimal.Decimal, decimal.Decimal]]:
+    """单行 → 各指标部分和 {(num, den)}（Decimal；den 只在指标非 NULL 且 w>0 计入）."""
+    w = decimal.Decimal(str(int(row.evaluated_loops or 0)))
+    out: dict[str, tuple[decimal.Decimal, decimal.Decimal]] = {}
+
+    def _put(field: str, val: Any) -> None:
+        if val is None:
+            out[field] = (decimal.Decimal(0), decimal.Decimal(0))
+            return
+        out[field] = (decimal.Decimal(str(val)) * w, w if w > 0 else decimal.Decimal(0))
+
+    _put("avg_score", _to_dec(row.avg_score))
+    for src, _dst in _RATE_FIELDS:
+        _put(src, _to_dec(getattr(row, src)))
+    return out
+
+
+def _to_dec(val: Any) -> decimal.Decimal | None:
+    """值 → Decimal（None 透传；float 经 str 规避二进制误差）."""
+    if val is None:
+        return None
+    if isinstance(val, decimal.Decimal):
+        return val
+    try:
+        return decimal.Decimal(str(val))
+    except (decimal.InvalidOperation, TypeError, ValueError):
+        return None
+
+
+def merge_partials(
+    partials: Sequence[dict[str, tuple[decimal.Decimal, decimal.Decimal]]],
+) -> dict[str, Any]:
+    """部分和列表加法合并 → aggregate_rows 同形结果.
+
+    输出键/舍入与 aggregate_rows 完全一致：score round 3、率值
+    /100 round 4、loop_count=score 分母。加法在 Decimal 域完成（结合律
+    下与逐行加权等价），仅在最终除法/舍入转 float。
+    """
+    totals: dict[str, tuple[decimal.Decimal, decimal.Decimal]] = {}
+    for partial in partials:
+        for field, (num, den) in partial.items():
+            if field not in totals:
+                totals[field] = (decimal.Decimal(0), decimal.Decimal(0))
+            n, d = totals[field]
+            totals[field] = (n + num, d + den)
+
+    def _mean(field: str) -> float | None:
+        num, den = totals.get(field, (decimal.Decimal(0), decimal.Decimal(0)))
+        if den <= 0:
+            return None
+        with decimal.localcontext(_AGG_CONTEXT):
+            return float(num / den)
+
+    score = _mean("avg_score")
+    rates: dict[str, float | None] = {}
+    for src, dst in _RATE_FIELDS:
+        rates[dst] = _round_rate(_mean(src))
+
+    return {
+        "score": round(score, 3) if score is not None else None,
+        "loop_count": int(totals["avg_score"][1]) if "avg_score" in totals else 0,
+        "rates": rates,
+    }
+
+
+class HourPartials:
+    """(unit, hour) 部分和索引：一次装载、多 scope × 多窗口加法复用.
+
+    - ``rows``→ ``{node_id: {hour: partial}}``（hour= naive UTC 整点）；
+    - ``window_agg(unit_ids, start, end)``：Σ 部分和 → aggregate_rows 同形；
+    - ``window_trend(unit_ids, window, start, end)``：score 趋势桶序列
+      （桶边界与 build_trend_points 同式：epoch - epoch % bucket_seconds）。
+    """
+
+    __slots__ = ("_by_unit",)
+
+    def __init__(self, rows: Sequence[Any]) -> None:
+        self._by_unit: dict[str, dict[datetime, dict]] = {}
+        for r in rows:
+            hour = r.snapshot_time
+            node = str(r.node_id)
+            self._by_unit.setdefault(node, {})[hour] = _row_hour_partial(r)
+
+    def iter_partials(
+        self, unit_ids: Sequence[str], start: datetime, end: datetime
+    ) -> list[dict[str, tuple[decimal.Decimal, decimal.Decimal]]]:
+        """[start, end) 内指定 unit 集的部分和列表（半开窗，与行查询同口径）."""
+        out: list[dict] = []
+        for uid in unit_ids:
+            for hour, partial in self._by_unit.get(uid, {}).items():
+                if start <= hour < end:
+                    out.append(partial)
+        return out
+
+    def window_agg(self, unit_ids: Sequence[str], start: datetime, end: datetime) -> dict[str, Any]:
+        return merge_partials(self.iter_partials(unit_ids, start, end))
+
+    def window_trend(
+        self, unit_ids: Sequence[str], window: str, start: datetime, end: datetime
+    ) -> list[dict[str, Any]]:
+        bucket_seconds = _TREND_BUCKET_HOURS[window] * 3600
+        buckets: dict[datetime, list[dict]] = {}
+        for uid in unit_ids:
+            for hour, partial in self._by_unit.get(uid, {}).items():
+                if not (start <= hour < end):
+                    continue
+                if partial["avg_score"][1] <= 0:
+                    continue
+                epoch = int(hour.replace(tzinfo=UTC).timestamp())
+                key = datetime.fromtimestamp(epoch - epoch % bucket_seconds, tz=UTC).replace(
+                    tzinfo=None
+                )
+                buckets.setdefault(key, []).append(partial)
+        points: list[dict[str, Any]] = []
+        for key in sorted(buckets):
+            agg = merge_partials(buckets[key])
+            if agg["score"] is not None:
+                points.append({"t": key.isoformat(), "v": agg["score"]})
+        return points
+
+
+async def _query_rows_bulk(
+    db: AsyncSession, unit_node_ids: list[str], start: datetime, end: datetime
+) -> list[Any]:
+    """单查询装载 [start, end) 内全部 UNIT 的小时行（轻量列投影）.
+
+    60d 最大跨度一次往返（索引 ix_unit_kpi_summary_snapshot_time /
+    (node_id, snapshot_time)），替代逐 scope × 逐窗口的重复窗口扫描。
+    """
+    if not unit_node_ids:
+        return []
+    cols = [
+        UnitKpiSummary.node_id,
+        UnitKpiSummary.snapshot_time,
+        UnitKpiSummary.evaluated_loops,
+        UnitKpiSummary.avg_score,
+        *(getattr(UnitKpiSummary, src) for src, _dst in _RATE_FIELDS),
+    ]
+    result = await db.execute(
+        select(*cols)
+        .where(UnitKpiSummary.node_id.in_(unit_node_ids))
+        .where(UnitKpiSummary.snapshot_time >= start)
+        .where(UnitKpiSummary.snapshot_time < end)
+    )
+    return list(result.all())
 
 
 def build_metric_slopes(cur: dict[str, Any], prev: dict[str, Any]) -> list[dict[str, Any]]:
@@ -542,13 +721,33 @@ async def _prune_rows(db: AsyncSession) -> int:
 
 
 async def build_and_upsert(db: AsyncSession) -> dict[str, Any]:
-    """三窗口 × 各 scope 聚合并 upsert。返回统计信息。"""
+    """三窗口 × 各 scope 聚合并 upsert。返回统计信息。
+
+    P5-03 ①：小时部分和单查复用——60d 最大跨度（30d 当前窗 + 30d 上一窗）
+    一次装载全部 UNIT 小时行，各 scope × 窗口 × 环比由 HourPartials 内存
+    加法合并（替代逐 scope × 逐窗口重复扫描；等价性见 HourPartials 节注释
+    与 tests/test_p5_03_cache_freshness.py 等价/手算用例）。
+    """
     from app.services.performance import get_grade_distribution
 
     now = datetime.now(UTC).replace(tzinfo=None)
     window_end = floor_grid(now).replace(tzinfo=None)
 
     scopes = await _load_scope_map(db)
+
+    # 所有 scope 的 UNIT 并集 × 最大回看跨度（30d 窗 + 30d 环比窗 = 60d）
+    all_unit_ids = sorted({uid for _sid, uids in scopes.values() for uid in uids})
+    max_hours = max(WINDOW_HOURS.values()) * 2
+    bulk_rows = await _query_rows_bulk(
+        db, all_unit_ids, window_end - timedelta(hours=max_hours), window_end
+    )
+    partials = HourPartials(bulk_rows)
+    logger.info(
+        "workbench_precalc: 部分和装载 %d 行（%d UNIT，跨 %dh）",
+        len(bulk_rows),
+        len(all_unit_ids),
+        max_hours,
+    )
 
     written = 0
     errors = 0
@@ -561,11 +760,9 @@ async def build_and_upsert(db: AsyncSession) -> dict[str, Any]:
         for scope_key, (scope_id, unit_ids) in scopes.items():
             scope_type = scope_key.split(":", 1)[0]
             try:
-                rows = await _query_window_rows(db, unit_ids, w_start, window_end)
-                agg = aggregate_rows(rows)
-                trend = build_trend_points(rows, window)
-                prev_rows = await _query_window_rows(db, unit_ids, p_start, w_start)
-                prev_agg = aggregate_rows(prev_rows)
+                agg = partials.window_agg(unit_ids, w_start, window_end)
+                trend = partials.window_trend(unit_ids, window, w_start, window_end)
+                prev_agg = partials.window_agg(unit_ids, p_start, w_start)
 
                 level_dist: list[dict[str, Any]] = []
                 try:

@@ -1209,16 +1209,41 @@ def _snapshot_to_dict(snap: KpiNodeSnapshotHourly, node_name: str | None = None)
     }
 
 
+def _latest_snapshot_subq(
+    start: datetime | None = None,
+    end: datetime | None = None,
+    plant_node_ids: list[str] | None = None,
+):
+    """窗口内每节点最新快照子查询（P5-03 ② 收口单一实现）.
+
+    语义：半开 [start, end)（CAL-05）+ DISTINCT ON plant_node_id 组内
+    ``ts_start DESC`` 取最新（**窗口时序**优先，不按 status 优先——与评估
+    历史 R02"最新代表后置筛选"同语义：较新 INCONCLUSIVE 不被较旧 SUCCESS
+    顶替，status 过滤由读方后置）。get_nodes_overview / get_node_ranking /
+    get_node_monitor_data(hour) 共用，防三处 DISTINCT ON 口径漂移。
+    """
+    stmt = select(KpiNodeSnapshotHourly)
+    conds = []
+    if start is not None:
+        conds.append(KpiNodeSnapshotHourly.ts_start >= start)
+    if end is not None:
+        conds.append(KpiNodeSnapshotHourly.ts_start < end)
+    if plant_node_ids is not None:
+        conds.append(KpiNodeSnapshotHourly.plant_node_id.in_(plant_node_ids))
+    if conds:
+        stmt = stmt.where(*conds)
+    return stmt.distinct(KpiNodeSnapshotHourly.plant_node_id).order_by(
+        KpiNodeSnapshotHourly.plant_node_id, KpiNodeSnapshotHourly.ts_start.desc()
+    )
+
+
 async def get_node_latest_snapshot(
     db: AsyncSession,
     plant_node_id: str,
 ) -> dict | None:
-    """获取节点最新一条快照。"""
+    """获取节点最新一条快照（P5-03 ②：走 _latest_snapshot_subq 无窗变体）."""
     result = await db.execute(
-        select(KpiNodeSnapshotHourly)
-        .where(KpiNodeSnapshotHourly.plant_node_id == plant_node_id)
-        .order_by(KpiNodeSnapshotHourly.ts_start.desc())
-        .limit(1)
+        _latest_snapshot_subq().where(KpiNodeSnapshotHourly.plant_node_id == plant_node_id)
     )
     snap = result.scalar_one_or_none()
     if snap is None:
@@ -1303,16 +1328,8 @@ async def get_node_ranking(
         sort_by: 排序字段 score/steady_rate/auto_loop_ratio
         sort_order: asc/desc（默认 desc，分数最高的在前）
     """
-    # 子查询：每个节点在时间窗内最新一条快照（半开 [start, end)，CAL-05 同款）
-    base = (
-        select(KpiNodeSnapshotHourly)
-        .where(
-            KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start < end,
-        )
-        .distinct(KpiNodeSnapshotHourly.plant_node_id)
-        .order_by(KpiNodeSnapshotHourly.plant_node_id, KpiNodeSnapshotHourly.ts_start.desc())
-    ).subquery()
+    # 子查询：每个节点在时间窗内最新一条快照（P5-03 ② 收口 _latest_snapshot_subq）
+    base = _latest_snapshot_subq(start=start, end=end).subquery()
 
     # JOIN plant_node 过滤类型
     stmt = select(base, PlantNode.name, PlantNode.type).join(
@@ -1405,17 +1422,8 @@ async def get_nodes_overview(
     node_name_map = {str(n.id): n.name for n in enabled_nodes}
     node_type_map = {str(n.id): n.type for n in enabled_nodes}
 
-    # 子查询：每个节点最新快照（半开 [start, end)，CAL-05 同款）
-    base = (
-        select(KpiNodeSnapshotHourly)
-        .where(
-            KpiNodeSnapshotHourly.ts_start >= start,
-            KpiNodeSnapshotHourly.ts_start < end,
-            KpiNodeSnapshotHourly.plant_node_id.in_(node_ids),
-        )
-        .distinct(KpiNodeSnapshotHourly.plant_node_id)
-        .order_by(KpiNodeSnapshotHourly.plant_node_id, KpiNodeSnapshotHourly.ts_start.desc())
-    ).subquery()
+    # 子查询：每个节点最新快照（P5-03 ② 收口 _latest_snapshot_subq；范围收窄批 α）
+    base = _latest_snapshot_subq(start=start, end=end, plant_node_ids=node_ids).subquery()
 
     stmt = select(base)
     result = await db.execute(stmt)

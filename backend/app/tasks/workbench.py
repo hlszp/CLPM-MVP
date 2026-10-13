@@ -138,13 +138,17 @@ async def _refresh_workbench_mv_async() -> dict[str, Any]:
             await db.execute(text(f"REFRESH MATERIALIZED VIEW CONCURRENTLY {mv_name}"))  # noqa: S608
             refreshed.append(mv_name)
         # 顺带预热总览 roots 聚合（2026-10-09 提速：30d JSONB 展开是冷算大头，
-        # API 侧常态命中缓存；Beat 强制重算写 Redis 跨 worker 共享）
+        # API 侧常态命中缓存；Beat 强制重算写 Redis 跨 worker 共享）。
+        # P5-03 ⑤：预热 key 与读方共用 roots_cache_key + 当前三源代数——
+        # 修复此前预热写 "workbench-roots:30d" 而读方带 hash/代数后缀导致
+        # 预热永不命中的键错位（ALL 口径 uhash="all"）。
         try:
-            from app.services.agg_cache import prime_agg
-            from app.services.workbench_overview import ROOTS_TOP_N, _query_roots
+            from app.services.agg_cache import generation_suffix, prime_agg
+            from app.services.workbench_overview import ROOTS_TOP_N, _query_roots, roots_cache_key
 
+            gen = await generation_suffix(db)
             rows = await _query_roots(db, ROOTS_TOP_N)
-            await prime_agg("workbench-roots:30d", rows, ttl=330)
+            await prime_agg(roots_cache_key(None, gen), rows, ttl=330)
         except Exception:  # noqa: BLE001 —— 预热失败不阻断 MV 刷新
             logger.warning("workbench roots 预热失败", exc_info=True)
         await db.commit()
