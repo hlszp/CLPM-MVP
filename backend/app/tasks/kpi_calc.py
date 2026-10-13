@@ -207,6 +207,12 @@ def calculate_hourly_kpi(
             # 无锁并发重跑全量批次，与持锁者互相覆盖 UPSERT 结果，
             # 同时 TaskRecord=FAILED 而 Celery=SUCCESS，G30 的整改意图被绕过。
             raise
+        except BatchSystemicFailure:
+            # 止血③（2026-10-13 连接风暴）：G29 熔断=系统性故障信号，必须
+            # 原样抛出走 Celery 退避重试——旧实现落入下方通用 except 触发
+            # "回退到直接计算"，导致系统性故障后整批第二次全量重跑（风暴中
+            # 每小时复现，回退再撞墙再失败）。与 HourlyWindowBusy 同语义。
+            raise
         except Exception as exc:
             # task_tracker 不可用时回退到直接计算（无任务跟踪）
             logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
@@ -403,6 +409,18 @@ async def _do_hourly_with_tracking(
             started_at=datetime.now(UTC).isoformat(),
             current_stage="开始计算",
         )
+
+        # 修 D（2026-10-13 连接风暴）：attempt 边界重置进度计数。重试复用同一
+        # TaskRecord（API 手动路径 task_id 恒定；Beat 路径每 attempt 新建记录
+        # 天然为零），旧口径下 backfill_done 等 HINCRBY 累加器跨 attempt 与
+        # 回退双跑累加不重置（现场「回路[2109/1030]」超总分显示）。
+        if attempt_no is not None and attempt_no > 1:
+            try:
+                await task_tracker.reset_task_progress(task_id)
+            except Exception:  # noqa: BLE001 — 进度重置失败不阻断计算主链
+                logger.warning(
+                    "attempt %d 进度重置失败 task_id=%s", attempt_no, task_id, exc_info=True
+                )
 
         try:
             result = await _do_calculate(
@@ -970,7 +988,7 @@ async def _run_batch_loop_calculations(
             True 时失败回路追加 status=FAILED 不可变终态 record（G2 遗留③
             重试终点）；False 时暂态失败只留 attempt 日志，等待 Celery 重试。
     """
-    from app.core.db import AsyncSessionLocal
+    from app.core.db import AsyncSessionLocal, close_session_guarded
 
     sem = asyncio.Semaphore(concurrency)
     op_limits_map = {
@@ -1002,79 +1020,96 @@ async def _run_batch_loop_calculations(
         raise AssertionError("unreachable")
 
     async def _calculate_once(loop: LoopLedger) -> dict | None:
+        # 止血①（2026-10-13 连接风暴）：不用 ``async with``——session 被并发
+        # 毒化后其 ``__aexit__`` 的 close 会抛 InvalidRequestError（覆盖/掩盖
+        # 原始异常），且被弃 session 的 asyncpg 连接永不归还（NullPool 泄漏，
+        # 现场挂满 100 连接）。显式 finally 走 ``close_session_guarded``
+        # （延迟重试 close → 耗尽则 terminate 底层连接，全程不抛出）。
         async with sem:
-            async with AsyncSessionLocal() as worker_db:
+            worker_db = AsyncSessionLocal()
+            try:
+                config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
+                data_planner = _build_data_planner(
+                    worker_db,
+                    bundle_cache=False if bundle_cache is False else _get_shared_bundle_cache(),
+                )
+                data_planner._config_loader = config_loader
+                data_planner._preloaded_op_limits = op_limits_map
+                result = await _calculate_loop_kpi(
+                    db=worker_db,
+                    loop=loop,
+                    metric_configs=metric_configs,
+                    ts_start=ts_start,
+                    ts_end=ts_end,
+                    data_planner=data_planner,
+                    type_weights=type_weights,
+                    custom_task_id=custom_task_id,
+                    loop_cfg=loop_configs.get(str(loop.id)),
+                    source=source,
+                    source_task_id=source_task_id,
+                    logical_run_id=logical_run_id,
+                    save_input_snapshot=save_input_snapshot,
+                    pinned_config=pinned_config,
+                    release_context=release_context,
+                    runtime_overrides=runtime_overrides,
+                    template_keys=template_keys,
+                    failed_source_ids=failed_source_ids,
+                )
+                await worker_db.commit()
+                return result
+            except Exception as exc:
                 try:
-                    config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
-                    data_planner = _build_data_planner(
-                        worker_db,
-                        bundle_cache=False if bundle_cache is False else _get_shared_bundle_cache(),
-                    )
-                    data_planner._config_loader = config_loader
-                    data_planner._preloaded_op_limits = op_limits_map
-                    result = await _calculate_loop_kpi(
-                        db=worker_db,
-                        loop=loop,
-                        metric_configs=metric_configs,
-                        ts_start=ts_start,
-                        ts_end=ts_end,
-                        data_planner=data_planner,
-                        type_weights=type_weights,
-                        custom_task_id=custom_task_id,
-                        loop_cfg=loop_configs.get(str(loop.id)),
-                        source=source,
-                        source_task_id=source_task_id,
-                        logical_run_id=logical_run_id,
-                        save_input_snapshot=save_input_snapshot,
-                        pinned_config=pinned_config,
-                        release_context=release_context,
-                        runtime_overrides=runtime_overrides,
-                        template_keys=template_keys,
-                        failed_source_ids=failed_source_ids,
-                    )
-                    await worker_db.commit()
-                    return result
-                except Exception as exc:
                     await worker_db.rollback()
-                    if final_attempt:
-                        # P5-02（G2 遗留③）终末尝试仍失败 → 追加 status=FAILED
-                        # 不可变终态 record（payload 含最终错误摘要）。暂态尝试
-                        # （final_attempt=False）不落终态，等待 Celery 重试；
-                        # 同键已有 record（此前尝试成功）时复用不重写（幂等）。
-                        try:
-                            await result_ledger.append_failed_result_record(
-                                worker_db,
-                                logical_run_id=logical_run_id
-                                or result_ledger.derive_loop_logical_run_id(
-                                    ts_start,
-                                    custom_task_id=custom_task_id,
-                                    source=source,
-                                    source_task_id=source_task_id,
-                                ),
-                                object_kind=result_ledger.OBJECT_KIND_LOOP,
-                                object_id=str(loop.id),
-                                ts_start=ts_start,
-                                ts_end=ts_end,
-                                algorithm_version=ALGORITHM_VERSION,
-                                config_revision=failed_record_revision,
-                                error=exc,
-                            )
-                            await worker_db.commit()
-                        except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
-                            logger.warning(
-                                "终末失败 record 追加失败（回路 %s 窗口 %s~%s）",
-                                loop.tag_name,
+                except Exception:  # noqa: BLE001 — 毒化态 rollback 可失败，不掩盖原异常
+                    logger.warning(
+                        "回路 %s 回退 rollback 失败（session 可能已毒化）",
+                        loop.tag_name,
+                        exc_info=True,
+                    )
+                if final_attempt:
+                    # P5-02（G2 遗留③）终末尝试仍失败 → 追加 status=FAILED
+                    # 不可变终态 record（payload 含最终错误摘要）。暂态尝试
+                    # （final_attempt=False）不落终态，等待 Celery 重试；
+                    # 同键已有 record（此前尝试成功）时复用不重写（幂等）。
+                    try:
+                        await result_ledger.append_failed_result_record(
+                            worker_db,
+                            logical_run_id=logical_run_id
+                            or result_ledger.derive_loop_logical_run_id(
                                 ts_start,
-                                ts_end,
-                                exc_info=True,
-                            )
-                    raise
-                finally:
+                                custom_task_id=custom_task_id,
+                                source=source,
+                                source_task_id=source_task_id,
+                            ),
+                            object_kind=result_ledger.OBJECT_KIND_LOOP,
+                            object_id=str(loop.id),
+                            ts_start=ts_start,
+                            ts_end=ts_end,
+                            algorithm_version=ALGORITHM_VERSION,
+                            config_revision=failed_record_revision,
+                            error=exc,
+                        )
+                        await worker_db.commit()
+                    except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                        logger.warning(
+                            "终末失败 record 追加失败（回路 %s 窗口 %s~%s）",
+                            loop.tag_name,
+                            ts_start,
+                            ts_end,
+                            exc_info=True,
+                        )
+                raise
+            finally:
+                try:
                     if on_completed is not None:
                         try:
                             await on_completed(str(loop.id))
                         except Exception:  # noqa: BLE001
                             logger.warning("批量 KPI 进度更新失败", exc_info=True)
+                finally:
+                    await close_session_guarded(
+                        worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
+                    )
 
     _batch_results = await asyncio.gather(
         *[_calculate_one(loop) for loop in loops], return_exceptions=True
@@ -1119,6 +1154,19 @@ def _log_batch_phase_timings(results: list, ts_start: datetime) -> None:
 _BATCH_FAILURE_ABORT_RATIO = 0.5
 
 
+class BatchSystemicFailure(RuntimeError):
+    """批量失败熔断（整改 G29）：失败占比达阈值，判定为系统性故障并中止。
+
+    PG 连接风暴止血③（2026-10-13）：此前熔断抛裸 RuntimeError，被
+    ``calculate_hourly_kpi`` 壳层的 ``except Exception``（task_tracker 回退
+    兜底）捕获后触发"回退到直接计算"——等于系统性故障后**整批第二次全量
+    重跑**，在故障窗内再撞墙并放大风暴。专用类型使壳层能把它与真正的
+    task_tracker 故障区分开：熔断即中止（由 Celery 以 ≥30s 退避重试），
+    不回退直算。继承 RuntimeError：既有按 RuntimeError 捕获/断言的语义
+    全部保持（G29 原始整改语义不变）。
+    """
+
+
 def _assert_batch_health(summary: dict[str, int], total: int) -> None:
     """批量失败熔断（整改 G29）。
 
@@ -1128,14 +1176,15 @@ def _assert_batch_health(summary: dict[str, int], total: int) -> None:
     漂移这类系统性故障在自动任务页表现为**成功**：autoretry_for 永不触发、
     死信不产生、监控侧也无信号。
 
-    失败占比达到阈值即抛错，使任务进入可观测的失败终态。
+    失败占比达到阈值即抛 ``BatchSystemicFailure``，使任务进入可观测的
+    失败终态（并可被壳层与 tracker 故障区分，不触发回退直算——止血③）。
     """
     if total <= 0:
         return
     failed = int(summary.get("failed", 0))
     ratio = failed / total
     if ratio >= _BATCH_FAILURE_ABORT_RATIO:
-        raise RuntimeError(
+        raise BatchSystemicFailure(
             f"批量 KPI 计算失败率 {ratio:.0%}（{failed}/{total}）达到阈值 "
             f"{_BATCH_FAILURE_ABORT_RATIO:.0%}，判定为系统性故障并中止；summary={summary}"
         )
@@ -1167,7 +1216,9 @@ def _summarize_batch_results(
             summary["failed"] += 1
             detail_line = f"{tag}: {str(result)[:80]}"
             summary["failed_detail"].append(detail_line)  # type: ignore[union-attr]
-            logger.warning("回路计算失败 [%s]: %s", tag, result)
+            # ⑤（2026-10-13 连接风暴）：批量收尾的逐回路失败也带堆栈，
+            # 与"DataPlanner 取数失败"同因（首发点钉死的日志缺口）。
+            logger.warning("回路计算失败 [%s]: %s", tag, result, exc_info=result)
         elif result is None:
             summary["failed"] += 1
             summary["failed_detail"].append(f"{tag}: (无返回)")  # type: ignore[union-attr]
@@ -2362,7 +2413,9 @@ async def _calculate_loop_kpi(
         )
         _t_read += time.perf_counter() - _tr
     except Exception as exc:  # noqa: BLE001
-        logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc)
+        # ⑤（2026-10-13 连接风暴）：加 exc_info——首发现场只记 message 导致
+        # 毒化首发行的精确位置无法钉死（诊断报告 §3.5 的直接原因）。
+        logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc, exc_info=True)
         # P2: DataPlanner 失败 → 数据严重不足 → L0
         return _timing_into(
             await _timed_persist(
@@ -4447,10 +4500,20 @@ _BACKFILL_BATCH_SIZE = 1
 _BACKFILL_LOOP_CONCURRENCY = 8
 
 
+class _BackfillWindowBatchTask(AsyncTask):
+    """`_backfill_window_batch` 的任务类：BUSY 轮询重试保留 10s（止血②豁免）.
+
+    BUSY = 该窗口子批正被另一 worker 持有租约执行，10s 短轮询是有意的
+    收敛节奏（非故障重试），不受 AsyncTask 30s countdown 下限约束。
+    """
+
+    min_retry_countdown = 10.0
+
+
 @celery_app.task(
     name="app.tasks.kpi_calc._backfill_window_batch",
     bind=True,
-    base=AsyncTask,
+    base=_BackfillWindowBatchTask,
     max_retries=None,
 )
 def _backfill_window_batch(

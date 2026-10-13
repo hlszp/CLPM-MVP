@@ -123,9 +123,25 @@ class AsyncTask(Task):
 
     S2-A6: on_failure 将耗尽重试的失败任务元数据发送到 dead_letter 队列，
     由 lifespan 自动启动的同一 worker（-Q default,dead_letter）消费排查。
+
+    止血②（2026-10-13 PG 连接风暴）：``retry()`` 的 countdown 统一抬到
+    ≥ ``min_retry_countdown``（默认 30s）。autoretry 的 retry_backoff +
+    full_jitter 可抽到 0s（现场实证 "Retry in 0s"——attempt2/3 紧贴
+    attempt1 失败 2ms 后再撞墙），系统性故障窗（如连接占满 ~90s）内贴脸
+    重试只会放大风暴；下限给故障窗留出自愈时间。既有显式 countdown ≥30s
+    的任务不受影响；需保留更短重试的任务用类属性覆盖
+    （如 ``_backfill_window_batch`` 的 BUSY 轮询 10s）。
     """
 
     abstract = True
+
+    min_retry_countdown = 30.0
+
+    def retry(self, *args, countdown=None, **kwargs):
+        floor = getattr(self, "min_retry_countdown", None)
+        if floor is not None and countdown is not None:
+            countdown = max(float(countdown), float(floor))
+        return super().retry(*args, countdown=countdown, **kwargs)
 
     def run_async(self, coro):
         """Run a coroutine in a fresh event loop."""

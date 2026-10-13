@@ -66,7 +66,7 @@ def cleanup_suppressions(self: AsyncTask) -> dict:
 
 async def _do_patrol() -> dict:
     """巡检主流程。"""
-    from app.core.db import AsyncSessionLocal
+    from app.core.db import AsyncSessionLocal, close_session_guarded
     from app.services.alert_rule_engine.cache import get_all_active_loops
     from app.services.alert_rule_engine.evaluator import evaluate_loop_rules
     from app.services.alert_rule_engine.service import get_global_switch
@@ -78,7 +78,8 @@ async def _do_patrol() -> dict:
     total_dispatched = 0
     total_recovered = 0
 
-    async with AsyncSessionLocal() as db:
+    db = AsyncSessionLocal()
+    try:
         # 1. 全局开关检查
         enabled = await get_global_switch(db)
         if not enabled:
@@ -90,37 +91,46 @@ async def _do_patrol() -> dict:
         total_loops = len(loop_ids)
         if not loop_ids:
             return {"total_loops": 0, "triggered": 0, "dispatched": 0, "recovered": 0}
+    finally:
+        await close_session_guarded(db, label="patrol-global-session")
 
     # 3. 逐回路求值（每个回路独立 session，避免长事务）
     for loop_id in loop_ids:
+        # 止血①（2026-10-13 连接风暴）：毒化 session 的 close 会抛
+        # InvalidRequestError 且连接永不归还（现场巡检链每分钟泄漏 1-2 条
+        # idle-in-transaction 连接对）；finally 走 guarded close 兜底回收。
+        db = None
         try:
             # 节流：5s 内已求值的回路跳过（实时轨可能刚触发过）
             if await suppressor.is_throttled(str(loop_id)):
                 continue
+            db = AsyncSessionLocal()
 
-            async with AsyncSessionLocal() as db:
-                # 取回路最新可信度等级
-                confidence_level = await _get_loop_confidence(db, str(loop_id))
+            # 取回路最新可信度等级
+            confidence_level = await _get_loop_confidence(db, str(loop_id))
 
-                # 批量求值
-                triggered_results = await evaluate_loop_rules(
-                    db, str(loop_id), confidence_level=confidence_level
-                )
-                total_triggered += len(triggered_results)
+            # 批量求值
+            triggered_results = await evaluate_loop_rules(
+                db, str(loop_id), confidence_level=confidence_level
+            )
+            total_triggered += len(triggered_results)
 
-                # 逐条处理触发结果
-                for result in triggered_results:
-                    dispatched = await _process_triggered(db, suppressor, str(loop_id), result)
-                    if dispatched:
-                        total_dispatched += 1
+            # 逐条处理触发结果
+            for result in triggered_results:
+                dispatched = await _process_triggered(db, suppressor, str(loop_id), result)
+                if dispatched:
+                    total_dispatched += 1
 
-                # 工况恢复自动解除（陈旧报警治理，0929）
-                total_recovered += await _auto_recover_events(db, str(loop_id), confidence_level)
+            # 工况恢复自动解除（陈旧报警治理，0929）
+            total_recovered += await _auto_recover_events(db, str(loop_id), confidence_level)
 
-                # 提交事件/工单写入
-                await db.commit()
+            # 提交事件/工单写入
+            await db.commit()
         except Exception:  # noqa: BLE001
             logger.warning("回路 %s 巡检异常", loop_id, exc_info=True)
+        finally:
+            if db is not None:
+                await close_session_guarded(db, label=f"patrol-loop-session[{loop_id}]")
 
     logger.info(
         "预警巡检完成: loops=%d triggered=%d dispatched=%d recovered=%d",
@@ -316,7 +326,10 @@ from celery.schedules import crontab  # noqa: E402
 
 # 追加方式注册 Beat 任务（避免覆盖其他模块的 beat_schedule）
 _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
-# 预警巡检：每 60s 执行（对齐方案 §4.5 周期轨间隔）
+# 预警巡检：每 60s 执行（对齐方案 §4.5 周期轨间隔）。
+# 2026-10-13 连接风暴曾考虑降频 */5 错峰——独立审查裁决撤销：降频改变预警
+# 业务时效，须用户裁决，不得作为性能优化直接落地。维持 */1；crontab 无
+# 相位/偏移参数，启动错峰在现有配置形态下不可行（登记待裁决）。
 _existing_beat["alert-patrol"] = {
     "task": "app.tasks.alert_patrol.run_alert_patrol",
     "schedule": crontab(minute="*/1"),

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import (
@@ -12,6 +14,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 # Async engine — created once at module import time.
 # 使用 NullPool：Celery AsyncTask 为每个任务创建新 event loop，
@@ -75,3 +79,87 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 async def dispose_engine() -> None:
     """Dispose of the engine connection pool (call on application shutdown)."""
     await engine.dispose()
+
+
+# ---------------------------------------------------------------------------
+# 毒化 session 关闭兜底（PG 连接风暴止血①，2026-10-13）
+#
+# 背景（诊断报告 PG连接风暴-诊断报告 §0.2/§5.1）：session 被并发误用后
+# （SQLAlchemy PROVISIONING_CONNECTION 态 / asyncpg 在途操作未完成），
+# 异常退出路径上的 rollback()/close() 会依次抛 InvalidRequestError
+# （"Method 'close()' can't be called here; method '_connection_for_bind()'
+# is already in progress"）。若就此放弃 session 对象，NullPool 下底层
+# asyncpg 连接**永不归还** → 泄漏连接 idle-in-transaction 挂满
+# max_connections（现场 100/100 全占满，每小时整点复现，PG 拒绝一切
+# 新建连接 ~90s）。
+#
+# close 失败的根因之一是 asyncio.gather 异常上抛后兄弟协程仍在后台驱动
+# 同一 session（gather 不撤销兄弟任务），句柄只存在于被弃协程中——延迟
+# 重试等在途操作自然完成后 close 即可成功归还连接；重试耗尽则直接
+# terminate 底层 asyncpg 连接（同步硬断 socket，服务端 backend 立即退出，
+# 宁可显式断连也不泄漏）。注意红线：不使用任何模块级 asyncio 原语。
+# ---------------------------------------------------------------------------
+_SESSION_CLOSE_RETRY_DELAYS: tuple[float, ...] = (1.0, 3.0, 8.0)
+
+
+def _extract_raw_asyncpg_connection(session: AsyncSession):
+    """尽力从 AsyncSession 挖出底层 raw asyncpg Connection（无则 None）。
+
+    链路：AsyncSession → sync_session.connection()（sync Connection）→
+    .connection（pool 代理）→ .dbapi_connection（AsyncAdapt_asyncpg_connection）
+    → ._connection（raw asyncpg Connection）。任何一环取不到都返回 None。
+    """
+    try:
+        proxy = session.sync_session.connection().connection
+        adapted = getattr(proxy, "dbapi_connection", None)
+        raw = getattr(adapted, "_connection", None)
+        return raw if raw is not None and hasattr(raw, "terminate") else None
+    except Exception:  # noqa: BLE001 — 挖不到句柄属预期（如 provisioning 未完成）
+        return None
+
+
+async def close_session_guarded(session: AsyncSession, *, label: str = "session") -> None:
+    """关闭 session，对"毒化 session"（close/rollback 抛错）做兜底回收。
+
+    依次升级，全程不抛出（不掩盖调用方原始异常）：
+    1. 立即 close（正常路径零额外开销）；
+    2. 短延迟重试 close——gather 兄弟协程的在途查询通常 1~2s 内自然完成，
+       之后 close 可正常归还连接（NullPool 即关闭）；
+    3. 重试耗尽仍失败：terminate 底层 asyncpg 连接（同步硬断）；连句柄都
+       取不到时仅记日志（该连接由服务端 idle-in-transaction 超时 300s /
+       进程 GC 兜底回收——最后防线，不再无限等待）。
+    """
+    last_exc: Exception | None = None
+    for delay in (0.0, *_SESSION_CLOSE_RETRY_DELAYS):
+        if delay > 0:
+            await asyncio.sleep(delay)
+        try:
+            await session.close()
+            if last_exc is not None:
+                logger.info(
+                    "毒化 %s 延迟重试 close 成功（连接已归还），此前失败: %s",
+                    label,
+                    last_exc,
+                )
+            return
+        except Exception as exc:  # noqa: BLE001 — 兜底路径绝不掩盖原始异常
+            last_exc = exc
+    raw = _extract_raw_asyncpg_connection(session)
+    if raw is not None:
+        try:
+            raw.terminate()
+            logger.warning(
+                "毒化 %s close 重试耗尽，已强制 terminate 底层连接（断连不泄漏），"
+                "close 失败原因: %s",
+                label,
+                last_exc,
+            )
+            return
+        except Exception:  # noqa: BLE001
+            logger.exception("毒化 %s 底层连接 terminate 失败", label)
+    logger.warning(
+        "毒化 %s close 重试耗尽且无法取得底层连接句柄（provisioning 从未完成，"
+        "句柄在被弃协程中），该连接依赖服务端 idle 超时/GC 回收。close 失败原因: %s",
+        label,
+        last_exc,
+    )
