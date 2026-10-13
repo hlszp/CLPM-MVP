@@ -1,5 +1,5 @@
 {
- "baseline_head": "05e94cabc2a9aebd7c1091debcec93c59c97dc76",
+ "baseline_head": "ecb1a018116471606c99b4a9fc54a4cfbb649325",
  "files": {
   "app/contracts/data_types.py": "6aeaeb1ab214accd94971ed44a524e1a267a922a0b64bbbfcaac4d7c5ad242ed",
   "app/services/diagnosis_orchestrator.py": "d4a21786c67f8956076ff5810ce2f3c2e8e91a64d95fe7da159240c9de4607a9",
@@ -21,7 +21,7 @@
   "app/services/metric_calculator/settling_time.py": "fc2d2c0daef0508b322b44f265392bcf2753580d9ccc348ab065662078413d82",
   "app/services/metric_calculator/stability.py": "d62c0fc114abf14009c2866e924d89a40f79c6a1e695cb17bf50caccfff5fd4b",
   "app/services/metric_calculator/statistics.py": "eb738cd1875f99cace21dd4d8194763fabf03dd0a2d567829d9b5e8f8664bd12",
-  "app/services/metric_calculator/stiction.py": "dcc5446862e7190cde6e64d499aa7526b7056f819a8f104f891066c675c50c76",
+  "app/services/metric_calculator/stiction.py": "02b65bba841d8c575d6a307fb6d6a71325831836cf6dcbd81d765309afd45232",
   "app/services/metric_calculator/time_axis.py": "51fa654b93f435bb8ea885c6941938a9218485820c0909ac20f0f6b45f24bc6f",
   "app/services/metric_calculator/time_constant.py": "eaf95e66121725f120103aa1e38335d5edff399ded2e9f4346386731d1de7a91",
   "app/services/metric_calculator/valve_diagnosis.py": "be3024fd66d0827616eef8f9621bc93353bb2df20992e1e8d6fa9303d06f7992",
