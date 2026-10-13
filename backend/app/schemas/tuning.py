@@ -287,6 +287,13 @@ class TuneResult(CamelModel):
     recommendationSource: dict[str, Any] | None = Field(
         None, description="建议来源绑定（模型来源/版本/终验结论/方法与参数版本）"
     )
+    # R03（G3 增量纠偏 2026-10-13）：适用性限制加性携带——低 SNR
+    # （LOW_SNR_PARAM_UNCOMMITTED，不承诺参数级精度）与未校准 ci95
+    # （CI95_UNCALIBRATED，仅证明被测集合成员）；S1-b 放行政策保持
+    # （提示不进门禁）；缺键=授权来源无已知限制
+    applicabilityLimitations: dict[str, Any] | None = Field(
+        None, description="适用性限制（低 SNR 参数精度不承诺 / ci95 未校准集合成员边界）"
+    )
 
 
 class TuneMatrixRequest(CamelModel):
@@ -545,6 +552,12 @@ class TuningTaskItem(CamelModel):
     # 辨识时间窗（异步历史辨识落库；同步阶跃/MANUAL 为 None）
     timeWindowStart: str | None = None
     timeWindowEnd: str | None = None
+    # R03（G3 增量纠偏 2026-10-13）：适用性限制回读（保存时冻结于
+    # calc_context；旧记录无该键 → None，显式未知不伪补）
+    applicabilityLimitations: dict[str, Any] | None = Field(
+        None,
+        description="适用性限制（低 SNR 参数精度不承诺 / ci95 未校准集合成员边界）",
+    )
 
 
 class TuningTaskDetail(TuningTaskItem):

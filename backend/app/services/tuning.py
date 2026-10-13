@@ -81,6 +81,11 @@ class TuningModelAuthorization:
     P3-07 加性字段：``model_version_id`` / ``snapshot_id`` /
     ``final_verification``（来源记录的证据快照摘要——模型级终验结论；
     读取失败或旧记录无终验装配时为 None，显式未知不伪补）。
+
+    R03（G3 增量纠偏 2026-10-13）加性字段：``identification_manifest``
+    ——授权读取的来源辨识输入包 manifest（只读证据），供普通建议/
+    矩阵/保存链统一派生适用性限制（低 SNR 不承诺、ci95 未校准）；
+    MANUAL/STEP 快路径无 manifest 时为 None（显式未知，不伪补）。
     """
 
     model_type: str
@@ -97,6 +102,8 @@ class TuningModelAuthorization:
     model_version_id: str | None = None
     snapshot_id: str | None = None
     final_verification: dict[str, Any] | None = None
+    # R03：授权读取的来源 manifest（适用性限制派生的唯一授权来源）
+    identification_manifest: dict[str, Any] | None = None
 
 
 def _read_identification_manifest(record: Any) -> dict[str, Any] | None:
@@ -357,7 +364,108 @@ async def authorize_tuning_model(
         ),
         snapshot_id=str(_dsn) if (_dsn := getattr(record, "dataset_snapshot_id", None)) else None,
         final_verification=_final_verification if isinstance(_final_verification, dict) else None,
+        identification_manifest=_manifest if isinstance(_manifest, dict) else None,
     )
+
+
+# ---------------------------------------------------------------------------
+# R03（G3 增量纠偏 2026-10-13）：适用性限制统一派生（授权来源单源）
+# ---------------------------------------------------------------------------
+
+#: 低 SNR 限制口径（S1-b 知悉传递，与鲁棒链 lowSnrDisclaimer 同文）
+_LOW_SNR_LIMITATION_STATEMENT = (
+    "来源辨识数据信噪比低于最低承诺档下界：模型参数不承诺参数级精度，"
+    "建议结合工程判断谨慎实施（S1-b 知悉传递，标注不进门禁）"
+)
+#: ci95 未校准限制口径（G3-APP 守卫 4：三独立族复核 K 85%/τ 90%/θ 85%）
+_CI_UNCALIBRATED_STATEMENT = (
+    "来源参数 ci95 区间未校准（uncalibrated，无频率学派 95% 覆盖保证，"
+    "仅可作相对分散度/灵敏度证据）：可信集合鲁棒验证仅证明被测集合成员通过，"
+    "不证明真实对象在集合内"
+)
+
+
+def _extract_low_snr_annotation(manifest: dict[str, Any] | None) -> dict[str, Any] | None:
+    """从来源 manifest 抽取 S1-b 低 SNR 标注（授权来源单源，三键回退链）.
+
+    键优先级（G3-APP 口径）：``resultEvidence.lowSnr``（辨识结果层透出，
+    joint 聚合标注落点）→ ``preprocess.lowSnr`` → ``searchAudit.preprocessing
+    .lowSnr``（多窗链）。缺键=当时未记录，返回 None 不伪补。
+    """
+    if not isinstance(manifest, dict):
+        return None
+    result_evidence = manifest.get("resultEvidence")
+    if isinstance(result_evidence, dict) and isinstance(result_evidence.get("lowSnr"), dict):
+        return result_evidence["lowSnr"]
+    pp = manifest.get("preprocess")
+    if not isinstance(pp, dict) or not pp.get("lowSnr"):
+        pp = (manifest.get("searchAudit") or {}).get("preprocessing")
+    low = pp.get("lowSnr") if isinstance(pp, dict) else None
+    return low if isinstance(low, dict) else None
+
+
+def _manifest_ci_basis(manifest: dict[str, Any] | None) -> str | None:
+    """来源 manifest 的 CI 基础类型（与鲁棒链 setBasis 同判定语义）.
+
+    Returns:
+        "RESELECT_UNCERTAINTY" / "PARAMETER_UNCERTAINTY" / None（无 CI 证据）.
+    """
+    if not isinstance(manifest, dict):
+        return None
+    result_evidence = manifest.get("resultEvidence") or {}
+    reselect = result_evidence.get("reselectUncertainty")
+    if isinstance(reselect, dict) and reselect.get("status") not in {"NOT_RUN", None}:
+        return "RESELECT_UNCERTAINTY"
+    param_uq = result_evidence.get("uncertainty")
+    if isinstance(param_uq, dict) and param_uq:
+        ci_keys = {
+            k
+            for k, v in param_uq.items()
+            if isinstance(v, dict) and isinstance(v.get("ci95"), list)
+        }
+        if ci_keys:
+            return "PARAMETER_UNCERTAINTY"
+    return None
+
+
+def _derive_applicability_limitations(manifest: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """R03：从授权来源（辨识 manifest / G3-APP 标注）统一生成适用性限制.
+
+    加性携带（不改变现有字段语义、不进门禁——S1-b 放行政策保持）：
+    - 低 SNR：``LOW_SNR_PARAM_UNCOMMITTED`` + "不承诺参数级精度"；
+    - 未校准区间：``CI95_UNCALIBRATED`` + 校准状态 + "仅证明被测集合成员"边界。
+
+    Returns:
+        限制条目列表（空列表=授权来源无已知限制，调用方按缺键处理不伪补）.
+    """
+    items: list[dict[str, Any]] = []
+    low = _extract_low_snr_annotation(manifest)
+    if low is not None:
+        items.append(
+            {
+                "reasonCode": "LOW_SNR_PARAM_UNCOMMITTED",
+                "scope": "PARAM_ACCURACY",
+                "statement": _LOW_SNR_LIMITATION_STATEMENT,
+                "evidence": {
+                    "mode": low.get("mode"),
+                    "snrDb": low.get("snrDb"),
+                    "thresholdDb": low.get("thresholdDb"),
+                    "basis": low.get("basis"),
+                },
+            }
+        )
+    ci_basis = _manifest_ci_basis(manifest)
+    if ci_basis is not None:
+        items.append(
+            {
+                "reasonCode": "CI95_UNCALIBRATED",
+                "scope": "ROBUST_SET_MEMBERSHIP",
+                "calibrationStatus": "uncalibrated",
+                "statement": _CI_UNCALIBRATED_STATEMENT,
+                "evidence": {"ciSource": ci_basis},
+            }
+        )
+    return items
 
 
 # ---------------------------------------------------------------------------
@@ -1819,13 +1927,31 @@ async def tune_pid(
         # V62-P3-007：回退值 = 当前值（实施失败时恢复原参数）
         result["rollbackPid"] = dict(current_pid)
 
-    # V62-P3-007：风险评估
+    # V62-P3-007：风险评估（R03：通用 risk 读取低 SNR 标记——因素如实
+    # 陈述，不加风险分、不进门禁，S1-b 放行政策保持）
+    _limitations = _derive_applicability_limitations(source_context.identification_manifest)
+    _low_snr_item = next(
+        (i for i in _limitations if i.get("reasonCode") == "LOW_SNR_PARAM_UNCOMMITTED"), None
+    )
     result["risk"] = _assess_tuning_risk(
         recommended_pid={"kp": pid.kp, "ti": pid.ti, "td": pid.td},
         current_pid=current_pid,
         model_params=model_params,
         confidence_level=(source_context.confidence_level if source_context else None),
+        low_snr=(
+            {
+                "mode": (_low_snr_item.get("evidence") or {}).get("mode"),
+                "snrDb": (_low_snr_item.get("evidence") or {}).get("snrDb"),
+            }
+            if _low_snr_item is not None
+            else None
+        ),
     )
+
+    # R03（G3 增量纠偏）：适用性限制加性携带（普通建议链；矩阵端点逐行
+    # 复用本函数同享；缺键=授权来源无已知限制，不伪补）
+    if _limitations:
+        result["applicabilityLimitations"] = {"items": _limitations}
 
     # V62-P3-007：单位转换说明（首版无转换，预留结构）
     result["unitConversion"] = {
@@ -1860,6 +1986,7 @@ def _assess_tuning_risk(
     current_pid: dict[str, Any] | None,
     model_params: dict[str, Any],
     confidence_level: str | None,
+    low_snr: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """V62-P3-007 评估整定风险等级与因素.
 
@@ -1867,6 +1994,10 @@ def _assess_tuning_risk(
     - HIGH：PID 参数变化 > 50%，或模型可信度 D/E，或纯滞后 θ/τ > 0.5
     - MEDIUM：PID 参数变化 20%-50%，或模型可信度 C
     - LOW：PID 参数变化 < 20%，且模型可信度 A/B
+
+    R03（加性，S1-b 放行政策保持）：``low_snr`` 在场时因素列表如实陈述
+    "参数级精度不承诺"——**不加风险分**（提示不变成新拒绝门禁），等级
+    计算不受影响。
     """
     factors: list[str] = []
     risk_score = 0
@@ -1905,6 +2036,15 @@ def _assess_tuning_risk(
     if abs(k) > 10 or (0 < abs(k) < 0.1):
         factors.append(f"过程增益极端（K={k:.3f}）")
         risk_score += 1
+
+    # 5. R03：低 SNR 标记（S1-b 知悉面；只陈述不加分，不构成新门禁）
+    if isinstance(low_snr, dict):
+        snr_db = low_snr.get("snrDb")
+        snr_txt = f"（snr≈{snr_db}dB）" if isinstance(snr_db, int | float) else ""
+        factors.append(
+            f"来源数据低信噪比{snr_txt}：模型参数不承诺参数级精度"
+            "（LOW_SNR_PARAM_UNCOMMITTED，S1-b 知悉传递）"
+        )
 
     if risk_score >= 4:
         risk_level = "HIGH"
@@ -2040,8 +2180,10 @@ async def verify_tuning_robustness(
 
     # 可信集合来源（P-32）：优先 06c 重选不确定性（覆盖全部方法），其次
     # P2-015 参数解析 CI；均缺失 → 名义单点集合（显式 setBasis，不伪补宽度）
-    _manifest = None
-    if source_context.source_record_id is not None:
+    # R03：manifest 优先复用授权上下文（authorize 已读，同一份授权证据）；
+    # 兼容显式传入 source_context 的调用方（无 manifest 时回退记录复读）
+    _manifest = source_context.identification_manifest
+    if _manifest is None and source_context.source_record_id is not None:
         record = await db.get(TuningRecord, source_context.source_record_id)
         _manifest = _read_identification_manifest(record) if record is not None else None
     _evidence = (_manifest or {}).get("resultEvidence") or {}
@@ -2202,20 +2344,26 @@ async def verify_tuning_robustness(
         disturbance_response = {"status": "FAILED", "reason": str(exc)}
 
     # S1-b 知悉传递：低 SNR 档显式"不承诺参数级精度"标注如实带入建议层
+    # （R03：统一走授权来源限制抽取器——三键回退链与普通建议链同源）
+    _low = _extract_low_snr_annotation(_manifest)
     low_snr = None
-    _pp = (_manifest or {}).get("preprocess")
-    if not isinstance(_pp, dict) or not _pp.get("lowSnr"):
-        _pp = ((_manifest or {}).get("searchAudit") or {}).get("preprocessing")
-    _low = _pp.get("lowSnr") if isinstance(_pp, dict) else None
-    if isinstance(_low, dict):
+    if _low is not None:
         low_snr = {
             "mode": _low.get("mode"),
             "snrDb": _low.get("snrDb"),
             "thresholdDb": _low.get("thresholdDb"),
-            "disclaimer": (
-                "来源辨识数据信噪比低于最低承诺档下界：模型参数带不承诺参数级精度，"
-                "建议结合工程判断谨慎实施（S1-b 知悉传递，如实标注不承诺）"
-            ),
+            "disclaimer": _LOW_SNR_LIMITATION_STATEMENT,
+        }
+
+    # R03：适用性限制统一携带（与普通建议/保存链同源同文）
+    _limitations = _derive_applicability_limitations(_manifest)
+
+    # R03：setBasis 加性携带校准状态与成员边界（ci95 未校准口径）
+    _set_basis_extras: dict[str, Any] = {}
+    if set_basis_source in {"RESELECT_UNCERTAINTY", "PARAMETER_UNCERTAINTY"}:
+        _set_basis_extras = {
+            "calibrationStatus": "uncalibrated",
+            "membershipScope": _CI_UNCALIBRATED_STATEMENT,
         }
 
     report.update(
@@ -2232,6 +2380,10 @@ async def verify_tuning_robustness(
                 "freeKeys": set_build["freeKeys"],
                 "fixedKeys": set_build["fixedKeys"],
                 "memberCount": set_build["memberCount"],
+                # R02：集合构造说明（成员数+原因码；允许 <64 并显式说明）
+                "setConstruction": set_build.get("setConstruction"),
+                # R03：校准状态 + "仅证明被测集合成员"边界（加性）
+                **_set_basis_extras,
             },
             "opLimits": {
                 "lower": op_limits[0],
@@ -2243,6 +2395,8 @@ async def verify_tuning_robustness(
             "dcsRepresentation": dcs_section,
             "disturbanceResponse": disturbance_response,
             "lowSnrDisclaimer": low_snr,
+            # R03：适用性限制统一携带（与普通建议链同源同文）
+            "applicabilityLimitations": ({"items": _limitations} if _limitations else None),
             "finalVerification": _fv,
             "sources": {
                 "modelSource": source_context.model_source,
@@ -2668,6 +2822,13 @@ async def create_tuning_task(
     model_type = source_context.model_type
     model_params = dict(source_context.model_params)
 
+    # R03（G3 增量纠偏）：适用性限制服务端权威派生（授权来源 manifest 单源；
+    # 与普通建议/矩阵/鲁棒链同源同文），随 calc_context 冻结入列——保存→
+    # 落库→回读不漂移；无限制时不写键（缺键=当时无已知限制，不伪补）
+    applicability_limitations = _derive_applicability_limitations(
+        source_context.identification_manifest
+    )
+
     # SIMULATED 状态必须有仿真证据（服务端 /compare 输出形态），拒绝"声称已仿真"
     if str(status) == "SIMULATED":
         candidate_responses = (
@@ -2791,6 +2952,12 @@ async def create_tuning_task(
             "unitBasis": unit_basis,
             "currentPid": pid_snapshot,
             "riskConfirmed": bool(risk_confirmed),
+            # R03：适用性限制冻结入列（低 SNR 不承诺/ ci95 未校准边界）
+            **(
+                {"applicabilityLimitations": {"items": applicability_limitations}}
+                if applicability_limitations
+                else {}
+            ),
         },
     )
     db.add(record)
@@ -3128,6 +3295,9 @@ def _record_to_dict(
         "modelSource": calc_ctx.get("modelSource"),
         "unitBasis": calc_ctx.get("unitBasis"),
         "currentPidContext": calc_ctx.get("currentPid"),
+        # R03（G3 增量纠偏）：适用性限制回读（保存时冻结于 calc_context；
+        # 旧记录无该键 → None，显式未知不伪补）
+        "applicabilityLimitations": calc_ctx.get("applicabilityLimitations"),
         # P3-04：仿真验证状态（加性键）——无仿真结果显式"未验证"，
         # 不以空白/占位数据冒充仿真结论（诚实化原则）
         "simulationStatus": (

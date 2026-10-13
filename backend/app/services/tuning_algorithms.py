@@ -1931,6 +1931,25 @@ ROBUSTNESS_OVERSHOOT_MAX_PCT = 20.0
 ROBUST_SET_MAX_MEMBERS = 64
 ROBUST_SET_MAX_SIM_DURATION = 600.0
 
+#: R01 超调证据充分性判据（2026-10-13 G3 增量纠偏；工程判据，不动
+#: R15 冻结阈值与 B-11 预算）：窗末尾部（最后 10% 窗长、至少 5 个采样
+#: 点）内 PV 未全部进入 ±2% 稳定带（与稳定时间指标同一带宽口径）→
+#: 该成员窗内最大超调不能代表全时域峰值（慢过程峰值可能在窗外，
+#: 17 号文 R01 反例：θ=60 慢 IPDT 600s 窗 19.14% 误 PASS、1800s 真值
+#: ≈20.3% 峰值 ~730s 在窗外），超调结论按证据不足（INCONCLUSIVE）
+#: 处理，不得总体 PASS。
+ROBUST_EVIDENCE_TAIL_FRACTION = 0.10
+ROBUST_EVIDENCE_TAIL_MIN_POINTS = 5
+ROBUST_EVIDENCE_SETTLING_BAND = 0.02
+
+#: R02 零宽/极窄区间有界终止（2026-10-13 G3 增量纠偏）：
+#: - CI 宽度 ≤ 去重分辨率（成员签名按 9 位小数舍入）的维度按固定维度
+#:   处理（零宽/极窄区间在均匀补样下去重后无法产生足够不同成员，
+#:   原实现 `while len(members) < max` 无尝试上限，全退化时死循环）；
+#: - 内部补样设尝试预算：超预算即停止并如实报告实际成员数与原因码。
+ROBUST_SET_DEGENERATE_WIDTH = 1e-9
+ROBUST_SET_FILL_ATTEMPT_BUDGET = 4096
+
 #: 各模型结构参与可信集合的参数键（与 _model_params_match 必需参数表同口径）
 _ROBUST_SET_PARAM_KEYS: dict[str, tuple[str, ...]] = {
     "FOPDT": ("K", "tau", "theta"),
@@ -2045,9 +2064,21 @@ def build_trustworthy_set(
     + 固定种子（42）内部填充至 max_members。CI 缺失/非法/跨越符号的
     维度按固定（degenerate）处理并记录——不虚构宽度。
 
+    R02 有界终止（2026-10-13 增量纠偏）：
+    - CI 宽度 ≤ 去重分辨率（``ROBUST_SET_DEGENERATE_WIDTH``=1e-9，
+      与成员签名 9 位小数舍入同格）的维度按固定维度处理（固定于名义值，
+      与既有 fixed 语义一致），原因码 ``DEGENERATE_INTERVALS_FIXED``；
+    - 补样尝试预算 ``ROBUST_SET_FILL_ATTEMPT_BUDGET``：超预算停止并
+      如实报告（``FILL_ATTEMPT_BUDGET_EXHAUSTED``），允许有效集合少于
+      max_members 并说明原因（上游四位小数舍入可产生极窄区间，不能
+      仅按"外部恶意输入"处理）。
+
     Returns:
         {"members": [param dict...], "freeKeys": [...], "fixedKeys": [...],
-         "bounds": {key: [lo, hi]}, "memberCount": N}
+         "bounds": {key: [lo, hi]}, "memberCount": N,
+         "setConstruction": {requestedMembers, actualMemberCount,
+                             degenerateKeysFixed, fillAttempts, reasonCodes,
+                             note}}
     """
     keys = _ROBUST_SET_PARAM_KEYS.get(str(model_type).upper())
     if not keys:
@@ -2056,6 +2087,7 @@ def build_trustworthy_set(
         )
     bounds: dict[str, tuple[float, float]] = {}
     fixed: list[str] = []
+    degenerate_fixed: list[str] = []
     nominal: dict[str, float] = {}
     for key in keys:
         raw = nominal_params.get(key)
@@ -2081,6 +2113,12 @@ def build_trustworthy_set(
         )
         if not valid:
             fixed.append(key)
+            continue
+        if hi - lo <= ROBUST_SET_DEGENERATE_WIDTH:
+            # R02：零宽/低于去重分辨率的区间按固定维度处理（不参与
+            # 角点/补样——均匀采样该宽度去重后至多 1~2 个不同成员）
+            fixed.append(key)
+            degenerate_fixed.append(key)
             continue
         if key != "K":
             lo = max(lo, 1e-6)
@@ -2108,23 +2146,84 @@ def build_trustworthy_set(
             _add(member)
     # 名义模型
     _add(dict(nominal))
-    # 固定种子内部填充（超方体均匀采样）
+    # 固定种子内部填充（超方体均匀采样；R02：有界尝试预算）
+    fill_attempts = 0
     if free and len(members) < max_members:
         rng = np.random.default_rng(42)
-        while len(members) < max_members:
+        while len(members) < max_members and fill_attempts < ROBUST_SET_FILL_ATTEMPT_BUDGET:
+            fill_attempts += 1
             member = dict(nominal)
             for k in free:
                 lo, hi = bounds[k]
                 member[k] = float(rng.uniform(lo, hi))
             _add(member)
 
+    # R02：集合构造说明（成员数 + 原因码，允许 <64 并显式说明）
+    reason_codes: list[str] = []
+    if degenerate_fixed:
+        reason_codes.append("DEGENERATE_INTERVALS_FIXED")
+    if not free:
+        reason_codes.append("ALL_DIMENSIONS_FIXED")
+    if free and len(members) < max_members and fill_attempts >= ROBUST_SET_FILL_ATTEMPT_BUDGET:
+        reason_codes.append("FILL_ATTEMPT_BUDGET_EXHAUSTED")
+    note_parts = []
+    if degenerate_fixed:
+        note_parts.append(
+            f"维度 {degenerate_fixed} 的 CI 宽度 ≤ 去重分辨率"
+            f"（{ROBUST_SET_DEGENERATE_WIDTH:g}），按固定维度处理（固定于名义值）"
+        )
+    if "FILL_ATTEMPT_BUDGET_EXHAUSTED" in reason_codes:
+        note_parts.append(
+            f"补样尝试预算 {ROBUST_SET_FILL_ATTEMPT_BUDGET} 耗尽后停止，"
+            f"实际有效成员 {len(members)} < 上限 {max_members}（区间过窄导致去重后无新成员）"
+        )
+    if not note_parts:
+        note_parts.append(
+            "全维度正常采样填满" if len(members) >= max_members else "无自由维度，集合为名义单点"
+        )
     return {
         "members": members,
         "freeKeys": free,
         "fixedKeys": fixed,
         "bounds": {k: [bounds[k][0], bounds[k][1]] for k in free},
         "memberCount": len(members),
+        "setConstruction": {
+            "requestedMembers": max_members,
+            "actualMemberCount": len(members),
+            "degenerateKeysFixed": degenerate_fixed,
+            "fillAttempts": fill_attempts,
+            "reasonCodes": reason_codes,
+            "note": "；".join(note_parts),
+        },
     }
+
+
+def _overshoot_evidence_sufficient(pv: list[float], setpoint_step: float) -> tuple[bool, str]:
+    """R01 超调证据充分性判据（窗末响应状态；工程判据不动冻结阈值）.
+
+    判据：窗末尾部（最后 ``ROBUST_EVIDENCE_TAIL_FRACTION`` 窗长、至少
+    ``ROBUST_EVIDENCE_TAIL_MIN_POINTS`` 个采样点）内 PV 全部保持在
+    ±2% 稳定带（与稳定时间指标同一带宽口径）内 → 窗内最大超调足以
+    代表全时域峰值（超调证据充分）；否则证据不足——慢过程峰值可能在
+    窗外，窗内最大超调会低估全时域峰值（17 号文 R01：θ=60 慢 IPDT
+    600s 窗 19.14% 误 PASS，1800s 真值 ≈20.3%，峰值 ~730s 在窗外）。
+
+    Returns:
+        (evidence_sufficient, note)——note 记录窗末偏差供报告留痕。
+    """
+    band = ROBUST_EVIDENCE_SETTLING_BAND * abs(setpoint_step)
+    if band <= 0.0:
+        return False, "setpointStep=0：无参考幅值，超调证据无从界定"
+    n = len(pv)
+    tail_len = min(max(int(n * ROBUST_EVIDENCE_TAIL_FRACTION), ROBUST_EVIDENCE_TAIL_MIN_POINTS), n)
+    tail = pv[n - tail_len :]
+    max_dev = max(abs(v - setpoint_step) for v in tail)
+    if max_dev <= band:
+        return True, "窗末尾部已进入 ±2% 稳定带（响应在窗内已回稳）"
+    return False, (
+        f"窗末尾部最大偏差 {max_dev / abs(setpoint_step) * 100:.2f}% 仍在 ±2% 稳定带外"
+        "（窗末响应仍在变化/未回稳，全时域峰值可能在窗外）"
+    )
 
 
 def verify_robustness_on_set(
@@ -2147,6 +2246,11 @@ def verify_robustness_on_set(
 
     B-11 预算：成员数 ≤64、时长 ≤600s、总积分步 ≤400 万（与
     SIM_BUDGET_ASYNC 总量同档）；超限明确拒绝。
+
+    R01 超调证据充分性（2026-10-13 增量纠偏）：窗末尾部未进入 ±2%
+    稳定带的成员，其窗内最大超调不能代表全时域峰值（慢过程峰值可能
+    在窗外）→ 超调指标按证据不足（INCONCLUSIVE）处理，**不得总体
+    PASS**（阈值与预算冻结不变）。
     """
     if len(members) > ROBUST_SET_MAX_MEMBERS:
         raise SimulationBudgetError(
@@ -2207,6 +2311,10 @@ def verify_robustness_on_set(
                 entry["overshootPct"] = _extract_metrics(resp, setpoint_step, sim_step).overshoot
                 entry["saturationSteps"] = int(_sat_steps)
                 entry["opRange"] = [min(op[1:]), max(op[1:])] if len(op) > 1 else None
+                # R01：超调证据充分性（窗末尾部 ±2% 稳定带判据）
+                sufficient, ev_note = _overshoot_evidence_sufficient(pv, setpoint_step)
+                entry["overshootEvidence"] = "SUFFICIENT" if sufficient else "INSUFFICIENT"
+                entry["overshootEvidenceNote"] = ev_note
         except SimulationError as exc:
             entry["error"] = str(exc)
             entry["diverged"] = True
@@ -2247,6 +2355,19 @@ def verify_robustness_on_set(
         for m in valid
         if not m.get("diverged") and (m.get("margins") or {}).get("phaseMarginDeg") is None
     )
+    # R01：超调证据不足成员（窗末尾部未进入 ±2% 稳定带 → 峰值可能在窗外）
+    insufficient_members = [
+        m for m in valid if not m.get("diverged") and m.get("overshootEvidence") == "INSUFFICIENT"
+    ]
+    n_insufficient = len(insufficient_members)
+    insufficient_indexes = [m.get("index") for m in insufficient_members]
+    os_threshold_ok = worst_os is not None and worst_os <= ROBUSTNESS_OVERSHOOT_MAX_PCT
+    if not os_threshold_ok:
+        os_status = "FAIL" if worst_os is not None else "INCONCLUSIVE"
+    elif n_insufficient > 0:
+        os_status = "INCONCLUSIVE"
+    else:
+        os_status = "PASS"
     indicators = {
         "gainMargin": {
             "worst": worst_gm,
@@ -2261,7 +2382,10 @@ def verify_robustness_on_set(
         "overshoot": {
             "worstPct": worst_os,
             "thresholdPct": ROBUSTNESS_OVERSHOOT_MAX_PCT,
-            "pass": bool(worst_os is not None and worst_os <= ROBUSTNESS_OVERSHOOT_MAX_PCT),
+            # R01：证据不足时 pass=False（不得总体 PASS），状态显式 INCONCLUSIVE
+            "pass": bool(os_threshold_ok and n_insufficient == 0),
+            "status": os_status,
+            "evidenceInsufficientMembers": n_insufficient,
         },
         "opLimits": {
             "worstSaturationSteps": worst_sat,
@@ -2273,7 +2397,14 @@ def verify_robustness_on_set(
             ),
         },
     }
-    overall = all(v["pass"] for v in indicators.values()) and n_diverged == 0
+    overall = (
+        all(v["pass"] for v in indicators.values()) and n_diverged == 0 and n_insufficient == 0
+    )
+    # R01：总体状态显式三态（INCONCLUSIVE≠PASS；证据不足不得误报通过）
+    if os_status == "INCONCLUSIVE":
+        overall_status = "INCONCLUSIVE"
+    else:
+        overall_status = "PASS" if overall else "FAIL"
     return {
         "frozenThresholds": {
             "gainMarginMin": ROBUSTNESS_GAIN_MARGIN_MIN,
@@ -2286,6 +2417,25 @@ def verify_robustness_on_set(
         "simStepEffective": sim_step,
         "divergedMembers": n_diverged,
         "membersWithoutGainCrossover": n_no_crossing,
+        # R01：仿真证据充分性（加性块；超调证据不足的显式留痕）
+        "simulationEvidence": {
+            "simDurationSeconds": sim_duration,
+            "criterion": "TAIL_IN_2PCT_SETTLING_BAND",
+            "tailFraction": ROBUST_EVIDENCE_TAIL_FRACTION,
+            "tailMinPoints": ROBUST_EVIDENCE_TAIL_MIN_POINTS,
+            "settlingBandPct": ROBUST_EVIDENCE_SETTLING_BAND * 100.0,
+            "insufficientMembers": n_insufficient,
+            "insufficientMemberIndexes": insufficient_indexes,
+            "note": (
+                "窗末尾部未进入 ±2% 稳定带的成员：其窗内最大超调不能代表全时域峰值"
+                "（慢过程峰值可能在仿真窗外），超调结论按证据不足（INCONCLUSIVE）处理，"
+                "不得总体 PASS；延长观察窗或收窄闭环时间常数后复验（B-11 预算与 R15 "
+                "冻结阈值不变）"
+                if n_insufficient > 0
+                else "全部有效成员窗末尾部均已进入 ±2% 稳定带（窗内超调证据充分）"
+            ),
+        },
+        "overallStatus": overall_status,
         "indicators": indicators,
         "overallPass": bool(overall),
         "members": member_results,
@@ -2317,6 +2467,11 @@ __all__ = [
     "ROBUSTNESS_PHASE_MARGIN_MIN_DEG",
     "ROBUSTNESS_OVERSHOOT_MAX_PCT",
     "ROBUST_SET_MAX_MEMBERS",
+    "ROBUST_SET_DEGENERATE_WIDTH",
+    "ROBUST_SET_FILL_ATTEMPT_BUDGET",
+    "ROBUST_EVIDENCE_TAIL_FRACTION",
+    "ROBUST_EVIDENCE_TAIL_MIN_POINTS",
+    "ROBUST_EVIDENCE_SETTLING_BAND",
     "closed_loop_gain_phase_margins",
     "build_trustworthy_set",
     "verify_robustness_on_set",
