@@ -67,6 +67,7 @@ import json
 import math
 import statistics
 import sys
+import tempfile
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -870,6 +871,47 @@ def _evaluate_run_gate(
     }
 
 
+def _terminal_failure_reason(
+    gate: dict, parent_state: str | None, task_record_status: str | None
+) -> str | None:
+    """只提前终止已确定失败的测量；节点/latest 未到齐仍须等待。
+
+    不停止或撤销 Celery 任务，不把各条件在不同时刻首达拼成 PASS。
+    行级违约在父任务和 TaskRecord 均成功、账本齐全后才视为终态。
+    """
+    if parent_state in {"FAILURE", "REVOKED"}:
+        return "PARENT_FAILED"
+    conditions = gate["conditions"]
+    if conditions["ledger"] and conditions["run_binding"]:
+        if task_record_status in {"FAILED", "CANCELLED"}:
+            return "TASK_FAILED"
+    row_conditions = ("source", "run_binding", "algorithm_version", "expected_status")
+    if (
+        conditions["ledger"]
+        and conditions["parent_terminal"]
+        and conditions["task_terminal"]
+        and not all(conditions[name] for name in row_conditions)
+    ):
+        return "TERMINAL_MISMATCH"
+    return None
+
+
+def _write_report_checkpoint(path: str, report: dict) -> None:
+    """每次有效观测原子替换报告，进程中断时保留最近证据及 RUNNING 状态。"""
+    target = Path(path)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=target.parent, prefix=f".{target.name}.", delete=False
+        ) as stream:
+            temporary = Path(stream.name)
+            json.dump(report, stream, ensure_ascii=False, indent=2)
+        temporary.replace(target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
 def _print_gate_report(gate: dict, parent_task_id: str, task_record_status: str | None) -> None:
     """屏障报告（完整分母 + 逐项违约明细，失败不缩分母）。"""
     d = gate["denominators"]
@@ -1041,6 +1083,8 @@ async def run_standard_hourly(args: argparse.Namespace) -> int:
     task_record_status: str | None = None
     first_met: dict[str, float] = {}
     done = False
+    completion_reason = "RUNNING"
+    report: dict = {}
     while time.perf_counter() - submit_started < args.timeout:
         # 子任务 ID 尽力取证（父任务终态≠屏障；错过即 not-observed）
         if not child_ids:
@@ -1069,8 +1113,31 @@ async def run_standard_hourly(args: argparse.Namespace) -> int:
         for name, ok in gate["conditions"].items():
             if ok and name not in first_met:
                 first_met[name] = time.perf_counter() - submit_started
-        if gate["ok"]:
-            done = True
+        elapsed = time.perf_counter() - submit_started
+        done = gate["ok"]
+        completion_reason = (
+            "BARRIER_PASSED"
+            if done
+            else _terminal_failure_reason(gate, parent_state, task_record_status)
+        ) or "RUNNING"
+        report = {
+            "window": freeze["window"],
+            "parentTaskId": parent_task_id,
+            "parentState": parent_state,
+            "taskRecordStatus": task_record_status,
+            "freezePath": str(freeze_path),
+            "observedAt": datetime.now(UTC).isoformat(),
+            "completionReason": completion_reason,
+            "totalSeconds": elapsed,
+            "sloSeconds": args.slo_seconds,
+            "sloPassed": done and elapsed <= args.slo_seconds,
+            "gate": gate,
+            "firstMetSeconds": first_met,
+            "childTaskObservation": child_ids or "not-observed",
+        }
+        if args.report_out:
+            _write_report_checkpoint(args.report_out, report)
+        if completion_reason != "RUNNING":
             break
         await asyncio.sleep(args.poll_interval)
 
@@ -1092,29 +1159,16 @@ async def run_standard_hourly(args: argparse.Namespace) -> int:
         f"违约 {sum(v_['count'] for v_ in gate['violations'].values()) if gate else 'n/a'} / "
         f"跳过(excluded) {gate['denominators']['skipped'] if gate else 'n/a'}）"
     )
+    if completion_reason == "RUNNING":
+        completion_reason = "TIMEOUT"
     if args.report_out and gate:
-        Path(args.report_out).write_text(
-            json.dumps(
-                {
-                    "window": freeze["window"],
-                    "parentTaskId": parent_task_id,
-                    "taskRecordStatus": task_record_status,
-                    "freezePath": str(freeze_path),
-                    "totalSeconds": elapsed,
-                    "sloSeconds": args.slo_seconds,
-                    "sloPassed": slo_passed,
-                    "gate": gate,
-                    "firstMetSeconds": first_met,
-                    "childTaskObservation": child_ids or "not-observed",
-                },
-                ensure_ascii=False,
-                indent=2,
-            ),
-            encoding="utf-8",
+        report.update(
+            completionReason=completion_reason, totalSeconds=elapsed, sloPassed=slo_passed
         )
+        _write_report_checkpoint(args.report_out, report)
         print(f"[report] 报告已落盘: {args.report_out}")
     if not done:
-        print("  [timeout] 屏障未闭合（上方违约明细即缺口；不缩分母、不改判）")
+        print(f"  [{completion_reason}] 屏障未通过（保留违约明细；不缩分母、不改判）")
         return 1
     return 0 if slo_passed else 1
 
