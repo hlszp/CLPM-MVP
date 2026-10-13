@@ -2625,6 +2625,18 @@ async def _calculate_loop_kpi(
     # P3-08a：完整语义明细（record payload 专用；latest 投影形状不动）
     metrics_semantic = _extract_metrics_semantic(metric_results, composite_result)
 
+    # 提取数据血缘信息
+    # 可信度统一 Phase 1（P1-5）：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
+    # 与 confidence_level 同口径，消除 §2.2 字段错配。
+    # 优先从 BASE 块（含 pv/sp/mode）计算回路级 valid_rate；缺失时回退到指标级 lineage。
+    # G5-γ1（2026-10-13）：前移至 INCONCLUSIVE 分支之前——该分支同样需要
+    # 血缘字段（algorithm_version 等），此前分支内缺参导致快照/latest 版本列
+    # 全 NULL（批 1 实测 100 行 DATA_INSUFFICIENT 四条件违约）。
+    loop_valid_rate = base_valid_rate
+    lineage_info = _extract_lineage_info(
+        metric_results, composite_result, loop_valid_rate=loop_valid_rate
+    )
+
     # P2: 基于门禁（gate.py evaluate_gate）构造 GateResult 供 compute_fitness L0 判定复用
     conf_level_for_gate = (
         composite_result.confidence_level if composite_result.confidence_level else "E"
@@ -2644,12 +2656,15 @@ async def _calculate_loop_kpi(
     if composite_result.value is None:
         logger.info("回路 %s 综合评分为 None（E 级），返回 INCONCLUSIVE", loop.tag_name)
         # P2: 可信度 E 级 + gate 构建 → compute_fitness 大概率 L0，但允许 L1 兜底
+        # G5-γ1（2026-10-13 批 1 实测）：source/source_task_id 原放本 dict，
+        # 被 _build_fitness_kwargs_from_result 整体替换吞掉（该函数只含
+        # fitness/三性六键）→ 快照/record/latest 的 source 与版本列全 NULL。
+        # 修复：显式字段改在 _timed_persist 调用点平铺（对齐主路径口径），
+        # 本 dict 只保留可被整体替换的 fitness 域键。
         fitness_kwargs: dict[str, Any] = {
             "fitness_level": None,
             "fitness_tags": None,
             "fitness_detail": None,
-            "source": source,
-            "source_task_id": source_task_id,
         }
         try:
             fresult = compute_fitness(
@@ -2674,8 +2689,14 @@ async def _calculate_loop_kpi(
                 ts_end=ts_end,
                 status="INCONCLUSIVE",
                 custom_task_id=custom_task_id,
-                confidence_level=composite_result.confidence_level,
                 metrics_detail=metrics_detail,
+                # 来源标注（G5-γ1）：平铺传递，不被 fitness_kwargs 整体替换波及
+                source=source,
+                source_task_id=source_task_id,
+                # 血缘字段（G5-γ1）：algorithm_version 等与主路径同源，
+                # 闭合快照/latest 版本列 NULL 违约；confidence_level 经
+                # lineage_info 携带（composite 可信度，E 兜底）
+                **lineage_info,
                 **fitness_kwargs,
             )
         )
@@ -2686,14 +2707,7 @@ async def _calculate_loop_kpi(
     # 提取阀门运行区间 op_min/op_max（从 valve_operating_range details，Task 6）
     valve_op_min, valve_op_max = _extract_valve_op_range(metric_results)
 
-    # 提取数据血缘信息
-    # 可信度统一 Phase 1（P1-5）：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
-    # 与 confidence_level 同口径，消除 §2.2 字段错配。
-    # 优先从 BASE 块（含 pv/sp/mode）计算回路级 valid_rate；缺失时回退到指标级 lineage。
-    loop_valid_rate = base_valid_rate
-    lineage_info = _extract_lineage_info(
-        metric_results, composite_result, loop_valid_rate=loop_valid_rate
-    )
+    # 数据血缘（G5-γ1 前移至 INCONCLUSIVE 分支之前，主路径沿用同一变量）
 
     # P2: 核心路径 — KPI 聚合完成后调用 compute_fitness
     # 规则：fitness 计算失败不得阻断 KPI 主流程，catch 异常后 fitness_level=NULL
