@@ -25,7 +25,7 @@ PG 会话时区 +8，勿裸用 now()）。
 from __future__ import annotations
 
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -196,16 +196,15 @@ def _default_funnel() -> dict[str, Any]:
 
 
 async def _query_global_summary_row(db: AsyncSession, window: str) -> WorkbenchWindowSummary | None:
-    """全厂窗口 KPI 行（GLOBAL scope_id=0，取最新 window_end）。"""
-    result = await db.execute(
-        select(WorkbenchWindowSummary)
-        .where(WorkbenchWindowSummary.scope_type == "GLOBAL")
-        .where(WorkbenchWindowSummary.scope_id == 0)
-        .where(WorkbenchWindowSummary.window_w == window)
-        .order_by(WorkbenchWindowSummary.window_end.desc())
-        .limit(1)
-    )
-    return result.scalars().first()
+    """全厂窗口 KPI 行（GLOBAL scope_id=0，取最新 window_end）。
+
+    P5-03 ②：收口到 workbench_overview.query_latest_scope_row 单一实现
+    （最新代表后置筛选语义——INCONCLUSIVE 最新行不被旧 SUCCESS 行顶替，
+    上层已有 status 判断后置处理）。
+    """
+    from app.services.workbench_overview import query_latest_scope_row
+
+    return await query_latest_scope_row(db, "GLOBAL", 0, window)
 
 
 async def _query_window_weighted_avg(
@@ -423,22 +422,41 @@ async def build_overview(
     P5 批 α：缓存 key 含授权节点集 hash + policyRevision——跨范围不共用
     聚合缓存（"全厂缓存不越界"），策略 revision 推进自然换 key、旧 key 按
     TTL 过期，无需清理。
+    P5-03（③⑤⑥）：整响应缓存改**块级缓存**（key 前缀仍为
+    ``cockpit-overview:``，loop.py/loop_batch.py 的前缀失效继续生效）；key
+    三源代数（policy + 数据新窗 + sys_config）任一推进即整体换 key；失败
+    块不缓存、置 ``block_states``=UNAVAILABLE（其余块可用，重试只重失败块）。
     """
-    from app.services.agg_cache import cached_agg, policy_revision_suffix
+    from app.services.agg_cache import generation_suffix
 
-    rev = await policy_revision_suffix(db)
-    key = f"cockpit-overview:{window}:{_unit_ids_hash(unit_ids)}:{rev}"
-    return await cached_agg(
-        key,
-        lambda: _build_overview(db, window, unit_ids=unit_ids),
-        ttl=240.0,
-    )
+    gen = await generation_suffix(db)
+    key_base = f"cockpit-overview:{window}:{_unit_ids_hash(unit_ids)}:{gen}"
+    return await _build_overview(db, window, unit_ids=unit_ids, key_base=key_base)
+
+
+async def _cached_block(
+    key: str,
+    builder: Callable[[], Any],
+    ttl: float = 240.0,
+    fallback: Any = None,
+) -> tuple[Any, str]:
+    """块级缓存包装（P5-03 ⑥）：失败 → UNAVAILABLE + 兜底值，不缓存失败."""
+    from app.services.agg_cache import cached_agg
+
+    try:
+        return await cached_agg(key, builder, ttl=ttl), "OK"
+    except Exception:  # noqa: BLE001 — 单块失败不阻断其余块
+        logger.warning("驾驶舱块构建失败 key=%s", key, exc_info=True)
+        return fallback, "UNAVAILABLE"
 
 
 async def _build_overview(
-    db: AsyncSession, window: str = "24h", unit_ids: list[str] | None = None
+    db: AsyncSession,
+    window: str = "24h",
+    unit_ids: list[str] | None = None,
+    key_base: str = "",
 ) -> dict[str, Any]:
-    """实际聚合（由 build_overview 的短缓存包装）；unit_ids=范围节点集。"""
+    """实际聚合（由 build_overview 计算块级 key 后调用）；unit_ids=范围节点集。"""
     hours = WINDOW_HOURS.get(window, 24)
     now = datetime.now(UTC).replace(tzinfo=None)
     start = now - timedelta(hours=hours)
@@ -446,104 +464,154 @@ async def _build_overview(
 
     kpi = _default_kpi()
     funnel = _default_funnel()
+    block_states: dict[str, str] = {}
+
+    def _bk(block: str) -> str:
+        return f"{key_base}:{block}"
 
     # --- 回路总数：loop_ledger 活跃回路实时计数（范围收窄同口径） ---
     # 语义是"配置回路总数"（与回路配置页对齐），不依赖 KPI 评分链路是否
     # 有数据；预计算行的 loop_count 是"窗口内参评回路数"，两者语义不同，
     # 此前混用导致总数与实际配置对不上（2026-09-04 修复）。
-    try:
-        loop_total_stmt = (
-            select(func.count()).select_from(LoopLedger).where(LoopLedger.is_active.is_(True))
-        )
-        if unit_ids is not None:
-            loop_total_stmt = loop_total_stmt.where(LoopLedger.unit_id.in_(unit_ids))
-        active_loops = await db.scalar(loop_total_stmt)
-        kpi["loopTotal"] = int(active_loops or 0)
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱回路总数查询失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("loop-total"), lambda: _loop_total_scalar(db, unit_ids), fallback=0
+    )
+    kpi["loopTotal"] = int(data or 0)
+    block_states["loopTotal"] = state
 
     # --- 环比：当前窗口 vs 上一等长窗口（unit_kpi_summary 加权均值） ---
     # 收窄模式下 cur_avg 兼作 score/autoRate 来源（GLOBAL 预计算行不适用）。
     cur_avg: dict[str, float | None] | None = None
-    try:
-        cur_avg = await _query_window_weighted_avg(db, start, now, unit_ids)
-        prev_avg = await _query_window_weighted_avg(db, prev_start, start, unit_ids)
-        kpi["scoreDelta"] = _delta(cur_avg["score"], prev_avg["score"])
-        kpi["autoRateDelta"] = _delta(cur_avg["auto_rate"], prev_avg["auto_rate"])
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱 KPI 环比计算失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("window-avg"),
+        lambda: _window_avg_pair(db, start, now, prev_start, unit_ids),
+        fallback=None,
+    )
+    if data is not None:
+        cur_avg = data["cur"]
+        kpi["scoreDelta"] = _delta(data["cur"]["score"], data["prev"]["score"])
+        kpi["autoRateDelta"] = _delta(data["cur"]["auto_rate"], data["prev"]["auto_rate"])
+    block_states["windowAvg"] = state
 
     # --- 全厂窗口 KPI 行：score / autoRate（仅 ALL；GLOBAL 行是全厂预计算） ---
     if unit_ids is None:
-        try:
-            row = await _query_global_summary_row(db, window)
-            if row is not None:
-                # INCONCLUSIVE = 窗口内无参评数据（precalc 写入 0 占位）：
-                # 显示 None（前端 "—"）而非误导性的 0.0
-                if row.status == "INCONCLUSIVE":
-                    kpi["score"] = None
-                    kpi["autoRate"] = None
-                else:
-                    kpi["score"] = _to_float(row.score)
-                    kpi["autoRate"] = _rate_to_pct(row.auto_mode_rate)
-        except Exception:  # noqa: BLE001
-            logger.warning("驾驶舱 KPI 窗口行查询失败", exc_info=True)
+        data, state = await _cached_block(
+            _bk("global-row"), lambda: _query_global_summary_row(db, window), fallback=None
+        )
+        if data is not None:
+            # INCONCLUSIVE = 窗口内无参评数据（precalc 写入 0 占位）：
+            # 显示 None（前端 "—"）而非误导性的 0.0
+            if data.status == "INCONCLUSIVE":
+                kpi["score"] = None
+                kpi["autoRate"] = None
+            else:
+                kpi["score"] = _to_float(data.score)
+                kpi["autoRate"] = _rate_to_pct(data.auto_mode_rate)
+        block_states["globalRow"] = state
     elif cur_avg is not None:
         # 收窄口径：范围内 unit_kpi_summary 当前窗口加权均值（0-100 标度，
         # 与 delta 同源同标度）；无数据 → None（前端 "—"）。
         kpi["score"] = cur_avg["score"]
         kpi["autoRate"] = cur_avg["auto_rate"]
+        block_states["globalRow"] = block_states.get("windowAvg", "OK")
 
     # --- 等级分布 + 劣化回路数（复用 grade-distribution service 口径） ---
-    try:
-        from app.services.performance import get_grade_distribution
-
-        dist = await get_grade_distribution(db, start=start, end=now, plant_node_ids=unit_ids)
+    data, state = await _cached_block(
+        _bk("grade-dist"),
+        lambda: _grade_dist_pair(db, start, now, prev_start, unit_ids),
+        fallback=None,
+    )
+    if data is not None:
+        dist, prev_degraded = data
         kpi["gradeDistribution"] = {k: int(dist.get(k, 0) or 0) for k in GRADE_KEYS}
         kpi["degradedCount"] = (
             kpi["gradeDistribution"]["WARNING"] + kpi["gradeDistribution"]["POOR"]
         )
-        try:
-            prev_dist = await get_grade_distribution(
-                db, start=prev_start, end=start, plant_node_ids=unit_ids
-            )
-            prev_degraded = int(prev_dist.get("WARNING", 0) or 0) + int(
-                prev_dist.get("POOR", 0) or 0
-            )
+        if prev_degraded is not None:
             kpi["degradedDelta"] = kpi["degradedCount"] - prev_degraded
-        except Exception:  # noqa: BLE001
-            logger.warning("驾驶舱劣化数环比计算失败", exc_info=True)
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱等级分布查询失败", exc_info=True)
+    block_states["gradeDist"] = state
 
     # --- 处置待办 ---
-    try:
-        todo = await _query_todo_counts(db, unit_ids)
-        kpi["todoPending"] = todo["pending"]
-        kpi["todoOverdue"] = todo["overdue"]
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱处置待办统计失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("todo"), lambda: _query_todo_counts(db, unit_ids), fallback=None
+    )
+    if data is not None:
+        kpi["todoPending"] = data["pending"]
+        kpi["todoOverdue"] = data["overdue"]
+    block_states["todo"] = state
 
     # --- 预警事件 ---
-    try:
-        alerts = await _query_alert_counts(db, start, unit_ids)
-        kpi["alertActive"] = alerts["active"]
-        kpi["alertUnconfirmed"] = alerts["unconfirmed"]
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱预警事件统计失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("alerts"), lambda: _query_alert_counts(db, start, unit_ids), fallback=None
+    )
+    if data is not None:
+        kpi["alertActive"] = data["active"]
+        kpi["alertUnconfirmed"] = data["unconfirmed"]
+    block_states["alerts"] = state
 
     # --- 闭环治理漏斗 ---
-    try:
-        counts = await _query_funnel_counts(db, start, now, unit_ids)
-        funnel.update(counts)
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱漏斗计数查询失败", exc_info=True)
-    try:
-        funnel["backlog"] = await _query_backlog(db, unit_ids)
-    except Exception:  # noqa: BLE001
-        logger.warning("驾驶舱漏斗积压查询失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("funnel"), lambda: _query_funnel_counts(db, start, now, unit_ids), fallback=None
+    )
+    if data is not None:
+        funnel.update(data)
+    block_states["funnelCounts"] = state
 
-    return {"window": window, "kpi": kpi, "funnel": funnel}
+    data, state = await _cached_block(
+        _bk("backlog"), lambda: _query_backlog(db, unit_ids), fallback=None
+    )
+    if data is not None:
+        funnel["backlog"] = data
+    block_states["backlog"] = state
+
+    return {"window": window, "kpi": kpi, "funnel": funnel, "block_states": block_states}
+
+
+async def _loop_total_scalar(db: AsyncSession, unit_ids: list[str] | None) -> int:
+    loop_total_stmt = (
+        select(func.count()).select_from(LoopLedger).where(LoopLedger.is_active.is_(True))
+    )
+    if unit_ids is not None:
+        loop_total_stmt = loop_total_stmt.where(LoopLedger.unit_id.in_(unit_ids))
+    return int(await db.scalar(loop_total_stmt) or 0)
+
+
+async def _window_avg_pair(
+    db: AsyncSession,
+    start: datetime,
+    now: datetime,
+    prev_start: datetime,
+    unit_ids: list[str] | None,
+) -> dict[str, dict[str, float | None]]:
+    """当前窗 + 上一窗加权均值（P5-03 ⑥：两查合并为单块缓存值）."""
+    return {
+        "cur": await _query_window_weighted_avg(db, start, now, unit_ids),
+        "prev": await _query_window_weighted_avg(db, prev_start, start, unit_ids),
+    }
+
+
+async def _grade_dist_pair(
+    db: AsyncSession,
+    start: datetime,
+    now: datetime,
+    prev_start: datetime,
+    unit_ids: list[str] | None,
+) -> tuple[dict[str, Any], int | None]:
+    """等级分布当前窗 + 上一窗劣化数（P5-03 ⑥：两查合并为单块缓存值）."""
+    from app.services.performance import get_grade_distribution
+
+    dist = await get_grade_distribution(db, start=start, end=now, plant_node_ids=unit_ids)
+    try:
+        prev_dist = await get_grade_distribution(
+            db, start=prev_start, end=start, plant_node_ids=unit_ids
+        )
+        prev_degraded: int | None = int(prev_dist.get("WARNING", 0) or 0) + int(
+            prev_dist.get("POOR", 0) or 0
+        )
+    except Exception:  # noqa: BLE001 — 环比失败不影响当前窗分布
+        logger.warning("驾驶舱劣化数环比计算失败", exc_info=True)
+        prev_degraded = None
+    return dist, prev_degraded
 
 
 async def build_backend_access_roles(db: AsyncSession) -> dict[str, list[str]]:

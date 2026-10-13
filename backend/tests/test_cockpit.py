@@ -437,14 +437,19 @@ class TestOverviewScopeNarrowing:
 
     @pytest.mark.asyncio
     async def test_缓存key含范围hash_跨范围不共用(self):
-        """聚合缓存 key 隔离：ALL/范围A/范围B 三 key 互异."""
+        """聚合缓存 key 隔离：ALL/范围A/范围B 三组块 key 互不相交.
+
+        P5-03 ⑥：整响应缓存改块级缓存（每 build 调用产生 8 个块 key，
+        均含前缀 cockpit-overview:{window}:{uhash}:{三源代数}）——断言
+        三组 key 集合两两不相交且 uhash 段互异。
+        """
         from app.services.agg_cache import cached_agg
 
-        keys: list[str] = []
+        keys_per_call: list[set[str]] = []
         orig = cached_agg
 
         async def _spy(key, builder, ttl=60.0):
-            keys.append(key)
+            keys_per_call[-1].add(key)
             return await orig(key, builder, ttl=ttl)
 
         db = AsyncMock()
@@ -454,16 +459,29 @@ class TestOverviewScopeNarrowing:
             patch.multiple("app.services.cockpit_overview", **_overview_patches()),
             patch("app.services.performance.get_grade_distribution", AsyncMock(return_value={})),
         ):
+            keys_per_call.append(set())
             await build_overview(db, window="24h")
+            keys_per_call.append(set())
             await build_overview(db, window="24h", unit_ids=["uA1"])
+            keys_per_call.append(set())
             await build_overview(db, window="24h", unit_ids=["uB1"])
 
-        assert len(keys) == 3
-        assert keys[0].endswith(":all:r0")
-        assert keys[1] != keys[2] and keys[1] != keys[0] and keys[2] != keys[0]
-        hash_a = keys[1].split(":")[2]
-        hash_b = keys[2].split(":")[2]
-        assert hash_a != "all" and hash_b != "all" and hash_a != hash_b
+        all_scope, scope_a, scope_b = keys_per_call
+        # 块级 key：ALL 口径 8 块（含 global-row）；收窄口径 7 块（global-row
+        # 块仅 ALL 消费——α 收窄语义，收窄时 score 来自 window-avg）
+        assert len(all_scope) == 8 and len(scope_a) == 7 and len(scope_b) == 7
+        assert any(k.endswith(":global-row") for k in all_scope)
+        assert not any(k.endswith(":global-row") for k in scope_a | scope_b)
+        # 三组两两不相交（跨范围不共用）
+        assert not (all_scope & scope_a) and not (all_scope & scope_b)
+        assert not (scope_a & scope_b)
+        # key 形状：cockpit-overview:{window}:{uhash}:{r0:d0:c0}:{block}
+        assert all(k.startswith("cockpit-overview:24h:") for k in all_scope | scope_a | scope_b)
+        assert all(k.split(":")[3] == "r0" for k in all_scope)  # 测试模式代数稳定
+        assert all(k.split(":")[2] == "all" for k in all_scope)
+        hash_a = {k.split(":")[2] for k in scope_a}
+        hash_b = {k.split(":")[2] for k in scope_b}
+        assert hash_a != {"all"} and hash_b != {"all"} and hash_a != hash_b
 
     @pytest.mark.asyncio
     async def test_等级分布按plant_node_ids收窄(self):

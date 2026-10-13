@@ -449,16 +449,12 @@ async def _query_scope_row(
 
     按窗口终点降序取最新行（precalc 每 5min 网格 upsert 新行，旧行保留
     供趋势回看；无序时可能命中历史行）。
+    P5-03 ②：收口到 workbench_overview.query_latest_scope_row 单一实现
+    （不预筛 score/status——最新代表后置筛选语义）。
     """
-    result = await db.execute(
-        select(WorkbenchWindowSummary)
-        .where(WorkbenchWindowSummary.scope_type == scope_type)
-        .where(WorkbenchWindowSummary.scope_id == scope_id)
-        .where(WorkbenchWindowSummary.window_w == window)
-        .order_by(WorkbenchWindowSummary.window_end.desc())
-        .limit(1)
-    )
-    return result.scalar_one_or_none()
+    from app.services.workbench_overview import query_latest_scope_row
+
+    return await query_latest_scope_row(db, scope_type, scope_id, window)
 
 
 async def _query_prev_window_row(
@@ -534,21 +530,12 @@ async def _query_scope_rows_in_ids(
 ) -> list[Any]:
     """子树/子节点分支（scope_id.in_()）查询 + 每节点最新行去重（PERF-03，2026-10-10）。
 
-    复用 workbench_overview._query_scope_rows 的 DISTINCT ON 模式：预计算表
-    每 (scope × window) 保留最多 64 行历史快照，.in_() 不去重时排名/热力图
-    会把同一 scope 的历史行渲染成重复条目。ids 为空返回空列表。
+    P5-03 ②：收口到 workbench_overview.query_latest_scope_rows 单一实现
+    （原 DISTINCT ON 模式迁入统一查询；语义不变——最新代表后置筛选）。
     """
-    if not scope_ids:
-        return []
-    result = await db.execute(
-        select(WorkbenchWindowSummary)
-        .where(WorkbenchWindowSummary.scope_type == scope_type)
-        .where(WorkbenchWindowSummary.scope_id.in_(scope_ids))
-        .where(WorkbenchWindowSummary.window_w == window)
-        .distinct(WorkbenchWindowSummary.scope_id)
-        .order_by(WorkbenchWindowSummary.scope_id, WorkbenchWindowSummary.window_end.desc())
-    )
-    return list(result.scalars().all())
+    from app.services.workbench_overview import query_latest_scope_rows
+
+    return await query_latest_scope_rows(db, scope_type, window, scope_ids)
 
 
 # 应评回路数（子树）：参评三条件 + source_node_id 子树内 UNIT 挂载（CAL-06）
@@ -618,8 +605,16 @@ async def build_assessment(
     - 环比 = 当前窗 − 上一等长窗评分（CAL-06，_window_delta + 上一等长窗行）；
     - 未计算显式区分（CAL-07：score NULL/旧伪 0 行 → None + score_state）；
     - ranking/heatmap 子树查询每节点最新行去重（PERF-03）。
+
+    P5-03 ⑥：ranking/heatmap 两 DB 重块接入块级缓存（key 含三源代数），
+    失败块显式置 UNAVAILABLE（不缓存失败 → 下次请求自然局部重试），
+    summary/trend 为纯派生块不缓存但仍纳入 block_states 账。
     """
+    from app.services.agg_cache import cached_agg, generation_suffix
+
     sid = _scope_id_int(scope_type, scope_id)
+    gen = await generation_suffix(db)
+    key_base = f"workbench-assessment:{scope_type}:{sid}:{window}:{gen}"
     assessment: dict[str, Any] = {
         "scope": {"type": scope_type, "id": scope_id},
         "window": window,
@@ -628,9 +623,11 @@ async def build_assessment(
         "ranking": [],
         "heatmap": {"metrics": [], "units": []},
         "trend": None,
+        # P5-03 ⑥：块状态账（OK | UNAVAILABLE）
+        "block_states": {},
     }
 
-    # --- 主 scope 行（summary + trend 共用）---
+    # --- 主 scope 行（summary + trend 共用；轻量直查不缓存）---
     win_row = await _query_scope_row(db, scope_type, sid, window)
 
     # --- CAL-06：主 scope 上一等长窗口行（环比基准；缺行 → delta=None）---
@@ -640,14 +637,6 @@ async def build_assessment(
             db, scope_type, sid, window, getattr(win_row, "window_end", None)
         )
 
-    # --- lose_factor 阈值 ---
-    threshold = await _get_lose_threshold(db)
-
-    # --- ranking + heatmap 共用的层级与子树查询 ---
-    hierarchy = await _load_plant_hierarchy(db)
-    alarm_per_unit = await _query_alarm_per_unit(db)
-    overdue_per_unit = await _query_overdue_per_unit(db)
-
     # 应评回路数（CAL-06）：回路台账参评口径，替代 GLOBAL 预计算行 loop_count 反推
     try:
         total_loops = await _count_evaluable_loops(db, scope_type, sid)
@@ -656,63 +645,102 @@ async def build_assessment(
         logger.warning("应评回路计数失败，参与率分母按 0 显式降级", exc_info=True)
 
     # --- ranking（plant 视图：下一层 FACTORY/AREA/UNIT；unit 视图：UNIT 子树）---
+    # P5-03 ⑥：块级缓存（view 进 key）；hierarchy/alarm/overdue 随块缓存
     try:
-        if view == "unit":
-            desc_unit_ids = await _get_descendant_unit_ids(db, scope_type, sid)
-            if not desc_unit_ids:
-                unit_rows = await _query_scope_rows(db, "UNIT", window)
-            else:
-                # PERF-03：.in_() 分支加每节点最新行去重
-                unit_rows = await _query_scope_rows_in_ids(db, "UNIT", desc_unit_ids, window)
-            prev_rows_by_scope = await _query_prev_rows_for(db, "UNIT", unit_rows, window)
-            assessment["ranking"] = shape_ranking_unit(unit_rows, hierarchy, prev_rows_by_scope)
-        else:
-            child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
-            if scope_type == "GLOBAL" or not child_ids:
-                plant_rows = await _query_scope_rows(db, child_type, window)
-            else:
-                # PERF-03：.in_() 分支加每节点最新行去重
-                plant_rows = await _query_scope_rows_in_ids(db, child_type, child_ids, window)
-            prev_rows_by_scope = await _query_prev_rows_for(db, child_type, plant_rows, window)
-            assessment["ranking"] = shape_ranking_plant(
-                plant_rows,
-                hierarchy,
-                alarm_per_unit,
-                overdue_per_unit,
-                threshold,
-                total_loops,
-                prev_rows_by_scope,
-            )
+        assessment["ranking"] = await cached_agg(
+            f"{key_base}:ranking:{view}",
+            lambda: _ranking_block(db, scope_type, sid, window, view, total_loops),
+        )
+        assessment["block_states"]["ranking"] = "OK"
     except Exception:  # noqa: BLE001
         logger.warning("评估 ranking 块构建失败", exc_info=True)
+        assessment["block_states"]["ranking"] = "UNAVAILABLE"
 
     # --- heatmap（单元 × 6 指标，按 scope 递归过滤 UNIT 行）---
     try:
+        assessment["heatmap"] = await cached_agg(
+            f"{key_base}:heatmap",
+            lambda: _heatmap_block(db, scope_type, sid, window),
+        )
+        assessment["block_states"]["heatmap"] = "OK"
+    except Exception:  # noqa: BLE001
+        logger.warning("评估 heatmap 块构建失败", exc_info=True)
+        assessment["block_states"]["heatmap"] = "UNAVAILABLE"
+
+    # --- summary（依赖 ranking 的 plants 风险速览；ranking 失败时用空 plants 兜底）---
+    try:
+        ranking_plants = assessment["ranking"] if view == "plant" and assessment["ranking"] else []
+        assessment["summary"] = shape_summary(win_row, ranking_plants, total_loops, prev_equal_row)
+        assessment["block_states"]["summary"] = "OK"
+    except Exception:  # noqa: BLE001
+        logger.warning("评估 summary 块构建失败", exc_info=True)
+        assessment["block_states"]["summary"] = "UNAVAILABLE"
+
+    # --- trend（score_trend + distribution JSONB）---
+    try:
+        prev_row = await _query_prev_window_row(db, scope_type, sid, window)
+        assessment["trend"] = shape_trend(win_row, prev_row)
+        assessment["block_states"]["trend"] = "OK"
+    except Exception:  # noqa: BLE001
+        logger.warning("评估 trend 块构建失败", exc_info=True)
+        assessment["block_states"]["trend"] = "UNAVAILABLE"
+
+    return assessment
+
+
+async def _ranking_block(
+    db: AsyncSession,
+    scope_type: str,
+    sid: int,
+    window: str,
+    view: str,
+    total_loops: int,
+) -> list[dict[str, Any]]:
+    """ranking 块主体（P5-03 ⑥ 从 build_assessment 抽出，供块级缓存）。"""
+    hierarchy = await _load_plant_hierarchy(db)
+    threshold = await _get_lose_threshold(db)
+    if view == "unit":
         desc_unit_ids = await _get_descendant_unit_ids(db, scope_type, sid)
         if not desc_unit_ids:
             unit_rows = await _query_scope_rows(db, "UNIT", window)
         else:
             # PERF-03：.in_() 分支加每节点最新行去重
             unit_rows = await _query_scope_rows_in_ids(db, "UNIT", desc_unit_ids, window)
-        assessment["heatmap"] = shape_heatmap(unit_rows, hierarchy)
-    except Exception:  # noqa: BLE001
-        logger.warning("评估 heatmap 块构建失败", exc_info=True)
+        prev_rows_by_scope = await _query_prev_rows_for(db, "UNIT", unit_rows, window)
+        return shape_ranking_unit(unit_rows, hierarchy, prev_rows_by_scope)
 
-    # --- summary（依赖 ranking 的 plants 风险速览；ranking 失败时用空 plants 兜底）---
-    try:
-        ranking_plants = assessment["ranking"] if view == "plant" and assessment["ranking"] else []
-        assessment["summary"] = shape_summary(win_row, ranking_plants, total_loops, prev_equal_row)
-    except Exception:  # noqa: BLE001
-        logger.warning("评估 summary 块构建失败", exc_info=True)
+    alarm_per_unit = await _query_alarm_per_unit(db)
+    overdue_per_unit = await _query_overdue_per_unit(db)
+    child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
+    if scope_type == "GLOBAL" or not child_ids:
+        plant_rows = await _query_scope_rows(db, child_type, window)
+    else:
+        # PERF-03：.in_() 分支加每节点最新行去重
+        plant_rows = await _query_scope_rows_in_ids(db, child_type, child_ids, window)
+    prev_rows_by_scope = await _query_prev_rows_for(db, child_type, plant_rows, window)
+    return shape_ranking_plant(
+        plant_rows,
+        hierarchy,
+        alarm_per_unit,
+        overdue_per_unit,
+        threshold,
+        total_loops,
+        prev_rows_by_scope,
+    )
 
-    # --- trend（score_trend + distribution JSONB）---
-    try:
-        prev_row = await _query_prev_window_row(db, scope_type, sid, window)
-        assessment["trend"] = shape_trend(win_row, prev_row)
-    except Exception:  # noqa: BLE001
-        logger.warning("评估 trend 块构建失败", exc_info=True)
 
-    return assessment
+async def _heatmap_block(
+    db: AsyncSession, scope_type: str, sid: int, window: str
+) -> dict[str, Any]:
+    """heatmap 块主体（P5-03 ⑥ 抽出，供块级缓存）。"""
+    hierarchy = await _load_plant_hierarchy(db)
+    desc_unit_ids = await _get_descendant_unit_ids(db, scope_type, sid)
+    if not desc_unit_ids:
+        unit_rows = await _query_scope_rows(db, "UNIT", window)
+    else:
+        # PERF-03：.in_() 分支加每节点最新行去重
+        unit_rows = await _query_scope_rows_in_ids(db, "UNIT", desc_unit_ids, window)
+    return shape_heatmap(unit_rows, hierarchy)
 
 
 async def _query_prev_rows_for(

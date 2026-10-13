@@ -23,6 +23,7 @@ scope_id 约定（G-总览定义，precalc 任务须遵守）：
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -378,7 +379,17 @@ async def _query_windows(db: AsyncSession, scope_type: str, scope_id: int) -> li
     历史（供 sparkline 用），而此前读侧无 ORDER BY / LIMIT —— 于是连续运行
     >5.3h（5min × 64）后：装置排名出现最多 64 份同名重复项，头部 KPI 卡片
     取到 64 行中任意一行（可能是 5 小时前的旧快照），同页自相矛盾且不可复现。
-    正确范式见 cockpit_overview 的 order_by(window_end.desc()).limit(1)。
+    P5-03 ②：收口到 query_latest_window_rows 单一实现。
+    """
+    return await query_latest_window_rows(db, scope_type, scope_id)
+
+
+async def query_latest_window_rows(db: AsyncSession, scope_type: str, scope_id: int) -> list[Any]:
+    """单一 scope 的三窗口行（每窗口各取最新 window_end 一行）。
+
+    P5-03 ②"最新 scope 行查询统一"的单一实现之一（真 PG 语义由
+    DISTINCT ON 保证；mock 只能看 SQL 形状——见
+    tests/test_workbench_latest_row_real_pg_g15.py 与 P5-03 测试）。
     """
     result = await db.execute(
         select(WorkbenchWindowSummary)
@@ -393,23 +404,58 @@ async def _query_windows(db: AsyncSession, scope_type: str, scope_id: int) -> li
     return list(result.scalars().all())
 
 
+async def query_latest_scope_rows(
+    db: AsyncSession,
+    scope_type: str,
+    window: str,
+    scope_ids: list[int] | None = None,
+) -> list[Any]:
+    """最新 scope 行查询统一实现（P5-03 ②）——全部层级/范围消费方收口于此。
+
+    语义契约（R02"最新代表后置筛选"的 scope 级对应，不回退）：
+    - 每个分组键（scope_id；scope_ids=None 时该层级全部）取
+      ``window_end`` **最新**一行（DISTINCT ON + 组内 window_end DESC）；
+    - **不预筛 score/status**：最新行是 NULL/INCONCLUSIVE 就返回它，
+      不被同 scope 更旧的 SUCCESS 行顶替（"最新代表"先选定，筛选/空态
+      判断一律由读方 shaper 后置处理——_row_score/shape_* 家族）；
+    - ids 为空列表 → 空结果（调用方显式传空集语义）。
+
+    消费方：workbench_overview（plants/units，含 .in_() 分支——G15 漏改
+    重复项的收口）、workbench_assessment（ranking/heatmap）。
+    """
+    stmt = (
+        select(WorkbenchWindowSummary)
+        .where(WorkbenchWindowSummary.scope_type == scope_type)
+        .where(WorkbenchWindowSummary.window_w == window)
+    )
+    if scope_ids is not None:
+        if not scope_ids:
+            return []
+        stmt = stmt.where(WorkbenchWindowSummary.scope_id.in_(scope_ids))
+    stmt = stmt.distinct(WorkbenchWindowSummary.scope_id).order_by(
+        WorkbenchWindowSummary.scope_id,
+        WorkbenchWindowSummary.window_end.desc(),
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def query_latest_scope_row(
+    db: AsyncSession, scope_type: str, scope_id: int, window: str
+) -> Any | None:
+    """单 scope × 单窗口的最新一行（P5-03 ② 收口；cockpit 全厂行同源）。"""
+    rows = await query_latest_scope_rows(db, scope_type, window, [scope_id])
+    return rows[0] if rows else None
+
+
 async def _query_scope_rows(db: AsyncSession, scope_type: str, window: str) -> list[Any]:
     """查指定层级 + 窗口的预计算行（用于 plants=FACTORY / units=UNIT）。
 
     整改 G15：同 _query_windows —— 每个 scope_id 只取最新 window_end 的一行，
     否则排名/热力图会把 64 份历史快照全部渲染成重复条目。
+    P5-03 ②：收口到 query_latest_scope_rows 单一实现。
     """
-    result = await db.execute(
-        select(WorkbenchWindowSummary)
-        .where(WorkbenchWindowSummary.scope_type == scope_type)
-        .where(WorkbenchWindowSummary.window_w == window)
-        .distinct(WorkbenchWindowSummary.scope_id)
-        .order_by(
-            WorkbenchWindowSummary.scope_id,
-            WorkbenchWindowSummary.window_end.desc(),
-        )
-    )
-    return list(result.scalars().all())
+    return await query_latest_scope_rows(db, scope_type, window, None)
 
 
 async def _get_child_ids_for_plants(
@@ -673,16 +719,48 @@ async def build_overview(
     2026-10-03：60s TTL 短缓存（agg_cache），同参聚合 60s 内直接复用。
     P4-03：unit_ids=数据范围节点集（None=ALL）；缓存 key 含授权节点集合
     hash + policyRevision——跨范围不共用全厂缓存，策略/拓扑变更自然换 key。
+    P5-03 ⑥：**块级缓存**替代整响应缓存——每统计块独立 key（块级命中/
+    失败不缓存 → 重试只重失败块），响应附 ``block_states``（OK |
+    UNAVAILABLE）供前端分块降级展示；P5-03 ⑤：key 三源代数
+    （policyRevision + 数据新窗 + sys_config 更新）任一推进即整体换 key。
     """
-    from app.services.agg_cache import cached_agg, policy_revision_suffix
+    from app.services.agg_cache import generation_suffix
 
-    rev = await policy_revision_suffix(db)
-    key = (
-        f"workbench-overview:{scope_type}:{scope_id or 0}:{window}:{_unit_ids_hash(unit_ids)}:{rev}"
+    gen = await generation_suffix(db)
+    key_base = (
+        f"workbench-overview:{scope_type}:{_scope_id_int(scope_type, scope_id)}:"
+        f"{window}:{_unit_ids_hash(unit_ids)}:{gen}"
     )
-    return await cached_agg(
-        key, lambda: _build_overview_impl(db, scope_type, scope_id, window, unit_ids=unit_ids)
+    return await _build_overview_impl(
+        db, scope_type, scope_id, window, unit_ids=unit_ids, key_base=key_base, gen=gen
     )
+
+
+async def _cached_block(
+    key: str,
+    builder: Callable[[], Any],
+    ttl: float = 60.0,
+    fallback: Any = None,
+) -> tuple[Any, str]:
+    """块级缓存包装（P5-03 ⑥）：失败 → UNAVAILABLE + 兜底值，不缓存失败.
+
+    cached_agg 的"失败不缓存"保证失败块下一次请求自然重建（局部重试），
+    成功块继续命中（重试不重算）。
+    """
+    from app.services.agg_cache import cached_agg
+
+    try:
+        return await cached_agg(key, builder, ttl=ttl), "OK"
+    except Exception:  # noqa: BLE001 — 单块失败不阻断其余块
+        logger.warning("总览块构建失败 key=%s", key, exc_info=True)
+        return fallback, "UNAVAILABLE"
+
+
+def roots_cache_key(unit_ids: list[str] | None, gen: str) -> str:
+    """roots 块缓存 key（P5-03：读方与 Beat 预热共用同一构造——修复此前
+    Beat 预热写 ``workbench-roots:30d`` 而读方带 hash/代数后缀导致预热
+    永不命中的键错位）。"""
+    return f"workbench-roots:30d:{_unit_ids_hash(unit_ids)}:{gen}"
 
 
 async def _build_overview_impl(
@@ -691,8 +769,11 @@ async def _build_overview_impl(
     scope_id: int | None = None,
     window: str = "24h",
     unit_ids: list[str] | None = None,
+    key_base: str = "",
+    gen: str = "",
 ) -> dict[str, Any]:
-    """实际聚合（由 build_overview 的短缓存包装）；P4-03 unit_ids=范围节点集。"""
+    """实际聚合（由 build_overview 计算块级 key 后调用）；unit_ids=范围节点集。"""
+
     sid = _scope_id_int(scope_type, scope_id)
     overview: dict[str, Any] = {
         "scope": {"type": scope_type, "id": scope_id},
@@ -707,14 +788,22 @@ async def _build_overview_impl(
         "roots": [],
         "alert_events": [],
         "funnel": None,
+        # P5-03 ⑥：块状态账（OK | UNAVAILABLE）——失败块显式可见，
+        # 不以空数据伪装可用
+        "block_states": {},
     }
 
+    def _bk(block: str) -> str:
+        return f"{key_base}:{block}"
+
     # --- windows：三窗口 KPI（选中 scope）---
-    try:
-        win_rows = await _query_windows(db, scope_type, sid)
-        overview["windows"] = shape_windows(win_rows)
-    except Exception:  # noqa: BLE001
-        logger.warning("总览 windows 块构建失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("windows"),
+        lambda: _windows_block(db, scope_type, sid),
+        fallback=dict.fromkeys(WINDOWS_ALL),
+    )
+    overview["windows"] = data
+    overview["block_states"]["windows"] = state
 
     # --- lose_factor 阈值（sys_config 可调）---
     threshold = await _get_lose_threshold(db)
@@ -729,89 +818,119 @@ async def _build_overview_impl(
     }
     try:
         hierarchy = await _load_plant_hierarchy(db)
-        child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
-        if scope_type == "GLOBAL" or not child_ids:
-            # GLOBAL → 全部 AREA（装置级）行（0930 按当前树过滤 + 1003 装置级修正）
-            plant_rows = await _query_scope_rows(db, child_type, window)
-            current_scope_ids = set(hierarchy["name_by_source_id"].keys())
-            plant_rows = [
-                r for r in plant_rows if getattr(r, "scope_id", None) in current_scope_ids
-            ]
-        else:
-            # FACTORY/AREA → 限定子节点 ID
-            stmt = (
-                select(WorkbenchWindowSummary)
-                .where(WorkbenchWindowSummary.scope_type == child_type)
-                .where(WorkbenchWindowSummary.scope_id.in_(child_ids))
-                .where(WorkbenchWindowSummary.window_w == window)
-            )
-            plant_rows = list((await db.execute(stmt)).scalars().all())
-        alarm_per_unit = await _query_alarm_per_unit(db)
-        overdue_per_unit = await _query_overdue_per_unit(db)
-        overview["plants"] = shape_plants(
-            plant_rows, hierarchy, alarm_per_unit, overdue_per_unit, threshold
-        )
     except Exception:  # noqa: BLE001
-        logger.warning("总览 plants 块构建失败", exc_info=True)
+        logger.warning("总览 hierarchy 装载失败", exc_info=True)
+
+    data, state = await _cached_block(
+        _bk("plants"),
+        lambda: _plants_block(db, scope_type, sid, window, hierarchy, threshold, unit_ids),
+        fallback=[],
+    )
+    overview["plants"] = data
+    overview["block_states"]["plants"] = state
 
     # --- units：单元 ×6 指标热力（按 scope 递归过滤 UNIT 行）---
-    try:
-        hierarchy_u = await _load_plant_hierarchy(db)
-        desc_unit_ids = await _get_descendant_unit_ids(db, scope_type, sid)
-        if not desc_unit_ids:
-            # GLOBAL → 全部 UNIT 行
-            unit_rows = await _query_scope_rows(db, "UNIT", window)
-        else:
-            stmt_u = (
-                select(WorkbenchWindowSummary)
-                .where(WorkbenchWindowSummary.scope_type == "UNIT")
-                .where(WorkbenchWindowSummary.scope_id.in_(desc_unit_ids))
-                .where(WorkbenchWindowSummary.window_w == window)
-            )
-            unit_rows = list((await db.execute(stmt_u)).scalars().all())
-        overview["units"] = shape_units(unit_rows, hierarchy_u)
-    except Exception:  # noqa: BLE001
-        logger.warning("总览 units 块构建失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("units"),
+        lambda: _units_block(db, scope_type, sid, window, hierarchy, unit_ids),
+        fallback=[],
+    )
+    overview["units"] = data
+    overview["block_states"]["units"] = state
 
     # --- pareto：异常类型分布（MV-02）---
-    try:
-        overview["pareto"] = shape_pareto(await _query_pareto(db))
-    except Exception:  # noqa: BLE001
-        logger.warning("总览 pareto 块构建失败", exc_info=True)
+    data, state = await _cached_block(_bk("pareto"), lambda: _pareto_block(db), fallback=[])
+    overview["pareto"] = data
+    overview["block_states"]["pareto"] = state
 
     # --- roots：根因 Top N（diagnosis_run symptom_tags 标签聚合，A3 迁 v2）---
     # 2026-10-09 提速：30d JSONB 展开聚合是冷算大头（秒级）——独立 330s 缓存
     # 长于总览 60s 缓存，且由 refresh-workbench-mv Beat（5min）预热写 Redis，
-    # API 路径常态命中、不再实时展开
-    try:
-        from app.services.agg_cache import cached_agg, policy_revision_suffix
-
-        _rev = await policy_revision_suffix(db)
-        root_rows = await cached_agg(
-            f"workbench-roots:30d:{_unit_ids_hash(unit_ids)}:{_rev}",
-            lambda: _query_roots(db, ROOTS_TOP_N, unit_ids=unit_ids),
-            ttl=330,
-        )
-        overview["roots"] = shape_roots(root_rows, ROOTS_TOP_N)
-    except Exception:  # noqa: BLE001
-        logger.warning("总览 roots 块构建失败", exc_info=True)
+    # API 路径常态命中、不再实时展开。P5-03：key 与 Beat 预热共用
+    # roots_cache_key（修复键错位）。
+    data, state = await _cached_block(
+        roots_cache_key(unit_ids, gen),
+        lambda: _query_roots(db, ROOTS_TOP_N, unit_ids=unit_ids),
+        ttl=330,
+        fallback=[],
+    )
+    overview["roots"] = shape_roots(data, ROOTS_TOP_N)
+    overview["block_states"]["roots"] = state
 
     # --- alert_events：预警规则引擎真实事件（0930：用户预期"有预警事件"的本源）---
-    try:
-        overview["alert_events"] = await _query_alert_events(db)
-    except Exception:  # noqa: BLE001
-        logger.warning("总览 alert_events 块构建失败", exc_info=True)
+    data, state = await _cached_block(_bk("alerts"), lambda: _query_alert_events(db), fallback=[])
+    overview["alert_events"] = data
+    overview["block_states"]["alert_events"] = state
 
     # --- funnel：处置漏斗（MV-03，scope 行）---
-    try:
-        # 非全局 scope 的 funnel 行用其 scope_type/scope_id；GLOBAL 用 'GLOBAL'/0
-        ft = scope_type if scope_type != "GLOBAL" else "GLOBAL"
-        overview["funnel"] = shape_funnel(await _query_funnel(db, ft, sid))
-    except Exception:  # noqa: BLE001
-        logger.warning("总览 funnel 块构建失败", exc_info=True)
+    data, state = await _cached_block(
+        _bk("funnel"),
+        lambda: _funnel_block(db, scope_type, sid),
+        fallback=None,
+    )
+    overview["funnel"] = data
+    overview["block_states"]["funnel"] = state
 
     overview.setdefault(
         "plantsEmptyReason",
         _plants_empty_reason(hierarchy, overview.get("plants")),
     )
     return overview
+
+
+async def _windows_block(db: AsyncSession, scope_type: str, sid: int) -> dict[str, Any]:
+    win_rows = await _query_windows(db, scope_type, sid)
+    return shape_windows(win_rows)
+
+
+async def _pareto_block(db: AsyncSession) -> list[dict[str, Any]]:
+    return shape_pareto(await _query_pareto(db))
+
+
+async def _plants_block(
+    db: AsyncSession,
+    scope_type: str,
+    sid: int,
+    window: str,
+    hierarchy: dict[str, Any],
+    threshold: float,
+    unit_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    """plants 块主体（P5-03 ⑥ 从 _build_overview_impl 抽出，供块级缓存）。"""
+    child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
+    if scope_type == "GLOBAL" or not child_ids:
+        # GLOBAL → 全部 AREA（装置级）行（0930 按当前树过滤 + 1003 装置级修正）
+        plant_rows = await _query_scope_rows(db, child_type, window)
+        current_scope_ids = set(hierarchy["name_by_source_id"].keys())
+        plant_rows = [r for r in plant_rows if getattr(r, "scope_id", None) in current_scope_ids]
+    else:
+        # FACTORY/AREA → 限定子节点 ID（P5-03 ②：统一走 latest 收口——原裸
+        # select 无 DISTINCT ON，>5.3h 后渲染 64 份历史重复项，G15 漏改分支）
+        plant_rows = await query_latest_scope_rows(db, child_type, window, child_ids)
+    alarm_per_unit = await _query_alarm_per_unit(db)
+    overdue_per_unit = await _query_overdue_per_unit(db)
+    return shape_plants(plant_rows, hierarchy, alarm_per_unit, overdue_per_unit, threshold)
+
+
+async def _units_block(
+    db: AsyncSession,
+    scope_type: str,
+    sid: int,
+    window: str,
+    hierarchy: dict[str, Any],
+    unit_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    """units 块主体（P5-03 ⑥ 抽出；.in_() 分支同步收口 latest 查询）。"""
+    desc_unit_ids = await _get_descendant_unit_ids(db, scope_type, sid)
+    if not desc_unit_ids:
+        # GLOBAL → 全部 UNIT 行
+        unit_rows = await _query_scope_rows(db, "UNIT", window)
+    else:
+        # P5-03 ②：统一 latest 收口（原裸 select 无 DISTINCT ON）
+        unit_rows = await query_latest_scope_rows(db, "UNIT", window, desc_unit_ids)
+    return shape_units(unit_rows, hierarchy)
+
+
+async def _funnel_block(db: AsyncSession, scope_type: str, sid: int) -> dict[str, Any] | None:
+    ft = scope_type if scope_type != "GLOBAL" else "GLOBAL"
+    return shape_funnel(await _query_funnel(db, ft, sid))
