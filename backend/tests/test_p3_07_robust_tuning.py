@@ -502,14 +502,19 @@ class TestOracleD3IpdtClosedLoopIndicators:
         ("K", "theta"),
         [
             (0.1, 5.0),
-            (0.1, 20.0),
             (0.05, 10.0),
             (0.2, 10.0),
             (-0.1, 10.0),  # 负增益：Kc 变号，闭环指标与正增益镜像一致
         ],
     )
     def test_lambda_7_wide_ci_variants_all_pass(self, K, theta) -> None:
-        """λ=7.0 宽 CI θ/K 变体+负增益：四项全过（IPDT 规则尺度不变性）."""
+        """λ=7.0 宽 CI θ/K 变体+负增益：四项全过（IPDT 规则尺度不变性）.
+
+        R01（2026-10-13 增量纠偏）：θ=20 慢窗变体移至
+        ``test_lambda_7_slow_theta20_inconclusive_evidence``——其窗末尾部
+        未进入 ±2% 稳定带，超调证据不足不得总体 PASS（本组仅保留
+        600s 窗内可完整回稳的快过程变体）。
+        """
         pid = tune_ipdt_pi(K, theta, 7.0)
         ci = {
             "K": [K * 0.95, K * 1.05] if K > 0 else [K * 1.05, K * 0.95],
@@ -520,6 +525,31 @@ class TestOracleD3IpdtClosedLoopIndicators:
         r = verify_robustness_on_set("IPDT", s["members"], pid, op_limits=_WIDE_OP_LIMITS)
         assert r["overallPass"], r["indicators"]
         assert r["indicators"]["overshoot"]["worstPct"] < 20.0
+        # R01：快过程窗内回稳 → 超调证据充分（非 INCONCLUSIVE）
+        assert r["overallStatus"] == "PASS"
+        assert r["indicators"]["overshoot"]["status"] == "PASS"
+
+    def test_lambda_7_slow_theta20_inconclusive_evidence(self) -> None:
+        """R01 语义变更回归：λ=7.0 θ=20（600s 窗内未回稳）→ INCONCLUSIVE.
+
+        原 all_pass 参数化的 (0.1, 20.0) 变体：Ti=2λ+θ=300s，闭环回稳
+        需要 ≈4~5×λ(140s)≈560~700s > 600s 窗——窗末尾部未进入 ±2%
+        稳定带，窗内最大超调不能代表全时域峰值，按证据不足处理不得
+        总体 PASS（17 号文 R01；GM/PM/OP 指标判定不受影响）。
+        """
+        pid = tune_ipdt_pi(0.1, 20.0, 7.0)
+        ci = {"K": [0.095, 0.105], "theta": [18.0, 22.0]}
+        s = build_trustworthy_set("IPDT", {"K": 0.1, "theta": 20.0}, ci)
+        assert s["memberCount"] == 64
+        r = verify_robustness_on_set("IPDT", s["members"], pid, op_limits=_WIDE_OP_LIMITS)
+        assert not r["overallPass"]
+        assert r["overallStatus"] == "INCONCLUSIVE"
+        assert r["indicators"]["overshoot"]["status"] == "INCONCLUSIVE"
+        assert r["indicators"]["overshoot"]["worstPct"] < 20.0  # 窗内数值不变
+        assert r["simulationEvidence"]["insufficientMembers"] == 64
+        assert r["indicators"]["gainMargin"]["pass"]  # 其余三项判定不受证据判据影响
+        assert r["indicators"]["phaseMargin"]["pass"]
+        assert r["indicators"]["opLimits"]["pass"]
 
     def test_lambda_7_narrow_ci_recheck_pass(self) -> None:
         """窄 CI（K±2%/θ±5%）复核：λ=7.0 四项全过且裕度优于宽 CI."""
