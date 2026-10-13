@@ -38,9 +38,33 @@ from app.services.metric_calculator.reference_stats import (
     scorable_p_ratio,
     weighted_score_stats,
 )
-from app.services.performance import ALGORITHM_VERSION, KPI_NAME_MAP, _score_to_status
+from app.services.performance import KPI_NAME_MAP, _score_to_status
 
 logger = logging.getLogger(__name__)
+
+# G5 前置立卡项3（2026-10-13）：节点级聚合版本戳随回路级算法版本。
+# 原实现导入 app.services.performance.ALGORITHM_VERSION（KPI_CALC_v1.0，
+# 仪表盘读侧卡片展示常量）——kpi_node_snapshot_hourly 恒戳 v1.0，与回路级
+# KPI_CALC_v2.0 裂轨（容量屏障 nodeBadVersion 20 节点全量违约）。与日/月
+# 聚合 node_aggregation 同法：主路径优先取聚合输入回路快照的实际版本
+# （随批，见 _batch_algorithm_version），空名册无输入可取时回落本常量
+# （与 kpi_calc.ALGORITHM_VERSION 保持同步更新）。
+ALGORITHM_VERSION = "KPI_CALC_v2.0"
+
+
+def _batch_algorithm_version(latest_snaps: Any) -> str:
+    """取聚合输入回路快照的实际算法版本（随批；无输入回落当前常量）.
+
+    与 node_aggregation._latest_algorithm_version 同语义：输入快照携带
+    产生它的回路级算法版本，节点快照/record 沿用之；无任何输入（空名册
+    空值快照路径）时回落 ALGORITHM_VERSION。
+    """
+    snaps = list(latest_snaps.values() if isinstance(latest_snaps, dict) else latest_snaps)
+    for snap in reversed(snaps):
+        version = getattr(snap, "algorithm_version", None)
+        if version:
+            return str(version)
+    return ALGORITHM_VERSION
 
 # 参与加权聚合的 KPI 字段（与回路级快照对齐）
 KPI_FIELDS = (
@@ -985,7 +1009,8 @@ async def aggregate_node_snapshot(
         "realtime_auto_rate": realtime_auto_rate,
         "loop_count": agg["loop_count"],
         "status": status,
-        "algorithm_version": ALGORITHM_VERSION,
+        # G5 前置立卡项3：随批版本（聚合输入回路快照的实际算法版本）
+        "algorithm_version": _batch_algorithm_version(latest_snaps),
         # v6.1.2: UnitKpiSummary 所需的回路计数字段
         "total_loops": total_loops_count,
         "evaluated_loops": evaluated_loops_count,
@@ -1994,7 +2019,8 @@ async def aggregate_node_snapshot_with_presets(
         "realtime_auto_rate": realtime_auto_rate,
         "loop_count": agg["loop_count"],
         "status": status,
-        "algorithm_version": ALGORITHM_VERSION,
+        # G5 前置立卡项3：随批版本（聚合输入回路快照的实际算法版本）
+        "algorithm_version": _batch_algorithm_version(latest_snaps),
         "total_loops": total_loops_count,
         "evaluated_loops": evaluated_loops_count,
         "inconclusive_loops": inconclusive_loops_count,

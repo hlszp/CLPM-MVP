@@ -84,8 +84,10 @@ DEFAULT_RETRY_SECONDS = 60.0
 DEFAULT_BATCH_SPACING_SECONDS = 2.0
 DEFAULT_FREEZE_DIR = Path("capacity_dataset/run_freezes")
 
-#: 屏障允许的快照来源（.delay 直投路径任务自建记录后 source 落 MANUAL_STANDARD；
-#: Beat 整点=SCHEDULED。同窗 Beat 先跑 → SCHEDULED+task_id=NULL）
+#: 屏障允许的快照来源（G5 前置立卡项1 修复后语义）：API 手动触发（带任务
+#: 记录）=MANUAL_STANDARD；无记录触发（Beat 整点与 .delay 直投在 Celery
+#: 入口不可区分）=SCHEDULED——.delay 直投自建系统记录后快照行
+#: source=SCHEDULED + source_task_id=系统记录 ID（两值均在允许集内）。
 _ALLOWED_SOURCES = ("SCHEDULED", "MANUAL_STANDARD")
 
 #: 冻结件格式版本（结构变更时递增，读端按版本拒绝不认识的格式）
