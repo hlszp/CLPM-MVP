@@ -195,12 +195,9 @@ class TestProviderPseudoQualityPassthrough:
             range_min=0.0,
             range_max=400.0,
         )
-        block = PreprocessingPipeline(config).process(
-            raw_out, TagGroup.QUALITY_HF, window=None
-        )
+        block = PreprocessingPipeline(config).process(raw_out, TagGroup.QUALITY_HF, window=None)
         assert block.quality_summary.good_value_rate == 1.0, (
-            "provider→pipeline 穿透后 good_value_rate 仍为 None——"
-            "非 FLOW 回路快照将维持 PARTIAL"
+            "provider→pipeline 穿透后 good_value_rate 仍为 None——非 FLOW 回路快照将维持 PARTIAL"
         )
 
         # 快照语义层：好值率计算器出值（required_kpis 三项齐 → PARTIAL 恢复 SUCCESS）
@@ -213,8 +210,7 @@ class TestProviderPseudoQualityPassthrough:
         )
         result = get_calculator("good_value_rate").calculate(bundle)
         assert result.value == 100.0, (
-            f"好值率计算器 value={result.value}——legacy 回退 0% 判 INCONCLUSIVE "
-            "的 PARTIAL 症状仍在"
+            f"好值率计算器 value={result.value}——legacy 回退 0% 判 INCONCLUSIVE 的 PARTIAL 症状仍在"
         )
 
     async def test_base_query_pv_role_codes_unchanged(self, monkeypatch) -> None:
