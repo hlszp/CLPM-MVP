@@ -43,24 +43,24 @@ const emit = defineEmits<{ retry: [] }>();
   gap: 8px;
   align-items: center;
   justify-content: center;
-  background: color-mix(in srgb, var(--ck-panel, #fff) 82%, transparent);
+  background: color-mix(in srgb, var(--ck-panel) 82%, transparent);
   backdrop-filter: blur(1px);
   font-size: 12px;
-  color: var(--ck-text-2, #666);
+  color: var(--ck-text-2);
 }
 
 .block-state__retry {
   padding: 2px 12px;
   font-size: 12px;
-  color: var(--ck-accent, #1677ff);
+  color: var(--ck-accent);
   cursor: pointer;
   user-select: none;
   background: transparent;
-  border: 1px solid var(--ck-accent, #1677ff);
+  border: 1px solid var(--ck-accent);
   border-radius: 4px;
 }
 
 .block-state__retry:hover {
-  background: color-mix(in srgb, var(--ck-accent, #1677ff) 10%, transparent);
+  background: color-mix(in srgb, var(--ck-accent) 10%, transparent);
 }
 </style>

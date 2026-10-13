@@ -255,7 +255,7 @@ function onLoseClick(_tag: string) {
   padding: 2px 8px;
   font-size: 11px;
   color: var(--ck-text-2);
-  background: color-mix(in srgb, var(--ck-panel, #fff) 88%, transparent);
+  background: color-mix(in srgb, var(--ck-panel) 88%, transparent);
   border-radius: 4px;
 }
 </style>
