@@ -121,7 +121,37 @@ class SettlingTimeResult:
         return self.window_length_sec
 
 
-def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarray:
+def _autocorr_bounded(signal: np.ndarray, max_lag: int) -> np.ndarray:
+    """有界 lag 自相关 r(0..max_lag)（P5-01：替代 full 相关平方成本）.
+
+    ``c[k] = Σᵢ signal[i+k]·signal[i]``（顺序累加，np.dot），与
+    ``np.correlate(signal, signal, mode="full")[n-1:] / n`` 的前
+    ``max_lag+1`` 项逐位一致（等价证据：tests/test_p5_01_shared_features.py）。
+    Yule-Walker 只消费 ``r(0..order)``（order ≤ 10），full 相关计算了
+    2n-1 个 lag 后丢弃 99% 以上——O(n²) → O(n·max_lag)。
+
+    Args:
+        signal: 输入信号（调用方保证已按 fit_ar_model 口径去均值）
+        max_lag: 最大滞后（含）
+
+    Returns:
+        归一化自相关序列 [r(0), r(1), ..., r(max_lag)]（÷n）
+    """
+    n = len(signal)
+    out = np.empty(max_lag + 1)
+    for k in range(max_lag + 1):
+        if k:
+            out[k] = np.dot(signal[k:], signal[: n - k])
+        else:
+            out[k] = np.dot(signal, signal)
+    return out / n
+
+
+def fit_ar_model(
+    signal: np.ndarray,
+    order: int = DEFAULT_AR_ORDER,
+    autocorr: np.ndarray | None = None,
+) -> np.ndarray:
     """AR(p) 模型辨识 — Yule-Walker 方程求解。
 
     AR(p) 模型：x(t) + a₁·x(t-1) + ... + aₚ·x(t-p) = e(t)
@@ -134,6 +164,9 @@ def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarra
     Args:
         signal: 输入信号（已去均值）
         order: AR 模型阶数
+        autocorr: 预计算的有界 lag 自相关 r(0..≥order)（P5-01 AR 重试
+            复用——同一信号多阶重试共享一次计算）；None 或长度不足时
+            内部按有界 lag 直接计算（与 full 相关逐位一致）
 
     Returns:
         AR 系数数组 [a₁, a₂, ..., aₚ]
@@ -143,8 +176,8 @@ def fit_ar_model(signal: np.ndarray, order: int = DEFAULT_AR_ORDER) -> np.ndarra
         order = max(1, n // 3)
 
     signal = signal - np.mean(signal)
-    autocorr = np.correlate(signal, signal, mode="full")
-    autocorr = autocorr[n - 1 :] / n  # r(0), r(1), ..., r(2n-1)
+    if autocorr is None or len(autocorr) < order + 1:
+        autocorr = _autocorr_bounded(signal, order)
 
     if autocorr[0] == 0:
         return np.zeros(order)
@@ -419,12 +452,23 @@ def compute_settling_time_detailed(
     # [ar_order, 4, 6, 10]，首个稳定的阶数胜出。ARMA(2,1) 的 MA(1) 部分能更好
     # 表示近单位根过程，当前 AR 近似丢失 MA 部分，阶数升级作为工程回退。
     retry_orders = sorted({ar_order, 4, 6, 10})
+    # P5-01（AR 重试复用 lag 特征）：重试链共享一次有界 lag 自相关
+    # r(0..max_order)，各阶 Yule-Walker 只取前缀切片——与逐阶重算
+    # full 自相关逐位一致（等价证据：tests/test_p5_01_shared_features.py
+    # TestSettlingDetailedEquivalence）。fit_ar_model 内部会对传入信号
+    # 再减一次均值，预计算复刻同一操作序列（二次均值为浮点残差，
+    # 双方口径相同）以保证逐位一致。
+    if retry_orders:
+        shared_signal = signal - np.mean(signal)
+        shared_autocorr = _autocorr_bounded(shared_signal, retry_orders[-1])
+    else:  # pragma: no cover — retry_orders 至少含 ar_order，防御分支
+        shared_autocorr = None
     ar_coeffs = None
     green_func = None
     for try_order in retry_orders:
         if try_order > n // 3:
             continue  # 数据点不足以支撑该阶数
-        coeffs = fit_ar_model(signal, order=try_order)
+        coeffs = fit_ar_model(signal, order=try_order, autocorr=shared_autocorr)
         # 抑制发散时的浮点溢出警告（发散检测会跳过该阶数）
         with np.errstate(over="ignore", invalid="ignore"):
             g = compute_green_function(coeffs, length=MAX_GREEN_FUNC_LENGTH)
