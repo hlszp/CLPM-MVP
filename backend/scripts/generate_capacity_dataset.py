@@ -50,6 +50,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 PREFIX = "PERF-T"
 #: 台账规模（冻结：1000 独立回路，禁止少 ID 重放凑数）
 TOTAL_LOOPS = 1000
+DATASET_VERSION = "capacity_v2_bounded_normal_noise"
 #: 装置树结构：1 工厂 × 5 装置(AREA) × 4 单元(UNIT) = 20 单元 × 50 回路
 AREAS = 5
 UNITS_PER_AREA = 4
@@ -164,8 +165,17 @@ def synth_series(
         pv = np.empty(POINTS)
         pv[0] = sp0
         alpha = 0.08 if category != "drift" else 0.02
+        bounded_measurement_noise = composition == "normal" and category == "noisy"
         for t in range(1, POINTS):
-            pv[t] = pv[t - 1] + alpha * (sp[t] - pv[t - 1]) + wn[t]
+            pv[t] = pv[t - 1] + alpha * (sp[t] - pv[t - 1])
+            if not bounded_measurement_noise:
+                pv[t] += wn[t]
+        if bounded_measurement_noise:
+            # 正常 noisy 组使用有界测量噪声（σ=3%量程、幅度≤6%），
+            # 与一阶过程状态分离。把白噪声累积进过程状态会在真实 5s
+            # BASE 采样下产生失效尖峰（固定 seed=949），违反全组 EVALUATED
+            # 预期。不筛种子、不改变线上异常阈值；旧数据作为 v1 失败样本保留。
+            pv += np.clip(wn, -0.06 * span, 0.06 * span)
         if category == "oscillation":
             pv = pv + 0.04 * span * np.sin(2 * np.pi * np.arange(POINTS) / 240.0)
         if category == "drift":
@@ -541,6 +551,7 @@ def build_manifest_rows(units: dict[str, str], scenario: str, ts_start: datetime
                 "isActive": True,
                 "ledgerStatus": "READY",
                 "synthetic": True,
+                "generatorVersion": DATASET_VERSION,
             }
         )
     return rows
@@ -556,6 +567,7 @@ def save_manifest(scenario: str, ts_start: datetime, rows: list[dict], extras: d
         "totalLoops": TOTAL_LOOPS,
         "tree": f"{PREFIX}-FACTORY/{AREAS}AREA/{AREAS * UNITS_PER_AREA}UNIT",
         "seed": "numpy default_rng(seed=loop_index)",
+        "generatorVersion": DATASET_VERSION,
         "windowStart": ts_start.isoformat(),
         "channel": {
             "metadata": "API组态(plant-nodes + tags/import + loops/import)",
@@ -585,6 +597,7 @@ async def write_declaration(scenario: str, ts_start: datetime, manifest_path: Pa
             "composition": SCENARIO_B if scenario == "b" else SCENARIO_A,
             "windowStart": ts_start.isoformat(),
             "seed": "numpy default_rng(seed=loop_index)",
+            "generatorVersion": DATASET_VERSION,
             "manifestPath": str(manifest_path),
             "manifestSha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
             "generatedAt": datetime.now(UTC).isoformat(),

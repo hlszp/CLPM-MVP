@@ -66,6 +66,7 @@ def _batch_algorithm_version(latest_snaps: Any) -> str:
             return str(version)
     return ALGORITHM_VERSION
 
+
 # 参与加权聚合的 KPI 字段（与回路级快照对齐）
 KPI_FIELDS = (
     "good_value_rate",

@@ -10,7 +10,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
+
+import pytest
 
 from scripts.generate_capacity_dataset import (
     AREAS,
@@ -171,3 +173,36 @@ class TestNaming:
 
     def test_7角色齐备(self):
         assert ROLES == ("PV", "SP", "OP", "MODE", "PID_P", "PID_I", "PID_D")
+
+
+@pytest.mark.parametrize("i", range(9, 1000, 10))
+def test_正常组全部noisy回路真实5秒采样不产生失效尖峰(i):
+    # PERF-T0949 的缺陷只在真实 BASE 5s 采样下暴露，1s 原始序列检查会漏掉。
+    from app.contracts.data_types import ControlType, LoopPreprocessConfig, RawTimeSeries, TagGroup
+    from app.services.preprocessing.pipeline import PreprocessingPipeline
+    from scripts.generate_capacity_dataset import LOOP_TYPES, RANGES
+
+    loop_type = LOOP_TYPES[(i - 1) % len(LOOP_TYPES)]
+    control_type = ControlType.TEMPERATURE if loop_type == "TEMPERATURE" else ControlType.LEVEL
+    span = RANGES[loop_type][1]
+    series = synth_series(i, "normal", "noisy", span)
+    pv = [row[1] for row in series["PV"]] + [series["PV"][-1][1]]
+    sp_changes = {row[0]: row[1] for row in series["SP"]}
+    sp = []
+    held = sp_changes[0]
+    for t in range(3601):
+        held = sp_changes.get(t, held)
+        sp.append(held)
+    timestamps = [datetime(2026, 10, 13) + timedelta(seconds=t) for t in range(0, 3601, 5)]
+    raw = RawTimeSeries(
+        timestamps=timestamps,
+        signals={"pv": pv[::5], "sp": sp[::5]},
+        quality_codes={"pv_quality": [1] * len(timestamps)},
+    )
+    block = PreprocessingPipeline(
+        LoopPreprocessConfig(
+            loop_id=f"PERF-T{i:04d}", control_type=control_type, range_min=0, range_max=span
+        )
+    ).process(raw, TagGroup.BASE)
+    assert all(block.validity["pv_valid"]), block.outlier_reasons["pv"]
+    assert all(block.validity["sp_valid"])

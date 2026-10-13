@@ -756,3 +756,90 @@ class TestCustomReplayGuard:
                 bench.run_custom(
                     _sh_args(mode="custom", loops=1000, allow_replay=False, dry_run=False)
                 )
+
+
+class TestTerminalEvidenceCapture:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "outcome", ["mismatch", "pending_then_pass", "parent_failed", "interrupted"]
+    )
+    async def test_终态失败及时保存_未完成继续等_中断保留最近证据(self, tmp_path, outcome):
+        staged = _base_patches(tmp_path, with_barrier=False)
+        observed = _full_pass_barrier()
+        if outcome == "mismatch":
+            observed["ledger_rows"][0].update(status="INCONCLUSIVE", score=None)
+        elif outcome in {"pending_then_pass", "interrupted"}:
+            observed["node_rows"] = []
+        snapshots = [_empty_barrier(), observed]
+        if outcome == "pending_then_pass":
+            snapshots.append(_full_pass_barrier())
+        else:
+            # 已确定失败不能继续等到后续批次改写 latest，丢失首份证据。
+            snapshots.append(RuntimeError("later poll must not erase evidence"))
+        barrier = AsyncMock(side_effect=snapshots)
+        submit = MagicMock()
+        submit.delay.return_value.id = PARENT
+        submit.delay.return_value.state = "FAILURE" if outcome == "parent_failed" else "SUCCESS"
+        report_out = tmp_path / "report.json"
+        sleep = AsyncMock()
+        with (
+            patch("app.tasks.kpi_calc.calculate_hourly_kpi", submit),
+            patch("scripts.kpi_capacity_benchmark._barrier_snapshot", barrier),
+            patch(
+                "scripts.kpi_capacity_benchmark._task_record_status",
+                AsyncMock(return_value="SUCCESS"),
+            ),
+            patch(
+                "scripts.kpi_capacity_benchmark._observe_child_task_ids", AsyncMock(return_value=[])
+            ),
+            patch("scripts.kpi_capacity_benchmark.asyncio.sleep", sleep),
+            _stacked(staged),
+        ):
+            args = _sh_args(
+                manifest=str(staged["manifest"]),
+                dry_run=False,
+                freeze_dir=str(tmp_path / "freezes"),
+                report_out=str(report_out),
+                timeout=60,
+            )
+            if outcome == "interrupted":
+                with pytest.raises(RuntimeError, match="later poll"):
+                    await run_standard_hourly(args)
+            else:
+                rc = await run_standard_hourly(args)
+                assert rc == (0 if outcome == "pending_then_pass" else 1)
+        report = json.loads(report_out.read_text())
+        expected_reason = {
+            "mismatch": "TERMINAL_MISMATCH",
+            "pending_then_pass": "BARRIER_PASSED",
+            "parent_failed": "PARENT_FAILED",
+            "interrupted": "RUNNING",
+        }[outcome]
+        assert report["completionReason"] == expected_reason
+        assert report["parentTaskId"] == PARENT
+        assert report["gate"]["denominators"]["frozenEligible"] == 2
+        assert report["sloPassed"] is (outcome == "pending_then_pass")
+        if outcome in {"mismatch", "parent_failed"}:
+            sleep.assert_not_awaited()
+            assert barrier.await_count == 2
+        if outcome == "mismatch":
+            assert report["gate"]["violations"]["expectedStatus"]["count"] == 1
+            assert report["gate"]["conditions"]["latest"] is True
+
+
+def test_缺口预登记INCONCLUSIVE不得按实际SUCCESS重解释为通过():
+    freeze = _freeze_fixture()
+    freeze["eligible"][0].update(
+        expectedStatus="INCONCLUSIVE(窗口覆盖不足——缺口段按 held/coverage 语义)",
+        expectedSnapshotStatus="INCONCLUSIVE",
+    )
+    gate = _evaluate_run_gate(
+        freeze,
+        _full_pass_barrier(),
+        parent_task_id=PARENT,
+        parent_state="SUCCESS",
+        task_record_status="SUCCESS",
+    )
+    assert gate["conditions"]["expected_status"] is False
+    assert gate["violations"]["expectedStatus"]["count"] == 1
+    assert gate["ok"] is False
