@@ -195,11 +195,18 @@ async def _metadata_execute(stmt: Any) -> Any:
 
     本函数为每次调用开**独立短会话**，彻底断开与调用方 session 的耦合；
     与 resolve_window_layouts(None, ...) 的既有模式一致。
-    """
-    from app.core.db import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as session:
+    止血①（2026-10-13 连接风暴）：``async with`` 的 ``__aexit__`` close 在
+    session 毒化（provisioning 态）时抛错且连接永不归还，改 guarded close
+    （延迟重试 close → 耗尽 terminate 底层连接，不抛出）。
+    """
+    from app.core.db import AsyncSessionLocal, close_session_guarded
+
+    session = AsyncSessionLocal()
+    try:
         return await session.execute(stmt)
+    finally:
+        await close_session_guarded(session, label="logical-wide-metadata")
 
 
 async def _resolve_role_segments(

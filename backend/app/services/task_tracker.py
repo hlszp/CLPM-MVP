@@ -545,6 +545,36 @@ async def delete_task_auxiliary_keys(task_id: str) -> None:
     await redis_client.delete(f"{_task_key(task_id)}:backfill_progress_events")
 
 
+async def reset_task_progress(task_id: str, *, stage: str = "重试中，进度已重置") -> bool:
+    """attempt 边界重置任务进度计数（2026-10-13 连接风暴修 D）.
+
+    缺陷背景：进度字段跨 Celery attempt 累加不重置——``backfill_done`` 为
+    HINCRBY 累加器（事件集去重），attempt1 全批计数 + 回退/重跑再计数，
+    现场出现「回路[2109/1030]」超总分显示。重试是**同一逻辑任务的新一次
+    完整尝试**，进度应从零重新计量。
+
+    重置范围：progress / loops_done / work_items_done / backfill_done 清零、
+    清空 backfill 事件去重集、stage 置为提示文案。状态与错误信息不动
+    （RUNNING 继续有效）。任务不存在返回 False。
+    """
+    exists = await redis_client.exists(_task_key(task_id))
+    if not exists:
+        logger.warning("重置任务进度失败：任务不存在 task_id=%s", task_id)
+        return False
+    await redis_client.hset(
+        _task_key(task_id),
+        mapping={
+            "progress": "0",
+            "loops_done": "0",
+            "work_items_done": "0",
+            "backfill_done": "0",
+            "current_stage": stage,
+        },
+    )
+    await redis_client.delete(f"{_task_key(task_id)}:backfill_progress_events")
+    return True
+
+
 async def claim_backfill_batch(
     task_id: str,
     batch_id: str,
@@ -862,6 +892,7 @@ __all__ = [
     "record_backfill_progress_once",
     "release_backfill_batch",
     "release_backfill_dispatch",
+    "reset_task_progress",
     "reserve_backfill_dispatch",
     "set_celery_task_ids",
     "set_terminal_stats",
