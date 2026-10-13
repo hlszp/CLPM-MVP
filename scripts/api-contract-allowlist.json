@@ -42,7 +42,8 @@
     "POST /engineering-templates",
     "POST /engineering-templates/*/versions",
     "POST /engineering-templates/*/versions/*/rollback",
-    "GET /loops/*/engineering-facts"
+    "GET /loops/*/engineering-facts",
+    "POST /tuning/tune/robustness"
   ],
   "backendUnusedReasons": {
     "DELETE /algorithms/dataplanner/cache/*": "算法直调端点：计算已全部收敛到 Celery 任务链路，前端不再直调（待清理评估）",
@@ -84,7 +85,8 @@
     "POST /engineering-templates": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
     "POST /engineering-templates/*/versions": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
     "POST /engineering-templates/*/versions/*/rollback": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
-    "GET /loops/*/engineering-facts": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通"
+    "GET /loops/*/engineering-facts": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
+    "POST /tuning/tune/robustness": "鲁棒验证专用后端端点（P3-07 交付）：工程师前端 UI 消费归 P6 待接通（挂账），当前由验收脚本/直链消费"
   },
   "frontendCallsWithoutBackend": [
     "/menu/all"
