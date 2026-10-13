@@ -50,7 +50,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 PREFIX = "PERF-T"
 #: 台账规模（冻结：1000 独立回路，禁止少 ID 重放凑数）
 TOTAL_LOOPS = 1000
-DATASET_VERSION = "capacity_v2_bounded_normal_noise"
+# v2r1 仅更正 manifest 源点数；合成值、seed、质量与 expected 状态沿用 v2。
+DATASET_VERSION = "capacity_v2r1_bounded_normal_noise"
 #: 装置树结构：1 工厂 × 5 装置(AREA) × 4 单元(UNIT) = 20 单元 × 50 回路
 AREAS = 5
 UNITS_PER_AREA = 4
@@ -532,6 +533,7 @@ def build_manifest_rows(units: dict[str, str], scenario: str, ts_start: datetime
         unit_name = _unit_name(area_idx, unit_idx)
         lt = LOOP_TYPES[(i - 1) % len(LOOP_TYPES)]
         composition = _loop_composition(scenario, i)
+        dense_points = 900 if composition == "gap" else POINTS
         rows.append(
             {
                 "loopTag": tag,
@@ -544,7 +546,12 @@ def build_manifest_rows(units: dict[str, str], scenario: str, ts_start: datetime
                 "controlType": CONTROL_TYPES[(i - 1) % len(CONTROL_TYPES)],
                 "windowStart": ts_start.isoformat(),
                 "windowEnd": (ts_start + timedelta(hours=1)).isoformat(),
-                "pointsPerTag": {"PV": POINTS, "OP": POINTS, "SP": "COV_sparse", "MODE": 1},
+                "pointsPerTag": {
+                    "PV": dense_points,
+                    "OP": dense_points,
+                    "SP": "COV_sparse",
+                    "MODE": 1,
+                },
                 "scenario": scenario,
                 "includeInEvaluation": True,
                 "expectedStatus": expected_map[composition],

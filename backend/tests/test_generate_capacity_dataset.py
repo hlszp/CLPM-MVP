@@ -134,6 +134,21 @@ class TestRows:
 
 
 class TestManifest:
+    @pytest.mark.parametrize(
+        ("loop_index", "dense_points"), [(1, 3600), (801, 3600), (901, 3600), (951, 900)]
+    )
+    def test_manifest_dense_role_counts_match_frozen_composition(self, loop_index, dense_points):
+        """正常/坏质量/手动是 3600 点；缺口仅 900 点，不能把源点数写成完整窗口。"""
+        row = build_manifest_rows({}, "b", datetime(2026, 10, 14))[loop_index - 1]
+        assert row["pointsPerTag"]["PV"] == dense_points
+        assert row["pointsPerTag"]["OP"] == dense_points
+        # 元数据对照实际公开生成接口，expected 状态仍按冻结场景，不能随实际改写。
+        series = synth_series(loop_index, row["composition"], row["responseCategory"], 400.0)
+        assert len(series["PV"]) == dense_points
+        assert len(series["OP"]) == dense_points
+        if row["composition"] == "gap":
+            assert row["expectedStatus"].startswith("INCONCLUSIVE")
+
     def test_manifest行字段与expected终态(self):
         units = {_unit_name(0, 0): "u-1"}
         rows = build_manifest_rows(units, "b", datetime(2026, 10, 12, 8, 0, 0))
