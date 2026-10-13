@@ -391,12 +391,33 @@ async def list_loop_monitor_endpoint(
         description="最高评分（不含，0-100；与 minScore 构成半开区间 [min, max)）",
     ),
     unscored: bool = Query(False, description="只看无评分回路（无任何评估快照）"),
+    grades: str | None = Query(
+        None,
+        description="按评分等级筛选（P5-04 服务端执行，驾驶舱回路墙）："
+        "EXCELLENT/GOOD/FAIR/WARNING/POOR 逗号分隔多选；"
+        "与 minScore/maxScore/unscored 互斥",
+    ),
+    modes: str | None = Query(
+        None,
+        description="按 MODE 原始值分桶筛选（P5-04 服务端执行，驾驶舱回路墙）："
+        "AUTO/CAS/REMOTE/MANUAL/APC 逗号分隔多选；与 controlMode 互斥",
+    ),
+    focusLoopId: str | None = Query(
+        None,
+        description="定位回路（P5-04）：返回该回路在当前筛选+排序下的位次"
+        "（focusIndex/focusPage，不在结果集内为 null）",
+    ),
     withAggregate: bool = Query(
         True,
         description="是否返回全量聚合统计 aggregate（分页不受影响）；"
         "监视页微型卡已删不消费聚合，可传 false 跳过全量计算提速",
     ),
-    sortBy: str = Query("score", description="排序字段：score/tagName"),
+    sortBy: str = Query(
+        "score",
+        description="排序字段：score/tagName/scoreDelta。scoreDelta=劣化排序，"
+        "取 workbench_loop_latest 5min 周期预计算列（score - prev_score，NULL 恒排最后）；"
+        "卡片显示的 delta 徽标为行内实时计算值，与排序键存在 ≤5min 窗口差（如实声明）",
+    ),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
@@ -404,7 +425,17 @@ async def list_loop_monitor_endpoint(
     _: SysUser = Depends(require_perms("loop:view")),
     scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分；P4-03 范围交集）。"""
+    """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分；P4-03 范围交集）。
+
+    P5-04：筛选/排序/总数/分页全部服务端执行（scope 收窄语义保持——
+    modes/grades 均作用在与授权范围交集之后的候选集上）。
+
+    sortBy=scoreDelta 口径（如实声明）：排序读 workbench_loop_latest 预计算列
+    （5min Celery 全量重算），卡片 delta 徽标为行内实时计算——二者存在
+    ≤5min 窗口差；且预计算以刷新时刻 is_active 为基数，覆盖外回路（如本
+    周期内重新投用的参评回路）徽标仍显行内值，但排序按预计算列 NULL 置底
+    （NULLS LAST）。
+    """
     data = await list_loop_monitor(
         db=db,
         plant_node_id=plantNodeId,
@@ -417,6 +448,9 @@ async def list_loop_monitor_endpoint(
         min_score=minScore,
         max_score=maxScore,
         unscored=unscored,
+        grades=grades,
+        modes=modes,
+        focus_loop_id=focusLoopId,
         with_aggregate=withAggregate,
         sort_by=sortBy,
         sort_order=sortOrder,

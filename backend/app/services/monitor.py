@@ -387,6 +387,36 @@ def _classify_grade(score: float | None, thresholds: list[dict]) -> str:
     return "INCONCLUSIVE"
 
 
+def _grade_score_ranges(
+    thresholds: list[dict],
+    grades: set[str],
+) -> list[tuple[float | None, float | None]]:
+    """等级名集合 → 最新快照评分区间列表（P5-04 服务端等级筛选）。
+
+    口径与前端 resolveGrade 完全一致：档位按 minScore 降序，第 i 档覆盖
+    [min_i, min_{i-1})（上界取更高一档的下界；最高档不设上界）；
+    **最低档下界不设限**（低于全部阈值回退最低档，对齐前端
+    ``sorted.at(-1)`` 兜底）。相邻选中档自动合并为单区间，未知名由
+    调用方先行校验（此处仅展开已知档）。
+    """
+    ordered = sorted(thresholds, key=lambda t: float(t["minScore"]), reverse=True)
+    picked: list[tuple[float | None, float | None]] = []
+    for i, t in enumerate(ordered):
+        name = str(t.get("name", "")).upper()
+        if name not in grades:
+            continue
+        # 上界 = 更高一档的下界（i=0 为最高档，无上界）
+        hi: float | None = float(ordered[i - 1]["minScore"]) if i > 0 else None
+        # 最低档兜底：低于全部阈值也归最低档（前端回退语义）
+        lo: float | None = None if i == len(ordered) - 1 else float(t["minScore"])
+        # 自高向低遍历：新档上界 == 已选上一档下界 即相邻，合并为单区间
+        if picked and hi is not None and picked[-1][0] == hi:
+            picked[-1] = (lo, picked[-1][1])
+        else:
+            picked.append((lo, hi))
+    return picked
+
+
 async def _count_loop_types(
     db: AsyncSession,
     conditions: list,
@@ -622,18 +652,27 @@ async def _build_loop_monitor_aggregate(
     }
 
 
-async def _filter_loop_ids_by_control_mode(
+# P5-04 服务端模式筛选键 → DCS 原始 MODE 值（驾驶舱回路墙口径）
+# 与前端 loops-shared.MODE_KEY_BY_VALUE 一致：AUTO=1/CAS=2/REMOTE=3/MANUAL=0/APC=4，
+# 按原始值分桶（与 controlMode 的"解析标签"口径区分——REMOTE/APC 不归并）
+_MODE_KEY_RAW_VALUES: dict[str, int] = {
+    "AUTO": 1,
+    "CAS": 2,
+    "REMOTE": 3,
+    "MANUAL": 0,
+    "APC": 4,
+}
+
+
+async def _load_current_mode_values(
     db: AsyncSession,
     loop_ids: list[str],
-    control_mode: str,
-) -> list[str]:
-    """按实时控制模式（modeLabel：Auto/Cascade/Manual）过滤回路 ID。
+) -> tuple[dict[str, dict[str, Any]], dict[str, float | None]]:
+    """批量装载回路当前 MODE 原始值（Redis 实时缓存优先，回退 PG current_value）。
 
-    modeLabel 推导与列表 items 构建逻辑一致：Redis 实时值优先，回退 PG current_value；
-    映射配置优先 loop_mode_mapping，回退默认映射。
+    返回 (tag_info, values)：tag_info 为 loop_id → {tag_name, current_value}；
+    values 为 loop_id → 当前原始值（两处来源均无值时缺项，调用方按 None 处理）。
     """
-    if not loop_ids:
-        return []
     m_result = await db.execute(
         select(
             LoopTagMapping.loop_id,
@@ -665,19 +704,56 @@ async def _filter_loop_ids_by_control_mode(
                     except (TypeError, ValueError):
                         redis_values[tag_name_to_loop[tc]] = None
     except Exception as exc:  # noqa: BLE001
-        logger.warning("MODE 筛选: 从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+        logger.warning("MODE 取值: 从 Redis 读取实时值失败，回退到数据库值: %s", exc)
+
+    values: dict[str, float | None] = {}
+    for lid, info in tag_info.items():
+        value = redis_values.get(lid)
+        if value is None:
+            cv = info["current_value"]
+            value = float(cv) if cv is not None else None
+        values[lid] = value
+    return tag_info, values
+
+
+async def _filter_loop_ids_by_mode_values(
+    db: AsyncSession,
+    loop_ids: list[str],
+    raw_values: set[int],
+) -> list[str]:
+    """按当前 MODE 原始值分桶过滤回路 ID（P5-04 驾驶舱回路墙模式筛选）。
+
+    口径与前端 modeBucket 一致：取当前原始 MODE 值（Redis 优先，回退 PG），
+    ``int(raw) ∈ raw_values`` 命中；无 MODE 关联/无值/未知值不命中
+    （前端同口径：mode 为 null 的回路在激活模式筛选时被排除）。
+    """
+    if not loop_ids:
+        return []
+    _tag_info, values = await _load_current_mode_values(db, loop_ids)
+    return [lid for lid in loop_ids if (v := values.get(lid)) is not None and int(v) in raw_values]
+
+
+async def _filter_loop_ids_by_control_mode(
+    db: AsyncSession,
+    loop_ids: list[str],
+    control_mode: str,
+) -> list[str]:
+    """按实时控制模式（modeLabel：Auto/Cascade/Manual）过滤回路 ID。
+
+    modeLabel 推导与列表 items 构建逻辑一致：Redis 实时值优先，回退 PG current_value；
+    映射配置优先 loop_mode_mapping，回退默认映射。
+    """
+    if not loop_ids:
+        return []
+    tag_info, value_map = await _load_current_mode_values(db, loop_ids)
 
     mode_mapping_map = await _load_mode_mappings(db, loop_ids)
     target = control_mode.strip().lower()
     matched: list[str] = []
     for lid in loop_ids:
-        info = tag_info.get(lid)
-        if not info:
+        if lid not in tag_info:
             continue
-        value = redis_values.get(lid)
-        if value is None:
-            cv = info["current_value"]
-            value = float(cv) if cv is not None else None
+        value = value_map.get(lid)
         label = _mode_value_to_label(value, mode_mapping_map.get(lid))
         if label and label.lower() == target:
             matched.append(lid)
@@ -696,6 +772,9 @@ async def list_loop_monitor(
     min_score: float | None = None,
     max_score: float | None = None,
     unscored: bool = False,
+    grades: str | None = None,
+    modes: str | None = None,
+    focus_loop_id: str | None = None,
     with_aggregate: bool = True,
     sort_by: str = "score",
     sort_order: str = "asc",
@@ -709,13 +788,23 @@ async def list_loop_monitor(
     ``control_mode`` 按实时控制模式（Auto/Cascade/Manual，大小写不敏感）过滤。
     ``min_score``/``max_score`` 按最新快照评分过滤（半开区间 [min, max)，0-100），
     ``unscored=True`` 只看无评分回路（无任何快照）。互斥语义：区间优先。
+    P5-04 服务端筛选（驾驶舱回路墙）：``grades`` 按等级名集合
+    （EXCELLENT/GOOD/FAIR/WARNING/POOR，逗号分隔，大小写不敏感；按服务端
+    阈值展开为评分区间，与前端 resolveGrade 同口径）；``modes`` 按 MODE 原始值
+    分桶键集合（AUTO/CAS/REMOTE/MANUAL/APC，逗号分隔）过滤。
+    ``focus_loop_id`` 返回该回路在当前筛选+排序下的位次（``focus_index``
+    0-based / ``focus_page``，不在结果集内为 null）——供前端筛选变化后
+    "跳到选中回路所在页"。
     ``with_aggregate=False`` 跳过全量聚合（P1 改版监视页不消费 aggregate）。
-    ``sort_by`` 支持 score / tagName，``sort_order`` 支持 asc / desc。
+    ``sort_by`` 支持 score / tagName / scoreDelta（P5-04：劣化排序，
+    ``score_delta`` 升序=劣化最多在前，NULL 恒排最后；预计算列，
+    与行内实时 scoreDelta 存在 ≤5min 窗口差，同 score 排序既有口径）。
     """
-    if sort_by not in {"score", "tagName"}:
+    _ALLOWED_SORT_BY = {"score", "tagName", "scoreDelta"}
+    if sort_by not in _ALLOWED_SORT_BY:
         raise BizError(
             code="ERR_VALIDATION",
-            message=f"无效的排序字段: {sort_by}，支持: score、tagName",
+            message=f"无效的排序字段: {sort_by}，支持: score、tagName、scoreDelta",
             status_code=400,
         )
     if sort_order not in {"asc", "desc"}:
@@ -746,6 +835,55 @@ async def list_loop_monitor(
         raise BizError(
             code="ERR_VALIDATION",
             message=f"无效的评分区间: minScore={min_score} 应小于 maxScore={max_score}",
+            status_code=400,
+        )
+    # P5-04：grades 与评分区间/unscored 互斥（两套筛选都落在最新快照评分上，
+    # 组合语义有歧义——显式拒绝而非静默取其一）
+    grade_keys: set[str] = set()
+    if grades is not None:
+        grade_keys = {g.strip().upper() for g in grades.split(",") if g.strip()}
+        allowed_grades = {t["name"] for t in _DEFAULT_GRADE_THRESHOLDS}
+        unknown = grade_keys - allowed_grades
+        if unknown:
+            raise BizError(
+                code="ERR_VALIDATION",
+                message=(
+                    f"无效的等级筛选: {','.join(sorted(unknown))}，"
+                    f"支持: {','.join(sorted(allowed_grades))}"
+                ),
+                status_code=400,
+            )
+        if min_score is not None or max_score is not None or unscored:
+            raise BizError(
+                code="ERR_VALIDATION",
+                message="grades 与 minScore/maxScore/unscored 互斥，请只用一种评分筛选",
+                status_code=400,
+            )
+    # P5-04：modes（原始值分桶）与 controlMode（解析标签）互斥——两种模式口径
+    mode_keys: set[str] = set()
+    if modes is not None:
+        mode_keys = {m.strip().upper() for m in modes.split(",") if m.strip()}
+        unknown_modes = mode_keys - set(_MODE_KEY_RAW_VALUES)
+        if unknown_modes:
+            raise BizError(
+                code="ERR_VALIDATION",
+                message=(
+                    f"无效的模式筛选: {','.join(sorted(unknown_modes))}，"
+                    f"支持: {','.join(sorted(_MODE_KEY_RAW_VALUES))}"
+                ),
+                status_code=400,
+            )
+        if control_mode is not None:
+            raise BizError(
+                code="ERR_VALIDATION",
+                message="modes 与 controlMode 互斥，请只用一种控制模式筛选",
+                status_code=400,
+            )
+    # P5-04：focus_loop_id 非法 UUID 直接 400（定位参数是显式请求，非法即错误）
+    if focus_loop_id is not None and not _is_valid_uuid(focus_loop_id):
+        raise BizError(
+            code="ERR_VALIDATION",
+            message="focusLoopId 格式非法（应为 UUID）",
             status_code=400,
         )
     conditions = []
@@ -799,6 +937,30 @@ async def list_loop_monitor(
                 "page": page,
                 "pageSize": page_size,
                 "aggregate": None,
+                "focusIndex": None,
+                "focusPage": None,
+            }
+        conditions.append(LoopLedger.id.in_(matched_ids))
+    elif mode_keys:
+        # P5-04：MODE 原始值分桶过滤（驾驶舱回路墙口径）——同样无法下推 SQL，
+        # 候选集合上解析当前原始值后并入 ID 条件（候选集已含 scope 收窄交集）
+        id_stmt = select(LoopLedger.id)
+        for cond in conditions:
+            id_stmt = id_stmt.where(cond)
+        candidate_ids = [str(r[0]) for r in (await db.execute(id_stmt)).all()]
+        matched_ids = await _filter_loop_ids_by_mode_values(
+            db, candidate_ids, {_MODE_KEY_RAW_VALUES[k] for k in mode_keys}
+        )
+        if not matched_ids:
+            return {
+                "view": view,
+                "items": [],
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+                "aggregate": None,
+                "focusIndex": None,
+                "focusPage": None,
             }
         conditions.append(LoopLedger.id.in_(matched_ids))
 
@@ -821,6 +983,41 @@ async def list_loop_monitor(
             grade_conds.append(grade_snap_sq.c.score < max_score)
         conditions.append(
             LoopLedger.id.in_(select(grade_snap_sq.c.loop_id).where(and_(*grade_conds)))
+        )
+    elif grade_keys:
+        # P5-04 服务端等级筛选：等级名 → 评分区间（服务端阈值，与前端
+        # resolveGrade 同口径含最低档兜底），OR 下推到最新快照子查询
+        thresholds = await _load_aggregate_grading_thresholds(db)
+        ranges = _grade_score_ranges(thresholds, grade_keys)
+        if not ranges:
+            # 配置阈值中无任何选中档（异常配置）→ 显式空结果而非放行
+            return {
+                "view": view,
+                "items": [],
+                "total": 0,
+                "page": page,
+                "pageSize": page_size,
+                "aggregate": None,
+                "focusIndex": None,
+                "focusPage": None,
+            }
+        grade_snap_sq = (
+            select(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.score)
+            .distinct(KpiSnapshotHourly.loop_id)
+            .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
+            .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
+            .subquery("grade_snap")
+        )
+        range_conds = []
+        for lo, hi in ranges:
+            parts = []
+            if lo is not None:
+                parts.append(grade_snap_sq.c.score >= lo)
+            if hi is not None:
+                parts.append(grade_snap_sq.c.score < hi)
+            range_conds.append(and_(*parts) if parts else func.true())
+        conditions.append(
+            LoopLedger.id.in_(select(grade_snap_sq.c.loop_id).where(or_(*range_conds)))
         )
     elif unscored:
         # 无评分：最新快照 score 为 NULL 或无任何快照（与 aggregate
@@ -874,27 +1071,54 @@ async def list_loop_monitor(
     #   更新，感知无差异；回算完成的新评分最迟 5min 后参与排序）。
     from app.models.workbench_loop_latest import WorkbenchLoopLatest
 
-    wll_sq = select(WorkbenchLoopLatest.loop_id, WorkbenchLoopLatest.score).subquery("wll_latest")
-    if sort_by == "tagName":
-        primary_order = (
-            LoopLedger.tag_name.asc() if sort_order == "asc" else LoopLedger.tag_name.desc()
-        )
-        stmt = select(LoopLedger).order_by(primary_order, LoopLedger.created_at.desc())
-    else:
-        score_col = wll_sq.c.score
-        primary_order = (
-            score_col.asc().nulls_last() if sort_order == "asc" else score_col.desc().nulls_last()
-        )
-        stmt = (
-            select(LoopLedger)
-            .outerjoin(wll_sq, wll_sq.c.loop_id == LoopLedger.id)
-            .order_by(primary_order, LoopLedger.created_at.desc())
-        )
+    wll_sq = select(
+        WorkbenchLoopLatest.loop_id,
+        WorkbenchLoopLatest.score,
+        # P5-04：劣化排序键（预计算列，见迁移 p504srvflt01）
+        WorkbenchLoopLatest.score_delta,
+    ).subquery("wll_latest")
+
+    def _order_columns() -> tuple[list, bool]:
+        """排序键列表 + 是否需要 wll 外连接（tagName 不需要，其余需要）。
+
+        稳定序三级：主键 → created_at desc → id desc（id 唯一使排序全序，
+        批量种子 created_at 并列时 offset/limit 翻页也无重复遗漏——
+        任务书【4】翻页遍历断言的结构性保证）。
+        """
+        tie_id = LoopLedger.id.desc()
+        if sort_by == "tagName":
+            col = LoopLedger.tag_name.asc() if sort_order == "asc" else LoopLedger.tag_name.desc()
+            return [col, LoopLedger.created_at.desc(), tie_id], False
+        key_col = wll_sq.c.score_delta if sort_by == "scoreDelta" else wll_sq.c.score
+        primary = key_col.asc().nulls_last() if sort_order == "asc" else key_col.desc().nulls_last()
+        return [primary, LoopLedger.created_at.desc(), tie_id], True
+
+    order_cols, needs_join = _order_columns()
+    stmt = select(LoopLedger).order_by(*order_cols)
+    if needs_join:
+        stmt = stmt.outerjoin(wll_sq, wll_sq.c.loop_id == LoopLedger.id)
     for cond in conditions:
         stmt = stmt.where(cond)
     stmt = stmt.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(stmt)
     loops = result.scalars().all()
+
+    # P5-04 focus 位次：当前筛选+排序下选中回路的全局位次（ids-only 轻查询，
+    # 与主列表同序同条件；≤千行 id 列表在 Python 侧定位，无 tie 歧义）
+    focus_index: int | None = None
+    focus_page: int | None = None
+    if focus_loop_id is not None and total > 0 and not loop_id:
+        rank_stmt = select(LoopLedger.id).order_by(*order_cols)
+        if needs_join:
+            rank_stmt = rank_stmt.outerjoin(wll_sq, wll_sq.c.loop_id == LoopLedger.id)
+        for cond in conditions:
+            rank_stmt = rank_stmt.where(cond)
+        rank_result = await db.execute(rank_stmt)
+        for idx, row in enumerate(rank_result.all()):
+            if str(row[0]) == focus_loop_id:
+                focus_index = idx
+                focus_page = idx // page_size + 1
+                break
 
     # 批量查 unit_name
     unit_ids = [str(loop.unit_id) for loop in loops if loop.unit_id]
@@ -1190,6 +1414,9 @@ async def list_loop_monitor(
         "page": page,
         "pageSize": page_size,
         "aggregate": aggregate,
+        # P5-04：focus 回路位次（focusLoopId 不在结果集内为 None）
+        "focusIndex": focus_index,
+        "focusPage": focus_page,
     }
 
 

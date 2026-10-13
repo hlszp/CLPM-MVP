@@ -482,12 +482,27 @@ export namespace LoopApi {
     /** 只看无评分回路（最新快照无分数或无快照，与 gradeCounts.INCONCLUSIVE 口径一致） */
     unscored?: boolean;
     /**
+     * 按评分等级筛选（P5-04 服务端执行，驾驶舱回路墙）：
+     * EXCELLENT/GOOD/FAIR/WARNING/POOR 逗号分隔多选；与 minScore/maxScore/unscored 互斥
+     */
+    grades?: string;
+    /**
+     * 按 MODE 原始值分桶筛选（P5-04 服务端执行，驾驶舱回路墙）：
+     * AUTO/CAS/REMOTE/MANUAL/APC 逗号分隔多选；与 controlMode 互斥
+     */
+    modes?: string;
+    /**
+     * 定位回路（P5-04）：响应返回该回路在当前筛选+排序下的位次
+     * （focusIndex 0-based / focusPage），不在结果集内为 null
+     */
+    focusLoopId?: string;
+    /**
      * 是否返回全量聚合 aggregate（P1 改版：监视页微型卡已删、不消费聚合，
      * 传 false 跳过服务端全量统计——961 回路下是每页请求的固定全量开销）
      */
     withAggregate?: boolean;
-    /** 排序字段（默认 score：评分升序，最差在前） */
-    sortBy?: 'score' | 'tagName';
+    /** 排序字段（默认 score：评分升序，最差在前；scoreDelta=P5-04 劣化排序，NULL 恒排最后） */
+    sortBy?: 'score' | 'scoreDelta' | 'tagName';
     /** 排序方向（默认 asc） */
     sortOrder?: 'asc' | 'desc';
   }
@@ -522,6 +537,9 @@ export namespace LoopApi {
     pageSize: number;
     /** E-1 聚合统计（深链接 loop_id 精确查询时为 null） */
     aggregate: MonitorAggregate | null;
+    /** P5-04 focus 位次（focusLoopId 不在结果集内为 null） */
+    focusIndex?: null | number;
+    focusPage?: null | number;
   }
 
   /** 回路监控详情 - 趋势数据（IDS v3.2 §2.2.14） */

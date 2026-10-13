@@ -58,6 +58,31 @@ _LATEST_SNAPSHOT_SQL = """
     ORDER BY s.loop_id, s.ts_start DESC
 """
 
+# P5-04 服务端劣化排序：每回路"昨日基线"快照（今日 0 点前最新一条，
+# 参评口径）——与 monitor.py 列表项 scoreDelta 同口径（ts_end < 今日 0 点）
+_PREV_DAY_SNAPSHOT_SQL = """
+    SELECT DISTINCT ON (s.loop_id)
+           s.loop_id, s.score AS prev_score
+    FROM kpi_snapshot_hourly s
+    JOIN loop_ledger l ON l.id = s.loop_id AND l.is_active
+                       AND l.include_in_evaluation
+    WHERE s.ts_end < date_trunc('day', now())
+    ORDER BY s.loop_id, s.ts_end DESC
+"""
+
+
+def compute_score_delta(score: Any, prev_score: Any) -> Any:
+    """score - prev_score（Decimal 精确减法）；任一为 None → None。
+
+    P5-04：供 /loops/monitor sortBy=scoreDelta 排序键，与列表项
+    scoreDelta（round(cur - prev, 1)）同号同向——排序只比大小，
+    不做展示舍入（避免 .05 刀口翻转序）。
+    """
+    if score is None or prev_score is None:
+        return None
+    return score - prev_score
+
+
 # 每回路最新异常 run（SUCCESS + category 非空；无窗口取全局最新）
 _LATEST_RUN_SQL = f"""
     SELECT * FROM (
@@ -106,6 +131,10 @@ async def refresh_workbench_loop_latest(db: AsyncSession) -> dict[str, int]:
         str(row.loop_id): dict(row._mapping)
         for row in (await db.execute(text(_LATEST_SNAPSHOT_SQL))).all()
     }
+    prev_snapshots = {
+        str(row.loop_id): dict(row._mapping)
+        for row in (await db.execute(text(_PREV_DAY_SNAPSHOT_SQL))).all()
+    }
     runs = {
         str(row.loop_id): dict(row._mapping)
         for row in (await db.execute(text(_LATEST_RUN_SQL))).all()
@@ -115,15 +144,20 @@ async def refresh_workbench_loop_latest(db: AsyncSession) -> dict[str, int]:
     upserted = 0
     for loop_id, meta in ledger.items():
         snap = snapshots.get(loop_id)
+        prev_snap = prev_snapshots.get(loop_id)
         run = runs.get(loop_id)
         terminal_cnt = int(run.get("terminal_cnt") or 0) if run else 0
+        cur_score = snap.get("score") if snap else None
+        prev_score = prev_snap.get("prev_score") if prev_snap else None
         values = {
             "loop_id": loop_id,
             "tag_name": meta.get("tag_name"),
             "unit_id": meta.get("unit_id"),
             "unit_name": meta.get("unit_name"),
             "factory_name": meta.get("factory_name"),
-            "score": snap.get("score") if snap else None,
+            "score": cur_score,
+            "prev_score": prev_score,
+            "score_delta": compute_score_delta(cur_score, prev_score),
             "fitness_level": snap.get("fitness_level") if snap else None,
             "fitness_tags": snap.get("fitness_tags") if snap else None,
             "fitness_detail": snap.get("fitness_detail") if snap else None,
