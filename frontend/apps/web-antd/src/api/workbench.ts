@@ -215,6 +215,14 @@ export namespace WorkbenchApi {
     trend: AssessmentTrend | null;
     view: 'plant' | 'unit';
     window: TimeWindow;
+    /**
+     * P5-03 ⑥ 块状态账（P5-04 前端接线）：ranking/heatmap/summary/trend
+     * 各块 OK | UNAVAILABLE——失败块显式"该来源暂不可用"+可重试（诚实化：
+     * 不做全局 error 兜底掩盖部分成功），缺省键视为 OK（旧响应兼容）
+     */
+    block_states?: Partial<
+      Record<'heatmap' | 'ranking' | 'summary' | 'trend', 'OK' | 'UNAVAILABLE'>
+    >;
   }
 
   /** 评估排名视图 */

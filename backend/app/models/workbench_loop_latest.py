@@ -55,6 +55,14 @@ class WorkbenchLoopLatest(Base):
 
     # ---- 最新小时快照 fitness 面（kpi_snapshot_hourly DISTINCT ON ts_start）----
     score: Mapped[float | None] = mapped_column(Numeric(6, 2), comment="最新综合评分")
+    # P5-04 服务端劣化排序：昨日基线评分（今日 0 点前最新快照）与差值——
+    # 供 /loops/monitor sortBy=scoreDelta 服务端排序（免每请求全表 DISTINCT ON）
+    prev_score: Mapped[float | None] = mapped_column(
+        Numeric(6, 2), comment="昨日基线评分（今日 0 点前最新快照）"
+    )
+    score_delta: Mapped[float | None] = mapped_column(
+        Numeric(7, 2), comment="较昨日评分增量（score - prev_score；无基线为 NULL）"
+    )
     fitness_level: Mapped[str | None] = mapped_column(String(8), comment="适用性等级 L0~L4")
     fitness_tags: Mapped[dict | None] = mapped_column(JSONB, comment="适用性标签（原样）")
     fitness_detail: Mapped[dict | None] = mapped_column(JSONB, comment="适用性明细（原样）")

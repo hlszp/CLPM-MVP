@@ -1542,6 +1542,9 @@ CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_fitness_level ON kpi_snapshot_
 CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_loop_status ON diagnosis_tag (loop_id, status);
 CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_severity ON diagnosis_tag (severity, triggered_at);
 CREATE INDEX IF NOT EXISTS ix_unit_kpi_summary_node_time ON unit_kpi_summary (node_id, snapshot_time);
+-- P5-03（迁移 p503cache01）：snapshot_time 单列索引——agg_cache 数据代数取
+-- max(snapshot_time) 的反向索引扫描；60d 跨窗范围过滤与上面复合索引二选一由规划器决定
+CREATE INDEX IF NOT EXISTS ix_unit_kpi_summary_snapshot_time ON unit_kpi_summary (snapshot_time);
 CREATE INDEX IF NOT EXISTS idx_report_config_period ON report_config (report_period);
 CREATE INDEX IF NOT EXISTS idx_report_config_is_enabled ON report_config (is_enabled);
 CREATE INDEX IF NOT EXISTS idx_dcs_vendor_sort ON dcs_vendor (sort_order);
@@ -2064,6 +2067,11 @@ CREATE TABLE IF NOT EXISTS workbench_loop_latest (
     unit_name VARCHAR(128),
     factory_name VARCHAR(128),
     score NUMERIC(6, 2),
+    -- P5-04 服务端劣化排序（迁移 p504srvflt01）：prev_score=今日 0 点前最新
+    -- 参评快照评分；score_delta=score - prev_score（任一 NULL 则 NULL）。
+    -- 排序读预计算列（5min Celery 全量重算），替代每请求全表 DISTINCT ON。
+    prev_score NUMERIC(6, 2),
+    score_delta NUMERIC(7, 2),
     fitness_level VARCHAR(8),
     fitness_tags JSONB,
     fitness_detail JSONB,
