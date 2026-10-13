@@ -35,6 +35,7 @@ from sqlalchemy import select
 
 from app.contracts import series_context as sc
 from app.contracts.data_types import RawTimeSeries
+from app.core import g5_trace
 from app.services.data_source import point_history_metadata as meta
 from app.services.data_source import point_history_repository as repo
 
@@ -79,6 +80,7 @@ _held_cfg_cache: dict[str, float] = {}
 _held_cfg_read_at: float = 0.0  # time.monotonic()
 
 
+@g5_trace.traced("builder.held_config")
 async def _held_limits_s(step_s: int) -> dict[str, float]:
     """解析两档 held 容忍秒数（sys_config 覆盖 + 默认兜底；TTL 缓存）。
 
@@ -183,6 +185,7 @@ class _PointStream:
         return self._states[i - 1]
 
 
+@g5_trace.traced("builder.pg_metadata")
 async def _metadata_execute(stmt: Any) -> Any:
     """用独立短会话执行元数据查询（整改 G14）。
 
@@ -209,6 +212,7 @@ async def _metadata_execute(stmt: Any) -> Any:
         await close_session_guarded(session, label="logical-wide-metadata")
 
 
+@g5_trace.traced("builder.roles")
 async def _resolve_role_segments(
     db: Any,  # noqa: ARG001 - 保留签名兼容；元数据查询改走独立短会话（G14）
     loop_id: str,
@@ -265,6 +269,7 @@ async def _resolve_role_segments(
     return out
 
 
+@g5_trace.traced("builder.total")
 async def build_logical_wide(
     db: Any,
     loop_id: str,
@@ -309,14 +314,19 @@ async def build_logical_wide(
         if 1 < len(sorted_points) <= 16:
             per_point = await asyncio.gather(
                 *[
-                    repo.read_events([pid], grid_start, grid_end, full_columns=False)
+                    g5_trace.awaited(
+                        "builder.events",
+                        repo.read_events([pid], grid_start, grid_end, full_columns=False),
+                        pointId=pid,
+                    )
                     for pid in sorted_points
                 ]
             )
             events_map = {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
         else:
-            events_map = await repo.read_events(
-                sorted_points, grid_start, grid_end, full_columns=False
+            events_map = await g5_trace.awaited(
+                "builder.events",
+                repo.read_events(sorted_points, grid_start, grid_end, full_columns=False),
             )
         # 各探测时刻的窗口前最后状态（batch per 时刻）
         by_before: dict[datetime, list[str]] = {}
@@ -324,12 +334,17 @@ async def build_logical_wide(
             by_before.setdefault(before, []).append(pid)
         initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
         for before, pids in by_before.items():
-            states = await repo.read_last_states_before(pids, before)
+            states = await g5_trace.awaited(
+                "builder.initial_state", repo.read_last_states_before(pids, before)
+            )
             for pid, st in states.items():
                 initial_states[(pid, before)] = st
         # 锚点（批量单查询；作为虚拟事件按其 sourceTime 生效）
-        anchors = await meta.applicable_anchors_batch(
-            db, point_ids=sorted(all_points), window_start=grid_start
+        anchors = await g5_trace.awaited(
+            "builder.anchors",
+            meta.applicable_anchors_batch(
+                db, point_ids=sorted(all_points), window_start=grid_start
+            ),
         )
         # 组装每点因果流
         for pid in all_points:
@@ -543,6 +558,7 @@ async def build_logical_wide(
     )
 
 
+@g5_trace.traced_sync("builder.context")
 def _build_context(
     *,
     loop_id: str,
@@ -651,6 +667,7 @@ def _in_gap(ts: datetime, gap_windows: list[tuple[datetime, datetime]]) -> bool:
     return any(gs <= ts < ge for gs, ge in gap_windows)
 
 
+@g5_trace.traced("builder.gaps")
 async def _load_gap_windows(db: Any) -> list[tuple[datetime, datetime]]:
     from app.models.point_history import HistoryCoverageSegment
 

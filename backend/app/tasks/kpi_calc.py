@@ -39,6 +39,7 @@ from app.contracts.data_types import (
     TagGroup,
     TimeWindow,
 )
+from app.core import g5_trace
 from app.core.timeparse import to_naive_utc
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.metric import (
@@ -1033,7 +1034,16 @@ async def _run_batch_loop_calculations(
         # 原始异常），且被弃 session 的 asyncpg 连接永不归还（NullPool 泄漏，
         # 现场挂满 100 连接）。显式 finally 走 ``close_session_guarded``
         # （延迟重试 close → 耗尽则 terminate 底层连接，全程不抛出）。
+        _sem_requested_ns = time.perf_counter_ns() if g5_trace.enabled() else None
         async with sem:
+            g5_trace.completed_interval(
+                "kpi.semaphore_wait",
+                _sem_requested_ns,
+                taskId=logical_run_id,
+                loopId=str(loop.id),
+                windowStart=ts_start,
+                windowEnd=ts_end,
+            )
             worker_db = AsyncSessionLocal()
             try:
                 config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
@@ -1063,7 +1073,14 @@ async def _run_batch_loop_calculations(
                     template_keys=template_keys,
                     failed_source_ids=failed_source_ids,
                 )
-                await worker_db.commit()
+                await g5_trace.awaited(
+                    "pg.commit",
+                    worker_db.commit(),
+                    taskId=logical_run_id,
+                    loopId=str(loop.id),
+                    windowStart=ts_start,
+                    windowEnd=ts_end,
+                )
                 return result
             except Exception as exc:
                 try:
@@ -1115,8 +1132,15 @@ async def _run_batch_loop_calculations(
                         except Exception:  # noqa: BLE001
                             logger.warning("批量 KPI 进度更新失败", exc_info=True)
                 finally:
-                    await close_session_guarded(
-                        worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
+                    await g5_trace.awaited(
+                        "pg.close",
+                        close_session_guarded(
+                            worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
+                        ),
+                        taskId=logical_run_id,
+                        loopId=str(loop.id),
+                        windowStart=ts_start,
+                        windowEnd=ts_end,
                     )
 
     _batch_results = await asyncio.gather(
@@ -2239,6 +2263,7 @@ async def _resolve_loop_pinned_params(
     return resolved["params"], {**scope, "sources": resolved["sources"]}
 
 
+@g5_trace.traced("kpi.loop")
 async def _calculate_loop_kpi(
     db,
     loop: LoopLedger,
@@ -3754,6 +3779,7 @@ def _quantize(value: Decimal) -> Decimal:
     return value.quantize(Decimal("0.01"))
 
 
+@g5_trace.traced("pg.hourly_snapshot")
 async def _save_snapshot(
     db,
     loop_id: str,
@@ -3911,6 +3937,7 @@ async def _save_snapshot(
     }
 
 
+@g5_trace.traced("pg.latest_projection")
 async def _save_confidence_latest(
     db,
     loop_id: str,
@@ -4173,6 +4200,7 @@ async def _save_custom_snapshot(
     }
 
 
+@g5_trace.traced("pg.persist_total")
 async def _persist_snapshot(
     db,
     loop_id: str,
@@ -4240,36 +4268,43 @@ async def _persist_snapshot(
                 ts_start=ts_start,
                 ts_end=ts_end,
             )
-        record = await result_ledger.append_result_record(
-            db,
-            logical_run_id=record_logical_run_id,
-            object_kind=result_ledger.OBJECT_KIND_LOOP,
-            object_id=loop_id,
-            ts_start=ts_start,
-            ts_end=ts_end,
-            algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
-            config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
-            dataset_snapshot_id=dataset_snapshot_id,
-            source_record_id=source_record_hint,
-            payload={
-                "snapshotStatus": status,
-                "customTaskId": custom_task_id,
-                "metricsDetail": metrics_detail,
-                **({"metricsSemantic": metrics_semantic} if metrics_semantic is not None else {}),
-                **(
-                    {"composite": _composite_semantic_entry(metrics_semantic)}
-                    if isinstance(metrics_semantic, dict)
-                    and _composite_semantic_entry(metrics_semantic) is not None
-                    else {}
-                ),
-                **(
-                    {"assessmentContext": assessment_context}
-                    if assessment_context is not None
-                    else {}
-                ),
-                **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
-                **kwargs,
-            },
+        record = await g5_trace.awaited(
+            "pg.ledger",
+            result_ledger.append_result_record(
+                db,
+                logical_run_id=record_logical_run_id,
+                object_kind=result_ledger.OBJECT_KIND_LOOP,
+                object_id=loop_id,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
+                config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
+                dataset_snapshot_id=dataset_snapshot_id,
+                source_record_id=source_record_hint,
+                payload={
+                    "snapshotStatus": status,
+                    "customTaskId": custom_task_id,
+                    "metricsDetail": metrics_detail,
+                    **(
+                        {"metricsSemantic": metrics_semantic}
+                        if metrics_semantic is not None
+                        else {}
+                    ),
+                    **(
+                        {"composite": _composite_semantic_entry(metrics_semantic)}
+                        if isinstance(metrics_semantic, dict)
+                        and _composite_semantic_entry(metrics_semantic) is not None
+                        else {}
+                    ),
+                    **(
+                        {"assessmentContext": assessment_context}
+                        if assessment_context is not None
+                        else {}
+                    ),
+                    **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
+                    **kwargs,
+                },
+            ),
         )
     except Exception:  # noqa: BLE001
         record = None

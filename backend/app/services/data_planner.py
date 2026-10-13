@@ -58,6 +58,7 @@ from app.contracts.data_types import (
     TagGroup,
     TimeWindow,
 )
+from app.core import g5_trace
 from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.cache.l2_bundle import L2BundleCache
 from app.services.metric_data_bundle import MetricDataBundleAssembler
@@ -231,6 +232,7 @@ class DataPlanner:
     # 核心入口
     # ------------------------------------------------------------------
 
+    @g5_trace.traced("data_planner.request")
     async def request_bundles(
         self,
         loop_id: str,
@@ -657,6 +659,7 @@ class DataPlanner:
 
         return data_blocks
 
+    @g5_trace.traced("data_planner.query_group")
     async def _query_and_preprocess(
         self,
         loop_id: str,
@@ -704,8 +707,12 @@ class DataPlanner:
         # R14：传入查询窗口（时间覆盖率计算用，可感知窗口头尾整段缺失）
         t_pre_start = time.perf_counter()
         pipeline = PreprocessingPipeline(preprocess_config)
-        data_block = await asyncio.to_thread(
-            pipeline.process, raw, task.tag_group, (time_window.start, time_window.end)
+        data_block = await g5_trace.threaded(
+            "preprocess.executor",
+            pipeline.process,
+            raw,
+            task.tag_group,
+            (time_window.start, time_window.end),
         )
         t_pre_elapsed = time.perf_counter() - t_pre_start
 
