@@ -1,4 +1,4 @@
-"""LogicalWideBuilder（P3-1）：测点子表 → 1 秒逻辑宽表的唯一构建器.
+"""LogicalWideBuilder（P3-1）：测点子表 → 逻辑宽表的唯一构建器.
 
 设计依据：设计文档 §5（唯一实现）/§5.2 构建步骤/§5.3 时间边界/§5.4 质量兼容。
 
@@ -20,7 +20,7 @@
    （解码已在写入侧唯一入口完成，本层不猜原码）；
 5. 改绑窗口分段：新点状态只来自新点事件/锚点，禁止沿用旧点值（V09）；
 6. MODE 角色输出整数语义（点表 DOUBLE 存储还原 int，对齐宽表 TINYINT）；
-7. interval_s 保留参数但 v1 恒 1s 网格（HF 组复用 BASE 不降分辨率，§5.2-5）。
+7. 默认 1s 网格；调用方指定 interval_s 时按该周期构建并携带真实周期。
 """
 
 from __future__ import annotations
@@ -271,9 +271,9 @@ async def build_logical_wide(
     tag_roles: list[str],
     start: datetime,
     end: datetime,
-    interval_s: int = 1,  # noqa: ARG001 — 契约保留；v1 恒 1s（不降采样）
+    interval_s: int = 1,
 ) -> RawTimeSeries:
-    """构建窗口的 1 秒逻辑宽表（设计 §5.2 全步骤实现）。"""
+    """构建窗口的逻辑宽表（设计 §5.2；按调用方周期，默认 1s）。"""
     grid_start = _ceil_second(start)
     grid_end = _floor_second(end)
     requested = [r.lower() for r in tag_roles]
@@ -533,6 +533,7 @@ async def build_logical_wide(
         rebind_boundaries=rebind_boundaries,
         segments=segments,
         gap_windows=[(gs, ge) for gs, ge in merged],
+        step_s=step_s,
     )
     return RawTimeSeries(
         timestamps=timestamps_naive,
@@ -551,6 +552,7 @@ def _build_context(
     rebind_boundaries: list[datetime],
     segments: dict[str, list[_BindingSegment]],
     gap_windows: list[tuple[datetime, datetime]],
+    step_s: int = 1,
 ) -> sc.SeriesContext:
     """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。
 
@@ -561,7 +563,7 @@ def _build_context(
     import hashlib
 
     grid_start, grid_end = grid[0], grid[-1]
-    grid_end_half_open = grid_end + timedelta(seconds=1)
+    grid_end_half_open = grid_end + timedelta(seconds=step_s)
     role_coverage: dict[str, sc.RoleCoverage] = {}
     unknown_reasons: dict[str, int] = {}
     for role in roles:
@@ -601,7 +603,7 @@ def _build_context(
         layout=sc.LAYOUT_POINT,
         grid_start=grid_start,
         grid_end=grid_end,
-        grid_period_s=1.0,
+        grid_period_s=float(step_s),
         expected_slots=len(grid),
         dataset_ref=dataset_ref,
         binding_version=f"b{seg_count}",

@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 #: 上下文 schema 版本（结构变化时递增；缓存键组成部分）
@@ -90,12 +90,16 @@ class RoleCoverage:
     unknown: list[IntervalRun] = field(default_factory=list)
     observed: list[IntervalRun] = field(default_factory=list)
 
-    def known_slots(self, grid_start: datetime, grid_end: datetime) -> int:
-        """已知覆盖槽数（与 [grid_start, grid_end] 整秒网格交集）。"""
-        return _count_grid_slots(self.known, grid_start, grid_end)
+    def known_slots(
+        self, grid_start: datetime, grid_end: datetime, grid_period_s: float = 1.0
+    ) -> int:
+        """已知覆盖槽数（与起点 + i×周期的离散网格交集）。"""
+        return _count_grid_slots(self.known, grid_start, grid_end, grid_period_s)
 
-    def unknown_slots(self, grid_start: datetime, grid_end: datetime) -> int:
-        return _count_grid_slots(self.unknown, grid_start, grid_end)
+    def unknown_slots(
+        self, grid_start: datetime, grid_end: datetime, grid_period_s: float = 1.0
+    ) -> int:
+        return _count_grid_slots(self.unknown, grid_start, grid_end, grid_period_s)
 
     def to_dict(self) -> dict[str, list[dict[str, str]]]:
         return {
@@ -137,42 +141,31 @@ class SegmentBoundary:
         )
 
 
-def _count_grid_slots(runs: list[IntervalRun], grid_start: datetime, grid_end: datetime) -> int:
-    """区间游程与 [grid_start, grid_end] 整秒网格的交集槽数（去重）。"""
+def _count_grid_slots(
+    runs: list[IntervalRun], grid_start: datetime, grid_end: datetime, grid_period_s: float = 1.0
+) -> int:
+    """半开游程所含的离散格点数（限于含两端网格，重叠槽去重）。
+
+    先映射为整数槽索引区间，再合并；不按游程秒数计数，也不逐槽展开。
+    timedelta 整除保留微秒边界精度，尾部游程不得计入 grid_end 之后的槽。
+    """
     gs, ge = _utc(grid_start), _utc(grid_end)
-    merged: list[tuple[datetime, datetime]] = []
+    period = timedelta(seconds=grid_period_s)
+    if ge < gs or period <= timedelta(0):
+        return 0
+    stop_index = (ge - gs) // period + 1
+    merged: list[tuple[int, int]] = []
     for r in sorted(runs, key=lambda x: _utc(x.start)):
-        s, e = _utc(r.start), _utc(r.end)
-        s = max(s, gs)
-        e = min(e, ge + _slot_unit())
-        if e <= s:
+        # ceil((边界 - gs) / period)：起点含，终点不含。
+        first = max(0, -((gs - _utc(r.start)) // period))
+        stop = min(stop_index, -((gs - _utc(r.end)) // period))
+        if stop <= first:
             continue
-        if merged and s <= merged[-1][1]:
-            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
+        if merged and first <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(merged[-1][1], stop))
         else:
-            merged.append((s, e))
-    total = 0
-    for s, e in merged:
-        total += _slots_between(s, e)
-    return total
-
-
-def _slot_unit():
-    from datetime import timedelta
-
-    return timedelta(seconds=1)
-
-
-def _slots_between(s: datetime, e: datetime) -> int:
-    """[s, e) 内整秒网格槽数（对齐到整秒边界；不足一槽按包含的整秒计）。"""
-    from datetime import timedelta
-
-    s2 = s.replace(microsecond=0)
-    if s.microsecond:
-        s2 += timedelta(seconds=1)
-    e2 = e.replace(microsecond=0)
-    n = int((e2 - s2).total_seconds())
-    return max(0, n)
+            merged.append((first, stop))
+    return sum(stop - first for first, stop in merged)
 
 
 @dataclass
@@ -212,13 +205,13 @@ class SeriesContext:
         cov = self.role_coverage.get(role)
         if cov is None:
             return 0
-        return cov.unknown_slots(self.grid_start, self.grid_end)
+        return cov.unknown_slots(self.grid_start, self.grid_end, self.grid_period_s)
 
     def known_slots(self, role: str) -> int:
         cov = self.role_coverage.get(role)
         if cov is None:
             return self.expected_slots
-        return cov.known_slots(self.grid_start, self.grid_end)
+        return cov.known_slots(self.grid_start, self.grid_end, self.grid_period_s)
 
     def source_coverage_ratio(self, role: str = "pv") -> float:
         """来源覆盖 = 已知覆盖槽数 / N（正常 COV 保持计入；断线/无初值/冲突不计）."""

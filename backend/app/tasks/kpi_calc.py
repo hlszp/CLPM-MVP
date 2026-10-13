@@ -3326,10 +3326,13 @@ def _compute_loop_valid_rate_from_bundles(
             # 的内部矛盾 —— 正是可信度统一方案 P1-5 声称已消除的 §2.2 字段错配，
             # 也是该方案 Phase 1「统一 valid_rate 口径」在 R14-2 之后被重新劈开的点。
             #
-            # 0.0 是 DataBlock 的未设默认值（管线路径必设；手搓/legacy 块可能未设），
-            # 故 0.0 时回退重算以保持 legacy 行为。残余风险见收口报告 §20：
-            # 若某块"有效点比例 >0 但时间覆盖率恰为 0"，回退会重新引入上述矛盾。
-            if block.loop_valid_rate > 0:
+            # 当前管道版本的0.0是已计算的真实零，必须保留（UNKNOWN可保留
+            # Good数值但不能充有效点）；只有未升级的手工/legacy默认块才回退。
+            from app.services.preprocessing.pipeline import PREPROCESS_VERSION
+
+            if block.loop_valid_rate > 0 or (
+                getattr(block, "preprocess_version", None) == PREPROCESS_VERSION
+            ):
                 return float(block.loop_valid_rate)
             return DataQualityAssessor.compute_loop_valid_rate(block.validity, block.point_count)
     return None
