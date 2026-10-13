@@ -126,6 +126,7 @@ def _ellipse_kernel(
     *,
     pv_range: tuple[float, float] | None = None,
     op_range: tuple[float, float] | None = None,
+    limit_cycle_gate: tuple[bool, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """PV-OP 散点椭圆拟合检测阀门粘滞（等价复制自引擎 L1970-2022）。
 
@@ -136,6 +137,10 @@ def _ellipse_kernel(
     b/a 并非尺度不变量，双轴归一化必须用各自满量程；量程缺失时
     assess_stiction_features 内部回退 DEFAULT 0~100 并随 range_source
     记录（"双轴默认 100"仅为缺省兜底，不再冒充已核实量程）。
+
+    P5-01（同输入重复特征共享）：limit_cycle_gate 传入调用方在同一
+    （截断后）pv 上已算过的极限环门控结果，避免 Choudhury 内部调用时
+    重算（None=内部自算，默认行为不变）。
     """
     min_len = min(len(pv_values), len(op_values))
     if min_len < 8:
@@ -150,6 +155,7 @@ def _ellipse_kernel(
             sample_interval=sample_interval,
             pv_range=pv_span if pv_span and pv_span > 0 else None,
             op_range=op_span if op_span and op_span > 0 else None,
+            limit_cycle_gate=limit_cycle_gate,
         )
         fitting_score = float(feat.get("fitting_score", 0.0))
         stiction_index = float(feat.get("stiction_index", 0.0))
@@ -326,12 +332,16 @@ def _choudhury_kernel(
         nli = _compute_max_bicoherence(op_diff_centered)
 
         # PV-OP 椭圆拟合（D3：透传真实采样间隔与量程，双相干元信息随结果落库）
+        # P5-01：极限环门控已在上方算过（同一 pv_arr）——传入复用，不在
+        # 椭圆内核内重算（等价证据：tests/test_p5_01_shared_features.py
+        # TestChoudhuryGateReuse）
         stiction_fit = _ellipse_kernel(
             pv_arr,
             op_arr,
             sample_interval if sample_interval > 0 else 1.0,
             pv_range=pv_range,
             op_range=op_range,
+            limit_cycle_gate=(is_limit_cycle, gate_info),
         )
         fitting_score = float(stiction_fit.get("fitting_score", 0.0))
         stiction_index = float(stiction_fit.get("stiction_index", 0.0))

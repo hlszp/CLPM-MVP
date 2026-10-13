@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import sys
 import time
 from datetime import UTC
@@ -409,6 +410,228 @@ def print_header(title: str) -> None:
     print(f"{'=' * 60}")
 
 
+# ---------------------------------------------------------------------------
+# P5-01（相关分析与重复特征，2026-10-13）基准 6~10
+#
+# 方法论：每个基准同时跑「当前生产实现」与「full 相关/重复特征参考副本」，
+# 后者是优化前行为的逐字复刻（独立直接参考，恒定不动）。优化前两者耗时
+# 相同；优化后差值即收益，数值一致性由等价证据测试守护（tests/
+# test_p5_01_shared_features.py）。
+# ---------------------------------------------------------------------------
+
+
+def _ref_autocorr_full(signal: np.ndarray, max_lag: int) -> np.ndarray:
+    """P5-01 前的 full 自相关参考副本（arma.fit_ar_model 优化前主体）."""
+    n = len(signal)
+    autocorr = np.correlate(signal, signal, mode="full")
+    return autocorr[n - 1 :] / n  # r(0), r(1), ...（取前 max_lag+1 项即可）
+
+
+def _ref_estimate_lag_full(pv: np.ndarray, op: np.ndarray, max_lag: int) -> tuple[int, float]:
+    """P5-01 前的 full 互相关 θ 估计参考副本（stiction._estimate_lag 优化前）."""
+    if max_lag < 1:
+        return 0, 0.0
+    x = pv - float(np.mean(pv))
+    y = op - float(np.mean(op))
+    denom = math.sqrt(float(np.sum(x**2) * np.sum(y**2)))
+    if denom <= 0:
+        return 0, 0.0
+    n = len(x)
+    corr = np.correlate(x, y, mode="full")
+    window = corr[n - 1 : n + max_lag]
+    lag = int(np.argmax(window))
+    peak = float(window[lag]) / denom
+    if peak < 0.3:
+        return 0, peak
+    return lag, peak
+
+
+def _make_pv_op_pair(
+    n: int, lag_samples: int, seed: int = 42, noise: float = 0.2
+) -> tuple[np.ndarray, np.ndarray]:
+    """构造 PV 跟随 OP 滞后 lag_samples 的正弦+噪声信号对.
+
+    noise≤0.1 时通过极限环门控（供 Choudhury 全路径基准）。
+    """
+    np.random.seed(seed)
+    t = np.linspace(0, 40 * np.pi, n)
+    op = 30.0 + 5.0 * np.sin(t) + np.random.randn(n) * noise
+    pv = np.empty(n)
+    pv[:lag_samples] = 30.0 + np.random.randn(lag_samples) * noise
+    pv[lag_samples:] = op[: n - lag_samples] + np.random.randn(n - lag_samples) * noise
+    return pv, op
+
+
+def benchmark_p5_01_correlation() -> dict:
+    """基准 6：相关分析平方成本（full 参考副本 vs 当前实现）.
+
+    - arma 自相关（fit_ar_model 内核，order=2）；
+    - stiction 互相关 θ 估计（_estimate_lag，301 个 lag）。
+    """
+    from app.services.metric_calculator.stiction import StictionIndexCalculator
+    from app.tasks.arma import fit_ar_model
+
+    results: dict = {}
+
+    for n in (3600, 21600):
+        np.random.seed(42)
+        a1, a2 = -1.8, 0.85
+        signal = np.zeros(n)
+        for i in range(2, n):
+            signal[i] = -a1 * signal[i - 1] - a2 * signal[i - 2] + np.random.randn() * 0.01
+        s = signal - np.mean(signal)
+
+        iterations = max(3, 9000 // n)
+        t0 = time.perf_counter()
+        for _ in range(iterations):
+            ref = _ref_autocorr_full(s, 10)
+        t_ref = (time.perf_counter() - t0) / iterations * 1000
+
+        t0 = time.perf_counter()
+        for _ in range(iterations):
+            fit_ar_model(signal, order=2)
+        t_cur = (time.perf_counter() - t0) / iterations * 1000
+
+        # 等价锚：当前实现与 full 参考的 r(0..10) 一致（由 fit 内部消费，
+        # 此处以参考副本自比校验稳定性；系数级一致性归等价证据测试）
+        results[f"arma_autocorr_n{n}"] = {
+            "full_ref_ms": round(t_ref, 3),
+            "current_ms": round(t_cur, 3),
+            "speedup": round(t_ref / t_cur, 1) if t_cur > 0 else float("inf"),
+        }
+        print(
+            f"  [P5-01 自相关 n={n}] full 参考: {t_ref:.3f}ms, 当前实现: {t_cur:.3f}ms, "
+            f"加速: {t_ref / t_cur:.1f}x"
+            if t_cur > 0
+            else "  [P5-01 自相关] inf"
+        )
+        del ref
+
+        pv, op = _make_pv_op_pair(n, lag_samples=25)
+        max_lag = min(300, n // 4)
+        t0 = time.perf_counter()
+        for _ in range(iterations):
+            lag_ref, peak_ref = _ref_estimate_lag_full(pv, op, max_lag)
+        t_ref2 = (time.perf_counter() - t0) / iterations * 1000
+
+        t0 = time.perf_counter()
+        for _ in range(iterations):
+            lag_cur, peak_cur = StictionIndexCalculator._estimate_lag(pv, op, max_lag)
+        t_cur2 = (time.perf_counter() - t0) / iterations * 1000
+
+        results[f"stiction_crosscorr_n{n}"] = {
+            "full_ref_ms": round(t_ref2, 3),
+            "current_ms": round(t_cur2, 3),
+            "speedup": round(t_ref2 / t_cur2, 1) if t_cur2 > 0 else float("inf"),
+            "lag_match": lag_ref == lag_cur,
+            "peak_max_abs_diff": abs(peak_ref - peak_cur),
+        }
+        print(
+            f"  [P5-01 互相关 n={n}] full 参考: {t_ref2:.3f}ms, 当前实现: {t_cur2:.3f}ms, "
+            f"加速: {t_ref2 / t_cur2:.1f}x, lag 一致: {lag_ref == lag_cur}, "
+            f"peak 差: {abs(peak_ref - peak_cur):.2e}"
+        )
+
+    return results
+
+
+def benchmark_p5_01_ar_retry_chain() -> dict:
+    """基准 7：AR 阶数重试链（compute_settling_time_detailed 全链）.
+
+    随机游走（近单位根）信号触发低阶 Green 发散 → 阶数升级重试，
+    优化前每档重试重算 full 自相关，优化后预计算一次有界 lag 复用。
+    """
+    from app.tasks.arma import compute_settling_time_detailed
+
+    np.random.seed(7)
+    n = 3600
+    steps = np.random.randn(n) * 0.05
+    walk = np.cumsum(steps)
+
+    # 预热
+    compute_settling_time_detailed(walk, sustained_tail=True)
+
+    iterations = 10
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+        res = compute_settling_time_detailed(walk, sustained_tail=True)
+    t_cur = (time.perf_counter() - t0) / iterations * 1000
+
+    print(f"  [P5-01 AR 重试链 n={n}] 当前实现全链: {t_cur:.3f}ms, status={res.status.value}")
+    return {
+        "current_ms": round(t_cur, 3),
+        "status": res.status.value,
+    }
+
+
+def benchmark_p5_01_choudhury_gate() -> dict:
+    """基准 8：Choudhury 内核（优化前内部重复极限环门控）.
+
+    noise=0.1 保证信号通过极限环门控（否则 no_limit_cycle 早退测不到全路径）。
+    """
+    from app.services.diagnosis_operators.stiction import _choudhury_kernel
+
+    pv, op = _make_pv_op_pair(3600, lag_samples=25, seed=7, noise=0.1)
+
+    iterations = 10
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+        r = _choudhury_kernel(pv, op)
+    t_cur = (time.perf_counter() - t0) / iterations * 1000
+
+    print(f"  [P5-01 Choudhury 内核 n=3600] 当前实现: {t_cur:.3f}ms, detected={r.get('detected')}")
+    return {"current_ms": round(t_cur, 3), "detected": bool(r.get("detected"))}
+
+
+def benchmark_p5_01_scoped_input() -> dict:
+    """基准 9：point 轴算子输入切片（优化前每算子重复掩码/切片/段目录）."""
+    from app.services.diagnosis_operators.base import OperatorInput
+    from app.services.diagnosis_orchestrator import _scoped_operator_input
+
+    n = 3600
+    pv, op = _make_pv_op_pair(n, lag_samples=25, seed=11)
+
+    class _Meta:
+        required_signals = ("pv", "op")
+
+    ts = np.arange(n, dtype=float)
+    pv_obj = np.array([None if i % 997 == 0 else pv[i] for i in range(n)], dtype=object)
+    op_obj = np.array([None if i % 811 == 0 else op[i] for i in range(n)], dtype=object)
+    op_input = OperatorInput(
+        loop_id="BENCH",
+        signals={
+            "pv": pv_obj,
+            "op": op_obj,
+            "pv_quality": np.zeros(n, dtype=int),
+        },
+        timestamps=ts,
+        meta={"point_axis": True, "signals_valid": None, "sample_interval": 1.0},
+    )
+
+    # 预热
+    _scoped_operator_input(op_input, _Meta)
+
+    iterations = 20
+    t0 = time.perf_counter()
+    for _ in range(iterations):
+        scoped, skip = _scoped_operator_input(op_input, _Meta)
+    t_one = (time.perf_counter() - t0) / iterations * 1000
+
+    # point 轴下按 8 个同 required 集算子计的旧口径总成本（逐算子重切）
+    operators_sharing_scope = 8
+    print(
+        f"  [P5-01 scoped 切片 n={n}] 单次: {t_one:.3f}ms × {operators_sharing_scope} "
+        f"算子（旧逐算子重切口径）= {t_one * operators_sharing_scope:.2f}ms；"
+        f"同 required 集共享后仅 1 次"
+    )
+    return {
+        "single_ms": round(t_one, 3),
+        "operators_sharing_scope": operators_sharing_scope,
+        "per_run_old_ms": round(t_one * operators_sharing_scope, 2),
+        "scoped_points": int(len(scoped.timestamps)),
+    }
+
+
 def main() -> None:
     print_header("CLPM 评估算法优化 — Phase 5 性能基准测试")
     print(f"  Python: {sys.version.split()[0]}")
@@ -429,6 +652,18 @@ def main() -> None:
     print_header("基准 4: 零交叉检测（向量化 vs 循环）")
     results["zero_crossings"] = benchmark_zero_crossings()
 
+    print_header("基准 6: P5-01 相关分析平方成本（full 参考 vs 当前实现）")
+    results["p5_01_correlation"] = benchmark_p5_01_correlation()
+
+    print_header("基准 7: P5-01 AR 阶数重试链（全链）")
+    results["p5_01_ar_retry"] = benchmark_p5_01_ar_retry_chain()
+
+    print_header("基准 8: P5-01 Choudhury 内核（重复门控消除）")
+    results["p5_01_choudhury"] = benchmark_p5_01_choudhury_gate()
+
+    print_header("基准 9: P5-01 point 轴算子输入切片（同 required 集共享）")
+    results["p5_01_scoped_input"] = benchmark_p5_01_scoped_input()
+
     # 端到端基准（需要 DB + Redis）
     print_header("基准 5: 端到端单回路 KPI 计算（1h 时间窗）")
     e2e_result = asyncio.run(benchmark_end_to_end())
@@ -443,6 +678,9 @@ def main() -> None:
     for label, val in results["settling_time_search"].items():
         print(f"  稳态搜索-{label} 加速: {val['speedup']}x")
     print(f"  零交叉检测加速: {results['zero_crossings']['speedup']}x")
+    for key, val in results["p5_01_correlation"].items():
+        if "speedup" in val:
+            print(f"  P5-01 {key} 加速: {val['speedup']}x")
     if "end_to_end" in results:
         e2e = results["end_to_end"]
         print(

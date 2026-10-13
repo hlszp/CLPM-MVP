@@ -845,6 +845,13 @@ def _run_operators(
     """
     selected = set(operators) if operators else None
     results: dict[str, OperatorResult] = {}
+    # P5-01（同输入多算子共享唯一数据块/mask）：point 轴下按 required_signals
+    # 数值信号集缓存 _scoped_operator_input 切片——同集算子共享同一切片
+    # （公共掩码/切片/连续段目录每集只算一次），不重复预处理。纯函数等价：
+    # 同 key 同输入必同输出（等价证据：tests/test_p5_01_shared_features.py
+    # TestScopedInputSharing）；key 的 numeric 过滤条件与
+    # _scoped_operator_input 内部推导逐字一致。
+    scoped_cache: dict[tuple[str, ...], tuple[OperatorInput, str | None]] = {}
     for name, (meta, fn) in OPERATOR_REGISTRY.items():
         if operator_group == "fast" and not meta.fast_group:
             results[name] = OperatorResult(
@@ -890,7 +897,16 @@ def _run_operators(
             )
             fn_input = op_input
             if op_input.meta.get("point_axis"):
-                fn_input, scope_skip = _scoped_operator_input(op_input, meta)
+                scope_key = tuple(
+                    sig
+                    for sig in meta.required_signals
+                    if sig in ("pv", "sp", "op", "mode") and sig in op_input.signals
+                )
+                if scope_key not in scoped_cache:
+                    # 缓存整个 (scoped_input, skip 原因) 元组——skip 与否
+                    # 同样只依赖 (输入, key)，同集算子共享同一判定
+                    scoped_cache[scope_key] = _scoped_operator_input(op_input, meta)
+                fn_input, scope_skip = scoped_cache[scope_key]
                 if scope_skip is not None:
                     results[name] = OperatorResult(
                         name,

@@ -85,8 +85,9 @@ class TestArmaSettlingSemantics:
         """故障注入：辨识恒发散（mock fit_ar_model 返回不稳定系数）→ IDENTIFICATION_FAILED。"""
         import app.tasks.arma as arma_module
 
-        def _unstable_fit(signal, order=2) -> np.ndarray:
+        def _unstable_fit(signal, order=2, autocorr=None) -> np.ndarray:  # noqa: ARG001
             # 特征根 |r| > 1（如 z - 2 = 0），Green 函数必发散
+            # （autocorr 为 P5-01 重试共享参数，mock 恒忽略）
             return np.concatenate([[-2.0], np.zeros(order - 1)])
 
         monkeypatch.setattr(arma_module, "fit_ar_model", _unstable_fit)
