@@ -352,6 +352,14 @@ async def _do_hourly_with_tracking(
     from app.schemas.task import TaskStatus, TaskType
     from app.services import task_tracker
 
+    # 来源判定必须在 Beat 路径创建 TaskRecord 之前（G5 前置立卡项1，2026-10-13）：
+    # 下方 ``if task_id is None`` 分支会把新建任务记录 ID 赋给 task_id，此后再按
+    # ``"MANUAL_STANDARD" if task_id else "SCHEDULED"`` 判定恒走 MANUAL_STANDARD
+    # ——Beat 整点路径来源被错标（曾登记"判定顺序问题"，批 1' 现场复现）。
+    # 语义：API 手动触发（带既有任务记录）=MANUAL_STANDARD；无记录触发
+    # （Beat 整点 / 工具 .delay 直投，两者在 Celery 入口不可区分）=SCHEDULED。
+    manual_triggered = task_id is not None
+
     lock_key = _hourly_window_lock_key(ts_start)
     lock_token = task_id or str(uuid4())
     acquired = await redis_client.set(
@@ -428,7 +436,7 @@ async def _do_hourly_with_tracking(
                 task_id=task_id,
                 window_index=1,
                 total_windows=1,
-                source="MANUAL_STANDARD" if task_id else "SCHEDULED",
+                source="MANUAL_STANDARD" if manual_triggered else "SCHEDULED",
                 source_task_id=task_id,
                 logical_run_id=logical_run_id,
                 final_attempt=final_attempt,
@@ -2797,6 +2805,11 @@ async def _calculate_loop_kpi(
             custom_task_id=custom_task_id,
             metrics_detail=metrics_detail,
             score=final_score,
+            # 来源标注（G5 前置立卡项1，2026-10-13）：主成功/部分路径此前漏传
+            # source/source_task_id——快照 UPSERT 把两列覆盖为 NULL（早退分支
+            # 均已透传，唯主路径缺失），批 1' 现场 1000 行 source=None 即此因。
+            source=source,
+            source_task_id=source_task_id,
             good_value_rate=kpi_values.get("good_value_rate"),
             auto_mode_rate=kpi_values.get("auto_mode_rate"),
             effective_auto_rate=kpi_values.get("effective_auto_rate"),

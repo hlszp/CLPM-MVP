@@ -513,7 +513,15 @@ async def build_logical_wide(
     # 输出仅含请求角色（内部补入的 PV 在未请求时移除）
     signals = {r: signals[r] for r in requested if r in signals}
     quality_codes: dict[str, list[int]] = {}
-    if "pv" in roles:
+    # G5 前置立卡项2（2026-10-13）：伪角色请求（PV_QUALITY，QUALITY_HF 独立
+    # 1s 查询——粗 BASE 禁止派生的控制类型走此路径）此前条件为 ``"pv" in
+    # roles``，而伪角色请求的 roles 已剔除 pv_quality → quality_codes 恒空，
+    # 质量三态只进伪信号不进质量码。下游 quality_summary.good_value_rate=None
+    # → legacy 好值率回退 0% 判 INCONCLUSIVE(value=None) → 快照 PARTIAL。
+    # 生产实测非 FLOW 控制类型（BASE>1s 独立 HF 查询）全量 PARTIAL、FLOW
+    # （BASE=1s 走派生路径带 BASE 质量摘要）全量 SUCCESS 即此因。伪角色
+    # 请求同样输出质量码（内部恒含 PV，逐网格点恰好追加一次）。
+    if "pv" in roles or pseudo_quality:
         assert len(pv_quality) == n  # PV 角色逐网格点恰好追加一次
         quality_codes["pv_quality"] = pv_quality
 

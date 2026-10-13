@@ -971,6 +971,54 @@ class TestHourlyWindowMutex:
         assert data["status"] == "SUCCESS"
         assert "task:hourly_calc_lock:2026062208" not in task_redis._strings
 
+    async def test_beat_path_source_is_scheduled(self, task_redis, fake_redis) -> None:
+        """G5 前置立卡项1：Beat 路径（task_id=None）source 必须落 SCHEDULED.
+
+        回归背景（2026-10-13 批 1'）：来源判定 ``"MANUAL_STANDARD" if task_id
+        else "SCHEDULED"`` 在 Beat 路径创建 TaskRecord **之后**求值——task_id
+        已被赋为新记录 ID，判定恒走 MANUAL_STANDARD（判定顺序缺陷）；主成功
+        路径另漏传 source（见 test_g5_pre_card_fixes），两者叠加现场 1000 行
+        source=None。
+        """
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            mock_calc.return_value = expected
+            await _do_hourly_with_tracking(ts_start="2026-06-22T08:00:00Z")
+
+        kwargs = mock_calc.call_args.kwargs
+        assert kwargs["source"] == "SCHEDULED", (
+            "Beat 路径（无外部 task_id）source 必须为 SCHEDULED——"
+            "若为 MANUAL_STANDARD 说明来源判定发生在创建系统任务记录之后（判定顺序回归）"
+        )
+
+    async def test_manual_path_source_is_manual_standard(self, task_redis, fake_redis) -> None:
+        """G5 前置立卡项1：手动路径（带外部 task_id）source 必须落 MANUAL_STANDARD."""
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-src",
+            task_type="STANDARD",
+            status="PENDING",
+            celery_task_id="celery-src",
+        )
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            mock_calc.return_value = expected
+            await _do_hourly_with_tracking(ts_start="2026-06-22T08:00:00Z", task_id="task-src")
+
+        kwargs = mock_calc.call_args.kwargs
+        assert kwargs["source"] == "MANUAL_STANDARD"
+        assert kwargs["source_task_id"] == "task-src"
+
 
 # ---------------------------------------------------------------------------
 # 并发槽位原子占用（Phase 3 健壮性整改 ④）
