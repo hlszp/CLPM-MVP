@@ -36,6 +36,7 @@ from app.contracts.data_types import (
     MetricDataBundle,
     QualitySummary,
 )
+from app.core import g5_trace
 
 logger = logging.getLogger(__name__)
 
@@ -171,10 +172,13 @@ class L2BundleCache:
         if ttl is None:
             ttl = DEFAULT_TTL
         # 序列化（JSON + zstd 压缩）移至线程池，避免 CPU 密集型操作阻塞事件循环
-        payload = await asyncio.to_thread(_serialize, bundles)
+        # O1 探针（H2 余段细拆，默认 off）：encode 段（zstd 序列化，含线程池等待）
+        with g5_trace.span("l2.set.encode"):
+            payload = await asyncio.to_thread(_serialize, bundles)
         # 整改 G17：写失败只降级不抛出，本次计算照常返回
         try:
-            await self._redis.setex(cache_key, ttl, payload)
+            # O1 探针（默认 off）：Redis await 段（SETEX 网络往返）
+            await g5_trace.awaited("l2.set.redis_await", self._redis.setex(cache_key, ttl, payload))
         except Exception:  # noqa: BLE001
             logger.warning("L2 cache 写入失败，忽略本次缓存: key=%s", cache_key, exc_info=True)
             return
