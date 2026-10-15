@@ -30,6 +30,7 @@ from typing import Any
 import zstandard
 
 from app.contracts.data_types import DataBlock, QualitySummary, TagGroup
+from app.core import g5_trace
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +235,7 @@ class L1DataBlockCache:
             return 0
 
         # 并行序列化所有 DataBlock（线程池避免阻塞事件循环）
+        # O1 探针（H2 余段细拆，默认 off）：encode 段（zstd 序列化，含线程池等待）
         async def _serialize_safe(
             block: DataBlock,
         ) -> tuple[str | None, str | None]:
@@ -243,10 +245,11 @@ class L1DataBlockCache:
             except Exception as exc:  # noqa: BLE001
                 return None, str(exc)
 
-        payloads = await asyncio.gather(
-            *[_serialize_safe(b) for b in data_blocks],
-            return_exceptions=True,
-        )
+        with g5_trace.span("l1.set_many.encode"):
+            payloads = await asyncio.gather(
+                *[_serialize_safe(b) for b in data_blocks],
+                return_exceptions=True,
+            )
 
         pipe = self._redis.pipeline()
         written = 0
@@ -273,7 +276,8 @@ class L1DataBlockCache:
             written += 1
 
         if written:
-            await pipe.execute()
+            # O1 探针（默认 off）：Redis await 段（Pipeline execute 网络往返）
+            await g5_trace.awaited("l1.set_many.redis_await", pipe.execute())
 
         logger.info(
             "L1 cache Pipeline 批量写入: total=%d, written=%d, skipped=%d",
