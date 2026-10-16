@@ -1465,6 +1465,12 @@ async def get_loop_detail(db: AsyncSession, loop_id: str) -> dict:
                 str(loop.complex_loop_group_id) if loop.complex_loop_group_id else None
             ),
             "complexRole": loop.complex_role,
+            # P2-04 工程模板关联（DEF-3：回路侧关联可见出口，与 LoopUpdate
+            # 返回值同口径；生效版本解析见 resolve_template_reference）
+            "engineeringTemplateId": (
+                str(loop.engineering_template_id) if loop.engineering_template_id else None
+            ),
+            "engineeringTemplateVersion": loop.engineering_template_version,
             "createdAt": loop.created_at.isoformat() if loop.created_at else None,
             "createdBy": loop.created_by,
             "updatedAt": loop.updated_at.isoformat() if loop.updated_at else None,

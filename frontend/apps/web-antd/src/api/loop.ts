@@ -228,6 +228,10 @@ export namespace LoopApi {
     complexLoopGroupId?: null | string;
     /** P4 S4：复杂回路角色（PUT null 可清空，解除分组） */
     complexRole?: ComplexRole | null;
+    /** P2-04：关联工程模板 ID（PUT null 解除关联；换绑时须同时清 pin 版本） */
+    engineeringTemplateId?: null | string;
+    /** P2-04：固定引用的模板版本号（PUT null 清除 pin，恢复跟随指针） */
+    engineeringTemplateVersion?: null | number;
   }
 
   /** 创建回路响应（IDS v3.2 §2.2.8） */
@@ -314,6 +318,10 @@ export namespace LoopApi {
     complexLoopGroupId?: null | string;
     /** P4 S4：复杂回路角色 */
     complexRole?: ComplexRole | null;
+    /** P2-04：关联工程模板 ID（NULL=未关联；DEF-3 详情可见出口） */
+    engineeringTemplateId?: null | string;
+    /** P2-04：固定引用的模板版本号（NULL=跟随模板当前版本） */
+    engineeringTemplateVersion?: null | number;
   }
 
   /** 回路详情 - Tag 关联映射（IDS v3.2 §2.2.9） */

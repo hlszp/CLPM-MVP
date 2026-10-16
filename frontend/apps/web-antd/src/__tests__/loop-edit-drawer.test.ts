@@ -24,13 +24,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const {
   createLoopApiMock,
+  getEngineeringTemplatesApiMock,
   getLoopDetailApiMock,
   getLoopTagsApiMock,
+  updateLoopApiMock,
   updateLoopTagMappingApiMock,
 } = vi.hoisted(() => ({
   createLoopApiMock: vi.fn(),
+  getEngineeringTemplatesApiMock: vi.fn().mockResolvedValue({
+    items: [],
+    total: 0,
+  }),
   getLoopDetailApiMock: vi.fn().mockResolvedValue({ basicInfo: {} }),
   getLoopTagsApiMock: vi.fn().mockResolvedValue({ loopId: 'loop-1', status: 'PARTIAL', tags: [] }),
+  updateLoopApiMock: vi.fn().mockResolvedValue({ loopId: 'loop-1' }),
   updateLoopTagMappingApiMock: vi.fn(),
 }));
 
@@ -39,7 +46,13 @@ vi.mock('#/api/loop', async (importOriginal) => ({
   createLoopApi: createLoopApiMock,
   getLoopDetailApi: getLoopDetailApiMock,
   getLoopTagsApi: getLoopTagsApiMock,
+  updateLoopApi: updateLoopApiMock,
   updateLoopTagMappingApi: updateLoopTagMappingApiMock,
+}));
+
+vi.mock('#/api/engineering-template', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('#/api/engineering-template')>()),
+  getEngineeringTemplatesApi: getEngineeringTemplatesApiMock,
 }));
 
 vi.mock('#/api/dcs', () => ({
@@ -200,5 +213,138 @@ describe('回路编辑抽屉 LoopEditDrawer ENG-01 保存失败阻断向导推�
     const { vm } = await setupWizardStep2();
 
     await expect(vm.doSaveTagMapping()).rejects.toThrow('boom');
+  });
+});
+
+describe('回路编辑抽屉 DEF-1b 工程模板关联字段（P6-04 E2E）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 编辑模式挂载：详情携带模板关联（DEF-3 字段）回显 */
+  async function setupEdit(detailBasicInfo: Record<string, any>) {
+    getLoopDetailApiMock.mockResolvedValueOnce({
+      basicInfo: {
+        remark: '',
+        description: '',
+        opOutputLowerLimit: null,
+        opOutputUpperLimit: null,
+        dcsModelId: null,
+        idealSettlingTime: null,
+        complexLoopGroupId: null,
+        complexRole: null,
+        ...detailBasicInfo,
+      },
+    });
+    const wrapper = mount(LoopEditDrawer, {
+      props: { plantNodeOptions: [] },
+      global: {
+        directives: { permission: {} },
+        stubs: {
+          ADrawer: true,
+          AForm: true,
+          AFormItem: true,
+          AInput: true,
+          AInputNumber: true,
+          ASelect: true,
+          ASpin: true,
+          ASteps: true,
+          AStep: true,
+          ASwitch: true,
+          ATabPane: true,
+          ATabs: true,
+          ATag: true,
+          ATooltip: true,
+          ARadioGroup: true,
+          ACheckbox: true,
+          AButton: true,
+          ModeMappingEditor: true,
+          LoopStatusBadge: true,
+        },
+      },
+    });
+    const vm = wrapper.vm as any;
+    await vm.open(LOOP, 'edit');
+    await nextTick();
+    return { vm, wrapper };
+  }
+
+  it('uT-LED-005: 详情模板关联回显表单；换绑时 PUT 携带新模板 ID 并清 pin；未变更不提交该字段', async () => {
+    getEngineeringTemplatesApiMock.mockResolvedValue({
+      items: [
+        {
+          id: 'tpl-new',
+          templateKey: 'FAST_RESP',
+          name: '快速响应流量模板',
+          category: 'RESPONSE',
+          currentVersion: 2,
+          description: null,
+          createdBy: 'admin',
+          createdAt: null,
+          updatedAt: null,
+        },
+      ],
+      total: 1,
+    });
+    const { vm } = await setupEdit({
+      engineeringTemplateId: 'tpl-orig',
+      engineeringTemplateVersion: 1,
+    });
+
+    // 回显：详情字段进入表单（DEF-3 出口 → DEF-1b 入口）
+    expect(vm.formState.engineeringTemplateId).toBe('tpl-orig');
+    expect(vm.formState._origEngineeringTemplateId).toBe('tpl-orig');
+
+    // 换绑：提交携带新模板 ID + 清 pin（恢复跟随指针）
+    vm.formState.engineeringTemplateId = 'tpl-new';
+    await vm.doSaveBasic();
+    await nextTick();
+    expect(updateLoopApiMock).toHaveBeenCalledWith(
+      'loop-1',
+      expect.objectContaining({
+        engineeringTemplateId: 'tpl-new',
+        engineeringTemplateVersion: null,
+      }),
+    );
+
+    // 保存后快照推进：再次保存（未变更）不再提交模板字段
+    updateLoopApiMock.mockClear();
+    await vm.doSaveBasic();
+    await nextTick();
+    expect(updateLoopApiMock).toHaveBeenCalledWith(
+      'loop-1',
+      expect.not.objectContaining({ engineeringTemplateId: expect.anything() }),
+    );
+  });
+
+  it('uT-LED-006: 解除关联（清除选择）提交 PUT null + 清 pin（回路侧回退通路 UI 出口）', async () => {
+    const { vm } = await setupEdit({
+      engineeringTemplateId: 'tpl-orig',
+      engineeringTemplateVersion: 2,
+    });
+    vm.formState.engineeringTemplateId = undefined;
+    await vm.doSaveBasic();
+    await nextTick();
+    expect(updateLoopApiMock).toHaveBeenCalledWith(
+      'loop-1',
+      expect.objectContaining({
+        engineeringTemplateId: null,
+        engineeringTemplateVersion: null,
+      }),
+    );
+  });
+
+  it('uT-LED-007: 未关联回路回显 undefined，未变更保存不提交模板字段', async () => {
+    const { vm } = await setupEdit({
+      engineeringTemplateId: null,
+      engineeringTemplateVersion: null,
+    });
+    expect(vm.formState.engineeringTemplateId).toBeUndefined();
+    await vm.doSaveBasic();
+    await nextTick();
+    expect(updateLoopApiMock).toHaveBeenCalledWith(
+      'loop-1',
+      expect.not.objectContaining({ engineeringTemplateId: expect.anything() }),
+    );
   });
 });

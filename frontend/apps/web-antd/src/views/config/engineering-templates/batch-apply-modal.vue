@@ -6,21 +6,27 @@
  * 零写入预览逐回路差异与部分失败状态，确认后执行（FAIL 回路跳过、OK 回路
  * 应用+审计，UNCHANGED 无差异跳过）。
  *
+ * 选择面（DEF-1 修复，P6-04 E2E）：复用既有 /loops 列表端点（分页 + 装置/
+ * 位号筛选），覆盖**全部回路（含未关联本模板的回路）**——首次关联不再依赖
+ * "已关联回路清单"（旧实现 0 关联即死锁）；>200 回路经分页/筛选可达，
+ * 跨页勾选自动保留。已关联与否不在选择面区分：dry-run 预览按
+ * OK（将关联/换绑）/UNCHANGED（已关联且无差异）逐回路如实呈现。
+ *
  * 千回路路径性能口径（诚实化）：后端单批 loopIds 上限 200（schemas 防线），
- * 模板关联回路枚举端点亦上限 200 条——本页批量选择面为模板关联回路前 200
- * 条（total 更大时显式提示）；更大范围按装置/单元在回路配置页分批。执行
- * 路径按 chunkLoopIds 顺序分批（每批 ≤200）并合并逐条结果；千回路端到端
- * 容量实证归 P5-05/G5-D02，本页不虚称已验证。
+ * 执行路径按 chunkLoopIds 顺序分批（每批 ≤200）并合并逐条结果；千回路
+ * 端到端容量实证归 P5-05/G5-D02，本页不虚称已验证。
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
 import type { EngineeringTemplateApi } from '#/api/engineering-template';
+import type { LoopApi } from '#/api/loop';
 
-import { computed, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 
 import {
   Alert,
   Button,
+  Input,
   Modal,
   Radio,
   RadioGroup,
@@ -32,9 +38,11 @@ import {
 
 import {
   batchApplyLoopsApi,
-  getEngineeringTemplateLoopsApi,
   getEngineeringTemplateVersionsApi,
 } from '#/api/engineering-template';
+import { getLoopListApi } from '#/api/loop';
+import { getPlantNodeTreeApi } from '#/api/plant-node';
+import { flattenNodes } from '#/utils/plant-node';
 
 import {
   BATCH_STATUS_LABEL,
@@ -43,7 +51,6 @@ import {
   type PublishFlowStep,
   reducePublishFlow,
   summarizeBatchResults,
-  truncationNote,
 } from './template-utils';
 
 type ResultItem = EngineeringTemplateApi.LoopBatchResultItem;
@@ -71,9 +78,18 @@ const executing = ref(false);
 const executeProgress = ref('');
 const flowError = ref('');
 
-const loops = ref<EngineeringTemplateApi.TemplateLoopItem[]>([]);
+/** 选择面：/loops 分页拉取（DEF-1：全量回路含未关联） */
+const LOOP_PAGE_SIZE = 50;
+const loops = ref<LoopApi.LoopListItem[]>([]);
 const loopsTotal = ref(0);
+const loopPage = ref(1);
+const loopFilters = reactive({
+  keyword: '',
+  plantNodeId: undefined as string | undefined,
+});
+const plantNodeOptions = ref<{ label: string; value: string }[]>([]);
 const versions = ref<EngineeringTemplateApi.TemplateVersionItem[]>([]);
+/** 跨页累积勾选的回路 ID（dry-run/执行的操作对象） */
 const selectedLoopIds = ref<string[]>([]);
 /** pin 模式：follow=仅关联跟随当前指针；pin=固定引用所选版本 */
 const pinMode = ref<'follow' | 'pin'>('follow');
@@ -84,10 +100,6 @@ const resultItems = ref<ResultItem[]>([]);
 /** 已完成分批数（失败时如实展示进度） */
 const doneChunks = ref(0);
 const totalChunks = ref(0);
-
-const loopNote = computed(() =>
-  truncationNote(loops.value.length, loopsTotal.value),
-);
 
 const summary = computed(() => summarizeBatchResults(resultItems.value));
 
@@ -111,22 +123,62 @@ function errorMessage(error: any): string {
   );
 }
 
+/** 选择面当前页（/loops 分页 + 装置/位号筛选） */
+async function loadLoopPage() {
+  loading.value = true;
+  try {
+    const data = await getLoopListApi({
+      page: loopPage.value,
+      pageSize: LOOP_PAGE_SIZE,
+      keyword: loopFilters.keyword || undefined,
+      plantNodeId: loopFilters.plantNodeId,
+    });
+    loops.value = data.items;
+    loopsTotal.value = data.total;
+  } catch (error: any) {
+    flowError.value = `加载回路列表失败：${errorMessage(error)}`;
+  } finally {
+    loading.value = false;
+  }
+}
+
+/** 工厂节点下拉（与回路配置页同源 getPlantNodeTreeApi + flattenNodes） */
+async function loadPlantNodes() {
+  try {
+    const tree = await getPlantNodeTreeApi();
+    const nodes = flattenNodes(tree);
+    const nodeMap = new Map(nodes.map((n) => [n.id, n]));
+    plantNodeOptions.value = nodes.map((node) => {
+      const path: string[] = [];
+      let current: (typeof nodes)[number] | undefined = node;
+      while (current) {
+        path.unshift(current.name);
+        current = current.parentId
+          ? nodeMap.get(current.parentId)
+          : undefined;
+      }
+      return { label: path.join(' / '), value: node.id };
+    });
+  } catch {
+    // 筛选辅助加载失败不阻断主流程（仍可按位号筛选）
+  }
+}
+
 async function loadContext() {
   if (!props.template) return;
-  loading.value = true;
   flowError.value = '';
+  loopPage.value = 1;
+  loading.value = true;
   try {
-    const [loopRes, versionRes] = await Promise.all([
-      getEngineeringTemplateLoopsApi(props.template.id, 200),
+    const [, versionRes] = await Promise.all([
+      loadLoopPage(),
       getEngineeringTemplateVersionsApi(props.template.id),
     ]);
-    loops.value = loopRes.items;
-    loopsTotal.value = loopRes.total;
     versions.value = versionRes.items;
     pinVersion.value =
       props.template.currentVersion ?? versionRes.items[0]?.version ?? undefined;
   } catch (error: any) {
-    flowError.value = `加载模板回路/版本失败：${errorMessage(error)}`;
+    flowError.value = `加载回路/版本失败：${errorMessage(error)}`;
   } finally {
     loading.value = false;
   }
@@ -143,11 +195,39 @@ watch(
       doneChunks.value = 0;
       totalChunks.value = 0;
       flowError.value = '';
+      loopFilters.keyword = '';
+      loopFilters.plantNodeId = undefined;
       loadContext();
+      loadPlantNodes();
     }
   },
   { immediate: true },
 );
+
+/** 筛选变更：回到第 1 页重查 */
+function handleFilterChange() {
+  loopPage.value = 1;
+  void loadLoopPage();
+}
+
+/** 翻页 */
+function handlePageChange(page: number) {
+  loopPage.value = page;
+  void loadLoopPage();
+}
+
+/**
+ * 跨页勾选合并（DEF-1：>200 回路分页可达）：
+ * onChange 的 keys 视为"当前页的勾选结果"，当前页之外的既有勾选保留；
+ * antd Table preserveSelectedRowKeys=true 时 keys 已含跨页键，合并后仍一致。
+ */
+function mergeSelection(keys: string[]) {
+  const currentPageIds = new Set(loops.value.map((l) => l.loopId));
+  const keptOffPage = selectedLoopIds.value.filter(
+    (id) => !currentPageIds.has(id),
+  );
+  selectedLoopIds.value = [...new Set([...keptOffPage, ...keys])];
+}
 
 function buildUpdates(): EngineeringTemplateApi.LoopBatchEngineeringUpdates {
   const updates: EngineeringTemplateApi.LoopBatchEngineeringUpdates = {
@@ -234,6 +314,7 @@ const STATUS_COLOR: Record<string, string> = {
 
 const loopColumns: TableColumnsType = [
   { title: '回路位号', dataIndex: 'tagName', key: 'tagName' },
+  { title: '所属单元', dataIndex: 'unitName', key: 'unitName' },
   { title: '监控状态', key: 'isActive', width: 90, align: 'center' },
 ];
 
@@ -245,8 +326,9 @@ const resultColumns: TableColumnsType = [
 
 const rowSelection = computed(() => ({
   selectedRowKeys: selectedLoopIds.value,
+  preserveSelectedRowKeys: true,
   onChange: (keys: (number | string)[]) => {
-    selectedLoopIds.value = keys.map(String);
+    mergeSelection(keys.map(String));
   },
 }));
 
@@ -301,23 +383,69 @@ function changesText(item: ResultItem): string {
           <span class="text-sm font-medium">
             选择回路（已选 {{ selectedLoopIds.length }} 条）
           </span>
-          <span v-if="loopNote" class="text-xs text-orange-500" data-testid="loops-note">
-            {{ loopNote }}；更大范围请按装置/单元在回路配置页分批（单批 ≤200）
+          <!-- DEF-4：指引与实际能力对齐（选择面含未关联回路；筛选+翻页+自动分批） -->
+          <span class="text-xs text-gray-400" data-testid="loops-note">
+            选择面为全部回路（含未关联本模板的回路）；可按装置/位号筛选并翻页，跨页勾选自动保留；执行按单批 ≤200 自动分批提交
           </span>
+        </div>
+        <!-- DEF-1：选择面筛选复用 /loops 既有参数（装置 + 位号） -->
+        <div class="mb-2 flex items-center gap-2">
+          <Select
+            v-model:value="loopFilters.plantNodeId"
+            :options="plantNodeOptions"
+            placeholder="按装置/单元筛选"
+            style="width: 240px"
+            allow-clear
+            show-search
+            :filter-option="
+              (input: string, option?: { label?: string }) =>
+                String(option?.label ?? '').includes(input)
+            "
+            data-testid="loop-filter-node"
+            @change="handleFilterChange"
+          />
+          <Input
+            v-model:value="loopFilters.keyword"
+            placeholder="按回路位号搜索（回车生效）"
+            style="width: 220px"
+            allow-clear
+            data-testid="loop-filter-keyword"
+            @press-enter="handleFilterChange"
+            @change="handleFilterChange"
+          />
         </div>
         <Table
           :columns="loopColumns"
           :data-source="loops"
-          :pagination="false"
+          :pagination="{
+            current: loopPage,
+            pageSize: LOOP_PAGE_SIZE,
+            total: loopsTotal,
+            size: 'small',
+            showTotal: (t: number) => `共 ${t} 条`,
+            onChange: handlePageChange,
+          }"
           :row-selection="rowSelection"
           row-key="loopId"
           size="small"
           :scroll="{ y: 280 }"
         >
           <template #bodyCell="{ column, record }">
-            <template v-if="column.key === 'isActive'">
-              <Tag :color="(record as EngineeringTemplateApi.TemplateLoopItem).isActive ? 'green' : 'default'">
-                {{ (record as EngineeringTemplateApi.TemplateLoopItem).isActive ? '监控中' : '停用' }}
+            <template v-if="column.key === 'tagName'">
+              <span class="font-mono">
+                {{ (record as LoopApi.LoopListItem).tagName }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'unitName'">
+              <span class="text-xs text-gray-500">
+                {{ (record as LoopApi.LoopListItem).unitName ?? '—' }}
+              </span>
+            </template>
+            <template v-else-if="column.key === 'isActive'">
+              <Tag
+                :color="(record as LoopApi.LoopListItem).isActive ? 'green' : 'default'"
+              >
+                {{ (record as LoopApi.LoopListItem).isActive ? '监控中' : '停用' }}
               </Tag>
             </template>
           </template>
