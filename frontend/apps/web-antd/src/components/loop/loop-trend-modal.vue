@@ -28,6 +28,7 @@ import { getLoopMonitorDetailApi } from '#/api/loop';
 import { ClpmModal, ClpmNumeric } from '#/components/clpm';
 import {
   parseTagCode,
+  registerInterest,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
 import { formatTime } from '#/utils/format';
@@ -126,6 +127,16 @@ function modeColor(modeLabel: null | string | undefined): string {
 
 // ===== 实时推送（每秒向趋势图追加一个点） =====
 const realtime = useLoopRealtime();
+// O02-RT：声明本实例实时兴趣（仅实时模式且有 tagName 时订阅本回路位号；
+// 并集语义只增不减，不影响宿主页面 owner）。本组件此前不声明兴趣、依赖宿主
+// 页面订阅存活——宿主 KeepAlive 停用/卸载后实时流会冻结；现按本实例 owner
+// 注册：viewMode/tagName 变化由 registerInterest 内部 watch 自动重订；
+// KeepAlive 停用→释放本实例兴趣、恢复→重算 source 重注册；
+// 组件卸载→自动停止 watch 并释放（stopRealtime 只停消息 handler 与定时器）。
+const realtimeInterestOwner = Symbol('loop-trend-modal-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  loops: viewMode.value === 'realtime' && props.tagName ? [props.tagName] : [],
+}));
 let liveUnsub: (() => void) | null = null;
 let liveTimer: null | ReturnType<typeof setInterval> = null;
 /** 各通道最近值（跨消息保持，SP/MODE 变化稀疏时维持阶梯延续） */

@@ -9,16 +9,20 @@ function monitorHome() {
  * 监控路由模块（0929 总览收敛：4 子页）
  *
  * 定位：运行驾驶舱与单回路处置入口。
- * 菜单顺序：回路监视 → 预警事件 → 关注队列 → 回路工作台。
+ * 菜单顺序：回路监视 → 预警事件 → 系统建议。
  * （装置总览 /dashboard/workbench 已按 2026-09-29 裁决下线，
  *   总览收敛为驾驶舱 + 工作台 + 性能总览三屏）
  *
+ * 五组导航（IAR-D1）：回路作业组（navGroup: 'loop-ops'）。
+ * 术语（IAR-D3，2026-10-14）：「关注队列」菜单更名「系统建议」——系统发现
+ * 的待核查事项，与个人收藏「我的关注」区分；URL /monitor/attention 不变。
+ *
  * 角色权限（实现契约 §5）：
- * - 回路监视/预警事件/关注队列：全部角色（Sponsor 只读）
+ * - 回路监视/预警事件/系统建议：全部角色（Sponsor 只读）
  * - 回路工作台：ADMIN / IC_ENGINEER / PE_ENGINEER / EXPERT
  *
  * 注：高密度回路实时表仍保留为隐藏视图，服务于批量巡检/导出与旧书签；
- *     关注队列聚合五类当前行动项，预警记录（/monitor/alerts）承载
+ *     系统建议聚合五类当前行动项，预警记录（/monitor/alerts）承载
  *     历史/审计/导出，二者互补不替代。
  */
 const routes: RouteRecordRaw[] = [
@@ -29,9 +33,10 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'],
       icon: 'lucide:activity',
+      module: 'monitor',
+      navGroup: 'loop-ops',
       order: 2,
       title: '回路监控',
-      module: 'monitor',
     },
     children: [
       {
@@ -84,7 +89,7 @@ const routes: RouteRecordRaw[] = [
             'EXPERT',
           ],
           icon: 'lucide:list-checks',
-          title: '关注队列',
+          title: '系统建议',
         },
       },
       // 回路工作台 2026-10-03 升为一级菜单（routes/modules/loop-workbench.ts，

@@ -97,6 +97,8 @@ function buildOption() {
       },
       {
         data: t.autoModeRate,
+        // P6-03：缺口不连线伪连续——null 桶断开（显式声明，不依赖默认值漂移）
+        connectNulls: false,
         itemStyle: { color: autoColor },
         lineStyle: { color: autoColor, width: 1.5 },
         name: '自动投用率',

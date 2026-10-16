@@ -37,8 +37,8 @@ import { useRoute, useRouter } from 'vue-router';
 import { getCockpitNodeTreeApi } from '#/api/cockpit';
 import { getGradingThresholdsApi, getLoopMetricSeriesApi } from '#/api/metric';
 import {
-  bindLoopInterest,
   parseTagCode,
+  registerInterest,
   resolveModeLabel,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
@@ -391,8 +391,15 @@ const realtimeBuffer = createRealtimeMergeBuffer<RealtimeMessage>(
 
 const handleRealtimeMessage = (msg: RealtimeMessage) => realtimeBuffer.push(msg);
 
-// 服务端订阅过滤（P5-04 收缩：仅当前页可见卡片绑定的位号）
-bindLoopInterest(() => items.value.map((l) => l.tagName));
+// 服务端订阅过滤（P5-04 收缩：仅当前页可见卡片绑定的位号）。
+// O02-RT：owner=本组件实例唯一身份（Symbol 每实例一份）；可见卡片/翻页/筛选
+// 变化由 registerInterest 内部 watch 自动重订（对 WS 发送全部 owner 并集，
+// 驾驶舱内其他实例互不覆盖）；KeepAlive 停用→释放、恢复→重算 source 重注册；
+// 组件卸载→自动停止 watch 并释放。
+const realtimeInterestOwner = Symbol('cockpit-loops-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  loops: items.value.map((l) => l.tagName),
+}));
 
 // ---------------------------------------------------------------------------
 // 详情面板（两态 + ‹ › 连续浏览）

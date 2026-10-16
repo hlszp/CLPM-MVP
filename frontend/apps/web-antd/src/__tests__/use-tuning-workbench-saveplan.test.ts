@@ -35,9 +35,12 @@ vi.mock('#/api/tuning', () => ({
   getTuningTaskStatusApi: vi.fn(),
   identifyHistoryApi: vi.fn(),
   identifyStepApi: (...args: unknown[]) => stepIdentifyMock(...args),
+  // Slice K（O-R-UI）：composable 新增命名导入，mock 同形补齐（按值判空同语义）
+  limitationItemsOf: (al: any) => (Array.isArray(al?.items) ? al.items : []),
   saveTuningTaskApi: (...args: unknown[]) => saveMock(...args),
   tuneMatrixApi: (...args: unknown[]) => matrixMock(...args),
   tuneSingleApi: vi.fn(),
+  verifyTuningRobustnessApi: vi.fn(),
 }));
 
 import { useTuningWorkbench } from '../views/tuning/composables/use-tuning-workbench';

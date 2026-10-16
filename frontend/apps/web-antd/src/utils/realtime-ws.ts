@@ -14,6 +14,18 @@
  * - R19 状态通知：每次完整状态迁移（offline/reconnecting/online）后统一
  *   _notifyConnectionChange；close 先置状态（通知 offline）→ 设置重连 timer
  *   后状态变 reconnecting（再次通知）；新订阅者注册时立即回调当前状态一次。
+ *
+ * P6-02a O02-RT（2026-10-14）owner 兴趣 registry：
+ * - 兴趣按 owner（symbol|string）登记为快照 {tags, loops}，对 WS 发送全部
+ *   存活 owner 的并集；释放 owner B 不影响 owner A；同 owner 重复注册为
+ *   整体替换（并集内容不变 → 零订阅帧，幂等）；
+ * - 连接 open/断线重连后自动重发当前并集（服务端订阅状态随连接生命周期）；
+ * - 兼容层：旧 subscribe()/clearInterest() 映射到保留 owner 切片（LEGACY_
+ *   INTEREST_OWNER），等价旧全局替换语义，供未迁移调用方与路由离开时的
+ *   "立即停推"安全网沿用；新代码一律 registerInterest 显式 owner；
+ * - 本层不感知 Vue 生命周期：页面级 watch、KeepAlive 停用释放/恢复重注册、
+ *   布局退出停全部 owner，由 composables/use-loop-realtime.ts 的冻结
+ *   Interface 与 layouts/basic.vue 负责。
  */
 
 import { useAccessStore } from '@vben/stores';
@@ -32,8 +44,42 @@ type MessageHandler = (msg: RealtimeMessage) => void;
 /** WS 连接状态三态（Phase 10 UX 包：监控页在线状态栏） */
 export type ConnectionStatus = 'offline' | 'online' | 'reconnecting';
 
+/**
+ * 兴趣 owner 身份（P6-02a O02-RT）：symbol 或字符串，由调用方生命周期托管
+ * （页面/组件实例级唯一）；同一 owner 的多次注册为整体替换语义。
+ */
+export type InterestOwner = string | symbol;
+
+/**
+ * 单个 owner 的实时兴趣快照（声明式：每次注册整体替换该 owner 上次内容）。
+ * loops = 回路名（服务端经权威 tag 映射解析）；tags = 精确位号。
+ */
+export interface RealtimeInterest {
+  loops?: string[];
+  tags?: string[];
+}
+
+/**
+ * 兼容层保留 owner（O02-RT）：旧 subscribe()/clearInterest() 与无实例身份的
+ * 兼容 bind 共用此切片——后者替换前者（等价旧全局替换语义），路由离开时由
+ * layouts/basic.vue 调 clearInterest 清空。新代码必须持有自有 owner，禁用。
+ */
+export const LEGACY_INTEREST_OWNER: InterestOwner = Symbol(
+  'clpm-realtime-legacy-interest',
+);
+
 const RECONNECT_INTERVAL = 3000; // 重连间隔 3 秒
 const MAX_RECONNECT_DELAY = 30_000; // 最大重连延迟 30 秒
+
+/** 归一化兴趣名单：去空、去重、排序（保证并集帧内容稳定，内容不变不重发） */
+function normalizeNames(names?: string[]): string[] {
+  return [...new Set((names ?? []).filter(Boolean))].toSorted();
+}
+
+/** 等值比对（并集变化检测用；入参均已排序） */
+function sameNames(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((v, i) => v === b[i]);
+}
 
 class RealtimeWebSocket {
   /**
@@ -57,11 +103,22 @@ class RealtimeWebSocket {
   private baseUrl: string;
   private connectionHandlers = new Set<() => void>();
   private handlers = new Set<MessageHandler>();
+  /** 并集缓存（loops）：全部存活 owner 快照的回路名并集（O02-RT） */
   private interestLoops: string[] = [];
   /**
-   * 页面兴趣集合（服务端订阅过滤，2026-09-06 慢链路防冲垮）。
+   * owner 兴趣 registry（P6-02a O02-RT）：每个 owner 一份归一化快照；
+   * interestTags/interestLoops 缓存其并集，registry 任何变更经 _applyUnion
+   * 重算并按"内容是否变化"决定是否发送 subscribe 帧。
+   */
+  private interestOwners = new Map<
+    InterestOwner,
+    { loops: string[]; tags: string[] }
+  >();
+  /**
+   * 并集缓存（tags，服务端订阅过滤，2026-09-06 慢链路防冲垮）。
    * null = 从未声明 → 保持旧版全量转发（兼容未接线的消费方）；
-   * 一旦声明（含空数组）→ 连接建立后发送 subscribe 帧，仅接收所订阅位号。
+   * 一旦声明（含空并集）→ 连接建立后发送 subscribe 帧，仅接收所订阅位号，
+   * 空并集 = 显式零流量。
    */
   private interestTags: null | string[] = null;
   private isManualClose = false;
@@ -83,11 +140,10 @@ class RealtimeWebSocket {
     this.baseUrl = `${wsBaseUrl}/api/v1/ws/realtime`;
   }
 
-  /** 清空兴趣集合（路由离开实时页时调用：非实时页面零流量） */
+  /** 清空兼容层切片（路由离开实时页时调用：非实时页面零流量；O02-RT 起
+   * 页面 owner 由各页面停用/卸载时自行释放，本方法只清保留切片作安全网） */
   clearInterest() {
-    this.interestTags = [];
-    this.interestLoops = [];
-    this._sendSubscribe();
+    this.registerInterest(LEGACY_INTEREST_OWNER, { loops: [], tags: [] });
   }
 
   /**
@@ -162,14 +218,75 @@ class RealtimeWebSocket {
   }
 
   /**
-   * 声明页面兴趣集合（替换语义）：服务端按回路名（loops，经权威 tag 映射解析）
-   * 或精确位号（tags）过滤实时流。连接未建立时先记住，open 时自动发送；
-   * 重连后自动重发（服务端订阅状态随连接生命周期）。
+   * 登记 owner 兴趣快照（P6-02a O02-RT）：整体替换该 owner 上次内容，
+   * 对 WS 发送全部存活 owner 的并集；幂等——并集内容不变时零订阅帧。
+   * owner 必须由调用方生命周期托管：页面停用/卸载时配套 unregisterInterest。
+   * 连接未建立时先记住，open/重连后自动重发当前并集。
+   */
+  registerInterest(owner: InterestOwner, interest: RealtimeInterest = {}) {
+    this.interestOwners.set(owner, {
+      loops: normalizeNames(interest.loops),
+      tags: normalizeNames(interest.tags),
+    });
+    if (this._applyUnion()) {
+      this._sendSubscribe();
+    }
+  }
+
+  /**
+   * 声明页面兴趣集合（兼容层，保留旧替换语义：映射到保留 owner 切片，
+   * 与其他 owner 切片求并集）。新代码改用 registerInterest(owner, ...)。
+   * 连接未建立时先记住，open 时自动发送；重连后自动重发（服务端订阅状态
+   * 随连接生命周期）。
    */
   subscribe(tags: string[] = [], loops: string[] = []) {
-    this.interestTags = [...new Set(tags.filter(Boolean))];
-    this.interestLoops = [...new Set(loops.filter(Boolean))];
-    this._sendSubscribe();
+    this.registerInterest(LEGACY_INTEREST_OWNER, { loops, tags });
+  }
+
+  /**
+   * 释放全部 owner 兴趣（布局退出/登出前调用：并集置空并立即通知服务端
+   * 停推，之后再断开连接）。从未声明过兴趣时为空操作（保持旧版全量转发
+   * 语义，不多发 subscribe 帧）。
+   */
+  unregisterAllInterests() {
+    this.interestOwners.clear();
+    if (this.interestTags === null) return;
+    if (this._applyUnion()) {
+      this._sendSubscribe();
+    }
+  }
+
+  /**
+   * 释放单个 owner 兴趣（幂等：owner 不存在为空操作；不影响其他 owner）。
+   */
+  unregisterInterest(owner: InterestOwner) {
+    if (!this.interestOwners.delete(owner)) return;
+    if (this._applyUnion()) {
+      this._sendSubscribe();
+    }
+  }
+
+  /**
+   * 重算并集缓存（O02-RT）：全部存活 owner 快照的 tags/loops 并集（排序去重，
+   * 帧内容稳定）。interestTags 的 null → 非 null 迁移即"从未声明 → 首次声明"。
+   * @returns 并集内容变化或首次声明时为 true（调用方据此发送 subscribe 帧）
+   */
+  private _applyUnion(): boolean {
+    const tags = new Set<string>();
+    const loops = new Set<string>();
+    for (const entry of this.interestOwners.values()) {
+      for (const t of entry.tags) tags.add(t);
+      for (const l of entry.loops) loops.add(l);
+    }
+    const nextTags = [...tags].toSorted();
+    const nextLoops = [...loops].toSorted();
+    const changed =
+      this.interestTags === null ||
+      !sameNames(nextTags, this.interestTags) ||
+      !sameNames(nextLoops, this.interestLoops);
+    this.interestTags = nextTags;
+    this.interestLoops = nextLoops;
+    return changed;
   }
 
   private _clearReconnectTimer() {

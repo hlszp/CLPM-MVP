@@ -14,16 +14,59 @@
  *   无效值不整条丢弃——数值置 null、质量按消息独立更新
  *
  * 对齐整改方案 §9.2 与数据链路整改 S0 契约 §3/§6。
+ *
+ * ===== P6-02a O02-RT（2026-10-14）冻结 Interface：owner 兴趣注册协议 =====
+ * 供 O02-CORE 与 Slice C/D 消费者调用；签名与语义本 Slice 冻结，下述注释即契约。
+ *
+ * registerInterest(owner, source): () => void
+ *   - owner: symbol|string，调用方持有的唯一身份（页面/组件实例级）；
+ *   - source: 无副作用 getter，每次求值返回该 owner 当前兴趣快照
+ *     {loops?, tags?}（loops=回路名，tags=精确位号），必须可重复调用；
+ *   - 语义：立即注册当前快照；watch source 派生键，内容变化自动重注册
+ *     （内容不变零订阅帧）；对 WebSocket 发送全部存活 owner 的并集——
+ *     释放 owner B 不影响 owner A；
+ *   - 同 owner 重复注册：后者整体替换前者（含其 watch），幂等；
+ *   - 组件 setup 同步路径（含 onMounted 等生命周期回调）内调用：
+ *     KeepAlive 停用 → 释放本 owner 兴趣（不影响其他 owner）；恢复 →
+ *     重新求值 source 重注册（重算兴趣源、不回放停用前快照——身份/权限/
+ *     筛选变化经 getter 反映当前真实可见对象，即"重验身份/权限语义"）；
+ *     卸载 → 自动停止 watch 并释放；
+ *   - 返回值 cleanup()（幂等）：停止 watch 并释放该 owner；
+ *   - 无实例上下文调用：无生命周期接线，调用方必须用返回的 cleanup
+ *     自行释放（兼容包装对此场景另有兜底，见 bindLoopInterest）。
+ * unregisterInterest(owner): void — 释放 owner（幂等；不影响其他 owner）。
+ * releaseAllInterests(): void — 停止全部 owner 的 watch 并清空 registry
+ *   （布局退出时在断开 WS 前调用，layouts/basic.vue 已接线）。
+ * 兼容包装（既有消费方签名/行为不变，Slice D 逐文件迁移到新 Interface）：
+ *   bindLoopInterest(source) / bindTagInterest(source)。
+ * 关闭组件只释放本实例兴趣与 handler，不假称取消后端计算。
+ * ===========================================================================
  */
 import type { Ref } from 'vue';
 
-import { onBeforeUnmount, ref, watch } from 'vue';
+import {
+  getCurrentInstance,
+  onActivated,
+  onBeforeUnmount,
+  onDeactivated,
+  onScopeDispose,
+  ref,
+  watch,
+} from 'vue';
 
 import { useAccessStore } from '@vben/stores';
 
 import { parseFiniteNumber } from '#/utils/numeric';
 import { mapQualityToLabel } from '#/utils/quality-code';
-import { type ConnectionStatus, realtimeWs } from '#/utils/realtime-ws';
+import {
+  type ConnectionStatus,
+  type InterestOwner,
+  LEGACY_INTEREST_OWNER,
+  type RealtimeInterest,
+  realtimeWs,
+} from '#/utils/realtime-ws';
+
+export type { InterestOwner, RealtimeInterest };
 
 /** WS 实时消息结构（对齐 realtime-ws.ts RealtimeMessage） */
 export interface RealtimeMessage {
@@ -176,47 +219,166 @@ export function parseTagCode(
   return { role, tagName };
 }
 
+// ---------------------------------------------------------------------------
+// P6-02a O02-RT：owner 兴趣注册（冻结 Interface，签名与语义见文件头契约注释）
+// ---------------------------------------------------------------------------
+
+/** 兴趣源：无副作用 getter，每次求值返回该 owner 当前兴趣快照 */
+export type InterestSource = () => RealtimeInterest;
+
+/** composable 侧 owner 注册表条目（watch 句柄 + 停用开关；对象身份作替换令牌） */
+interface InterestEntry {
+  deactivate: () => void;
+  stop: () => void;
+}
+
+const interestEntries = new Map<InterestOwner, InterestEntry>();
+
+/** 归一化：去空、去重、排序（内容不变 → 派生键不变 → 不触发重注册） */
+function normalizeInterestNames(names?: string[]): string[] {
+  return [...new Set((names ?? []).filter(Boolean))].toSorted();
+}
+
+/** 兴趣快照 → 稳定派生键（watch 比对用：内容不变不重发订阅帧） */
+function joinInterest(interest: RealtimeInterest): string {
+  return JSON.stringify([
+    normalizeInterestNames(interest.tags),
+    normalizeInterestNames(interest.loops),
+  ]);
+}
+
+/**
+ * 注册 owner 实时兴趣（冻结 Interface，语义见文件头契约注释）。
+ * @returns cleanup()（幂等）：停止 watch 并释放该 owner
+ */
+export function registerInterest(
+  owner: InterestOwner,
+  source: InterestSource,
+): () => void {
+  // 同 owner 重复注册：先停旧条目（后者整体替换前者；内容相同零订阅帧）
+  const prev = interestEntries.get(owner);
+  if (prev) {
+    prev.deactivate();
+    prev.stop();
+  }
+
+  // KeepAlive 停用/cleanup 后置 false：停用期间 source 变化不再重注册
+  let active = true;
+  const stop = watch(
+    () => joinInterest(source()),
+    () => {
+      if (active) realtimeWs.registerInterest(owner, source());
+    },
+    { immediate: true },
+  );
+  const entry: InterestEntry = {
+    deactivate: () => {
+      active = false;
+    },
+    stop,
+  };
+  interestEntries.set(owner, entry);
+
+  /** cleanup（幂等）：仅当注册表仍是本条目时释放；被同 owner 后者替换时不误伤 */
+  const cleanup = () => {
+    entry.deactivate();
+    entry.stop();
+    if (interestEntries.get(owner) === entry) {
+      interestEntries.delete(owner);
+      realtimeWs.unregisterInterest(owner);
+    }
+  };
+
+  if (getCurrentInstance()) {
+    // KeepAlive：停用 → 释放本 owner 兴趣（不影响其他 owner）；
+    // 恢复 → 重新求值 source 重注册（重算兴趣源，不缓存停用前快照）。
+    // 条目被同 owner 后者替换后，旧条目的生命周期回调一律不再触碰 registry。
+    onDeactivated(() => {
+      if (interestEntries.get(owner) !== entry) return;
+      entry.deactivate();
+      realtimeWs.unregisterInterest(owner);
+    });
+    onActivated(() => {
+      // 初始挂载也会触发 activated：active 为 true 说明未曾停用，直接跳过；
+      // 仅"停用后恢复"才重算兴趣源重注册（不缓存停用前快照）
+      if (active || interestEntries.get(owner) !== entry) return;
+      active = true;
+      realtimeWs.registerInterest(owner, source());
+    });
+    onScopeDispose(cleanup);
+  }
+
+  return cleanup;
+}
+
+/**
+ * 释放 owner 实时兴趣（幂等；不影响其他 owner）。冻结 Interface 之一。
+ */
+export function unregisterInterest(owner: InterestOwner): void {
+  const entry = interestEntries.get(owner);
+  if (entry) {
+    interestEntries.delete(owner);
+    entry.deactivate();
+    entry.stop();
+  }
+  realtimeWs.unregisterInterest(owner);
+}
+
+/**
+ * 停止全部 owner 的 watch 并清空 registry（布局退出时在断开 WS 前调用，
+ * layouts/basic.vue 已接线；页面组件正常已先行卸载并各自释放，这里兜底
+ * 全局/无实例注册的残留）。冻结 Interface 之一。
+ */
+export function releaseAllInterests(): void {
+  for (const entry of interestEntries.values()) {
+    entry.deactivate();
+    entry.stop();
+  }
+  interestEntries.clear();
+  realtimeWs.unregisterAllInterests();
+}
+
+/**
+ * 声明页面回路兴趣集合（兼容包装，签名/行为保持 2026-09-06 版本）。
+ *
+ * 页面把"当前关心的回路名列表"以 getter 传入：列表变化（分页/筛选/选中切换）
+ * 自动重新订阅，服务端仅推送这些回路绑定的位号（经权威 tag 映射解析，前端
+ * 无需猜测位号命名风格）。setup 同步路径（含 onMounted 等生命周期回调）内
+ * 调用：owner = 组件实例，享 owner 隔离与 KeepAlive 停用/恢复语义，组件卸载
+ * 自动停止监听并释放；无实例上下文调用：退化 WS 兼容层切片（旧全局替换语义，
+ * 路由离开时由布局 clearInterest 清空，同 owner 后注册替换先注册不积累 watch）。
+ * 新代码改用 registerInterest（Slice D 逐文件迁移）。
+ */
+export function bindLoopInterest(source: () => string[]) {
+  bindInterest('loop', () => ({ loops: source() }));
+}
+
+/**
+ * 声明页面位号兴趣集合（测点清单页用：直接按 tag_name 精确订阅）。
+ * 兼容包装，owner 策略同 bindLoopInterest。
+ */
+export function bindTagInterest(source: () => string[]) {
+  bindInterest('tag', () => ({ tags: source() }));
+}
+
+/**
+ * 兼容包装共用入口：有实例按实例 uid 隔离（owner 隔离 + KeepAlive 语义）；
+ * 无实例退化 WS 兼容层保留切片（旧全局替换语义，路由离开由布局清空）。
+ */
+function bindInterest(kind: 'loop' | 'tag', source: InterestSource): void {
+  const instance = getCurrentInstance();
+  registerInterest(
+    instance ? `bind-${kind}:${instance.uid}` : LEGACY_INTEREST_OWNER,
+    source,
+  );
+}
+
 /**
  * 回路实时数据 composable。
  *
  * 注意：本 composable 只注册页面级消息回调和轮询定时器，
  * WS 全局连接由 layouts/basic.vue 管理生命周期，页面卸载只退订 handler。
  */
-/**
- * 声明页面回路兴趣集合（服务端订阅过滤，2026-09-06 接通）。
- *
- * 页面把"当前关心的回路名列表"以 getter 传入：列表变化（分页/筛选/选中切换）
- * 自动重新订阅，服务端仅推送这些回路绑定的位号（经权威 tag 映射解析，前端
- * 无需猜测位号命名风格）。在 setup 中调用，组件卸载自动停止监听。
- */
-export function bindLoopInterest(source: () => string[]) {
-  watch(
-    () => dedupeJoin(source()),
-    (joined) => {
-      realtimeWs.subscribe([], joined ? joined.split('\u0000') : []);
-    },
-    { immediate: true },
-  );
-}
-
-/**
- * 声明页面位号兴趣集合（测点清单页用：直接按 tag_name 精确订阅）。
- */
-export function bindTagInterest(source: () => string[]) {
-  watch(
-    () => dedupeJoin(source()),
-    (joined) => {
-      realtimeWs.subscribe(joined ? joined.split('\u0000') : []);
-    },
-    { immediate: true },
-  );
-}
-
-/** 去重排序后拼接为稳定 key（内容不变不重发订阅帧） */
-function dedupeJoin(names: string[]): string {
-  return [...new Set(names.filter(Boolean))].toSorted().join('\u0000');
-}
-
 export function useLoopRealtime(): UseLoopRealtimeReturn {
   const connectionStatus = ref<ConnectionStatus>(realtimeWs.status);
   const lastMessageAt = ref<Date | null>(null);

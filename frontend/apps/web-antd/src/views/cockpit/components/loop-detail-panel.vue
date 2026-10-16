@@ -20,16 +20,18 @@ import type { HandlingApi } from '#/api/handling';
 import type { MetricApi } from '#/api/metric';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { useUserStore } from '@vben/stores';
 
 import { getDiagnosisRunsLatestApi } from '#/api/diagnosis';
 import { getHandlingOrdersApi } from '#/api/handling';
 import { getLoopMonitorDetailApi } from '#/api/loop';
 import { getNodeSnapshotApi } from '#/api/metric';
 import {
-  bindLoopInterest,
   type LoopRealtimeValues,
+  registerInterest,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
 import { useCockpitStore } from '#/store/cockpit';
@@ -46,6 +48,11 @@ import {
   sixDimsFromNodeSnapshot,
   type SixDimValues,
 } from '../loops-shared';
+import {
+  canOpenWorkbench360,
+  preciseCockpitWindow,
+  wb360DrillQuery,
+} from '../wb-comps/use-drill';
 import CockpitRadar from './cockpit-radar.vue';
 
 defineOptions({ name: 'CockpitLoopDetailPanel' });
@@ -87,6 +94,10 @@ const emit = defineEmits<{
 }>();
 
 const rootRef = ref<HTMLElement>();
+
+const route = useRoute();
+const router = useRouter();
+const userStore = useUserStore();
 
 // ---------------------------------------------------------------------------
 // 态一：聚合视图（模式柱状图 + 节点雷达）
@@ -384,9 +395,15 @@ const realtimeItem = computed(() =>
 );
 
 // 服务端订阅过滤：仅接收当前面板回路的位号。
-// realtimeItem 必须先于本调用声明：bindLoopInterest 的 watch 带
-// immediate:true，注册即执行回调，声明在后会触发 TDZ ReferenceError。
-bindLoopInterest(() => realtimeItem.value.map((i) => i.tagName));
+// realtimeItem 必须先于本调用声明：registerInterest 内部 watch 带
+// immediate:true，注册即求值 source，声明在后会触发 TDZ ReferenceError。
+// O02-RT：owner=本组件实例唯一身份（Symbol 每实例一份）；面板回路变化自动
+// 重订（对 WS 发送全部 owner 并集，驾驶舱卡片墙其他实例互不覆盖）；
+// KeepAlive 停用→释放、恢复→重算 source 重注册；组件卸载→自动停止 watch 并释放。
+const realtimeInterestOwner = Symbol('loop-detail-panel-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  loops: realtimeItem.value.map((i) => i.tagName),
+}));
 
 onMounted(() => {
   realtime.start();
@@ -422,6 +439,29 @@ watch(
     else refreshTrend();
   },
 );
+
+// ---------------------------------------------------------------------------
+// P6-02b：态二 → 回路工作台（发送端接通 wb360 上下文协议）
+// 携带：稳定 loopId + 驾驶舱当前时间窗精确起止/时区 + 左树节点 scope +
+// from 返回来源；SPONSOR 无工作台路由权限 → 不渲染入口（不造死链）
+// ---------------------------------------------------------------------------
+const canOpenWorkbench = computed(() =>
+  canOpenWorkbench360(userStore.userInfo?.roles ?? []),
+);
+
+function openInWorkbench() {
+  const loopId = props.loop?.loopId;
+  if (!loopId) return;
+  const { path, query } = wb360DrillQuery(
+    {
+      loopId,
+      window: preciseCockpitWindow(cockpitStore.timeWindow),
+      ...(props.nodeId ? { scope: { nodeId: props.nodeId } } : {}),
+    },
+    { from: route.fullPath },
+  );
+  void router.push({ path, query });
+}
 </script>
 
 <template>
@@ -479,6 +519,15 @@ watch(
           </div>
         </div>
         <div class="ldp__nav">
+          <button
+            v-if="canOpenWorkbench"
+            type="button"
+            class="ldp__nav-wb"
+            title="在回路工作台打开（携带当前时间窗与节点范围上下文，可返回本页）"
+            @click="openInWorkbench"
+          >
+            工作台
+          </button>
           <button
             type="button"
             :disabled="loopIndex <= 1"
@@ -650,6 +699,12 @@ watch(
 .ldp__nav button:hover:not(:disabled) {
   color: var(--ck-text);
   border-color: var(--ck-accent);
+}
+
+.ldp__nav button.ldp__nav-wb {
+  width: auto;
+  padding: 0 8px;
+  font-size: 11px;
 }
 
 .ldp__nav button:disabled {

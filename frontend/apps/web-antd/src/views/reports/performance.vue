@@ -19,8 +19,10 @@ import type { PlantNodeApi } from '#/api/plant-node';
 import type { ColumnConfig } from '#/composables/use-clpm-preferences';
 
 import { computed, onMounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
+import { useUserStore } from '@vben/stores';
 
 import {
   DatePicker,
@@ -53,6 +55,11 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { exportData } from '#/utils/export';
 import { formatLocalTime } from '#/utils/format';
 import { flattenNodes } from '#/utils/plant-node';
+import {
+  canOpenWorkbench360,
+  localTimezone,
+  wb360DrillQuery,
+} from '#/views/cockpit/wb-comps/use-drill';
 
 defineOptions({ name: 'ReportsPerformance' });
 
@@ -60,6 +67,9 @@ defineOptions({ name: 'ReportsPerformance' });
 dayjs.extend(isoWeek);
 
 const { themeColors } = useClpmTheme();
+const route = useRoute();
+const router = useRouter();
+const userStore = useUserStore();
 
 // ============ 筛选状态 ============
 type TimeDimension = 'day' | 'month' | 'week';
@@ -385,6 +395,31 @@ function getTimeRange(): { end: string; start: string } {
  */
 function formatSnapshotTime(ts: null | string | undefined): string {
   return formatLocalTime(ts, 'MM-DD HH:mm');
+}
+
+// ============ P6-02b：回路行 → 回路工作台（wb360 上下文协议发送端） ============
+// 携带：稳定 loopId + 报表当前精确窗口起止/时区 + 工厂节点 scope + 聚合行
+// profile（algorithmVersion，跨版本窗口已只取该版本均值）+ from 返回来源。
+// recordId 不携带——聚合行跨多条评估记录，无单一账本身份，不编造顶替。
+/** SPONSOR 无工作台路由权限 → 纯文本降级不造死链 */
+const canOpenWorkbench = computed(() =>
+  canOpenWorkbench360(userStore.userInfo?.roles ?? []),
+);
+
+function openLoopInWorkbench(row: LoopAggRow) {
+  if (!row.loopId) return;
+  const { start, end } = getTimeRange();
+  const { path, query } = wb360DrillQuery(
+    {
+      loopId: row.loopId,
+      section: 'assess',
+      window: { timezone: localTimezone(), tsEnd: end, tsStart: start },
+      ...(plantNodeId.value ? { scope: { nodeId: plantNodeId.value } } : {}),
+      ...(row.algorithmVersion ? { profileRef: row.algorithmVersion } : {}),
+    },
+    { from: route.fullPath },
+  );
+  void router.push({ path, query });
 }
 
 /** 提取记录的评分（综合报表用 avgScore，回路报表用聚合 score） */
@@ -1125,6 +1160,19 @@ onMounted(() => {
           <template v-else-if="column.key === 'loopName'">
             <span>{{ record.loopName || record.loopTagName || '—' }}</span>
           </template>
+          <!-- 02b：回路编号 → 回路工作台（精确窗口/节点 scope/profile 版本/
+               from 返回；聚合行无单一 recordId 不编造） -->
+          <template v-else-if="column.key === 'loopTagName'">
+            <a
+              v-if="canOpenWorkbench && reportType === 'loop'"
+              class="clpm-reports__loop-link"
+              :title="`${record.loopTagName} · 在回路工作台评估剖面打开（携带报表窗口与版本，可返回本页）`"
+              @click="openLoopInWorkbench(record as LoopAggRow)"
+            >
+              {{ record.loopTagName }}
+            </a>
+            <span v-else>{{ record.loopTagName }}</span>
+          </template>
           <template v-else-if="column.key === 'confidenceLevel'">
             <Tag
               v-if="
@@ -1157,3 +1205,19 @@ onMounted(() => {
     </ClpmDataCanvas>
   </Page>
 </template>
+
+<style scoped>
+/* 02b：回路编号 → 回路工作台上下文深链（等宽字体口径同 ClpmLoopLink） */
+.clpm-reports__loop-link {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--status-info));
+  cursor: pointer;
+}
+
+.clpm-reports__loop-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+</style>

@@ -740,10 +740,15 @@ class PublishResultResponse(CamelModel):
 
 
 class PublicationItem(CamelModel):
-    """发布账本行（config_publication）."""
+    """发布账本行（config_publication）.
+
+    operation 取值与模型 CHECK（ck_config_publication_operation）一致：
+    含 P2-04 的 TEMPLATE_VERSION（模板版本发布/回拨账本行）——缺该项时
+    账本列表在任一模板发布后 pydantic 校验失败 500。
+    """
 
     revision: int
-    operation: Literal["PUBLISH", "RESET", "ROLLBACK", "LEGACY_SYNC"]
+    operation: Literal["PUBLISH", "RESET", "ROLLBACK", "LEGACY_SYNC", "TEMPLATE_VERSION"]
     layer: str | None = None
     scope: dict[str, Any] = Field(default_factory=dict)
     reason: str

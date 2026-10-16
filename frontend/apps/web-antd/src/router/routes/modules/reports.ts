@@ -30,9 +30,10 @@ const routes: RouteRecordRaw[] = [
       // 父路由 authority 取子路由并集，避免 IC/PE/SPONSOR 看不到菜单
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:file-bar-chart-2',
+      module: 'reports',
+      navGroup: 'analytics',
       order: 7,
       title: '统计分析',
-      module: 'reports',
     },
     children: [
       {

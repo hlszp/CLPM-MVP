@@ -95,12 +95,14 @@ describe('use-drill 下钻清单诚实化（P1-03 IA-01/IA-02）', () => {
   });
 
   it('IA-02：指标清单按数值列降序，缺值排末尾（百分号字符串 Number→NaN 修复）', async () => {
+    // G-N1 返修后口径：ranking 率字段为 0–100（与 API 实测一致），
+    // pct 直拼 % 不再 ×100（原 0–1 fixture 钉住的是错误 ×100 行为）
     getRankingApi.mockResolvedValue([
-      rankItem(1, 0.42),
+      rankItem(1, 42),
       rankItem(2, null),
-      rankItem(3, 0.99),
-      rankItem(4, 0.85),
-      rankItem(5, 0.07),
+      rankItem(3, 99),
+      rankItem(4, 85),
+      rankItem(5, 7),
     ]);
 
     const { drill, list } = useCockpitDrill();
@@ -108,8 +110,8 @@ describe('use-drill 下钻清单诚实化（P1-03 IA-01/IA-02）', () => {
 
     // 旧实现对 metricText（"85.00%" 字符串）Number() 恒 NaN，降序比较全失效
     const values = list.rows.map((r) => r.metricValue as null | number);
-    expect(values).toEqual([0.99, 0.85, 0.42, 0.07, null]);
-    // 展示列仍是百分号文案
+    expect(values).toEqual([99, 85, 42, 7, null]);
+    // 展示列仍是百分号文案（0–100 口径直拼）
     expect(list.rows[0]!.metricText).toBe('99.00%');
     expect(list.rows[4]!.metricText).toBe('—');
     expect(list.error).toBe('');

@@ -21,9 +21,10 @@ const routes: RouteRecordRaw[] = [
       // （例：权限矩阵声明「所有角色可查看」却对 EXPERT/SPONSOR/PE 不可达）。
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR', 'EXPERT'],
       icon: 'lucide:settings',
+      module: 'system',
+      navGroup: 'system',
       order: 9,
       title: '系统管理',
-      module: 'system',
     },
     name: 'System',
     path: '/system',

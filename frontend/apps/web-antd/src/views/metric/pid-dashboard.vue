@@ -9,10 +9,11 @@ import type {
 import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -31,7 +32,6 @@ import dayjs from 'dayjs';
 import {
   ClpmBulletChart,
   ClpmEmptyState,
-  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
@@ -43,12 +43,19 @@ import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useScoreColor } from '#/composables/use-score-color';
 import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
 import { normalizeUtcTimestamp } from '#/utils/format';
+import {
+  canOpenWorkbench360,
+  localTimezone,
+  wb360DrillQuery,
+} from '#/views/cockpit/wb-comps/use-drill';
 
 import GateHealthPanel from './components/gate-health-panel.vue';
 
 defineOptions({ name: 'PidDashboard' });
 
 const router = useRouter();
+const route = useRoute();
+const userStore = useUserStore();
 const { isDark, themeColors, chartColors } = useClpmTheme();
 const { canReadConfig } = useConfigAccess();
 const { axisBase, getTooltipPreset } = useEchartsPreset();
@@ -122,16 +129,6 @@ function resolveWindow(): { end: dayjs.Dayjs; start: dayjs.Dayjs } {
   }
   if (end.isAfter(now)) end = now;
   return { start, end };
-}
-
-/** 指标分析页深链窗口映射：其窗口枚举为滚动窗预设，按当前窗口跨度取最近档 */
-function nearestIndicatorWindow(): string {
-  const { start, end } = resolveWindow();
-  const hours = end.diff(start, 'hour', true);
-  if (hours <= 8) return 'last_8_hours';
-  if (hours <= 24) return 'today';
-  if (hours <= 24 * 7) return 'last_7_days';
-  return 'last_30_days';
 }
 
 /** 统一 API 窗口参数（custom + UTC ISO），所有数据接口共用同一窗口 */
@@ -243,12 +240,58 @@ function handleWindowChange() {
   loadAll();
 }
 
-/** M3 联动（指标分析页）：携指标与当前时间窗深链跳转，回答"该指标弱在哪套装置" */
+/**
+ * M3 联动（指标分析页）：携指标与当前时间窗深链跳转，回答"该指标弱在哪套装置"
+ * P6-02b：精确 tsStart/tsEnd/tz（禁止近似滚动窗替换）+ 稳定 nodeId scope +
+ * from 返回来源；目标页消费全部参数并回显、可单项清除
+ */
 function goIndicatorAnalysis(metric: string) {
+  const { start, end } = resolveWindow();
   router.push({
     path: '/metric/indicator-analysis',
-    query: { metric, window: nearestIndicatorWindow() },
+    query: {
+      metric,
+      tsStart: start.toISOString(),
+      tsEnd: end.toISOString(),
+      tz: localTimezone(),
+      ...(selectedPlantNodeId.value
+        ? {
+            plantNodeId: selectedPlantNodeId.value,
+            plantNodeName: selectedPlantNodeName.value,
+          }
+        : {}),
+      from: route.fullPath,
+    },
   });
+}
+
+/**
+ * 02b：回路 → 回路工作台（wb360 上下文协议）：稳定 loopId + 指定剖面 +
+ * 当前窗口精确起止/时区 + 节点 scope + from 返回来源。
+ * SPONSOR 无工作台路由权限 → 渲染纯文本不造死链（同 ClpmLoopLink 降级口径）。
+ */
+const canOpenWorkbench = computed(() =>
+  canOpenWorkbench360(userStore.userInfo?.roles ?? []),
+);
+
+function openLoopWorkbench(loopId: string, section: 'diagnosis' | 'tuning') {
+  const { start, end } = resolveWindow();
+  const { path, query } = wb360DrillQuery(
+    {
+      loopId,
+      section,
+      window: {
+        timezone: localTimezone(),
+        tsEnd: end.toISOString(),
+        tsStart: start.toISOString(),
+      },
+      ...(selectedPlantNodeId.value
+        ? { scope: { nodeId: selectedPlantNodeId.value } }
+        : {}),
+    },
+    { from: route.fullPath },
+  );
+  router.push({ path, query });
 }
 
 const boardAggregate = ref<DashboardApi.BoardAggregateResult | null>(null);
@@ -762,6 +805,33 @@ const latestMetricStat = ref<MetricApi.NodeMetricStat | null>(null);
 /** 名册序列说明（图表头部角标：不可追溯/未计入节点） */
 const rosterNote = ref('');
 
+// ===== P6-03（PL-04/PL-05）：首屏常驻 N/E + 截至 + 原因 + F 参考同显块 =====
+// 数据源同为 nodes/{nodeId}/monitor hour 快照 assessmentStats：N/E 取
+// 最新可知名册桶（跨节点求和口径与趋势柱序列一致），F 参考消费
+// fastRateReference 充分统计量（分子/权重和跨节点可加，重算均分不取
+// 节点均分再平均——PL-03 充分统计量聚合）。
+/** 最新可知名册桶的跨节点 N/E（null=无名册桶，断点不猜算） */
+const coverageN = ref<null | number>(null);
+const coverageE = ref<null | number>(null);
+/** 最新可知名册桶时间戳（boardTrend 桶序列原值） */
+const coverageTs = ref('');
+/** 是否存在可知名册桶 */
+const coverageKnown = ref(false);
+/** 最新可知名册桶的六类状态账跨节点求和（不可评分原因） */
+const coverageStates = ref<Record<string, number>>({});
+/** F 参考充分统计量跨节点求和（null=该桶无任何 fastRateReference） */
+interface FastRefSum {
+  numerator: number;
+  weightSum: number;
+  numeric: number;
+  dynamic: number;
+  policy: number;
+  unavailable: number;
+  /** 桶内有节点缺 fastRateReference（部分口径，显式标注） */
+  missingNodes: number;
+}
+const fastRefSum = ref<FastRefSum | null>(null);
+
 /** R07-3：性能评分卡——metricStats.weightedMean 优先（null 不作 0），
  *  无 metricStats（历史快照）回退既有 board/aggregate 已评加权均分 */
 const gaugeScore = computed(() => {
@@ -775,11 +845,84 @@ const gaugeScoreMeta = computed(() => {
   return `统计窗口：${timeWindowLabel.value}`;
 });
 
+// ===== P6-03（PL-04/PL-05）：首屏常驻 N/E 与 F 参考块展示视图 =====
+/** 可评分比例文本：E=0 → 「无参评回路」（零应评与无完整 P 区分，PL-03） */
+const coverageRatioText = computed(() => {
+  if (!coverageKnown.value) return '';
+  const n = coverageN.value;
+  const e = coverageE.value;
+  if (n === null || e === null) return '';
+  if (e === 0) return '无参评回路（E=0）';
+  return `可评分比例 ${Math.round((n / e) * 100)}%`;
+});
+
+/** 截至时间（最新可知名册桶；hour=UTC 补 Z 转本地，day=北京日原样） */
+const coverageAsOfText = computed(() => {
+  if (!coverageKnown.value || !coverageTs.value) return '';
+  const isDay = boardTrend.value?.granularity === 'day';
+  const text = isDay
+    ? dayjs(coverageTs.value).format('M-D')
+    : dayjs(normalizeUtcTimestamp(coverageTs.value)).format('M-D H:00');
+  return `截至 ${text}`;
+});
+
+/** 名册六类状态 → 不可评分原因（仅 N<E 时展示；scorable 不算原因） */
+const ROSTER_STATE_REASON_LABELS: Record<string, string> = {
+  incomplete: '数据不足',
+  failed: '计算失败',
+  missing: '无快照',
+  cancelled: '已取消',
+  pending: '排队中',
+};
+const coverageReasonText = computed(() => {
+  if (!coverageKnown.value) return '';
+  const n = coverageN.value;
+  const e = coverageE.value;
+  if (n === null || e === null || n >= e) return '';
+  const parts = Object.keys(ROSTER_STATE_REASON_LABELS)
+    .filter((k) => (coverageStates.value[k] ?? 0) > 0)
+    .map((k) => `${ROSTER_STATE_REASON_LABELS[k]} ${coverageStates.value[k]}`);
+  return parts.join(' · ');
+});
+
+/**
+ * F 参考同显块视图（PL-04：参考均分紧邻参考数量/动态证据不足/动态估计
+ * 覆盖/来源同显，不冒充正式 F/P）——均分由充分统计量分子/权重和重算
+ * （跨节点加权口径正确，不取节点均分再平均）
+ */
+const fastRefView = computed(() => {
+  const f = fastRefSum.value;
+  if (!f) return null;
+  const mean =
+    f.weightSum > 0
+      ? Math.round((f.numerator / f.weightSum) * 1000) / 10
+      : null;
+  // 参评对象数 = 有参考值（动态+政策参考）+ 无数据；动态估计覆盖 = 动态/参评
+  const objects = f.numeric + f.unavailable;
+  const coverage = objects > 0 ? Math.round((f.dynamic / objects) * 100) : null;
+  return {
+    mean,
+    numeric: f.numeric,
+    dynamic: f.dynamic,
+    policy: f.policy,
+    unavailable: f.unavailable,
+    coverage,
+    missingNodes: f.missingNodes,
+  };
+});
+
 async function loadRosterTrend() {
   rosterNValues.value = [];
   rosterEValues.value = [];
   latestMetricStat.value = null;
   rosterNote.value = '';
+  // P6-03：首屏常驻 N/E + F 参考块复位（无名册桶时保持"无名册"诚实态）
+  coverageN.value = null;
+  coverageE.value = null;
+  coverageTs.value = '';
+  coverageKnown.value = false;
+  coverageStates.value = {};
+  fastRefSum.value = null;
   const trend = boardTrend.value;
   if (!trend || !trend.timestamps || trend.timestamps.length === 0) return;
   const bucketTimestamps = trend.timestamps;
@@ -819,11 +962,12 @@ async function loadRosterTrend() {
   }
 
   const isDay = trend.granularity === 'day';
-  // 节点内按桶取名册：hour=该小时快照；day=该北京日最末一条小时快照（日末状态）
-  function rosterOfBucket(
+  // 节点内按桶取评估统计：hour=该小时快照；day=该北京日最末一条小时快照（日末状态）
+  // P6-03：返回值由 roster 扩为 assessmentStats 整体（roster + fastRateReference 同桶同源）
+  function statsOfBucket(
     snaps: MetricApi.NodeMonitorSnapshot[],
     bucketIdx: number,
-  ): MetricApi.NodeAssessmentRoster | null | undefined {
+  ): MetricApi.NodeAssessmentStats | null | undefined {
     const bucketTs = bucketTimestamps[bucketIdx] ?? '';
     let chosen: MetricApi.NodeMonitorSnapshot | undefined;
     for (const s of snaps) {
@@ -836,30 +980,87 @@ async function loadRosterTrend() {
       }
     }
     if (!chosen) return undefined; // 该节点该桶无快照
-    return chosen.assessmentStats?.roster ?? null; // null=有快照无名册（历史）
+    return chosen.assessmentStats ?? null; // null=有快照无名册（历史）
   }
 
   const nSeries: (null | number)[] = [];
   const eSeries: (null | number)[] = [];
-  for (let i = 0; i < bucketTimestamps.length; i++) {
+  // P6-03：最新可知名册桶（跨节点求和口径与柱序列一致）——首屏常驻 N/E +
+  // 状态账 + F 参考充分统计量随桶序升序覆盖，循环结束即最新可知名册桶
+  let latestKnown: null | {
+    e: number;
+    fast: FastRefSum | null;
+    n: number;
+    states: Record<string, number>;
+    ts: string;
+  } = null;
+  for (const [i, bucketTimestamp] of bucketTimestamps.entries()) {
     let n: null | number = 0;
     let e: null | number = 0;
     let unknown = false;
+    const statesSum: Record<string, number> = {};
+    const fastSum: FastRefSum = {
+      numerator: 0,
+      weightSum: 0,
+      numeric: 0,
+      dynamic: 0,
+      policy: 0,
+      unavailable: 0,
+      missingNodes: 0,
+    };
+    let fastKnown = false;
     for (const snaps of contributing) {
-      const roster = rosterOfBucket(snaps, i);
-      if (roster === undefined || roster === null) {
+      const stats = statsOfBucket(snaps, i);
+      const roster = stats?.roster;
+      if (stats === undefined || stats === null || !roster) {
         // 任一节点该桶无快照/无名册 → 合计不可知（不猜算，断点显示）
         unknown = true;
         break;
       }
       n += roster.scorableLoopCount ?? 0;
       e += roster.eligibleLoopCount ?? 0;
+      for (const [k, v] of Object.entries(roster.states ?? {})) {
+        if (typeof v === 'number') statesSum[k] = (statesSum[k] ?? 0) + v;
+      }
+      // F 参考充分统计量（PL-03：分子/权重和/计数跨节点可加；
+      // 缺 fastRateReference 的节点计入 missingNodes 显式部分口径）
+      const fr = stats.fastRateReference;
+      if (fr) {
+        fastKnown = true;
+        fastSum.numerator += fr.referenceWeightedNumerator ?? 0;
+        fastSum.weightSum += fr.referenceWeightSum ?? 0;
+        fastSum.numeric += fr.numericCount ?? 0;
+        fastSum.dynamic += fr.dynamicEstimateCount ?? 0;
+        fastSum.policy += fr.policyReferenceCount ?? 0;
+        fastSum.unavailable += fr.unavailableCount ?? 0;
+      } else {
+        fastSum.missingNodes += 1;
+      }
     }
     nSeries.push(unknown ? null : n);
     eSeries.push(unknown ? null : e);
+    if (!unknown) {
+      latestKnown = {
+        n: n ?? 0,
+        e: e ?? 0,
+        ts: bucketTimestamp ?? '',
+        states: statesSum,
+        fast: fastKnown || fastSum.missingNodes > 0 ? fastSum : null,
+      };
+    }
   }
   rosterNValues.value = nSeries;
   rosterEValues.value = eSeries;
+
+  // P6-03：首屏常驻块落值（最新可知名册桶；无名册桶保持 coverageKnown=false）
+  if (latestKnown) {
+    coverageKnown.value = true;
+    coverageN.value = latestKnown.n;
+    coverageE.value = latestKnown.e;
+    coverageTs.value = latestKnown.ts;
+    coverageStates.value = latestKnown.states;
+    fastRefSum.value = latestKnown.fast;
+  }
 
   // R07-3：窗口内最新带 metricStats 的快照（跨节点取 tsStart 最大者）
   let latest: null | { snap: MetricApi.NodeMonitorSnapshot } = null;
@@ -948,6 +1149,8 @@ function renderTrendChart() {
         yAxisIndex: 1,
         data: trend.avgScore ?? [],
         smooth: true,
+        // P6-03：缺口不连线伪连续——null 桶断开（显式声明，不依赖默认值漂移）
+        connectNulls: false,
         itemStyle: { color: themeColors.value.WARNING },
         lineStyle: { width: 2 },
         symbol: 'circle',
@@ -972,6 +1175,7 @@ function renderTrendChart() {
         yAxisIndex: 1,
         data: trend.autoModeRate ?? [],
         smooth: true,
+        connectNulls: false,
         itemStyle: { color: themeColors.value.INFO },
         lineStyle: { width: 2 },
         symbol: 'circle',
@@ -996,6 +1200,7 @@ function renderTrendChart() {
         yAxisIndex: 1,
         data: trend.stabilityRate ?? [],
         smooth: true,
+        connectNulls: false,
         itemStyle: { color: themeColors.value.SUCCESS },
         lineStyle: { width: 2 },
         symbol: 'circle',
@@ -1530,6 +1735,82 @@ onMounted(() => {
             </div>
           </div>
 
+          <!-- P6-03（PL-04/PL-05）：首屏常驻可评分 N/E + 截至 + 不可评分原因 +
+               F 参考同显块。数据源=小时快照名册（assessmentStats），与上方
+               期间均值仪表盘口径不同（名册桶快照口径），无名册时显式诚实态 -->
+          <div
+            class="clpm-pid-dashboard__coverage"
+            data-testid="coverage-strip"
+          >
+            <template v-if="coverageKnown">
+              <span
+                class="clpm-pid-dashboard__coverage-item"
+                data-testid="coverage-ne"
+                title="N=可评分回路数（完整 P），E=参评名册回路数；来源：小时快照名册 assessmentStats.roster"
+              >
+                可评分 N/E
+                <b class="clpm-pid-dashboard__coverage-num"
+                  >N={{ coverageN ?? '—' }} / E={{ coverageE ?? '—' }}</b
+                >
+                <span
+                  v-if="coverageRatioText"
+                  class="clpm-pid-dashboard__coverage-dim"
+                  >（{{ coverageRatioText }}）</span
+                >
+              </span>
+              <span
+                v-if="coverageAsOfText"
+                class="clpm-pid-dashboard__coverage-item clpm-pid-dashboard__coverage-dim"
+                data-testid="coverage-asof"
+              >
+                {{ coverageAsOfText }}（小时快照名册口径）
+              </span>
+              <span
+                v-if="coverageReasonText"
+                class="clpm-pid-dashboard__coverage-item clpm-pid-dashboard__coverage-reason"
+                data-testid="coverage-reason"
+                title="参评名册中不可评分回路的构成原因（六类状态账跨节点求和）"
+              >
+                不可评分：{{ coverageReasonText }}
+              </span>
+              <span
+                v-if="fastRefView && fastRefView.mean !== null"
+                class="clpm-pid-dashboard__coverage-item clpm-pid-dashboard__coverage-fastref"
+                data-testid="fastref-block"
+                title="F（快速性）参考均分：含动态证据不足回路的政策参考值，仅作管理参考，不计入正式 F/P"
+              >
+                F 参考均分
+                <b class="clpm-pid-dashboard__coverage-num">{{
+                  fastRefView.mean.toFixed(1)
+                }}</b>
+                <i class="clpm-pid-dashboard__coverage-refbadge">参考</i>
+                <span class="clpm-pid-dashboard__coverage-dim">
+                  参考数量 {{ fastRefView.numeric }}（动态证据充分
+                  {{ fastRefView.dynamic }} · 动态证据不足
+                  {{ fastRefView.policy }}）· 无数据
+                  {{ fastRefView.unavailable }} · 动态估计覆盖
+                  {{
+                    fastRefView.coverage === null
+                      ? '—'
+                      : `${fastRefView.coverage}%`
+                  }}
+                  · 来源：小时快照名册统计<template
+                    v-if="fastRefView.missingNodes > 0"
+                    >（{{ fastRefView.missingNodes }} 节点缺参考统计）</template
+                  >
+                  · 参考口径不计入正式 F/P
+                </span>
+              </span>
+            </template>
+            <span
+              v-else
+              class="clpm-pid-dashboard__coverage-item clpm-pid-dashboard__coverage-dim"
+              data-testid="coverage-ne"
+            >
+              可评分 N/E：暂无名册数据（历史快照不可追溯，断点显示不猜算）
+            </span>
+          </div>
+
           <div class="clpm-pid-dashboard__middle-row">
             <div
               class="clpm-pid-dashboard__chart-card clpm-pid-dashboard__chart-card--status-pie"
@@ -1783,13 +2064,22 @@ onMounted(() => {
               >
                 <template #bodyCell="{ column, record }">
                   <template v-if="column.key === 'tagName'">
-                    <!-- F-PID-002：位号接 LoopLink，默认跳诊断（待治理用户任务=找最差回路去处置），
-                         下拉菜单可跳工作台/整定/评估 -->
-                    <ClpmLoopLink
-                      :loop-id="record.loopId"
-                      :tag-name="record.tagName"
-                      default-target="diagnosis"
-                    />
+                    <!-- 02b：位号 → 回路工作台诊断剖面（携带精确窗口/节点 scope/
+                         from 返回）；无权角色降级纯文本不造死链 -->
+                    <a
+                      v-if="canOpenWorkbench"
+                      class="clpm-pid-dashboard__loop-link"
+                      :title="`${record.tagName} · 在回路工作台诊断剖面打开（携带当前窗口与节点范围）`"
+                      @click="openLoopWorkbench(record.loopId, 'diagnosis')"
+                    >
+                      {{ record.tagName }}
+                    </a>
+                    <span
+                      v-else
+                      class="clpm-pid-dashboard__loop-link--static"
+                    >
+                      {{ record.tagName }}
+                    </span>
                   </template>
                   <template v-else-if="column.key === 'rating'">
                     <Tooltip
@@ -1864,11 +2154,19 @@ onMounted(() => {
                 :key="item.loopId"
                 class="clpm-pid-dashboard__valve-row"
               >
-                <ClpmLoopLink
-                  :loop-id="item.loopId"
-                  :tag-name="item.tagName"
-                  default-target="tuning"
-                />
+                <!-- 02b：越限回路 → 回路工作台整定剖面（携带精确窗口/节点
+                     scope/from 返回）；无权角色降级纯文本 -->
+                <a
+                  v-if="canOpenWorkbench"
+                  class="clpm-pid-dashboard__loop-link"
+                  :title="`${item.tagName} · 在回路工作台整定剖面打开（携带当前窗口与节点范围）`"
+                  @click="openLoopWorkbench(item.loopId, 'tuning')"
+                >
+                  {{ item.tagName }}
+                </a>
+                <span v-else class="clpm-pid-dashboard__loop-link--static">
+                  {{ item.tagName }}
+                </span>
                 <span
                   class="text-xs"
                   :style="{ color: 'var(--status-warning)' }"
@@ -1981,6 +2279,55 @@ onMounted(() => {
   }
 }
 
+/* P6-03（PL-04/PL-05）：首屏常驻 N/E + F 参考同显块（小时快照名册口径） */
+.clpm-pid-dashboard__coverage {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 3px 14px;
+  align-items: baseline;
+  padding: 4px 10px;
+  font-size: 11px;
+  color: hsl(var(--foreground) / 85%);
+  background: hsl(var(--card) / 60%);
+  border: 1px solid hsl(var(--border));
+  border-radius: 6px;
+}
+
+.clpm-pid-dashboard__coverage-item {
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.clpm-pid-dashboard__coverage-num {
+  font-family: var(--font-mono, monospace);
+  font-weight: 600;
+  color: hsl(var(--foreground));
+}
+
+.clpm-pid-dashboard__coverage-dim {
+  color: hsl(var(--muted-foreground));
+}
+
+.clpm-pid-dashboard__coverage-reason {
+  color: hsl(var(--warning));
+}
+
+.clpm-pid-dashboard__coverage-fastref {
+  padding-left: 14px;
+  border-left: 1px dashed hsl(var(--border));
+}
+
+.clpm-pid-dashboard__coverage-refbadge {
+  padding: 0 4px;
+  margin: 0 2px;
+  font-size: 10px;
+  font-style: normal;
+  color: hsl(var(--muted-foreground));
+  border: 1px solid hsl(var(--muted-foreground) / 50%);
+  border-radius: 3px;
+}
+
 .clpm-pid-dashboard__gauge-card {
   display: flex;
   flex-direction: column;
@@ -2013,6 +2360,26 @@ onMounted(() => {
   &:hover {
     color: hsl(var(--primary));
   }
+}
+
+/* 02b：位号 → 回路工作台上下文深链（等宽字体口径同原 ClpmLoopLink） */
+.clpm-pid-dashboard__loop-link {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--status-info));
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+    opacity: 0.85;
+  }
+}
+
+.clpm-pid-dashboard__loop-link--static {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 13px;
+  font-weight: 500;
 }
 
 .clpm-pid-dashboard__gauge-meta {

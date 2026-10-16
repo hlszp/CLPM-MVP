@@ -166,6 +166,19 @@ const progressPct = computed(() => {
   const p = runner.state.progress;
   return typeof p === 'number' ? Math.round(p * 100) : null;
 });
+
+/**
+ * P6-03：终态区分——取消（CANCELLED）不是失败（FAILED）。
+ * runner 对非 SUCCESS 终态写入 error（CANCELLED 时 errorMessage 为空 →
+ * "任务CANCELLED"），此处按语义分标签展示，不把取消渲染成失败。
+ */
+const runnerTerminalTag = computed(() => {
+  const err = runner.state.error ?? '';
+  if (err.includes('CANCELLED') || err.includes('取消')) {
+    return { cls: 't-gray', label: '上次评估已取消' };
+  }
+  return { cls: 't-danger', label: '上次评估失败' };
+});
 </script>
 
 <template>
@@ -203,10 +216,11 @@ const progressPct = computed(() => {
       </span>
       <span
         v-else-if="runner.state.error"
-        class="tag t-danger"
+        class="tag"
+        :class="runnerTerminalTag.cls"
         :title="runner.state.error"
       >
-        <span class="dot"></span>上次评估失败
+        <span class="dot"></span>{{ runnerTerminalTag.label }}
       </span>
       <span class="spacer"></span>
       <span class="dim">发起后页内轮询进度，完成后自动刷新</span>
@@ -416,7 +430,7 @@ const progressPct = computed(() => {
       <div class="tbl-foot">
         <span class="dim"
           >共 {{ history.total.value }} 条 · 第 {{ history.page.value }} /
-          {{ totalPages }} 页（仅整点来源，手动来源待 G2）</span
+          {{ totalPages }} 页（来源行内标注：自动 / 回算 / 手动）</span
         >
         <span class="pager">
           <button

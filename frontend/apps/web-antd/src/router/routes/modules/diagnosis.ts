@@ -23,9 +23,10 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:stethoscope',
+      module: 'diagnosis',
+      navGroup: 'loop-ops',
       order: 4,
       title: '回路诊断',
-      module: 'diagnosis',
     },
     children: [
       {
@@ -84,7 +85,8 @@ const routes: RouteRecordRaw[] = [
           ],
           icon: 'lucide:loader-circle',
           order: 2,
-          title: '诊断任务',
+          // IAR-D3（2026-10-14）：「计算任务」始终指系统计算——诊断类计算任务
+          title: '诊断计算任务',
         },
       },
       {

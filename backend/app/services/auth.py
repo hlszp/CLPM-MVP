@@ -122,12 +122,14 @@ ROLE_PERMISSIONS: dict[str, list[str]] = {
 #
 # 2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench 工作台。
 # 2026-09-30 用户口径：默认落地统一 /workbench 工作台（驾驶舱保留菜单首位可进入）。
+# 2026-10-14 P6-06（IAR-D1/D2 已采纳）：工程师（IC/PE/EXPERT）首页为我的工作
+# /my-work，管理员/观察者（ADMIN/SPONSOR）为驾驶舱 /cockpit；前端表同批对齐。
 ROLE_DEFAULT_HOME: dict[str, str] = {
-    "ADMIN": "/workbench",
-    "IC_ENGINEER": "/workbench",
-    "PE_ENGINEER": "/workbench",
-    "SPONSOR": "/workbench",
-    "EXPERT": "/workbench",
+    "ADMIN": "/cockpit",
+    "IC_ENGINEER": "/my-work",
+    "PE_ENGINEER": "/my-work",
+    "SPONSOR": "/cockpit",
+    "EXPERT": "/my-work",
 }
 
 
@@ -138,7 +140,7 @@ def get_permissions(role: str) -> list[str]:
 
 def get_default_home(role: str) -> str:
     """Return the default home path for a role."""
-    return ROLE_DEFAULT_HOME.get(role, "/workbench")
+    return ROLE_DEFAULT_HOME.get(role, "/cockpit")
 
 
 # ---------------------------------------------------------------------------

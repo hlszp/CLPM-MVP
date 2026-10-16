@@ -2778,5 +2778,116 @@ CREATE TABLE IF NOT EXISTS policy_publication_guard (
 COMMENT ON TABLE policy_publication_guard IS '授权发布栅栏行（P4-03；单行 id=1，排他/共享锁序列化策略变更与提交/发送）';
 
 -- =============================================================================
+-- P6-05 个人关系分片（与迁移 p605person01 同批同内容，契约 01a §3）
+-- PostgreSQL 为真相来源：账号关注/跨设备偏好/最近继续；版本墓碑与代际栅栏
+-- 防迟到请求复活；撤权保留关系不泄露对象信息。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS user_loop_follow (
+    user_id UUID NOT NULL REFERENCES sys_user (id) ON DELETE CASCADE,
+    loop_id UUID NOT NULL REFERENCES loop_ledger (id) ON DELETE CASCADE,
+    is_followed BOOLEAN NOT NULL,
+    revision INTEGER NOT NULL,
+    last_request_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, loop_id),
+    CONSTRAINT ck_user_loop_follow_revision CHECK (revision >= 1)
+);
+CREATE INDEX IF NOT EXISTS idx_user_loop_follow_user_list ON user_loop_follow (user_id, is_followed, updated_at);
+COMMENT ON TABLE user_loop_follow IS '回路关注关系（P6-05；取消关注留 is_followed=false 版本墓碑不物理删行）';
+
+CREATE TABLE IF NOT EXISTS user_workspace_preference (
+    user_id UUID NOT NULL REFERENCES sys_user (id) ON DELETE CASCADE,
+    preference_key VARCHAR(64) NOT NULL,
+    payload JSONB NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    last_request_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, preference_key),
+    CONSTRAINT ck_user_workspace_preference_revision CHECK (revision >= 1),
+    CONSTRAINT ck_user_workspace_preference_schema_version CHECK (schema_version >= 1)
+);
+COMMENT ON TABLE user_workspace_preference IS '账号工作偏好（P6-05；按 key 独立 revision；保留键 resume_generation 服务端专用）';
+
+CREATE TABLE IF NOT EXISTS user_work_resume (
+    user_id UUID NOT NULL REFERENCES sys_user (id) ON DELETE CASCADE,
+    resource_kind VARCHAR(32) NOT NULL,
+    resource_id VARCHAR(64) NOT NULL,
+    context JSONB NOT NULL,
+    revision INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    last_visited_at TIMESTAMP NOT NULL,
+    deleted_at TIMESTAMP,
+    last_request_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, resource_kind, resource_id),
+    CONSTRAINT ck_user_work_resume_revision CHECK (revision >= 1),
+    CONSTRAINT ck_user_work_resume_generation CHECK (generation >= 1)
+);
+CREATE INDEX IF NOT EXISTS idx_user_work_resume_user_visited ON user_work_resume (user_id, last_visited_at);
+COMMENT ON TABLE user_work_resume IS '最近继续位置（P6-05；generation 对齐清空栅栏，deleted_at 单项删除墓碑）';
+
+-- =============================================================================
+-- P6-05 后续分片一（E1）回路核查最小实体（与迁移 p605invest01 同批同内容，契约 01a §2.1）
+-- 阶段机 TODO/IN_PROGRESS/WAITING/CLOSED + 四结束结果；WAITING 三要素必填；
+-- 来源身份+问题身份去重（未结束部分唯一）；owner_id 稳定身份、owner_name
+-- 仅显示快照；HANDED_OFF 必有目标核查回链；取消≠回路正常。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_investigation (
+    id UUID PRIMARY KEY,
+    loop_id UUID NOT NULL REFERENCES loop_ledger (id) ON DELETE CASCADE,
+    source_kind VARCHAR(32) NOT NULL,
+    source_id VARCHAR(64) NOT NULL,
+    problem_key VARCHAR(128) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    detail VARCHAR(500),
+    stage VARCHAR(16) NOT NULL DEFAULT 'TODO',
+    outcome VARCHAR(24),
+    outcome_note VARCHAR(500),
+    owner_id UUID REFERENCES sys_user (id) ON DELETE SET NULL,
+    owner_name VARCHAR(100),
+    wait_reason VARCHAR(200),
+    wait_review_condition VARCHAR(200),
+    wait_responsible VARCHAR(120),
+    close_target_kind VARCHAR(32),
+    close_target_id VARCHAR(64),
+    handoff_source_id UUID REFERENCES loop_investigation (id) ON DELETE SET NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    last_request_id VARCHAR(64),
+    created_by UUID REFERENCES sys_user (id) ON DELETE SET NULL,
+    closed_by UUID REFERENCES sys_user (id) ON DELETE SET NULL,
+    closed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_loop_investigation_stage
+        CHECK (stage IN ('TODO', 'IN_PROGRESS', 'WAITING', 'CLOSED')),
+    CONSTRAINT ck_loop_investigation_outcome
+        CHECK ((stage = 'CLOSED' AND outcome IS NOT NULL AND outcome IN
+            ('NO_FURTHER_ACTION', 'ANSWERED', 'HANDED_OFF', 'CANCELLED')
+            AND closed_at IS NOT NULL)
+            OR (stage <> 'CLOSED' AND outcome IS NULL AND closed_at IS NULL)),
+    CONSTRAINT ck_loop_investigation_waiting
+        CHECK ((stage = 'WAITING' AND wait_reason IS NOT NULL
+            AND wait_review_condition IS NOT NULL AND wait_responsible IS NOT NULL)
+            OR (stage <> 'WAITING' AND wait_reason IS NULL
+            AND wait_review_condition IS NULL AND wait_responsible IS NULL)),
+    CONSTRAINT ck_loop_investigation_handoff_target
+        CHECK (outcome IS NULL OR outcome <> 'HANDED_OFF' OR
+            (close_target_kind = 'loop_investigation' AND close_target_id IS NOT NULL)),
+    CONSTRAINT ck_loop_investigation_revision CHECK (revision >= 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_loop_investigation_active_identity
+    ON loop_investigation (loop_id, source_kind, source_id, problem_key)
+    WHERE stage <> 'CLOSED';
+CREATE INDEX IF NOT EXISTS idx_loop_investigation_loop_list
+    ON loop_investigation (loop_id, stage, created_at);
+CREATE INDEX IF NOT EXISTS idx_loop_investigation_owner
+    ON loop_investigation (owner_id, stage);
+COMMENT ON TABLE loop_investigation IS '回路核查最小实体（P6-05 E1；来源+问题去重，取消≠回路正常）';
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-09-29",
-  "note": "API 契约对账白名单。check_api_contract.py 会对白名单内的端点放行（WARN 可见、不阻塞 CI）；不在白名单且前端从不调用的端点会被提示登记。登记不等于永久保留：清理周期需逐条确认后从本文件移除并删除实现。0929 清理：GET/PUT /configs/metrics、GET /performance/board、GET /dashboard/system-overview、GET /dashboard/predictions、/workbench A-05/07/08/09/11 空壳已随实现一并删除，从本清单移除。 2026-10-12 登记第二批（25 项）：P2-02 配置发布/P2-04 工程模板/P4-01/02 授权管理端点——后端已验收落地、管理 UI 分别归 P4-04（配置/授权页）与 P6-04（模板维护页），UI 落地接通前端消费后逐条移除。2026-10-12 P4-04 移除 8 条：system/authorization 全部端点已由授权配置页/用户管理页接通前端消费（api/authorization.ts）。",
+  "generatedAt": "2026-10-15",
+  "note": "API 契约对账白名单。check_api_contract.py 会对白名单内的端点放行（WARN 可见、不阻塞 CI）；不在白名单且前端从不调用的端点会被提示登记。登记不等于永久保留：清理周期需逐条确认后从本文件移除并删除实现。0929 清理：GET/PUT /configs/metrics、GET /performance/board、GET /dashboard/system-overview、GET /dashboard/predictions、/workbench A-05/07/08/09/11 空壳已随实现一并删除，从本清单移除。 2026-10-12 登记第二批（25 项）：P2-02 配置发布/P2-04 工程模板/P4-01/02 授权管理端点——后端已验收落地、管理 UI 分别归 P4-04（配置/授权页）与 P6-04（模板维护页），UI 落地接通前端消费后逐条移除。2026-10-12 P4-04 移除 8 条：system/authorization 全部端点已由授权配置页/用户管理页接通前端消费（api/authorization.ts）。 1015：移除 14 条已接通前端消费的陈旧条目（engineering-templates/configs-publish/robustness，P6 K/M 已接线）；登记 5 条 investigations 后端先行端点。",
   "registryDoc": "docs/过程文档/dead-code-registry-2026-09-24.md",
   "backendUnused": [
     "DELETE /algorithms/dataplanner/cache/*",
@@ -28,22 +28,13 @@
     "POST /tuning/identify/segments",
     "POST /tuning/simulate",
     "GET /configs/publish/effective",
-    "GET /configs/publish/overrides",
-    "GET /configs/publish/publications",
-    "GET /configs/publish/revision",
-    "POST /configs/publish/overrides",
     "POST /configs/publish/overrides/*/reset",
-    "POST /configs/publish/overrides/preview",
-    "POST /configs/publish/publications/*/rollback",
-    "GET /engineering-templates",
-    "GET /engineering-templates/*",
-    "GET /engineering-templates/*/loops",
-    "GET /engineering-templates/*/versions",
-    "POST /engineering-templates",
-    "POST /engineering-templates/*/versions",
-    "POST /engineering-templates/*/versions/*/rollback",
     "GET /loops/*/engineering-facts",
-    "POST /tuning/tune/robustness"
+    "GET /loops/*/investigations",
+    "POST /loops/*/investigations",
+    "POST /investigations/*/close",
+    "POST /investigations/*/resume",
+    "POST /investigations/*/wait"
   ],
   "backendUnusedReasons": {
     "DELETE /algorithms/dataplanner/cache/*": "算法直调端点：计算已全部收敛到 Celery 任务链路，前端不再直调（待清理评估）",
@@ -86,7 +77,12 @@
     "POST /engineering-templates/*/versions": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
     "POST /engineering-templates/*/versions/*/rollback": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
     "GET /loops/*/engineering-facts": "P2-04 工程模板端点，维护 UI 归 P6-04 落地时接通",
-    "POST /tuning/tune/robustness": "鲁棒验证专用后端端点（P3-07 交付）：工程师前端 UI 消费归 P6 待接通（挂账），当前由验收脚本/直链消费"
+    "POST /tuning/tune/robustness": "鲁棒验证专用后端端点（P3-07 交付）：工程师前端 UI 消费归 P6 待接通（挂账），当前由验收脚本/直链消费",
+    "GET /loops/*/investigations": "P6-05 核查实体后端先行（2026-10-14）：前端 my-work 已接 claim/handoff；create/close/wait/resume/list 由核查详情视图后续接入（IAR-D4 独立语义），暂登记不删。",
+    "POST /loops/*/investigations": "P6-05 核查实体后端先行（2026-10-14）：前端 my-work 已接 claim/handoff；create/close/wait/resume/list 由核查详情视图后续接入（IAR-D4 独立语义），暂登记不删。",
+    "POST /investigations/*/close": "P6-05 核查实体后端先行（2026-10-14）：前端 my-work 已接 claim/handoff；create/close/wait/resume/list 由核查详情视图后续接入（IAR-D4 独立语义），暂登记不删。",
+    "POST /investigations/*/resume": "P6-05 核查实体后端先行（2026-10-14）：前端 my-work 已接 claim/handoff；create/close/wait/resume/list 由核查详情视图后续接入（IAR-D4 独立语义），暂登记不删。",
+    "POST /investigations/*/wait": "P6-05 核查实体后端先行（2026-10-14）：前端 my-work 已接 claim/handoff；create/close/wait/resume/list 由核查详情视图后续接入（IAR-D4 独立语义），暂登记不删。"
   },
   "frontendCallsWithoutBackend": [
     "/menu/all"

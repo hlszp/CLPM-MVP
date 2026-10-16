@@ -14,6 +14,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
 
 import {
+  Alert,
   Descriptions,
   DescriptionsItem,
   Drawer,
@@ -24,7 +25,12 @@ import {
 } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
-import { getTuningTaskDetailApi } from '#/api/tuning';
+import {
+  getTuningTaskDetailApi,
+  limitationDesc,
+  limitationItemsOf,
+  limitationTitle,
+} from '#/api/tuning';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 
@@ -131,6 +137,14 @@ const RISK_COLOR: Record<string, string> = {
   HIGH: 'red',
 };
 
+/**
+ * R03 重读链：适用性限制按值判空（G3 F3——HTTP 层 null 序列化，
+ * null/缺键/空数组 → [] 不制造警告；旧记录无该键显式未知不伪补）
+ */
+const limitationItems = computed(() =>
+  limitationItemsOf(detail.value?.applicabilityLimitations),
+);
+
 const paramsText = computed(() => {
   const p = detail.value?.modelParams;
   if (!p) return '—';
@@ -236,7 +250,40 @@ const deltaRows = computed(() => {
           <DescriptionsItem v-if="timeWindowText" label="辨识时间窗" :span="2">
             {{ timeWindowText }}
           </DescriptionsItem>
+          <!-- 记录身份（R01：recordId/版本随证据同显；旧记录为 null 显式 — 不伪补） -->
+          <DescriptionsItem label="记录 ID" :span="2">
+            <span class="clpm-num">{{ detail.id }}</span>
+          </DescriptionsItem>
+          <DescriptionsItem label="来源记录">
+            {{ detail.sourceRecordId ?? '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="模型版本">
+            {{ detail.processModelVersionId ?? '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="模型来源">
+            {{ detail.modelSource ?? '—' }}
+          </DescriptionsItem>
+          <DescriptionsItem label="DCS 模板">
+            {{ detail.dcsTemplateRevision ?? '—' }}
+          </DescriptionsItem>
         </Descriptions>
+
+        <!-- R03：适用性限制（保存时冻结于 calc_context；按值判空，null 不渲染） -->
+        <template v-if="limitationItems.length > 0">
+          <div class="mt-4 text-xs font-medium text-neutral-500">
+            适用性限制（保存时冻结）
+          </div>
+          <Alert
+            v-for="item in limitationItems"
+            :key="item.reasonCode"
+            class="mt-1"
+            type="warning"
+            :message="limitationTitle(item)"
+            :description="limitationDesc(item)"
+            data-testid="record-limitation-item"
+            show-icon
+          />
+        </template>
 
         <!-- A4：实施前 → 推荐参数变化表（Δ 高亮） -->
         <div

@@ -324,11 +324,12 @@ function openLatestDetail(record: DiagnosisApi.LatestRunItem): void {
 const detailModalOpen = ref(false);
 const detailItem = ref<DiagnosisApi.LatestRunItem | null>(null);
 
-/** 行内"诊断" → 右侧抽屉内嵌回路工作台诊断剖面（2026-10-05 用户裁决：
+/** 行内"诊断" → 右侧抽屉内嵌单回路作业核心诊断剖面（2026-10-05 用户裁决：
  * 单回路诊断页面抽屉推出，原为跳转 /loop/workbench360?section=diagnosis；
- * 异步组件避免工作台大包拖累概览页首屏） */
-const Workbench360 = defineAsyncComponent(
-  () => import('#/views/loop/workbench360/index.vue'),
+ * P6-02a：改挂 SingleLoopWorkbench（presentation=drawer，统一上下文 props，
+ * 不再经路由页 embed props）；异步组件避免工作台大包拖累概览页首屏） */
+const SingleLoopWorkbench = defineAsyncComponent(
+  () => import('#/views/loop/workbench360/components/SingleLoopWorkbench.vue'),
 );
 const diagWorkbenchOpen = ref(false);
 const diagWorkbenchLoopId = ref('');
@@ -336,6 +337,30 @@ const diagWorkbenchLoopId = ref('');
 function openDiagWorkbench(loopId: string): void {
   diagWorkbenchLoopId.value = loopId;
   diagWorkbenchOpen.value = true;
+}
+
+/** 抽屉内核心上下文（诊断剖面直达；keyed 会话随对象切换） */
+const diagWorkbenchContext = computed(() => ({
+  loopId: diagWorkbenchLoopId.value,
+  section: 'diagnosis' as const,
+}));
+
+/** 核心数据变化（发起诊断/复核等）→ 概览最新结论就地刷新（不冒充现场闭环） */
+function onDiagWorkbenchResultChanged(): void {
+  loadLatestOverview();
+}
+
+/** 核心上下文更新请求（抽屉宿主：本地状态更新，不写 URL） */
+function onDiagWorkbenchNavigate(payload: {
+  context?: { loopId: string };
+  target: string;
+}): void {
+  if (payload.target === 'update-context' && payload.context?.loopId) {
+    diagWorkbenchLoopId.value = payload.context.loopId;
+  }
+  if (payload.target === 'return') {
+    diagWorkbenchOpen.value = false;
+  }
 }
 
 // ===== 概览行操作：证据 / 复核 / 历史 =====
@@ -794,8 +819,8 @@ onMounted(() => {
     />
     <ClpmFitnessRulesModal v-model:open="fitnessRulesOpen" />
 
-    <!-- 单回路诊断抽屉：内嵌回路工作台诊断剖面（embed 模式；v-if +
-         destroy-on-close 关闭即卸载，停止工作台实时订阅） -->
+    <!-- 单回路诊断抽屉：内嵌单回路作业核心诊断剖面（presentation=drawer；
+         v-if + destroy-on-close 关闭即卸载，停止工作台实时订阅与读请求） -->
     <Drawer
       v-model:open="diagWorkbenchOpen"
       title="回路诊断"
@@ -809,10 +834,13 @@ onMounted(() => {
       }"
       destroy-on-close
     >
-      <Workbench360
+      <SingleLoopWorkbench
         v-if="diagWorkbenchOpen"
-        :embed-loop-id="diagWorkbenchLoopId"
-        embed-section="diag"
+        :key="diagWorkbenchLoopId"
+        :context="diagWorkbenchContext"
+        presentation="drawer"
+        @navigate-request="onDiagWorkbenchNavigate"
+        @result-changed="onDiagWorkbenchResultChanged"
       />
     </Drawer>
   </Page>

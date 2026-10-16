@@ -39,7 +39,7 @@ import ClpmPageToolbar from '#/components/clpm/page-toolbar.vue';
 import ClpmToolbarButton from '#/components/clpm/toolbar-button.vue';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 import { useLatestOverviewCache } from '#/composables/use-latest-overview-cache';
-import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
+import { registerInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
 
 import { SCORE_GRADES } from '../diagnosis/constants';
@@ -257,7 +257,14 @@ const overviewColumns: TableColumnsType = [
 // ===== 实时更新（P/I/D 由全局 WS 推送，初值批量拉取） =====
 const { applyMessage, onMessage, start, stop } = useLoopRealtime();
 
-bindLoopInterest(() => overviewRows.value.map((r) => r.tagName));
+// O02-RT：声明本页回路实时兴趣（owner=本组件实例唯一身份，Symbol 每实例一份）；
+// 列表/筛选变化由 registerInterest 内部 watch 自动重订（对 WS 发送全部 owner
+// 并集，与其他页面互不覆盖）；KeepAlive 停用→释放、恢复→重算 source 重注册；
+// 组件卸载→自动停止 watch 并释放。
+const realtimeInterestOwner = Symbol('tuning-overview-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  loops: overviewRows.value.map((r) => r.tagName),
+}));
 
 onMessage((msg) => {
   applyMessage(msg, overviewRows.value as never[]);

@@ -558,6 +558,32 @@ class TuningTaskItem(CamelModel):
         None,
         description="适用性限制（低 SNR 参数精度不承诺 / ci95 未校准集合成员边界）",
     )
+    # O-1（P6 四批/五批验收挂账）：服务层 _record_to_dict 已产出但 response_model
+    # 未声明而被过滤的身份/冻结上下文字段——仅补声明（服务层产出逻辑不变）；
+    # 声明在 Item 层使 history recentTasks 与 detail 同源下发（detail 继承）；
+    # 旧记录无冻结身份 → None（显式未知不伪补）
+    sourceRecordId: str | None = Field(
+        None, description="来源辨识记录 ID（P3-B2 W4 新协议保存链冻结）"
+    )
+    processModelVersionId: str | None = Field(
+        None, description="过程模型版本 ID（V62-P3-005；遗留记录为 null）"
+    )
+    modelSource: ModelSource | None = Field(
+        None, description="推荐链模型来源（calc_context 冻结；旧记录为 null）"
+    )
+    dcsTemplateRevision: str | None = Field(
+        None, description="DCS PID 模板版本（保存链工程事实冻结；未知为 null）"
+    )
+    unitBasis: dict[str, Any] | None = Field(
+        None, description="K 单位域冻结依据（calc_context 冻结；旧记录为 null）"
+    )
+    currentPidContext: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "实施前 PID 三元组上下文（standard 标准/raw DCS 原始/conversion "
+            "转换依据；calc_context 冻结，旧记录为 null）"
+        ),
+    )
 
 
 class TuningTaskDetail(TuningTaskItem):

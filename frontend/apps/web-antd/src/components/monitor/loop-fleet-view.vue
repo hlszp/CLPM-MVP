@@ -41,7 +41,7 @@ import {
   MODE_LABEL_MAP,
   useLoopPalettes,
 } from '#/composables/use-loop-palettes';
-import { bindLoopInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
+import { registerInterest, useLoopRealtime } from '#/composables/use-loop-realtime';
 import { useMonitorContext } from '#/composables/use-monitor-context';
 import { useTableDensity } from '#/composables/use-table-density';
 import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
@@ -232,7 +232,13 @@ const {
 // 在路由切换时清空兴趣——切到回路监视页后订阅恒为空集，服务端过滤掉
 // 全部推送，实时值长期冻结（仅刷新页面的 REST 首屏会更新一次）。
 // 列表加载/翻页/筛选变化时 watch 自动重订当前页回路。
-bindLoopInterest(() => monitorList.value.map((l) => l.tagName));
+// O02-RT：owner=本组件实例唯一身份（Symbol 每实例一份）；对 WS 发送全部
+// owner 并集（与其他实例/页面互不覆盖）；KeepAlive 停用→释放、恢复→重算
+// source 重注册；组件卸载→自动停止 watch 并释放。
+const realtimeInterestOwner = Symbol('loop-fleet-view-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  loops: monitorList.value.map((l) => l.tagName),
+}));
 
 const autoRefresh = ref(true);
 const isFallbackPolling = computed(

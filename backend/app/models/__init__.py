@@ -48,6 +48,7 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_action_item import LoopActionItem
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
 from app.models.loop_health_flag import LoopHealthFlag  # 运维健康标记
+from app.models.loop_investigation import LoopInvestigation  # P6-05 E1 核查最小实体
 from app.models.metric import (
     KpiSnapshotCustom,
     KpiSnapshotHourly,
@@ -61,6 +62,11 @@ from app.models.node_kpi import (
     KpiNodeSnapshotDaily,
     KpiNodeSnapshotHourly,
     KpiNodeSnapshotMonthly,
+)
+from app.models.personal_workspace import (  # P6-05 个人关系分片
+    UserLoopFollow,
+    UserWorkResume,
+    UserWorkspacePreference,
 )
 from app.models.plant_node import PlantNode
 from app.models.point_history import (  # tag-timeseries-refactor P1
@@ -99,12 +105,16 @@ __all__ = [
     "PolicyPublicationGuard",
     "Base",
     "LoopHealthFlag",
+    "LoopInvestigation",  # P6-05 E1 回路核查最小实体（来源+问题去重）
     "TimestampMixin",
     "AlgorithmParameter",
     "AssessmentReleaseRegistry",  # P3-08a 评估发布代际登记
     "SysDictItem",
     "SysUser",
     "PlantNode",
+    "UserLoopFollow",  # P6-05 回路关注（取消留版本墓碑）
+    "UserWorkspacePreference",  # P6-05 账号工作偏好（按 key 独立版本）
+    "UserWorkResume",  # P6-05 最近继续（generation 清空栅栏）
     "HistoryCoverageSegment",  # tag-timeseries-refactor P1 覆盖区间
     "HistoryLayoutManifest",  # 布局清单
     "HistoryPointConflict",  # 同 ts 冲突登记

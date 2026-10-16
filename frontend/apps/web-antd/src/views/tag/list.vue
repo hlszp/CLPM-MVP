@@ -68,7 +68,7 @@ import {
   ClpmToolbarButton,
 } from '#/components/clpm';
 import QualityTag from '#/components/loop/quality-tag.vue';
-import { bindTagInterest } from '#/composables/use-loop-realtime';
+import { registerInterest } from '#/composables/use-loop-realtime';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
 import { useTableDensity } from '#/composables/use-table-density';
 import { formatTime } from '#/utils/format';
@@ -758,8 +758,17 @@ function handleRealtimeMessage(msg: {
   item.stale = false;
 }
 
-/** 服务端订阅过滤：仅接收当前页位号（分页/筛选变化自动重订） */
-bindTagInterest(() => tagList.value.map((t) => t.tagName));
+/**
+ * 服务端订阅过滤：仅接收当前页位号（分页/筛选变化自动重订）。
+ * O02-RT：owner=本组件实例唯一身份（Symbol 每实例一份）；注册/重订由
+ * registerInterest 内部 watch 驱动（对 WS 发送全部 owner 并集）；
+ * KeepAlive 停用→释放本实例兴趣、恢复→重算 source 重注册；
+ * 组件卸载→自动停止 watch 并释放（布局退出时 releaseAllInterests 兜底）。
+ */
+const realtimeInterestOwner = Symbol('tag-list-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  tags: tagList.value.map((t) => t.tagName),
+}));
 
 /** R20：失联（offline/reconnecting）期间当前页值显式标旧 */
 function markAllStale() {

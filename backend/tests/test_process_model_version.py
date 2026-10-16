@@ -92,12 +92,16 @@ def test_orm_has_38_tables() -> None:
     sys_authz_policy，P4-01 迁移 p401authz01，2026-10-11）= 76
     + 授权发布栅栏行（policy_publication_guard，P4-03 迁移 p403scope01，
     2026-10-12）= 77 + 计算尝试日志（calculation_result_attempt，
-    P5-02 迁移 p502attm01，2026-10-13）= 78。
+    P5-02 迁移 p502attm01，2026-10-13）= 78
+    + 个人关系三表（user_loop_follow / user_workspace_preference /
+    user_work_resume，P6-05 迁移 p605person01，2026-10-14）= 81
+    + 回路核查最小实体（loop_investigation，P6-05 后续分片一 E1，
+    迁移 p605invest01，2026-10-14）= 82。
 
     注：loop_integrity_snapshot（数据完整性巡检快照）已于数据检查模块
     整体下线时移除，表计数曾从 63 回落至 62。
     """
-    assert len(Base.metadata.tables) == 78
+    assert len(Base.metadata.tables) == 82
 
 
 def test_partial_unique_index_current_exists() -> None:

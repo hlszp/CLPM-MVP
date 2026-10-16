@@ -247,7 +247,9 @@ describe('P5-04 createRealtimeMergeBuffer（实时短时合并）', () => {
       { windowMs: 500 },
     );
     buf.push({ tagCode: 'T1.PV', value: '1' });
+    // eslint-disable-next-line unicorn/prefer-single-call -- push 类型为单参数（窗口去重逐次语义），不可合并
     buf.push({ tagCode: 'T1.PV', value: '2' }); // 同位号覆盖
+    // eslint-disable-next-line unicorn/prefer-single-call -- 同上，逐次入窗
     buf.push({ tagCode: 'T2.PV', value: '9' });
     expect(applied).toEqual([]); // 窗口内未应用
     vi.advanceTimersByTime(500);

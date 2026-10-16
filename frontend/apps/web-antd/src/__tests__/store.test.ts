@@ -93,6 +93,24 @@ vi.mock('@vben/stores', async () => {
   };
 });
 
+// F-G2：登录首页消费 default_home 偏好（auth.ts 动态 import 目标模块 mock）
+const fetchDefaultHomePreferenceMock = vi.fn();
+const noteClpmAccountLoginMock = vi.fn();
+const handleClpmAccountLogoutMock = vi.fn();
+vi.mock('#/composables/use-clpm-preferences', async () => {
+  const actual = await vi.importActual<any>(
+    '#/composables/use-clpm-preferences',
+  );
+  return {
+    ...actual,
+    fetchDefaultHomePreference: (...args: any[]) =>
+      fetchDefaultHomePreferenceMock(...args),
+    handleClpmAccountLogout: (...args: any[]) =>
+      handleClpmAccountLogoutMock(...args),
+    noteClpmAccountLogin: (...args: any[]) => noteClpmAccountLoginMock(...args),
+  };
+});
+
 // 测试用路由数据（模拟 CLPM 路由模块）
 const testRoutes: any[] = [
   {
@@ -175,6 +193,10 @@ describe('store 测试', () => {
     routerPushSpy.mockReset();
     routerReplaceSpy.mockReset();
     resetAllStoresMock.mockReset();
+    // 默认无个人偏好：登录落地回退角色映射（既有断言保持）
+    fetchDefaultHomePreferenceMock.mockReset().mockResolvedValue(null);
+    noteClpmAccountLoginMock.mockReset();
+    handleClpmAccountLogoutMock.mockReset();
   });
 
   // ===== useAuthStore 测试 =====
@@ -296,8 +318,8 @@ describe('store 测试', () => {
     expect(userInfo.username).toBe('engineer');
     expect(userInfo.realName).toBe('工程师');
     expect(userInfo.roles).toEqual(['IC_ENGINEER']);
-    // IC_ENGINEER 默认落地驾驶舱（2026-10-05 整合裁决：默认落地 /cockpit，前端角色映射优先于后端 defaultHome）
-    expect(userInfo.homePath).toBe('/cockpit');
+    // IC_ENGINEER 默认落地我的工作（2026-10-14 P6-06 IAR-D1/D2：工程师首页 /my-work，前端角色映射优先于后端 defaultHome）
+    expect(userInfo.homePath).toBe('/my-work');
     // 验证 store 已更新
     expect(userStore.userInfo?.username).toBe('engineer');
     expect(accessStore.accessCodes).toEqual([
@@ -305,6 +327,86 @@ describe('store 测试', () => {
       'loop:edit',
       'loop:view',
     ]);
+  });
+
+  // UT-STORE-006: F-G2 个人 default_home 偏好优先于角色映射
+  it('uT-STORE-006: authLogin 时服务端 default_home 偏好（合法路径）优先于角色映射', async () => {
+    fetchDefaultHomePreferenceMock.mockResolvedValue('/cockpit');
+    loginApiMock.mockResolvedValue({
+      accessToken: 't',
+      refreshToken: 'r',
+      expiresIn: 1800,
+      tokenType: 'Bearer',
+      user: {
+        id: 'user-9',
+        username: 'ic',
+        displayName: '仪控工程师',
+        email: 'ic@clpm.com',
+        role: 'IC_ENGINEER',
+        permissions: ['loop:view'],
+      },
+    });
+    getUserInfoApiMock.mockResolvedValue({
+      id: 'user-9',
+      username: 'ic',
+      displayName: '仪控工程师',
+      email: 'ic@clpm.com',
+      role: 'IC_ENGINEER',
+      defaultHome: '/dashboard',
+      permissions: ['loop:view'],
+    });
+
+    const authStore = useAuthStore();
+    const { userInfo } = await authStore.authLogin({
+      username: 'ic',
+      password: 'x',
+      rememberMe: false,
+    });
+
+    // 偏好 /cockpit 优先于角色映射 /my-work
+    expect(userInfo?.homePath).toBe('/cockpit');
+    expect(routerPushSpy).toHaveBeenCalledWith('/cockpit');
+  });
+
+  // UT-STORE-007: F-G2 偏好加载失败回退角色映射，不阻断登录
+  it('uT-STORE-007: authLogin 时偏好加载失败回退角色映射（登录不受阻断）', async () => {
+    fetchDefaultHomePreferenceMock.mockRejectedValue(
+      new TypeError('Network Error'),
+    );
+    loginApiMock.mockResolvedValue({
+      accessToken: 't',
+      refreshToken: 'r',
+      expiresIn: 1800,
+      tokenType: 'Bearer',
+      user: {
+        id: 'user-9',
+        username: 'ic',
+        displayName: '仪控工程师',
+        email: 'ic@clpm.com',
+        role: 'IC_ENGINEER',
+        permissions: ['loop:view'],
+      },
+    });
+    getUserInfoApiMock.mockResolvedValue({
+      id: 'user-9',
+      username: 'ic',
+      displayName: '仪控工程师',
+      email: 'ic@clpm.com',
+      role: 'IC_ENGINEER',
+      defaultHome: '/dashboard',
+      permissions: ['loop:view'],
+    });
+
+    const authStore = useAuthStore();
+    const { userInfo } = await authStore.authLogin({
+      username: 'ic',
+      password: 'x',
+      rememberMe: false,
+    });
+
+    // 失败回退角色映射（IC_ENGINEER → /my-work），登录与跳转照常
+    expect(userInfo?.homePath).toBe('/my-work');
+    expect(routerPushSpy).toHaveBeenCalledWith('/my-work');
   });
 
   // ===== 权限路由生成测试 =====

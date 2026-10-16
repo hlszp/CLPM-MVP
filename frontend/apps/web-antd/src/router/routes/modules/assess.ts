@@ -27,9 +27,10 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
       icon: 'lucide:gauge',
+      module: 'assess',
+      navGroup: 'loop-ops',
       order: 3,
       title: '性能评估',
-      module: 'assess',
     },
     children: [
       {
@@ -80,7 +81,8 @@ const routes: RouteRecordRaw[] = [
           permCode: 'page:assess.tasks',
           authority: ['ADMIN', 'IC_ENGINEER'],
           icon: 'lucide:list-checks',
-          title: '评估任务',
+          // IAR-D3（2026-10-14）：「计算任务」始终指系统计算——评估类计算任务
+          title: '评估计算任务',
         },
       },
     ],
