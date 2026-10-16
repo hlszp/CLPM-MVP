@@ -171,7 +171,7 @@ const typeZh = computed(() => {
   left: 12px;
   padding: 0;
   font-size: 10px;
-  color: var(--ck-accent, #1d4ed8);
+  color: var(--ck-accent);
   cursor: pointer;
   background: transparent;
   border: none;
