@@ -171,6 +171,10 @@ export interface LoopEditFormSnapshot {
   /** 原始分组信息快照（用于判断是否变更） */
   _origComplexLoopGroupId?: string;
   _origComplexRole?: LoopApi.ComplexRole;
+  /** P2-04：关联工程模板（DEF-1b 编辑抽屉补字段；未变更不提交） */
+  engineeringTemplateId?: string;
+  /** 原始模板关联快照（用于判断是否变更；换绑/解除同时清 pin 版本） */
+  _origEngineeringTemplateId?: string;
 }
 
 /**
@@ -180,11 +184,13 @@ export interface LoopEditFormSnapshot {
  * @param form 编辑表单当前值
  * @param opts.useDefaultOpLimits 是否勾选「使用默认 OP 限位」
  * @param opts.unitLabel 单元 ID → 显示标签（工厂节点路径）
+ * @param opts.templateLabel 模板 ID → 显示标签（缺省回退 ID 前 8 位）
  */
 export function buildUpdateDiff(
   orig: LoopApi.LoopListItem,
   form: LoopEditFormSnapshot,
   opts: {
+    templateLabel?: (id: null | string | undefined) => string;
     unitLabel: (unitId: string | undefined) => string;
     useDefaultOpLimits: boolean;
   },
@@ -288,6 +294,22 @@ export function buildUpdateDiff(
       field: '回路分组',
       from: fmt(origGroup, origRole),
       to: fmt(newGroup, newRole),
+    });
+  }
+  // P2-04 工程模板关联变更对比（换绑/解除时随保存清除 pin 版本恢复跟随）
+  const origTpl = form._origEngineeringTemplateId ?? null;
+  const newTpl = form.engineeringTemplateId ?? null;
+  if ((origTpl ?? null) !== (newTpl ?? null)) {
+    const tplFmt = (id: null | string) => {
+      if (!id) return '未关联';
+      return opts.templateLabel
+        ? opts.templateLabel(id)
+        : `${id.slice(0, 8)}…`;
+    };
+    summary.push({
+      field: '工程模板',
+      from: tplFmt(origTpl),
+      to: tplFmt(newTpl),
     });
   }
   // 评分权重对比已移除（v6.1：回路级权重未参与计算）

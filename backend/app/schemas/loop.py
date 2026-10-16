@@ -309,6 +309,15 @@ class LoopBasicInfo(CamelModel):
     )
     complexLoopGroupId: str | None = Field(None, description="复杂回路分组 ID")
     complexRole: str | None = Field(None, description="复杂回路角色：MAIN / SUB")
+    # P2-04 工程模板关联（DEF-3：回路详情可见模板关联/pin 状态）
+    engineeringTemplateId: str | None = Field(
+        None, description="关联工程模板 ID；NULL=未关联（TEMPLATE 层对该回路不参与）"
+    )
+    engineeringTemplateVersion: int | None = Field(
+        None,
+        ge=1,
+        description="固定引用的模板版本号；NULL=跟随模板当前版本",
+    )
     createdAt: str | None = None
     createdBy: str | None = None
     updatedAt: str | None = None

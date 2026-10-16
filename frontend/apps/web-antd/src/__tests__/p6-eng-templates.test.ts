@@ -1,4 +1,5 @@
 import type { EngineeringTemplateApi } from '#/api/engineering-template';
+import type { LoopApi } from '#/api/loop';
 
 /**
  * P6 Slice M（03/04-a）P2-04 工程模板维护 UI 测试
@@ -14,6 +15,9 @@ import type { EngineeringTemplateApi } from '#/api/engineering-template';
  *   灰而不藏（disabled + 占位），ADMIN 全量可用；
  * - 纯函数：profile 键级差异 / 千回路分批（≤200）/ 汇总 / 截断提示 /
  *   profile JSON 校验。
+ * - P6-04 E2E 缺陷修复（DEF-1/DEF-4，2026-10-16 报告 §5）：批量应用
+ *   选择面改 /loops 分页+筛选（覆盖未关联回路——0 关联不再死锁），
+ *   跨页勾选保留，指引文案与实际能力对齐。
  */
 import { flushPromises, mount } from '@vue/test-utils';
 
@@ -61,6 +65,29 @@ vi.mock('#/api/metric', async () => {
 
 const getAlgorithmParamsApiMock = vi.hoisted(() => vi.fn());
 
+// P6-04 DEF-1：批量应用选择面改用 /loops 列表（分页+筛选）与工厂节点树
+const loopApi = vi.hoisted(() => ({
+  getLoopListApi: vi.fn(),
+}));
+vi.mock('#/api/loop', async () => {
+  const actual = await vi.importActual<any>('#/api/loop');
+  return {
+    ...actual,
+    getLoopListApi: (...a: any[]) => loopApi.getLoopListApi(...a),
+  };
+});
+
+const plantNodeApi = vi.hoisted(() => ({
+  getPlantNodeTreeApi: vi.fn(),
+}));
+vi.mock('#/api/plant-node', async () => {
+  const actual = await vi.importActual<any>('#/api/plant-node');
+  return {
+    ...actual,
+    getPlantNodeTreeApi: (...a: any[]) => plantNodeApi.getPlantNodeTreeApi(...a),
+  };
+});
+
 vi.mock('@vben/common-ui', () => ({
   Page: { template: '<div class="page-stub"><slot /></div>' },
 }));
@@ -102,8 +129,9 @@ vi.mock('ant-design-vue', async () => {
     },
     Input: {
       props: ['value', 'placeholder', 'maxlength'],
+      emits: ['update:value', 'change'],
       template:
-        '<input class="input-stub" :value="value" @input="$emit(\'update:value\', $event.target.value)" />',
+        '<input class="input-stub" :value="value" @input="$emit(\'update:value\', $event.target.value); $emit(\'change\', $event.target.value)" />',
     },
     InputNumber: {
       props: ['value', 'min', 'max', 'precision'],
@@ -125,8 +153,9 @@ vi.mock('ant-design-vue', async () => {
     },
     Select: {
       props: ['value', 'options', 'placeholder'],
+      emits: ['update:value', 'change'],
       template:
-        '<select class="select-stub" :value="value" @change="$emit(\'update:value\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option></select>',
+        '<select class="select-stub" :value="value" @change="$emit(\'update:value\', $event.target.value); $emit(\'change\', $event.target.value)"><option v-for="o in options" :key="o.value" :value="o.value">{{ o.label }}</option></select>',
     },
     Spin: { template: '<div class="spin-stub"><slot /></div>' },
     Switch: {
@@ -134,7 +163,7 @@ vi.mock('ant-design-vue', async () => {
       template: '<span class="switch-stub" />',
     },
     Table: {
-      props: ['columns', 'dataSource', 'loading', 'rowSelection', 'rowKey'],
+      props: ['columns', 'dataSource', 'loading', 'rowSelection', 'rowKey', 'pagination'],
       methods: {
         selectAllRows(this: any) {
           const key = typeof this.rowKey === 'string' ? this.rowKey : 'loopId';
@@ -142,10 +171,14 @@ vi.mock('ant-design-vue', async () => {
             (this.dataSource ?? []).map((r: any) => r[key]),
           );
         },
+        gotoPage2(this: any) {
+          this.pagination?.onChange?.(2);
+        },
       },
       template:
         '<div class="table-stub">' +
         '<button v-if="rowSelection" class="select-all-stub" type="button" @click="selectAllRows">全选</button>' +
+        '<button v-if="pagination && pagination.onChange" class="pager-next-stub" type="button" @click="gotoPage2">下一页</button>' +
         '<div v-for="(record, i) in dataSource" :key="i" class="row-stub">' +
         '<span v-for="col in columns" :key="col.key" class="cell-stub">' +
         '<slot name="bodyCell" :column="col" :record="record" :index="i" />' +
@@ -258,6 +291,43 @@ const LOOPS: EngineeringTemplateApi.TemplateLoopItem[] = [
   { loopId: 'loop-2', tagName: 'FIC-102', isActive: true },
 ];
 
+/** DEF-1：选择面数据源改为 /loops 列表项（全量回路，含未关联） */
+const TAG_MAPPING_ALL_FALSE: LoopApi.TagMappingStatus = {
+  pv: false,
+  sp: false,
+  op: false,
+  mode: false,
+  pid_p: false,
+  pid_i: false,
+  pid_d: false,
+};
+
+function makeLoopListItem(
+  loopId: string,
+  tagName: string,
+): LoopApi.LoopListItem {
+  return {
+    loopId,
+    tagName,
+    description: '',
+    unitId: 'unit-1',
+    unitName: '一单元',
+    controlMode: 'Auto',
+    isActive: true,
+    status: 'READY',
+    loopType: 'FLOW',
+    controlType: 'STABLE',
+    importanceLevel: 2,
+    includeInEvaluation: true,
+    tagMappingStatus: { ...TAG_MAPPING_ALL_FALSE },
+  };
+}
+
+const LOOP_LIST_PAGE_1: LoopApi.LoopListItem[] = [
+  makeLoopListItem('loop-1', 'FIC-101'),
+  makeLoopListItem('loop-2', 'FIC-102'),
+];
+
 const DETAIL: EngineeringTemplateApi.TemplateDetail = {
   ...TEMPLATE,
   currentVersionDetail: VERSIONS[0]!,
@@ -285,6 +355,14 @@ function mockBaseApis() {
     items: LOOPS,
     total: 2,
   });
+  // DEF-1：批量应用选择面 = /loops 分页（全量回路，含未关联）
+  loopApi.getLoopListApi.mockResolvedValue({
+    items: LOOP_LIST_PAGE_1,
+    total: 2,
+    page: 1,
+    pageSize: 50,
+  });
+  plantNodeApi.getPlantNodeTreeApi.mockResolvedValue([]);
   api.getConfigRevisionApi.mockResolvedValue({
     revision: 7,
     lastPublication: null,
@@ -418,6 +496,8 @@ describe('工程模板维护页（index.vue）', () => {
     setActivePinia(createPinia());
     for (const fn of Object.values(api)) fn.mockReset();
     getAlgorithmParamsApiMock.mockReset();
+    loopApi.getLoopListApi.mockReset();
+    plantNodeApi.getPlantNodeTreeApi.mockReset();
     mockBaseApis();
   });
 
@@ -483,6 +563,8 @@ describe('模板版本发布向导（publish-version-modal）', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     for (const fn of Object.values(api)) fn.mockReset();
+    loopApi.getLoopListApi.mockReset();
+    plantNodeApi.getPlantNodeTreeApi.mockReset();
     mockBaseApis();
   });
 
@@ -564,6 +646,8 @@ describe('批量应用向导（batch-apply-modal）', () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     for (const fn of Object.values(api)) fn.mockReset();
+    loopApi.getLoopListApi.mockReset();
+    plantNodeApi.getPlantNodeTreeApi.mockReset();
     mockBaseApis();
   });
 
@@ -669,6 +753,137 @@ describe('批量应用向导（batch-apply-modal）', () => {
       false,
     );
   });
+
+  // -------------------------------------------------------------------------
+  // P6-04 E2E 缺陷修复：DEF-1（首次关联死锁）+ DEF-4（指引文案）
+  // -------------------------------------------------------------------------
+
+  it('DEF-1 首次关联不死锁：0 关联模板打开弹窗，选择面来自 /loops 全量列表（未关联回路可选可预览）', async () => {
+    // 0 关联模板（E2E 起始态）——旧实现选择面=已关联回路前 200 → 空表死锁
+    const zeroAssociation = { ...TEMPLATE, loopCount: 0 };
+    api.batchApplyLoopsApi.mockResolvedValue({
+      affected: 2,
+      action: 'update',
+      loopIds: ['loop-1', 'loop-2'],
+      dryRun: true,
+      results: DRY_RUN_RESULTS,
+    });
+    const wrapper = mount(BatchApplyModal, {
+      props: { open: true, template: zeroAssociation },
+    });
+    await flushPromises();
+
+    // 选择面数据源 = /loops（page/pageSize/keyword/plantNodeId 契约）
+    expect(loopApi.getLoopListApi).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 50,
+      keyword: undefined,
+      plantNodeId: undefined,
+    });
+    // 未关联回路在选择面可见（不再空表）
+    expect(wrapper.text()).toContain('FIC-101');
+    expect(wrapper.text()).toContain('FIC-102');
+
+    // 未勾选时 dry-run 禁用；全选后可预览（路径通）
+    const dryRunBtn = wrapper.find('[data-testid="btn-dry-run"]');
+    expect(dryRunBtn.attributes('disabled')).toBeDefined();
+    await wrapper.find('.select-all-stub').trigger('click');
+    await flushPromises();
+    expect(dryRunBtn.attributes('disabled')).toBeUndefined();
+    await dryRunBtn.trigger('click');
+    await flushPromises();
+
+    expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
+      loopIds: ['loop-1', 'loop-2'],
+      updates: { engineeringTemplateId: 'tpl-1' },
+      dryRun: true,
+    });
+  });
+
+  it('DEF-1 >200 可达：筛选回第 1 页重查 + 翻页第 2 页重查 + 跨页勾选保留并进入 dry-run', async () => {
+    const page2Item = makeLoopListItem('loop-3', 'FIC-201');
+    // 装置筛选需要非空节点树（下拉可选项）
+    plantNodeApi.getPlantNodeTreeApi.mockResolvedValueOnce([
+      { id: 'node-9', name: '装置A', type: 'PLANT', parentId: null },
+    ]);
+    loopApi.getLoopListApi
+      .mockResolvedValueOnce({
+        items: LOOP_LIST_PAGE_1,
+        total: 3,
+        page: 1,
+        pageSize: 50,
+      })
+      .mockResolvedValueOnce({
+        // 装置筛选触发（回第 1 页）
+        items: LOOP_LIST_PAGE_1,
+        total: 2,
+        page: 1,
+        pageSize: 50,
+      })
+      .mockResolvedValueOnce({
+        // 翻页第 2 页
+        items: [page2Item],
+        total: 3,
+        page: 2,
+        pageSize: 50,
+      });
+    api.batchApplyLoopsApi.mockResolvedValue({
+      affected: 3,
+      action: 'update',
+      loopIds: ['loop-1', 'loop-2', 'loop-3'],
+      dryRun: true,
+      results: [],
+    });
+    const wrapper = mountModal();
+    await flushPromises();
+
+    // 第 1 页全选
+    await wrapper.find('.select-all-stub').trigger('click');
+    await flushPromises();
+
+    // 装置筛选变更 → page=1 重查携带 plantNodeId
+    const nodeSelect = wrapper.find('[data-testid="loop-filter-node"]');
+    await nodeSelect.setValue('node-9');
+    await flushPromises();
+    expect(loopApi.getLoopListApi).toHaveBeenLastCalledWith({
+      page: 1,
+      pageSize: 50,
+      keyword: undefined,
+      plantNodeId: 'node-9',
+    });
+
+    // 翻页第 2 页（重查携带 page=2）+ 跨页勾选保留
+    await wrapper.find('.pager-next-stub').trigger('click');
+    await flushPromises();
+    expect(loopApi.getLoopListApi).toHaveBeenLastCalledWith({
+      page: 2,
+      pageSize: 50,
+      keyword: undefined,
+      plantNodeId: 'node-9',
+    });
+    expect(wrapper.text()).toContain('FIC-201');
+    await wrapper.find('.select-all-stub').trigger('click');
+    await flushPromises();
+    await wrapper.find('[data-testid="btn-dry-run"]').trigger('click');
+    await flushPromises();
+
+    expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
+      loopIds: ['loop-1', 'loop-2', 'loop-3'],
+      updates: { engineeringTemplateId: 'tpl-1' },
+      dryRun: true,
+    });
+  });
+
+  it('DEF-4 指引文案与能力对齐：选择面含未关联回路 + 自动分批说明；断头指引已移除', async () => {
+    const wrapper = mountModal();
+    await flushPromises();
+    const note = wrapper.find('[data-testid="loops-note"]');
+    expect(note.exists()).toBe(true);
+    expect(note.text()).toContain('含未关联本模板');
+    expect(note.text()).toContain('单批 ≤200');
+    // 旧断头指引（回路配置页批量表单不支持模板字段）不得再出现
+    expect(note.text()).not.toContain('回路配置页');
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -680,6 +895,8 @@ describe('覆盖发布向导（override-publish-modal）', () => {
     setActivePinia(createPinia());
     for (const fn of Object.values(api)) fn.mockReset();
     getAlgorithmParamsApiMock.mockReset();
+    loopApi.getLoopListApi.mockReset();
+    plantNodeApi.getPlantNodeTreeApi.mockReset();
     mockBaseApis();
   });
 

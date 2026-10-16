@@ -19,6 +19,7 @@ import type { RadioChangeEvent } from 'ant-design-vue/es/radio/interface';
 import type { DefaultOptionType } from 'ant-design-vue/es/select';
 
 import type { DictApi } from '#/api/dict';
+import type { EngineeringTemplateApi } from '#/api/engineering-template';
 import type { LoopApi } from '#/api/loop';
 import type { TagApi } from '#/api/tag';
 
@@ -53,6 +54,7 @@ import {
   DICT_TYPE_LOOP_TYPE,
   getDictItemsApi,
 } from '#/api/dict';
+import { getEngineeringTemplatesApi } from '#/api/engineering-template';
 import {
   createLoopApi,
   getLoopDetailApi,
@@ -250,6 +252,10 @@ const formState = reactive({
   /** P4 S4：原始分组信息快照（用于判断是否变更 + 解除分组确认） */
   _origComplexLoopGroupId: undefined as string | undefined,
   _origComplexRole: undefined as LoopApi.ComplexRole | undefined,
+  /** P2-04：关联工程模板（DEF-1b 补字段；可选，换绑/解除时随保存提交） */
+  engineeringTemplateId: undefined as string | undefined,
+  /** 原始模板关联快照（判断是否变更；变更时同时清 pin 版本恢复跟随） */
+  _origEngineeringTemplateId: undefined as string | undefined,
 });
 
 const controlTypeOptions: {
@@ -372,6 +378,51 @@ async function loadDcsModels() {
   } catch {
     // 忽略：DCS 型号列表加载失败不影响回路编辑
   }
+}
+
+// ===== P2-04：工程模板关联（DEF-1b 编辑抽屉补字段）=====
+/** 工程模板下拉（仅列出已发布版本的模板——无版本模板无法解析生效档案） */
+const engineeringTemplates = ref<EngineeringTemplateApi.TemplateItem[]>([]);
+let engineeringTemplatesLoaded = false;
+async function loadEngineeringTemplates() {
+  if (engineeringTemplatesLoaded) return;
+  try {
+    const data = await getEngineeringTemplatesApi();
+    engineeringTemplates.value = data.items;
+    engineeringTemplatesLoaded = true;
+  } catch {
+    // 模板下拉加载失败不阻断回路编辑其余字段（保存时未变更不提交该字段）
+  }
+}
+
+/** 模板下拉选项（key+名称+当前版本，便于对账） */
+const engineeringTemplateOptions = computed(() =>
+  engineeringTemplates.value
+    .filter((t) => t.currentVersion !== null)
+    .map((t) => ({
+      label: `${t.name}（${t.templateKey}，v${t.currentVersion}）`,
+      value: t.id,
+    })),
+);
+
+/** 当前关联状态提示（pin/跟随如实呈现，DEF-3 详情字段出口） */
+const templateAssociationHint = computed(() => {
+  if (!formState.engineeringTemplateId) return '未关联工程模板';
+  const tpl = engineeringTemplates.value.find(
+    (t) => t.id === formState.engineeringTemplateId,
+  );
+  const label = tpl
+    ? `${tpl.name}（${tpl.templateKey}）`
+    : formState.engineeringTemplateId.slice(0, 8);
+  const pin = loopDetail.value?.basicInfo.engineeringTemplateVersion;
+  return pin ? `${label} · 固定引用 v${pin}` : `${label} · 跟随当前版本`;
+});
+
+/** 模板 ID → 显示标签（供父组件变更确认摘要 diff 用） */
+function templateLabel(id: null | string | undefined): string {
+  if (!id) return '未关联';
+  const tpl = engineeringTemplates.value.find((t) => t.id === id);
+  return tpl ? `${tpl.name}（${tpl.templateKey}）` : `${id.slice(0, 8)}…`;
 }
 
 /** v6.1：切换"使用默认"时更新状态并重置限位字段
@@ -634,8 +685,12 @@ function openCreate(defaultUnitId?: string) {
   formState.complexRole = undefined;
   formState._origComplexLoopGroupId = undefined;
   formState._origComplexRole = undefined;
+  // P2-04：新建默认不关联模板（关联入口在编辑/批量应用）
+  formState.engineeringTemplateId = undefined;
+  formState._origEngineeringTemplateId = undefined;
   useDefaultOpLimits.value = true;
   loadDcsModels();
+  loadEngineeringTemplates();
   activeTab.value = 'basic';
   drawerVisible.value = true;
 }
@@ -690,6 +745,7 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
     formState.opOutputLowerLimit === undefined &&
     formState.opOutputUpperLimit === undefined;
   loadDcsModels();
+  loadEngineeringTemplates();
   activeTab.value = 'basic';
   drawerVisible.value = true;
   // 加载详情
@@ -716,6 +772,10 @@ async function loadLoopForDrawer(record: LoopApi.LoopListItem) {
     // 快照原始值，用于判断是否变更
     formState._origComplexLoopGroupId = formState.complexLoopGroupId;
     formState._origComplexRole = formState.complexRole;
+    // P2-04：详情加载后同步工程模板关联（DEF-3 详情字段；列表项不携带）
+    formState.engineeringTemplateId =
+      detail.basicInfo.engineeringTemplateId ?? undefined;
+    formState._origEngineeringTemplateId = formState.engineeringTemplateId;
     useDefaultOpLimits.value =
       formState.opOutputLowerLimit === undefined &&
       formState.opOutputUpperLimit === undefined;
@@ -921,10 +981,21 @@ async function doSaveBasic() {
         // P4 S4：复杂回路分组（仅当变更时发送，null=解除分组）
         complexLoopGroupId: formState.complexLoopGroupId ?? null,
         complexRole: formState.complexRole ?? null,
+        // P2-04：工程模板关联（仅当变更时发送；换绑/解除同时清 pin 版本
+        // 恢复跟随指针——后端 validate 拒绝"清模板留 pin"的不一致组合）
+        ...(formState.engineeringTemplateId ===
+        formState._origEngineeringTemplateId
+          ? {}
+          : {
+              engineeringTemplateId: formState.engineeringTemplateId ?? null,
+              engineeringTemplateVersion: null,
+            }),
       });
       // P4 S4：保存后更新原始快照
       formState._origComplexLoopGroupId = formState.complexLoopGroupId;
       formState._origComplexRole = formState.complexRole;
+      // P2-04：保存后更新模板关联快照
+      formState._origEngineeringTemplateId = formState.engineeringTemplateId;
       message.success('回路更新成功');
     } else {
       if (!formState.unitId) {
@@ -1000,6 +1071,7 @@ defineExpose({
   tagData,
   slotState,
   useDefaultOpLimits,
+  templateLabel,
 });
 </script>
 
@@ -1260,6 +1332,30 @@ defineExpose({
                 />
                 <span class="ml-2 text-xs text-gray-400">
                   在数据接入 → DCS 系统中管理型号
+                </span>
+              </FormItem>
+              <!-- P2-04：工程模板关联（DEF-1b；可选关联，清除即解除） -->
+              <FormItem
+                v-if="editingLoop"
+                name="engineeringTemplateId"
+                label="工程模板"
+                tooltip="可选关联工程模板（响应/控制特征档案），关联后随模板版本参与参数整定；批量关联请用 参数配置 → 工程模板 → 批量应用（dry-run 预览 + 自动分批）"
+              >
+                <Select
+                  v-model:value="formState.engineeringTemplateId"
+                  placeholder="不关联"
+                  :disabled="isViewMode"
+                  allow-clear
+                  show-search
+                  :options="engineeringTemplateOptions"
+                  :filter-option="
+                    (input: string, option?: DefaultOptionType) =>
+                      String(option?.label ?? '').includes(input)
+                  "
+                  data-testid="eng-template-select"
+                />
+                <span class="ml-2 text-xs text-gray-400">
+                  {{ templateAssociationHint }}；换绑/清除后跟随新模板当前版本
                 </span>
               </FormItem>
             </div>

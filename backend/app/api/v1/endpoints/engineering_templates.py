@@ -113,9 +113,13 @@ async def get_template_endpoint(
         if template.current_version is not None
         else None
     )
+    # DEF-2（P6-04 E2E）：loopCount 用精确计数（与列表端点一致），
+    # 不再用 list_loops_for_template（limit 50）的枚举长度当计数——
+    # 千回路场景详情/列表口径不一致会误导影响范围判断
+    loop_count = await et.count_loops_for_template(db, template_id)
     loops = await et.list_loops_for_template(db, template_id)
     data = {
-        **et._template_to_dict(template, loop_count=len(loops)),
+        **et._template_to_dict(template, loop_count=loop_count),
         "currentVersionDetail": current,
         "loops": loops,
     }

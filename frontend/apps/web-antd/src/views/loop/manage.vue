@@ -746,6 +746,11 @@ const changeSummary = computed<DiffEntry[]>(() => {
     return buildUpdateDiff(drawer.editingLoop, drawer.formState, {
       useDefaultOpLimits: drawer.useDefaultOpLimits,
       unitLabel,
+      // P2-04：模板关联变更的显示标签（抽屉已加载模板列表）
+      templateLabel: (id) =>
+        drawer.templateLabel
+          ? drawer.templateLabel(id)
+          : (id ?? '未关联'),
     });
   }
   if (confirmContextType.value === 'tagMapping' && drawer?.tagData) {
