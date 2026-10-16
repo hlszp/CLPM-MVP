@@ -1006,6 +1006,7 @@ ON CONFLICT DO NOTHING;
 
 -- 15. 授权目录与五角色矩阵种子（P4-01，与迁移 p401authz01 / services.authz_catalog 同批同内容）
 INSERT INTO sys_permission (code, kind, parent_code, requires_codes, module_key, is_protected, description, sort_order) VALUES
+    ('page:my-work', 'PAGE_GROUP', NULL, '[]'::jsonb, NULL, false, '我的工作（工程师个人首页：责任/建议/关注/接续）', -1),
     ('page:cockpit', 'PAGE_GROUP', NULL, '[]'::jsonb, NULL, false, '驾驶舱（全局观察入口，不受模块开关约束）', 0),
     ('page:workbench', 'PAGE_GROUP', NULL, '[]'::jsonb, NULL, false, '工作台（回路全生命周期单页）', 1),
     ('page:monitor', 'PAGE_GROUP', NULL, '[]'::jsonb, 'monitor', false, '回路监控', 2),
@@ -1022,6 +1023,7 @@ INSERT INTO sys_permission (code, kind, parent_code, requires_codes, module_key,
     ('page:cockpit.diagnosis', 'PAGE', 'page:cockpit', '[]'::jsonb, 'diagnosis', false, '驾驶舱-诊断｜五角色', 40),
     ('page:cockpit.tuning', 'PAGE', 'page:cockpit', '[]'::jsonb, 'tuning', false, '驾驶舱-整定｜五角色', 50),
     ('page:cockpit.handling', 'PAGE', 'page:cockpit', '[]'::jsonb, 'handling', false, '驾驶舱-处置｜五角色', 60),
+    ('page:my-work.main', 'PAGE', 'page:my-work', '[]'::jsonb, NULL, false, '我的工作｜五角色', 10),
     ('page:workbench.main', 'PAGE', 'page:workbench', '[]'::jsonb, NULL, false, '工作台主页（回路 360 全生命周期）｜ADMIN/IC/PE/EXPERT', 10),
     ('page:monitor.loops', 'PAGE', 'page:monitor', '[]'::jsonb, 'monitor', false, '回路监视｜五角色', 10),
     ('page:monitor.alerts', 'PAGE', 'page:monitor', '[]'::jsonb, 'monitor', false, '预警事件｜五角色', 20),
@@ -1061,6 +1063,7 @@ INSERT INTO sys_permission (code, kind, parent_code, requires_codes, module_key,
     ('page:config.ledger', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '回路台账｜ADMIN/IC/PE', 40),
     ('page:config.factory', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '工厂配置｜ADMIN/IC/PE', 50),
     ('page:config.datasource', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '数据导入｜ADMIN/IC/PE', 60),
+    ('page:config.eng-templates', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '工程模板｜ADMIN/IC/PE', 65),
     ('page:config.metric', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '指标配置｜ADMIN', 70),
     ('page:config.diagnosis', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '诊断配置｜ADMIN', 80),
     ('page:config.alert-rules', 'PAGE', 'page:config', '[]'::jsonb, 'config', false, '预警规则｜ADMIN', 90),
@@ -1184,6 +1187,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('ADMIN', 'page:cockpit.tuning'),
     ('ADMIN', 'page:config.alert-rules'),
     ('ADMIN', 'page:config.datasource'),
+    ('ADMIN', 'page:config.eng-templates'),
     ('ADMIN', 'page:config.diagnosis'),
     ('ADMIN', 'page:config.factory'),
     ('ADMIN', 'page:config.ledger'),
@@ -1205,6 +1209,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('ADMIN', 'page:monitor.attention'),
     ('ADMIN', 'page:monitor.loops'),
     ('ADMIN', 'page:monitor.table'),
+    ('ADMIN', 'page:my-work.main'),
     ('ADMIN', 'page:reports.alert-statistics'),
     ('ADMIN', 'page:reports.benefit'),
     ('ADMIN', 'page:reports.data-quality'),
@@ -1288,6 +1293,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('IC_ENGINEER', 'page:cockpit.performance'),
     ('IC_ENGINEER', 'page:cockpit.tuning'),
     ('IC_ENGINEER', 'page:config.datasource'),
+    ('IC_ENGINEER', 'page:config.eng-templates'),
     ('IC_ENGINEER', 'page:config.factory'),
     ('IC_ENGINEER', 'page:config.ledger'),
     ('IC_ENGINEER', 'page:config.loop'),
@@ -1305,6 +1311,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('IC_ENGINEER', 'page:monitor.attention'),
     ('IC_ENGINEER', 'page:monitor.loops'),
     ('IC_ENGINEER', 'page:monitor.table'),
+    ('IC_ENGINEER', 'page:my-work.main'),
     ('IC_ENGINEER', 'page:reports.alert-statistics'),
     ('IC_ENGINEER', 'page:reports.benefit'),
     ('IC_ENGINEER', 'page:reports.data-quality'),
@@ -1355,6 +1362,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('PE_ENGINEER', 'page:cockpit.performance'),
     ('PE_ENGINEER', 'page:cockpit.tuning'),
     ('PE_ENGINEER', 'page:config.datasource'),
+    ('PE_ENGINEER', 'page:config.eng-templates'),
     ('PE_ENGINEER', 'page:config.factory'),
     ('PE_ENGINEER', 'page:config.ledger'),
     ('PE_ENGINEER', 'page:config.loop'),
@@ -1372,6 +1380,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('PE_ENGINEER', 'page:monitor.attention'),
     ('PE_ENGINEER', 'page:monitor.loops'),
     ('PE_ENGINEER', 'page:monitor.table'),
+    ('PE_ENGINEER', 'page:my-work.main'),
     ('PE_ENGINEER', 'page:reports.alert-statistics'),
     ('PE_ENGINEER', 'page:reports.benefit'),
     ('PE_ENGINEER', 'page:reports.data-quality'),
@@ -1421,6 +1430,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('SPONSOR', 'page:monitor.alerts'),
     ('SPONSOR', 'page:monitor.attention'),
     ('SPONSOR', 'page:monitor.loops'),
+    ('SPONSOR', 'page:my-work.main'),
     ('SPONSOR', 'page:reports.alert-statistics'),
     ('SPONSOR', 'page:reports.benefit'),
     ('SPONSOR', 'page:reports.data-quality'),
@@ -1465,6 +1475,7 @@ INSERT INTO sys_role_permission (role, permission_code) VALUES
     ('EXPERT', 'page:monitor.alerts'),
     ('EXPERT', 'page:monitor.attention'),
     ('EXPERT', 'page:monitor.loops'),
+    ('EXPERT', 'page:my-work.main'),
     ('EXPERT', 'page:reports.alert-statistics'),
     ('EXPERT', 'page:reports.data-quality'),
     ('EXPERT', 'page:reports.diagnosis'),
@@ -1500,6 +1511,13 @@ ON CONFLICT (revision) DO NOTHING;
 -- datasource/dataplanner/factory_sync 13 端点，故补 data:import 独立码。
 INSERT INTO sys_authz_policy (revision, operation, role, user_id, reason, operator, before_value, after_value, rollback_of, created_at) VALUES
     (3, 'CATALOG_EXTENSION', NULL, NULL, 'P4-02 尾批：历史数据导入补独立动作码 data:import（ADMIN/IC/PE == loop_data 活链白名单；data:manage 种子不扩防放大 datasource 等 13 端点）', 'system:migration', NULL, '{"addedCodes": ["data:import"], "grants": {"ADMIN": ["data:import"], "IC_ENGINEER": ["data:import"], "PE_ENGINEER": ["data:import"]}, "source": "p402authz03"}'::jsonb, NULL, now())
+ON CONFLICT (revision) DO NOTHING;
+
+-- P7-02 D-1（迁移 p702perm01 同批同内容）：page:my-work 组/page:my-work.main/
+-- page:config.eng-templates 三码代码侧 CATALOG/ROLE_SEED 已含而种子未随批下发——
+-- 目录扩展=系统基线变更（不可回退）；推进 revision 使运行时矩阵缓存下一请求重载。
+INSERT INTO sys_authz_policy (revision, operation, role, user_id, reason, operator, before_value, after_value, rollback_of, created_at) VALUES
+    (4, 'CATALOG_EXTENSION', NULL, NULL, 'P7-02 D-1：补下发 page:my-work 组/page:my-work.main/page:config.eng-templates（代码 CATALOG/ROLE_SEED 已含而种子未随批；角色口径 == ROLE_SEED）', 'system:migration', NULL, '{"addedCodes": ["page:my-work", "page:my-work.main", "page:config.eng-templates"], "grants": {"ADMIN": ["page:my-work.main", "page:config.eng-templates"], "IC_ENGINEER": ["page:my-work.main", "page:config.eng-templates"], "PE_ENGINEER": ["page:my-work.main", "page:config.eng-templates"], "SPONSOR": ["page:my-work.main"], "EXPERT": ["page:my-work.main"]}, "source": "p702perm01"}'::jsonb, NULL, now())
 ON CONFLICT (revision) DO NOTHING;
 
 INSERT INTO sys_user_scope (user_id, scope_type, node_id, updated_by, updated_at)

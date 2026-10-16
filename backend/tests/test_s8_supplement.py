@@ -111,13 +111,13 @@ class TestExceptionBranches:
             assert resp.status_code == 422
 
     def test_err_006_invalid_uuid_format(self, client) -> None:
-        """UT-ERR-006: UUID 格式错误返回 422 或 404。"""
+        """UT-ERR-006: UUID 格式错误返回 422 或 404（P7-02 D-2 起为守卫 400）."""
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
                 "/api/v1/loops/not-a-uuid",
                 headers={"Authorization": "Bearer fake-token"},
             )
-            assert resp.status_code in (422, 404)
+            assert resp.status_code in (400, 422, 404)
 
 
 # ===========================================================================

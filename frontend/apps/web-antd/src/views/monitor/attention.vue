@@ -39,7 +39,7 @@ export const ATTENTION_STATUS_ORDER: MonitorApi.AttentionStatus[] = [
 
 <script lang="ts" setup>
 /**
- * 关注队列（列表页标杆 v2.0）
+ * 系统建议（列表页标杆 v2.0；原"关注队列"，2026-10 P6-H 更名）
  *
  * 页型 D：队列分诊——回答"今天先干什么"。
  * 五段式布局：工具栏 → 摘要条 → 优先级速览卡/来源chips → 筛选区 → 主表。
@@ -356,12 +356,12 @@ async function handleExport() {
     const a = document.createElement('a');
     a.href = url;
     const stamp = new Date().toISOString().slice(0, 16).replaceAll(/[:T]/g, '');
-    a.download = `关注队列_${stamp}.csv`;
+    a.download = `系统建议_${stamp}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    message.success('已按当前筛选与排序导出全量关注队列');
+    message.success('已按当前筛选与排序导出全量系统建议');
   } catch (error) {
-    console.error('[关注队列/导出] 失败:', error);
+    console.error('[系统建议/导出] 失败:', error);
     message.error('导出失败，请稍后重试');
   } finally {
     exporting.value = false;
@@ -407,7 +407,7 @@ async function loadData() {
       }
     }
   } catch (error: any) {
-    message.error(error?.message ?? '加载关注队列失败');
+    message.error(error?.message ?? '加载系统建议失败');
     attentionGroups.value = [];
     totalGroups.value = 0;
     totalItems.value = 0;
@@ -591,7 +591,7 @@ const { toolbarItems } = usePageToolbar(() => ({
 
 function handleHelp() {
   showPageHelp({
-    title: '关注队列 帮助',
+    title: '系统建议 帮助',
     content: `
       <p><b>五来源定义</b>：活跃预警（ACTIVE/ACKNOWLEDGED/SUPPRESSED 预警事件）、评分恶化（日降≥2分）、数据质量（完整性告警或可信度 D/E）、适用性异常（整定适用性等级 L0/L1/L2 及原因标签）、处置工单（重开/超期等在途工单待办）。</p>
       <p><b>优先级规则</b>：紧急=CRITICAL 活跃预警或重开工单；高=ERROR 预警/完整性 CRITICAL/日降≥10分/执行·验证超期工单；中=WARN/完整性 WARNING/日降5-10分/待执行超期工单；低=INFO/日降2-5分/可信度 D/E。</p>
@@ -717,7 +717,7 @@ watch(
 <template>
   <Page>
     <!-- 1. 工具栏：标准工具（刷新/筛选/帮助）+ 密度切换 -->
-    <ClpmPageToolbar title="关注队列" :loading="loading">
+    <ClpmPageToolbar title="系统建议" :loading="loading">
       <template #context v-if="route.query.from === 'overview'">
         <button
           class="flex items-center gap-1 rounded border border-transparent px-2 py-0.5 text-xs text-blue-600 hover:border-blue-200 hover:bg-blue-50"

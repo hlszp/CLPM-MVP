@@ -78,6 +78,24 @@ from app.services.tag_mapping import get_loop_tags, update_loop_tags
 router = APIRouter(prefix="/loops", tags=["loop"])
 
 
+def _require_loop_uuid(loop_id: str) -> str:
+    """loop_id 路径参数 UUID 校验（P7-02 D-2；G-N2 同口径：非法输入 400，绝不变 500）.
+
+    loop_ledger.id 为 UUID 列——非 UUID 形态（E2E 实证 ``not-a-real-loop-id``）
+    直达 asyncpg 报 invalid UUID → 500 裸透 traceback 给前端。合法输入归一为
+    小写连字符形态（PG UUID 按值比较，语义不变）。
+    """
+    raw = loop_id.strip()
+    try:
+        return str(UUID(raw))
+    except (ValueError, AttributeError, TypeError):
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"loopId 不是合法 UUID: {raw}",
+            status_code=400,
+        ) from None
+
+
 # ---------------------------------------------------------------------------
 # Loop CRUD (固定路径优先)
 # ---------------------------------------------------------------------------
@@ -537,6 +555,7 @@ async def get_loop_detail_endpoint(
     scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """获取回路详情（P4-03：越界通用拒绝）。"""
+    loop_id = _require_loop_uuid(loop_id)
     await ensure_loop_in_scope(db, scope, loop_id)
     data = await get_loop_detail(db=db, loop_id=loop_id)
     return success(data=data)
@@ -562,6 +581,7 @@ async def get_loop_engineering_facts_endpoint(
     - qualifications：历史片段辨识资格与 PID 应用资格**分别定义**
       （07 号文 §3.3——前者不消费 L0/L1 门禁，后者为现行门禁的只读映射）。
     """
+    loop_id = _require_loop_uuid(loop_id)
     from app.services.engineering_facts import (
         get_loop_qualifications,
         resolve_loop_engineering_facts,
@@ -581,6 +601,7 @@ async def update_loop_endpoint(
     scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。"""
+    loop_id = _require_loop_uuid(loop_id)
     # P4-03：跨 scope 对象拒绝（目标回路须在范围内；改挂 unit 同理）
     await ensure_loop_in_scope(db, scope, loop_id)
     score_weights = None
@@ -644,6 +665,7 @@ async def delete_loop_endpoint(
     ON DELETE CASCADE 自动清理 kpi_snapshot/action_tracker/diagnosis_result 等关联数据。
     批量删除保持软删除（可恢复），单删为硬删除（不可恢复，与前端弹窗承诺一致）。
     """
+    loop_id = _require_loop_uuid(loop_id)
     await ensure_loop_in_scope(db, scope, loop_id)
     data = await delete_loop(db=db, loop_id=loop_id, operator=user.username)
     return success(data=data, message="删除成功")
@@ -662,6 +684,7 @@ async def get_loop_tags_endpoint(
     scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """获取回路 7 个 Tag 槽位关联状态（P4-03 越界拒绝）。"""
+    loop_id = _require_loop_uuid(loop_id)
     await ensure_loop_in_scope(db, scope, loop_id)
     data = await get_loop_tags(db=db, loop_id=loop_id)
     return success(data=data)
@@ -683,6 +706,7 @@ async def update_loop_tags_endpoint(
     Tag 不存在于 tag_registry → ERR_TAG_NOT_FOUND。
     tag 名发生变更时响应带 warnings（历史数据在新 subtable 下重新开始）。
     """
+    loop_id = _require_loop_uuid(loop_id)
     await ensure_loop_in_scope(db, scope, loop_id)
     # P2：变更前记录各角色 tag 名，用于检测 tag 重关联（历史数据孤儿化风险）。
     # 回路不存在时由 update_loop_tags 抛出 ERR_LOOP_NOT_FOUND，此处查询返回空 dict
@@ -737,6 +761,7 @@ async def get_loop_monitor_detail_endpoint(
     scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """回路运行详情（7 Tag 当前值、PID 参数、波形数据；P4-03 越界拒绝）。"""
+    loop_id = _require_loop_uuid(loop_id)
     await ensure_loop_in_scope(db, scope, loop_id)
     data = await get_loop_monitor_detail(
         db=db,
@@ -765,6 +790,7 @@ async def get_loop_confidence_latest_endpoint(
     无评估记录时返回 ``data=null``（HTTP 200，不抛 404），
     前端据此展示"暂无评估记录"。
     """
+    loop_id = _require_loop_uuid(loop_id)
     await ensure_loop_in_scope(db, scope, loop_id)
     result = await db.execute(
         select(LoopConfidenceLatest).where(LoopConfidenceLatest.loop_id == loop_id)
