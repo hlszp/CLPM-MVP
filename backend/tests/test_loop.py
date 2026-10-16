@@ -274,11 +274,12 @@ class TestLoopDetail:
         assert "aasSyncStatus" in data
 
     def test_get_loop_detail_not_found(self, client, mock_db, fake_redis) -> None:
-        """回路不存在返回 404。"""
+        """回路不存在返回 404（P7-02 D-2 起 id 须为合法 UUID——非 UUID 形态
+        由守卫先行 400，见 tests/test_p7_02_loop_uuid_guard.py）。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.get(
-                "/api/v1/loops/nonexistent",
+                "/api/v1/loops/00000000-0000-0000-0000-00000000dead",
                 headers={"Authorization": "Bearer fake-token"},
             )
         assert resp.status_code == 404
