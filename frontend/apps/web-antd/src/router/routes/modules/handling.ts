@@ -43,9 +43,10 @@ const routes: RouteRecordRaw[] = [
     meta: {
       authority: HANDLING_AUTHORITY,
       icon: 'lucide:clipboard-check',
+      module: 'handling',
+      navGroup: 'loop-ops',
       order: 6,
       title: '运维处置',
-      module: 'handling',
     },
     children: [
       {

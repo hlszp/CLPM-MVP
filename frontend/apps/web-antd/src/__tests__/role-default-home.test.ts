@@ -1,16 +1,14 @@
 /**
  * ROLE_DEFAULT_HOME 前端落地单元测试
  *
- * 对齐实现契约 §5 + UI/UX §4.2 三方权限基准 + 驾驶舱方案 11 §3.1（C2）：
- * - 全角色 → /cockpit 驾驶舱（2026-10-05 驾驶舱整合裁决 D5/D6：旧运维工作台退役，默认落地驾驶舱）
- * - EXPERT → /cockpit（同上）
- * - ADMIN → /dashboard（保持现行为）
+ * 2026-10-14 P6-06（IAR-D1/D2 已采纳）：
+ * - 工程师（IC_ENGINEER/PE_ENGINEER/EXPERT）→ /my-work 我的工作
+ * - 管理员/观察者（ADMIN/SPONSOR）→ /cockpit 驾驶舱
  *
- * 前端 resolveHomePath 以角色映射优先于后端 defaultHome 返回值。
- * 注意：后端 auth.py ROLE_DEFAULT_HOME 仍为旧口径（SPONSOR→/reports/overview），
- * 前端映射覆盖之，后端对齐留待后续任务。
+ * 前端 resolveHomePath 以角色映射优先于后端 defaultHome 返回值；
+ * 后端 auth.py 同批已对齐本表。
  */
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('vue-router', () => ({
   useRouter: () => ({
@@ -50,29 +48,47 @@ vi.mock('#/api', () => ({
   getAccessCodesApi: vi.fn(),
 }));
 
-const { resolveHomePath, ROLE_DEFAULT_HOME } = await import('#/store/auth');
+/* F-G2：登录首页消费 default_home 偏好（动态 import 目标模块 mock） */
+const fetchDefaultHomePreferenceMock = vi.hoisted(() => vi.fn());
+vi.mock('#/composables/use-clpm-preferences', async () => {
+  const actual = await vi.importActual<any>(
+    '#/composables/use-clpm-preferences',
+  );
+  return {
+    ...actual,
+    fetchDefaultHomePreference: (...a: any[]) =>
+      fetchDefaultHomePreferenceMock(...a),
+    handleClpmAccountLogout: vi.fn(),
+    noteClpmAccountLogin: vi.fn(),
+  };
+});
 
-describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
-  it('EXPERT 默认首页为 /cockpit 驾驶舱', () => {
-    expect(ROLE_DEFAULT_HOME.EXPERT).toBe('/cockpit');
-    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/cockpit');
+const { resolveHomePath, resolveUserHomePath, ROLE_DEFAULT_HOME } =
+  await import('#/store/auth');
+
+describe('rOLE_DEFAULT_HOME（2026-10-14 P6-06 IAR-D1/D2）', () => {
+  it('eXPERT 默认首页为 /my-work 我的工作', () => {
+    expect(ROLE_DEFAULT_HOME.EXPERT).toBe('/my-work');
+    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/my-work');
   });
 
-  it('sPONSOR / IC_ENGINEER / PE_ENGINEER 默认首页为 /cockpit 驾驶舱', () => {
-    for (const role of ['SPONSOR', 'IC_ENGINEER', 'PE_ENGINEER']) {
+  it('iC_ENGINEER / PE_ENGINEER 默认首页为 /my-work 我的工作', () => {
+    for (const role of ['IC_ENGINEER', 'PE_ENGINEER']) {
+      expect(ROLE_DEFAULT_HOME[role]).toBe('/my-work');
+      expect(resolveHomePath(role, '/dashboard')).toBe('/my-work');
+    }
+  });
+
+  it('aDMIN / SPONSOR 默认首页为 /cockpit 驾驶舱', () => {
+    for (const role of ['ADMIN', 'SPONSOR']) {
       expect(ROLE_DEFAULT_HOME[role]).toBe('/cockpit');
       expect(resolveHomePath(role, '/dashboard')).toBe('/cockpit');
     }
   });
 
-  it('aDMIN 默认首页为 /cockpit 驾驶舱（0929 总览收敛）', () => {
-    expect(ROLE_DEFAULT_HOME.ADMIN).toBe('/cockpit');
-    expect(resolveHomePath('ADMIN', '/dashboard')).toBe('/cockpit');
-  });
-
   it('角色映射优先于后端 defaultHome 返回值', () => {
     // 后端 defaultHome 返回任意值，前端映射必须覆盖之
-    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/cockpit');
+    expect(resolveHomePath('EXPERT', '/dashboard')).toBe('/my-work');
     expect(resolveHomePath('SPONSOR', '/reports/overview')).toBe('/cockpit');
   });
 
@@ -80,5 +96,48 @@ describe('rOLE_DEFAULT_HOME（实现契约 §5 三方对齐）', () => {
     expect(resolveHomePath('UNKNOWN_ROLE', '/metric')).toBe('/metric');
     expect(resolveHomePath('UNKNOWN_ROLE', null)).toBe('/cockpit');
     expect(resolveHomePath('UNKNOWN_ROLE')).toBe('/cockpit');
+  });
+});
+
+describe('resolveUserHomePath（F-G2：个人 default_home 偏好优先于角色映射）', () => {
+  beforeEach(() => {
+    fetchDefaultHomePreferenceMock.mockReset();
+  });
+
+  it('服务端偏好为合法站内路径 → 优先于角色映射', async () => {
+    fetchDefaultHomePreferenceMock.mockResolvedValue('/cockpit');
+    await expect(
+      resolveUserHomePath('IC_ENGINEER', '/dashboard'),
+    ).resolves.toBe('/cockpit');
+    fetchDefaultHomePreferenceMock.mockResolvedValue('/my-work');
+    await expect(resolveUserHomePath('ADMIN', '/dashboard')).resolves.toBe(
+      '/my-work',
+    );
+  });
+
+  it('无偏好 → 回退角色映射', async () => {
+    fetchDefaultHomePreferenceMock.mockResolvedValue(null);
+    await expect(
+      resolveUserHomePath('IC_ENGINEER', '/dashboard'),
+    ).resolves.toBe('/my-work');
+    await expect(resolveUserHomePath('SPONSOR', '/x')).resolves.toBe(
+      '/cockpit',
+    );
+  });
+
+  it('非法值（协议外路径）→ 回退角色映射（双端形态校验）', async () => {
+    fetchDefaultHomePreferenceMock.mockResolvedValue('//evil.com/x');
+    await expect(
+      resolveUserHomePath('IC_ENGINEER', '/dashboard'),
+    ).resolves.toBe('/my-work');
+  });
+
+  it('偏好加载失败（reject）→ 回退角色映射，不阻断登录', async () => {
+    fetchDefaultHomePreferenceMock.mockRejectedValue(
+      new TypeError('Network Error'),
+    );
+    await expect(
+      resolveUserHomePath('PE_ENGINEER', '/dashboard'),
+    ).resolves.toBe('/my-work');
   });
 });

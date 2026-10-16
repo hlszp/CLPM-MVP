@@ -16,7 +16,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms, require_roles
+from app.api.deps import get_current_user, get_scope_ctx, require_perms, require_roles
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
@@ -31,6 +31,7 @@ from app.schemas.node_performance import (
     NodeSnapshotItem,
     NodeTrendData,
 )
+from app.services.authz_scope import ScopeContext, ensure_node_in_scope
 from app.services.node_performance import (
     get_node_latest_snapshot,
     get_node_monitor_data,
@@ -85,8 +86,10 @@ async def get_node_snapshot_endpoint(
     node_id: str,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """获取节点最新性能快照（所有角色）。"""
+    """获取节点最新性能快照（所有角色；P4-03 越界通用拒绝）。"""
+    ensure_node_in_scope(scope, node_id)
     data = await get_node_latest_snapshot(db, node_id)
     if data is None:
         return success(data=None, message="该节点暂无快照数据")
@@ -125,9 +128,11 @@ async def get_node_trend_endpoint(
     endTime: str = Query(..., description="结束时间（ISO 8601）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """获取节点历史趋势（所有角色）。"""
+    """获取节点历史趋势（所有角色；P4-03 越界通用拒绝）。"""
     _ensure_uuid(node_id, "nodeId")
+    ensure_node_in_scope(scope, node_id)
     start_dt = to_naive_utc(parse_iso_datetime(startTime, field="startTime"))
     end_dt = to_naive_utc(parse_iso_datetime(endTime, field="endTime"))
 
@@ -161,8 +166,9 @@ async def get_node_ranking_endpoint(
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """节点间性能排名（所有角色）。"""
+    """节点间性能排名（所有角色；P4-03 仅范围内节点）。"""
 
     def _parse_dt(s: str | None) -> datetime | None:
         if not s:
@@ -183,6 +189,9 @@ async def get_node_ranking_endpoint(
         sort_order=sortOrder,
         limit=limit,
     )
+    # P4-03：排名仅暴露范围内节点（ALL 不加条件；rank 保持原全厂名次）
+    if scope.allowed_node_ids is not None:
+        data = [item for item in data if str(item.get("plantNodeId")) in scope.allowed_node_ids]
     return success(data=data)
 
 
@@ -201,8 +210,9 @@ async def calculate_node_endpoint(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_roles("ADMIN")),
     _perm: SysUser = Depends(require_perms("metric:snapshot-manage")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """手动触发节点级 KPI 聚合（仅 ADMIN）。
+    """手动触发节点级 KPI 聚合（仅 ADMIN；P4-03 越界通用拒绝）。
 
     注：原实现写作 require_roles("ADMIN", "ENGINEER")，而 "ENGINEER" 不在
     合法角色集（ADMIN/IC_ENGINEER/PE_ENGINEER/SPONSOR/EXPERT，见
@@ -215,6 +225,7 @@ async def calculate_node_endpoint(
     """
     from app.services.node_performance import calculate_and_save_node_snapshot
 
+    ensure_node_in_scope(scope, node_id, action="节点级 KPI 计算")
     now = datetime.now(UTC).replace(tzinfo=None)
     ts_start_str = body.tsStart if body else None
     ts_end_str = body.tsEnd if body else None
@@ -278,10 +289,16 @@ async def get_nodes_overview_endpoint(
     ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """全厂总览：所有启用 KPI 评估的节点最新快照汇总（所有角色）。"""
+    """全厂总览：所有启用 KPI 评估的节点最新快照汇总（所有角色）。
+
+    P5 批 α（聚合收窄）：NODE_SUBTREE 范围按授权节点集收窄——仅统计
+    范围内节点，域外节点不再出现在总览/状态分布中。
+    """
     start, end = _parse_time_window(time_window=timeWindow)
-    data = await get_nodes_overview(db, start, end)
+    unit_ids = None if scope.is_all else sorted(scope.allowed_node_ids)
+    data = await get_nodes_overview(db, start, end, unit_ids=unit_ids)
     return success(data=data)
 
 
@@ -302,8 +319,9 @@ async def get_node_monitor_endpoint(
     end: str = Query(..., description="结束时间（ISO 8601，date 或 datetime）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """获取节点多维度监控数据（hour/day/month，所有角色）。
+    """获取节点多维度监控数据（hour/day/month，所有角色；P4-03 越界通用拒绝）。
 
     - dimension=hour：读 kpi_node_snapshot_hourly（按 ts_start 过滤）
     - dimension=day：读 kpi_node_snapshot_daily（按 stat_date 过滤）
@@ -315,6 +333,7 @@ async def get_node_monitor_endpoint(
             message=f"不支持的维度: {dimension}，可选值: hour/day/month",
         )
 
+    ensure_node_in_scope(scope, node_id)
     # 解析时间参数（兼容带 Z 后缀的 ISO 8601 和纯日期）；
     # 非法输入抛 400，不再 500
     start_dt = to_naive_utc(parse_iso_datetime(start, field="start"))

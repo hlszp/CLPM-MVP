@@ -278,9 +278,13 @@ async def trigger_backfill(
             status_code=status.HTTP_400_BAD_REQUEST,
         )
 
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.kpi_calc import backfill_kpi_range
 
-    celery_result = backfill_kpi_range.delay(ts_start, ts_end, loop_ids=loop_ids)
+    # P5-02：人工回算走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+    celery_result = backfill_kpi_range.apply_async(
+        args=[ts_start, ts_end], kwargs={"loop_ids": loop_ids}, priority=PRIORITY_MANUAL
+    )
 
     logger.info(
         "KPI 回算已触发: import_task=%s, celery_id=%s, loops=%d",

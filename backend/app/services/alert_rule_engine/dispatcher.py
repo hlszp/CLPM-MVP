@@ -439,16 +439,22 @@ async def _trigger_diagnosis(rule: dict[str, Any], loop_id: str) -> str | None:
             ts_end=end.isoformat(),
         )
 
+        from app.tasks.celery_app import PRIORITY_EVENT
         from app.tasks.diagnosis_v2 import run_diagnosis_batch
 
-        celery_result = run_diagnosis_batch.delay(
-            loop_ids=[loop_id],
-            start=start.isoformat(),
-            end=end.isoformat(),
-            task_id=task_id,
-            operator_group="full",
-            triggered_by=f"alert:{rule_code}",
-            trigger_type="EVENT",
+        # P5-02：事件 fast 诊断走最高优先级（Redis 队列分桶：事件9>人工5>夜间1；
+        # 04 号文预算：排队 P95≤5s，须抢在夜间批量前消费）
+        celery_result = run_diagnosis_batch.apply_async(
+            kwargs={
+                "loop_ids": [loop_id],
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "task_id": task_id,
+                "operator_group": "full",
+                "triggered_by": f"alert:{rule_code}",
+                "trigger_type": "EVENT",
+            },
+            priority=PRIORITY_EVENT,
         )
         from app.services.task_tracker import set_celery_task_ids
 

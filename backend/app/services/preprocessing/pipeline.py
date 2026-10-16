@@ -28,7 +28,7 @@ from app.contracts.data_types import (
 )
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.metric_calculator.time_axis import to_half_open, utc
-from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
+from app.services.preprocessing.data_quality_assessor import CORE_TAGS, DataQualityAssessor
 from app.services.preprocessing.outlier_detection import OutlierDetector
 from app.services.preprocessing.quality_code import (
     is_nan_or_inf,
@@ -57,7 +57,8 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 #     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
 _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
 
-PREPROCESS_VERSION = "pre_v1"
+# G5：UNKNOWN 覆盖不计核心有效率、上下文使用真实网格周期；换键禁止复用旧块。
+PREPROCESS_VERSION = "pre_v2"
 
 # R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
 # 日志用于定位"数据窗口缺口"型低可信度的根因）
@@ -202,7 +203,19 @@ class PreprocessingPipeline:
         # 120 个 Good 点 / 30s 间隔 / 跨 1 小时（coverage≈3.3%）不再获得
         # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
         # （INCONCLUSIVE 兼容口径）处理。
-        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
+        # point/mixed 的 UNKNOWN 槽可能保留 Good 原值，数值 validity 不能
+        # 代替覆盖依据。复用连续性逐槽 known 判定，但不以最短连续段门禁
+        # 过滤有效点；只扣核心角色，PID 等非评估信号不拉低回路有效率。
+        # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
+        confidence_validity = validity
+        if _ctx is not None and _ctx.role_coverage:
+            known_mask = self._stitchable_mask(raw, [True] * n, roles=CORE_TAGS)
+            confidence_validity = {
+                key: [valid and known_mask[i] for i, valid in enumerate(validity[key])]
+                for tag in CORE_TAGS
+                if (key := f"{tag}_valid") in validity
+            }
+        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(confidence_validity, n)
         time_coverage = compute_time_coverage(
             raw.timestamps,
             expected_interval_s=float(self.threshold.base_sampling_freq),
@@ -559,7 +572,9 @@ class PreprocessingPipeline:
         unknown_seconds = min(window_seconds, union + uncovered)
         return window_seconds, round(unknown_seconds, 3)
 
-    def _stitchable_mask(self, raw: RawTimeSeries, all_valid: list[bool]) -> list[bool]:
+    def _stitchable_mask(
+        self, raw: RawTimeSeries, all_valid: list[bool], roles: tuple[str, ...] | None = None
+    ) -> list[bool]:
         """可拼接掩码：all_valid 且（有覆盖上下文时）本块任一角色 UNKNOWN 的
         槽不可拼接（gap 槽保留 COV 值但无依据——不删除也不能拼）。"""
         ctx = getattr(raw, "series_context", None)
@@ -570,7 +585,7 @@ class PreprocessingPipeline:
         cov_roles = [
             (role.lower(), cov)
             for role, cov in ctx.role_coverage.items()
-            if role.lower() in raw.signals
+            if role.lower() in raw.signals and (roles is None or role.lower() in roles)
         ]
         if not cov_roles:
             return all_valid

@@ -69,14 +69,14 @@ class TestBackfillTaskEvaluate:
         assert data["windowCount"] == 24  # 24 小时
         assert data["loopCount"] == 3
         assert data["estimatedDurationSec"] == 48  # ceil(3/4) × 24 × 2s
-        # dryRun 不应触发 Celery
-        mock_task.delay.assert_not_called()
+        # dryRun 不应触发 Celery（P5-02：派发渠道 apply_async）
+        mock_task.apply_async.assert_not_called()
 
     def test_backfill_submit_creates_task(self, client, task_redis, fake_redis) -> None:
         """dryRun=False 应创建 PENDING 状态的 BACKFILL 任务，不触发 Celery."""
         fake_loops = [_mock_loop("loop-1", "L-001"), _mock_loop("loop-2", "L-002")]
         with patch("app.tasks.kpi_calc.backfill_kpi_range") as mock_task:
-            mock_task.delay.return_value.id = "celery-123"
+            mock_task.apply_async.return_value = MagicMock(id="celery-123")
             with (
                 patch(
                     "app.api.v1.endpoints.tasks._resolve_loop_ids",

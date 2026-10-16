@@ -71,6 +71,7 @@ from app.api.v1.endpoints import (
     llm_config,
     # Phase 3: 回路数据管理（历史数据导入）
     loop_data,
+    loop_investigation,  # P6-05 E1: 回路核查最小实体
     loop_level_weight,
     loop_mode_mapping,
     loop_type_weight,
@@ -82,6 +83,10 @@ from app.api.v1.endpoints import (
     node_performance,
     outlier_config,
     performance,
+    # P6-05 E2: 统一工作查询（/me/work 四视图聚合）
+    personal_work,
+    # P6-05: 个人关系分片（/me/* 关注/偏好/最近继续）
+    personal_workspace,
     plant_nodes,
     realtime,
     reports,
@@ -1200,6 +1205,13 @@ def create_app() -> FastAPI:
     v1_router.include_router(alert.router)
     # 监控模块：关注队列（整改方案 §8.1）
     v1_router.include_router(monitor.router)
+    # P6-05: 个人关系分片（/me/* 关注/偏好/最近继续，登录主体自助）
+    v1_router.include_router(personal_workspace.router)
+    # P6-05 E1: 回路核查最小实体（/loops/{id}/investigations + /investigations/*）
+    v1_router.include_router(loop_investigation.loops_router)
+    v1_router.include_router(loop_investigation.investigations_router)
+    # P6-05 E2: 统一工作查询（/me/work，纯查询聚合）
+    v1_router.include_router(personal_work.router)
     # v4.0: 批量配置接口（IDS §2.8/§2.9）
     v1_router.include_router(configs.router)
     # v5.3: 权重模板管理（FDS §5.2.2）+ 定级阈值管理（FDS §5.2.4）

@@ -1523,5 +1523,14 @@ VALUES
 ON CONFLICT (release_generation) DO NOTHING;
 
 -- =============================================================================
+-- 17. 授权发布栅栏行种子（P4-03，迁移 p403scope01 同批）
+--   单行 id=1；revision 对齐账本当前 max（空账本=0）。策略变更事务取该行
+--   排他锁递增 revision；任务提交/WS 发送批取共享锁读主体策略（栅栏）。
+-- =============================================================================
+INSERT INTO policy_publication_guard (id, revision, updated_at)
+SELECT 1, COALESCE((SELECT max(revision) FROM sys_authz_policy), 0), now()
+WHERE NOT EXISTS (SELECT 1 FROM policy_publication_guard WHERE id = 1);
+
+-- =============================================================================
 -- 脚本结束
 -- =============================================================================

@@ -1,4 +1,4 @@
-"""LogicalWideBuilder（P3-1）：测点子表 → 1 秒逻辑宽表的唯一构建器.
+"""LogicalWideBuilder（P3-1）：测点子表 → 逻辑宽表的唯一构建器.
 
 设计依据：设计文档 §5（唯一实现）/§5.2 构建步骤/§5.3 时间边界/§5.4 质量兼容。
 
@@ -20,7 +20,7 @@
    （解码已在写入侧唯一入口完成，本层不猜原码）；
 5. 改绑窗口分段：新点状态只来自新点事件/锚点，禁止沿用旧点值（V09）；
 6. MODE 角色输出整数语义（点表 DOUBLE 存储还原 int，对齐宽表 TINYINT）；
-7. interval_s 保留参数但 v1 恒 1s 网格（HF 组复用 BASE 不降分辨率，§5.2-5）。
+7. 默认 1s 网格；调用方指定 interval_s 时按该周期构建并携带真实周期。
 """
 
 from __future__ import annotations
@@ -35,6 +35,7 @@ from sqlalchemy import select
 
 from app.contracts import series_context as sc
 from app.contracts.data_types import RawTimeSeries
+from app.core import g5_trace
 from app.services.data_source import point_history_metadata as meta
 from app.services.data_source import point_history_repository as repo
 
@@ -79,6 +80,7 @@ _held_cfg_cache: dict[str, float] = {}
 _held_cfg_read_at: float = 0.0  # time.monotonic()
 
 
+@g5_trace.traced("builder.held_config")
 async def _held_limits_s(step_s: int) -> dict[str, float]:
     """解析两档 held 容忍秒数（sys_config 覆盖 + 默认兜底；TTL 缓存）。
 
@@ -183,6 +185,7 @@ class _PointStream:
         return self._states[i - 1]
 
 
+@g5_trace.traced("builder.pg_metadata")
 async def _metadata_execute(stmt: Any) -> Any:
     """用独立短会话执行元数据查询（整改 G14）。
 
@@ -195,13 +198,21 @@ async def _metadata_execute(stmt: Any) -> Any:
 
     本函数为每次调用开**独立短会话**，彻底断开与调用方 session 的耦合；
     与 resolve_window_layouts(None, ...) 的既有模式一致。
+
+    止血①（2026-10-13 连接风暴）：``async with`` 的 ``__aexit__`` close 在
+    session 毒化（provisioning 态）时抛错且连接永不归还，改 guarded close
+    （延迟重试 close → 耗尽 terminate 底层连接，不抛出）。
     """
-    from app.core.db import AsyncSessionLocal
+    from app.core.db import AsyncSessionLocal, close_session_guarded
 
-    async with AsyncSessionLocal() as session:
+    session = AsyncSessionLocal()
+    try:
         return await session.execute(stmt)
+    finally:
+        await close_session_guarded(session, label="logical-wide-metadata")
 
 
+@g5_trace.traced("builder.roles")
 async def _resolve_role_segments(
     db: Any,  # noqa: ARG001 - 保留签名兼容；元数据查询改走独立短会话（G14）
     loop_id: str,
@@ -258,15 +269,16 @@ async def _resolve_role_segments(
     return out
 
 
+@g5_trace.traced("builder.total")
 async def build_logical_wide(
     db: Any,
     loop_id: str,
     tag_roles: list[str],
     start: datetime,
     end: datetime,
-    interval_s: int = 1,  # noqa: ARG001 — 契约保留；v1 恒 1s（不降采样）
+    interval_s: int = 1,
 ) -> RawTimeSeries:
-    """构建窗口的 1 秒逻辑宽表（设计 §5.2 全步骤实现）。"""
+    """构建窗口的逻辑宽表（设计 §5.2；按调用方周期，默认 1s）。"""
     grid_start = _ceil_second(start)
     grid_end = _floor_second(end)
     requested = [r.lower() for r in tag_roles]
@@ -302,14 +314,19 @@ async def build_logical_wide(
         if 1 < len(sorted_points) <= 16:
             per_point = await asyncio.gather(
                 *[
-                    repo.read_events([pid], grid_start, grid_end, full_columns=False)
+                    g5_trace.awaited(
+                        "builder.events",
+                        repo.read_events([pid], grid_start, grid_end, full_columns=False),
+                        pointId=pid,
+                    )
                     for pid in sorted_points
                 ]
             )
             events_map = {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
         else:
-            events_map = await repo.read_events(
-                sorted_points, grid_start, grid_end, full_columns=False
+            events_map = await g5_trace.awaited(
+                "builder.events",
+                repo.read_events(sorted_points, grid_start, grid_end, full_columns=False),
             )
         # 各探测时刻的窗口前最后状态（batch per 时刻）
         by_before: dict[datetime, list[str]] = {}
@@ -317,12 +334,17 @@ async def build_logical_wide(
             by_before.setdefault(before, []).append(pid)
         initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
         for before, pids in by_before.items():
-            states = await repo.read_last_states_before(pids, before)
+            states = await g5_trace.awaited(
+                "builder.initial_state", repo.read_last_states_before(pids, before)
+            )
             for pid, st in states.items():
                 initial_states[(pid, before)] = st
         # 锚点（批量单查询；作为虚拟事件按其 sourceTime 生效）
-        anchors = await meta.applicable_anchors_batch(
-            db, point_ids=sorted(all_points), window_start=grid_start
+        anchors = await g5_trace.awaited(
+            "builder.anchors",
+            meta.applicable_anchors_batch(
+                db, point_ids=sorted(all_points), window_start=grid_start
+            ),
         )
         # 组装每点因果流
         for pid in all_points:
@@ -506,7 +528,15 @@ async def build_logical_wide(
     # 输出仅含请求角色（内部补入的 PV 在未请求时移除）
     signals = {r: signals[r] for r in requested if r in signals}
     quality_codes: dict[str, list[int]] = {}
-    if "pv" in roles:
+    # G5 前置立卡项2（2026-10-13）：伪角色请求（PV_QUALITY，QUALITY_HF 独立
+    # 1s 查询——粗 BASE 禁止派生的控制类型走此路径）此前条件为 ``"pv" in
+    # roles``，而伪角色请求的 roles 已剔除 pv_quality → quality_codes 恒空，
+    # 质量三态只进伪信号不进质量码。下游 quality_summary.good_value_rate=None
+    # → legacy 好值率回退 0% 判 INCONCLUSIVE(value=None) → 快照 PARTIAL。
+    # 生产实测非 FLOW 控制类型（BASE>1s 独立 HF 查询）全量 PARTIAL、FLOW
+    # （BASE=1s 走派生路径带 BASE 质量摘要）全量 SUCCESS 即此因。伪角色
+    # 请求同样输出质量码（内部恒含 PV，逐网格点恰好追加一次）。
+    if "pv" in roles or pseudo_quality:
         assert len(pv_quality) == n  # PV 角色逐网格点恰好追加一次
         quality_codes["pv_quality"] = pv_quality
 
@@ -518,6 +548,7 @@ async def build_logical_wide(
         rebind_boundaries=rebind_boundaries,
         segments=segments,
         gap_windows=[(gs, ge) for gs, ge in merged],
+        step_s=step_s,
     )
     return RawTimeSeries(
         timestamps=timestamps_naive,
@@ -527,6 +558,7 @@ async def build_logical_wide(
     )
 
 
+@g5_trace.traced_sync("builder.context")
 def _build_context(
     *,
     loop_id: str,
@@ -536,6 +568,7 @@ def _build_context(
     rebind_boundaries: list[datetime],
     segments: dict[str, list[_BindingSegment]],
     gap_windows: list[tuple[datetime, datetime]],
+    step_s: int = 1,
 ) -> sc.SeriesContext:
     """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。
 
@@ -546,7 +579,7 @@ def _build_context(
     import hashlib
 
     grid_start, grid_end = grid[0], grid[-1]
-    grid_end_half_open = grid_end + timedelta(seconds=1)
+    grid_end_half_open = grid_end + timedelta(seconds=step_s)
     role_coverage: dict[str, sc.RoleCoverage] = {}
     unknown_reasons: dict[str, int] = {}
     for role in roles:
@@ -586,7 +619,7 @@ def _build_context(
         layout=sc.LAYOUT_POINT,
         grid_start=grid_start,
         grid_end=grid_end,
-        grid_period_s=1.0,
+        grid_period_s=float(step_s),
         expected_slots=len(grid),
         dataset_ref=dataset_ref,
         binding_version=f"b{seg_count}",
@@ -634,6 +667,7 @@ def _in_gap(ts: datetime, gap_windows: list[tuple[datetime, datetime]]) -> bool:
     return any(gs <= ts < ge for gs, ge in gap_windows)
 
 
+@g5_trace.traced("builder.gaps")
 async def _load_gap_windows(db: Any) -> list[tuple[datetime, datetime]]:
     from app.models.point_history import HistoryCoverageSegment
 

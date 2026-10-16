@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -30,6 +31,7 @@ from app.models.calculation_result import (
     LEGACY_TABLE_HOURLY,
     LEGACY_TABLE_LATEST,
     LEGACY_TABLE_NODE_HOURLY,
+    CalculationResultAttempt,
     CalculationResultLegacyMap,
     CalculationResultRecord,
 )
@@ -56,6 +58,8 @@ LEGACY_TABLES: tuple[str, ...] = (
 
 # 固定 namespace（uuid5 确定性推导用）
 _RUN_NAMESPACE = uuid.uuid5(uuid.NAMESPACE_URL, "clpm:calculation-result-ledger")
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -196,6 +200,12 @@ async def append_result_record(
 
     与投影切换在同一事务（调用方同一 session 提交）。并发插入竞态由
     ``ON CONFLICT DO NOTHING`` 兜底：冲突后回读复用既有 record。
+
+    P5-02（G2 遗留③）显式重评链：``source_record_id`` 由调用方经
+    ``latest_failed_source_id`` 解析后显式传入（批/单回路入口先经
+    ``loop_ids_with_failed_records`` 一次窗口级门查询判定是否存在 FAILED
+    前身，常见空集路径零逐 record 查询——本函数自身不内联查找，保持
+    P1-05 唯一幂等汇合点行为不变）。
     """
     key = _record_key_filter(logical_run_id, object_kind, object_id, ts_start, ts_end)
 
@@ -229,6 +239,229 @@ async def append_result_record(
             await db.execute(select(CalculationResultRecord).where(*key))
         ).scalar_one_or_none()
     return record
+
+
+async def loop_ids_with_failed_records(
+    db,
+    ts_start: datetime,
+    ts_end: datetime,
+    *,
+    object_ids: list[str] | None = None,
+    object_kind: str = OBJECT_KIND_LOOP,
+) -> set[str]:
+    """窗口级门查询：本窗存在 FAILED 终态 record 的对象 id 集合（P5-02）.
+
+    批/单回路入口一次调用判定"是否存在 FAILED 前身"：空集（常见路径）→
+    后续逐 record 落库完全跳过 sourceRecordId 解析（零额外查询）；命中
+    对象才走 ``latest_failed_source_id`` 单条点查。失败按空集处理（链接
+    链是审计增强，不阻断结果落库）。
+    """
+    try:
+        cond = [
+            CalculationResultRecord.object_kind == object_kind,
+            CalculationResultRecord.ts_start == to_naive_utc(ts_start),
+            CalculationResultRecord.ts_end == to_naive_utc(ts_end),
+            CalculationResultRecord.status == RECORD_STATUS_FAILED,
+        ]
+        if object_ids is not None:
+            cond.append(CalculationResultRecord.object_id.in_([str(x) for x in object_ids]))
+        rows = (
+            (await db.execute(select(CalculationResultRecord.object_id).where(*cond).distinct()))
+            .scalars()
+            .all()
+        )
+        return {str(r) for r in rows}
+    except Exception:  # noqa: BLE001 — 门查询失败按空集（链接链不阻断主链）
+        return set()
+
+
+async def latest_failed_source_id(
+    db,
+    *,
+    logical_run_id: str,
+    object_kind: str,
+    object_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+) -> str | None:
+    """查同 (对象, 窗口) 最近一条 FAILED 终态 record（不同 logicalRunId）.
+
+    供 COMPLETED record 的显式重评链（sourceRecordId）；无 FAILED 前身时
+    返回 None。命中 idx_calc_result_record_object_window 索引，单条点查。
+    查询失败按 None 处理（链接链是审计增强，不阻断结果落库）。
+    """
+    try:
+        row = (
+            await db.execute(
+                select(CalculationResultRecord.id)
+                .where(
+                    CalculationResultRecord.object_kind == object_kind,
+                    CalculationResultRecord.object_id == str(object_id),
+                    CalculationResultRecord.ts_start == to_naive_utc(ts_start),
+                    CalculationResultRecord.ts_end == to_naive_utc(ts_end),
+                    CalculationResultRecord.status == RECORD_STATUS_FAILED,
+                    CalculationResultRecord.logical_run_id != str(logical_run_id),
+                )
+                .order_by(CalculationResultRecord.created_at.desc())
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        return str(row) if row is not None else None
+    except Exception:  # noqa: BLE001 — 链接失败不阻断主链
+        return None
+
+
+async def append_failed_result_record(
+    db,
+    *,
+    logical_run_id: str,
+    object_kind: str,
+    object_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    algorithm_version: str,
+    config_revision: str,
+    error: BaseException | str,
+    worker_pid: int | str | None = None,
+) -> CalculationResultRecord | None:
+    """终末失败（第 3 次 attempt 仍失败）追加 ``status=FAILED`` 不可变终态 record.
+
+    P0-02 冻结 v2 §2.2 重试终点（P5-02 落地）：
+
+    - 仅在**终末尝试**调用（暂态失败只写 attempt 日志，不落终态）；
+    - 同唯一键已有任何 record（此前尝试成功/已写 FAILED）→ 复用不重写
+      （幂等，与 append_result_record 同口径）；
+    - payload 含最终错误摘要（errorClass/errorMessage/workerPid），快照
+      业务键 snapshotStatus=FAILED；
+    - 失败证据不可变：后续同窗重算走新 logicalRunId 的 COMPLETED record
+      并经 append_result_record 自动回链 sourceRecordId。
+    """
+    error_class = type(error).__name__ if isinstance(error, BaseException) else "Error"
+    error_message = str(error)[:1800] or error_class
+    return await append_result_record(
+        db,
+        logical_run_id=logical_run_id,
+        object_kind=object_kind,
+        object_id=object_id,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        algorithm_version=algorithm_version,
+        config_revision=config_revision,
+        status=RECORD_STATUS_FAILED,
+        payload={
+            "snapshotStatus": "FAILED",
+            "error": {
+                "errorClass": error_class,
+                "errorMessage": error_message,
+                "workerPid": str(worker_pid) if worker_pid is not None else None,
+            },
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# 计算尝试日志（P5-02，G2 遗留③；P0-02 冻结 v2 §2.2）
+# ---------------------------------------------------------------------------
+
+
+def derive_attempt_no(task_request) -> int:
+    """Celery 任务请求 → attempt 序号（1=首跑；retry 复用同一 task id）."""
+    return int(getattr(task_request, "retries", 0) or 0) + 1
+
+
+def is_final_attempt(task_request, max_retries: int) -> bool:
+    """当前尝试是否为终末尝试（再失败即耗尽重试，须落 FAILED 终态）."""
+    return int(getattr(task_request, "retries", 0) or 0) >= max_retries
+
+
+async def start_calculation_attempt(
+    logical_run_id: str, attempt_no: int, worker_pid: int | str | None = None
+) -> str | None:
+    """开始一次计算尝试：插入 attempt 行（best-effort，独立短会话）.
+
+    ``ON CONFLICT (logical_run_id, attempt_no) DO NOTHING``：Worker 重启/
+    消息重投导致同 task id 同 attempt_no 再执行时不重复建行（幂等）。
+    失败仅记日志——attempt 日志是可观测性增强，绝不阻断计算主链。
+    """
+    from datetime import UTC, datetime
+    from uuid import uuid4 as _uuid4
+
+    from sqlalchemy.dialects.postgresql import insert as _pg_insert
+
+    from app.core.db import AsyncSessionLocal
+
+    if not logical_run_id:
+        return None
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                _pg_insert(CalculationResultAttempt)
+                .values(
+                    id=str(_uuid4()),
+                    logical_run_id=str(logical_run_id),
+                    attempt_no=attempt_no,
+                    worker_pid=str(worker_pid) if worker_pid is not None else None,
+                    started_at=datetime.now(UTC).replace(tzinfo=None),
+                )
+                .on_conflict_do_nothing(constraint="uq_calc_attempt_run_no")
+            )
+            await db.execute(stmt)
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "attempt 日志写入失败（忽略）: logical_run_id=%s attempt_no=%s",
+            logical_run_id,
+            attempt_no,
+            exc_info=True,
+        )
+        return None
+    return str(logical_run_id)
+
+
+async def finish_calculation_attempt(
+    logical_run_id: str,
+    attempt_no: int,
+    error: BaseException | None = None,
+) -> None:
+    """结束一次计算尝试：补 finished_at 与错误摘要（best-effort）.
+
+    仅更新尚未结束的行（finished_at IS NULL）：重投递并发收尾不互相
+    覆盖；成功完成时 error_class/error_message 保持 NULL。
+    """
+    from datetime import UTC, datetime
+
+    from sqlalchemy import update as _update
+
+    from app.core.db import AsyncSessionLocal
+
+    if not logical_run_id:
+        return
+    error_class = type(error).__name__ if error is not None else None
+    error_message = str(error)[:1800] if error is not None else None
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = (
+                _update(CalculationResultAttempt)
+                .where(
+                    CalculationResultAttempt.logical_run_id == str(logical_run_id),
+                    CalculationResultAttempt.attempt_no == attempt_no,
+                    CalculationResultAttempt.finished_at.is_(None),
+                )
+                .values(
+                    finished_at=datetime.now(UTC).replace(tzinfo=None),
+                    error_class=error_class,
+                    error_message=error_message,
+                )
+            )
+            await db.execute(stmt)
+            await db.commit()
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "attempt 日志收尾失败（忽略）: logical_run_id=%s attempt_no=%s",
+            logical_run_id,
+            attempt_no,
+            exc_info=True,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -313,15 +546,22 @@ __all__ = [
     "OBJECT_KIND_NODE",
     "RECORD_STATUS_COMPLETED",
     "RECORD_STATUS_FAILED",
+    "append_failed_result_record",
     "append_result_record",
     "canonical_json",
     "canonical_value",
     "config_revision_digest",
     "content_digest",
+    "derive_attempt_no",
     "derive_loop_logical_run_id",
     "derive_node_logical_run_id",
     "find_record_any_id",
+    "finish_calculation_attempt",
     "get_record_by_id",
+    "is_final_attempt",
+    "latest_failed_source_id",
+    "loop_ids_with_failed_records",
     "record_to_dict",
     "resolve_legacy_id",
+    "start_calculation_attempt",
 ]

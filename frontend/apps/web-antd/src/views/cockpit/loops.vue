@@ -2,39 +2,43 @@
 import type { LoopCardModel } from './loops-shared';
 
 /**
- * 驾驶舱 · 页2 回路状态墙（方案 11 §6，C4）
+ * 驾驶舱 · 页2 回路状态墙（方案 11 §6，C4；P5-04 服务端筛选改造）
  *
  * 三栏壳（1920×1080 满屏无页面滚动，区块内滚动）：
  * - 左：装置树（工厂→装置→单元，215px，GET /cockpit/node-tree，计数角标）
- * - 中：等级/模式筛选 + 排序 + 右上角分页控件 + 回路卡片墙（每页 20 个，WS 实时刷新）
+ * - 中：等级/模式筛选 + 排序 + 右上角分页控件 + 回路卡片墙（每页 30 个，WS 实时刷新）
  * - 右：详情面板（~368px，两态：聚合[模式柱状图固定+节点雷达弹性] / 回路详情）
  *
- * 交互规则（§6.3）：
- * - 筛选/排序/装置变化后：有选中回路→跳到其所在页；否则回第 1 页；
- *   选中回路被过滤掉→自动回聚合视图
- * - 详情面板 ‹ › 在当前筛选结果内连续浏览，跨页自动翻页并保持卡片选中
- * - 纯只读：无任何写操作/后台跳转
+ * P5-04（03 号文 §8）：
+ * - 筛选/稳定排序/总数/分页全部服务端执行（use-loop-wall-list）——消除
+ *   "筛选/劣化排序触发客户端预抓全量 34 页"反模式；筛选变化只发 1 个列表
+ *   请求（选中回路跨页定位 +1），总数含 >1000 场景准确；
+ * - 竞态：use-latest-request 守卫（装置 A→B 快速切换，迟到的 A 被丢弃）；
+ * - focus 协议：筛选/排序/装置变化后有选中回路 → 服务端返回 focusPage 跳到
+ *   其所在页；不在结果集 → 自动回聚合视图；
+ * - 实时节流：tagName 索引 + 500ms 短时合并（同位号窗口内只保留最新值）+
+ *   document.hidden 停更（可见时冲刷）+ 订阅收缩到当前页位号；
+ * - 刷新保状态：5min/手动静默刷新按当前页重拉，不清页码/不重置筛选/不关
+ *   选中；浏览器刷新（F5）经 URL query 恢复节点/筛选/页码/选中回路。
  *
- * 数据源：GET /loops/monitor（列表+评分+六维+实时值一次取齐，按节点拉全量后
- * 客户端筛选/排序/分页）+ /performance/loops/metric-series（火花线）+
- * WebSocket /api/v1/ws/realtime（PV/SP/OP/MODE 局部刷新，断连 30s 轮询降级）。
+ * 数据源：GET /loops/monitor（服务端筛选排序分页+评分+六维+实时值）+
+ * /performance/loops/metric-series（火花线）+ WebSocket /api/v1/ws/realtime
+ * （PV/SP/OP/MODE 短窗合并后局部刷新，断连 30s 轮询降级）。
  */
 import type { CockpitApi } from '#/api/cockpit';
 import type { LoopApi } from '#/api/loop';
 import type { MetricApi } from '#/api/metric';
+import type { RealtimeMessage } from '#/composables/use-loop-realtime';
 import type { CockpitModeKey } from '#/store/cockpit';
 
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
 
 import { getCockpitNodeTreeApi } from '#/api/cockpit';
-import { getLoopMonitorListApi } from '#/api/loop';
+import { getGradingThresholdsApi, getLoopMetricSeriesApi } from '#/api/metric';
 import {
-  getGradingThresholdsApi,
-  getLoopMetricSeriesApi,
-} from '#/api/metric';
-import {
-  bindLoopInterest,
   parseTagCode,
+  registerInterest,
   resolveModeLabel,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
@@ -47,21 +51,81 @@ import DeviceTree from './components/device-tree.vue';
 import LoopCard from './components/loop-card.vue';
 import LoopDetailPanel from './components/loop-detail-panel.vue';
 import LoopPager from './components/loop-pager.vue';
+import { createRealtimeMergeBuffer } from './composables/create-realtime-merge-buffer';
+import { LOOP_WALL_PAGE_SIZE, useLoopWallList } from './composables/use-loop-wall-list';
 import { MODE_KEY_ORDER, MODE_KEY_ZH, toLoopCardModel } from './loops-shared';
 
 import './styles/theme.css';
 
-const PAGE_SIZE = 30; // 2026-10-06 用户裁决：6 列 × 5 行（原 4 列 × 5 行）
-/** 懒加载批量 = 页大小（2026-10-07 用户裁决：首批 30 张、翻页按需拉取；
- *  页大小恒定保证服务端 page 边界对齐，追加段与已加载前缀序连续） */
-const FETCH_BATCH = 30;
-/** 补全并发度（筛选/劣化排序需全量时的分批并发页数） */
-const ENSURE_CONCURRENCY = 6;
-/** 拉全量页数上限（防护） */
-const MAX_FETCH_PAGES = 80;
+/** 2026-10-06 用户裁决：6 列 × 5 行（原 4 列 × 5 行） */
+const PAGE_SIZE = LOOP_WALL_PAGE_SIZE;
+/**
+ * P5-04 短时合并窗口（决策点定稿，登记交接）：500ms——WS 1s 采样节拍下，
+ * 同位号窗口内仅保留最新值、每至多 2 次响应式更新；感知延迟低于人眼对
+ * 数字闪烁的辨识阈值，30 卡 × 4 位号高频推送的重渲染合并为窗口批量。
+ */
+const REALTIME_MERGE_WINDOW_MS = 500;
 
 const cockpitStore = useCockpitStore();
+const route = useRoute();
+const router = useRouter();
 const theme = computed(() => cockpitStore.theme);
+
+// ---------------------------------------------------------------------------
+// URL query 保状态（P5-04：浏览器刷新不关面板/不重置筛选）
+// node/grades/modes/sort/page/loop 六键往返同步（router.replace 不留历史）
+// ---------------------------------------------------------------------------
+const QUERY_GRADE_KEYS = [
+  'EXCELLENT',
+  'FAIR',
+  'GOOD',
+  'POOR',
+  'WARNING',
+] as const;
+
+function restoreFromQuery() {
+  const q = route.query;
+  if (typeof q.node === 'string' && q.node) cockpitStore.setLoopsNode(q.node);
+  if (typeof q.grades === 'string') {
+    const gs = q.grades
+      .split(',')
+      .filter((g): g is CockpitApi.GradeKey =>
+        (QUERY_GRADE_KEYS as readonly string[]).includes(g),
+      );
+    if (gs.length > 0) cockpitStore.setLoopsFilters({ grades: gs });
+  }
+  if (typeof q.modes === 'string') {
+    const ms = q.modes
+      .split(',')
+      .filter((m): m is CockpitModeKey =>
+        (MODE_KEY_ORDER as readonly string[]).includes(m),
+      );
+    if (ms.length > 0) cockpitStore.setLoopsFilters({ modes: ms });
+  }
+  if (q.sort === 'degradeDesc' || q.sort === 'scoreDesc') {
+    cockpitStore.setLoopsFilters({ sortBy: q.sort });
+  }
+  if (typeof q.page === 'string') {
+    const p = Number.parseInt(q.page, 10);
+    if (Number.isFinite(p) && p >= 1) cockpitStore.setLoopsPage(p);
+  }
+  if (typeof q.loop === 'string' && q.loop) cockpitStore.selectLoop(q.loop);
+}
+
+function syncQueryToUrl() {
+  const f = cockpitStore.loopsFilters;
+  const query: Record<string, string> = {};
+  if (cockpitStore.loopsNodeId) query.node = cockpitStore.loopsNodeId;
+  if (f.grades.length > 0) query.grades = f.grades.join(',');
+  if (f.modes.length > 0) query.modes = f.modes.join(',');
+  if (f.sortBy !== 'scoreDesc') query.sort = f.sortBy;
+  if (cockpitStore.loopsPage > 1) query.page = String(cockpitStore.loopsPage);
+  if (cockpitStore.loopsSelectedLoopId) query.loop = cockpitStore.loopsSelectedLoopId;
+  void router.replace({ query });
+}
+
+// 启动即恢复（先于下方 watcher 注册，恢复本身不触发加载）
+restoreFromQuery();
 
 // ---------------------------------------------------------------------------
 // 左：装置树
@@ -103,231 +167,116 @@ async function refreshTree() {
 }
 
 // ---------------------------------------------------------------------------
-// 中：回路列表（节点联动拉全量 → 客户端筛选/排序/分页）
+// 中：回路列表（P5-04：服务端筛选/排序/总数/分页 + 竞态守卫）
 // ---------------------------------------------------------------------------
-const allLoops = ref<LoopApi.MonitorListItem[]>([]);
-const listLoading = ref(true);
-/** 懒加载：翻页/补全进行中（卡片墙显示加载提示） */
-const pagingLoading = ref(false);
-/** 服务端总数（默认浏览态分页总页数以此为准，未全量也准确） */
-const serverTotal = ref(0);
-/** 当前节点数据是否已全量加载（筛选/劣化排序需要全量，触发时自动补全） */
-const fullyLoaded = ref(false);
-/** 补全互斥（并发触发去重） */
-let ensuring = false;
-/** 节点口径模式分布（服务端聚合，面板态一柱状图） */
-const modeDistribution = ref<null | Record<string, number>>(null);
-const nodeLoopTotal = ref(0);
-
-/**
- * 本地筛选/本地排序态：等级 chips / 模式 chips / 劣化排序都基于全量数据
- * 才准确（接口不支持这些筛选参数）——激活时自动补全加载。
- * 默认态（无筛选 + 评分降序）与服务端排序口径一致，已加载前缀即全局序。
- */
-const needsFullData = computed(() => {
-  const { grades, modes, sortBy } = cockpitStore.loopsFilters;
-  return grades.length > 0 || modes.length > 0 || sortBy !== 'scoreDesc';
-});
-
-async function fetchRange(
-  plantNodeId: string | undefined,
-  page: number,
-  withAggregate: boolean,
-) {
-  return getLoopMonitorListApi({
-    page,
-    pageSize: FETCH_BATCH,
-    plantNodeId,
-    sortBy: 'score',
-    sortOrder: 'desc',
-    withAggregate,
-  });
-}
-
-/**
- * 按需补全：加载到覆盖目标下标（Infinity = 全量）。
- * 从已加载断点续页拉取（分批并发，页界与首批对齐），追加不重置——
- * 已渲染卡片不闪烁，WS 订阅/选中态自然延续。
- */
-async function ensureMore(uptoIndex: number) {
-  if (fullyLoaded.value || ensuring || uptoIndex < allLoops.value.length) {
-    return;
-  }
-  ensuring = true;
-  pagingLoading.value = true;
-  try {
-    const plantNodeId = cockpitStore.loopsNodeId ?? undefined;
-    let next = Math.floor(allLoops.value.length / FETCH_BATCH) + 1;
-    while (next <= MAX_FETCH_PAGES && !fullyLoaded.value) {
-      const batch: number[] = [];
-      for (let p = next; p < next + ENSURE_CONCURRENCY; p++) {
-        if (p > Math.ceil(serverTotal.value / FETCH_BATCH)) break;
-        batch.push(p);
-      }
-      if (batch.length === 0) break;
-      const results = await Promise.all(
-        batch.map((p) => fetchRange(plantNodeId, p, false).catch(() => null)),
-      );
-      let appended = 0;
-      for (const res of results) {
-        if (!res) continue;
-        const items = res.items ?? [];
-        if (items.length === 0) continue;
-        // 页边界抖动防御：按 loopId 去重追加
-        const known = new Set(allLoops.value.map((i) => i.loopId));
-        allLoops.value.push(...items.filter((i) => !known.has(i.loopId)));
-        appended += items.length;
-        if (res.aggregate?.modeDistribution) {
-          modeDistribution.value = res.aggregate.modeDistribution;
-        }
-      }
-      if (appended === 0) {
-        // 全部请求失败或全为空 → 终止，避免死循环
-        break;
-      }
-      fullyLoaded.value = allLoops.value.length >= serverTotal.value;
-      if (
-        uptoIndex !== Number.POSITIVE_INFINITY &&
-        allLoops.value.length > uptoIndex
-      ) {
-        break;
-      }
-      next += ENSURE_CONCURRENCY;
-    }
-    fullyLoaded.value = allLoops.value.length >= serverTotal.value;
-  } finally {
-    ensuring = false;
-    pagingLoading.value = false;
-  }
-}
+const {
+  booted,
+  busy,
+  focusPage,
+  items,
+  load,
+  modeDistribution,
+  total,
+} = useLoopWallList();
 
 /** 定级阈值（等级五档色染；未加载时 loops-shared 降级国标默认） */
 const gradingThresholds = ref<MetricApi.GradingThresholdItem[]>([]);
 
-async function loadLoops(silent = false) {
-  if (!silent) listLoading.value = true;
-  try {
-    const plantNodeId = cockpitStore.loopsNodeId ?? undefined;
-    // 懒加载首批：只拉第 1 页 30 条（带全量聚合，树角标/模式分布一次取齐）
-    const res = await fetchRange(plantNodeId, 1, true);
-    const items = res.items ?? [];
-    const total = res.total ?? 0;
-    serverTotal.value = total;
-    nodeLoopTotal.value = total;
-    modeDistribution.value = res.aggregate?.modeDistribution ?? null;
-    fullyLoaded.value = items.length >= total;
-    allLoops.value = items;
-    // 筛选/劣化排序态必须保持全量（否则本地筛选口径失真）→ 自动补全
-    // （静默刷新场景会短暂回首批渲染，2~3s 内补全恢复，可接受）
-    if (!fullyLoaded.value && needsFullData.value) {
-      await ensureMore(Number.POSITIVE_INFINITY);
-    }
-  } catch {
-    if (!silent) {
-      allLoops.value = [];
-      serverTotal.value = 0;
-      nodeLoopTotal.value = 0;
-      modeDistribution.value = null;
-      fullyLoaded.value = false;
-    }
-  } finally {
-    if (!silent) listLoading.value = false;
-  }
+/** 当前查询态（store → 服务端请求参数的单一映射） */
+function currentQuery() {
+  const f = cockpitStore.loopsFilters;
+  return {
+    grades: f.grades,
+    modes: f.modes,
+    page: cockpitStore.loopsPage,
+    plantNodeId: cockpitStore.loopsNodeId,
+    sortBy: f.sortBy,
+  };
 }
 
-// ---------------------------------------------------------------------------
-// 筛选 / 排序 / 分页
-// ---------------------------------------------------------------------------
-const models = computed<LoopCardModel[]>(() =>
-  allLoops.value.map((item) => toLoopCardModel(item, gradingThresholds.value)),
-);
-
-const filteredSorted = computed<LoopCardModel[]>(() => {
-  const { grades, modes, sortBy } = cockpitStore.loopsFilters;
-  let list = models.value;
-  if (grades.length > 0) {
-    list = list.filter((m) => m.grade !== null && grades.includes(m.grade.key));
-  }
-  if (modes.length > 0) {
-    list = list.filter((m) => m.mode !== null && modes.includes(m.mode));
-  }
-  const sorted = [...list];
-  if (sortBy === 'scoreDesc') {
-    sorted.sort((a, b) => (b.score ?? -1) - (a.score ?? -1));
-  } else {
-    // 劣化降序：较昨日下降最多在前（scoreDelta 升序），无增量排最后
-    sorted.sort((a, b) => (a.scoreDelta ?? 999) - (b.scoreDelta ?? 999));
-  }
-  return sorted;
-});
-
-const pageCount = computed(() => {
-  // 筛选/劣化态（已自动补全全量）或已全量：本地口径准确
-  if (needsFullData.value || fullyLoaded.value) {
-    return Math.max(1, Math.ceil(filteredSorted.value.length / PAGE_SIZE));
-  }
-  // 默认浏览态：以服务端总数为准（已加载仅为前缀，翻页按需补拉）
-  return Math.max(1, Math.ceil(serverTotal.value / PAGE_SIZE));
-});
-
-const pageItems = computed<LoopCardModel[]>(() => {
-  const start = (cockpitStore.loopsPage - 1) * PAGE_SIZE;
-  return filteredSorted.value.slice(start, start + PAGE_SIZE);
-});
-
-/** 筛选/排序/装置变化后回跳：选中回路仍在结果内→跳到其所在页，否则回第 1 页 */
-function applyPostChangeRule() {
-  const list = filteredSorted.value;
+/** 选中回路的 focus 校正（响应后调用）：不在结果集→清选中；跨页→跳所在页 */
+async function reconcileFocus() {
   const sel = cockpitStore.loopsSelectedLoopId;
-  const idx = sel ? list.findIndex((m) => m.loopId === sel) : -1;
-  if (sel && idx >= 0) {
-    cockpitStore.setLoopsPage(Math.floor(idx / PAGE_SIZE) + 1);
-  } else {
-    if (sel) cockpitStore.selectLoop(null);
-    cockpitStore.setLoopsPage(1);
-  }
-}
-
-/** 数据刷新后选中回路被过滤掉 → 自动回聚合视图 */
-watch(filteredSorted, (list) => {
-  const sel = cockpitStore.loopsSelectedLoopId;
-  if (sel && !list.some((m) => m.loopId === sel)) {
+  if (!sel) return;
+  if (focusPage.value == null) {
+    // 选中回路被过滤掉 → 自动回聚合视图（方案 §6.3）
     cockpitStore.selectLoop(null);
+    if (cockpitStore.loopsPage !== 1) await goToPage(1);
+  } else if (focusPage.value !== cockpitStore.loopsPage) {
+    await goToPage(focusPage.value);
   }
-});
+}
 
-watch(
-  () => cockpitStore.loopsFilters,
-  async () => {
-    // 筛选/劣化排序需全量数据（口径准确），先补全再回跳定位
-    if (needsFullData.value && !fullyLoaded.value) {
-      await ensureMore(Number.POSITIVE_INFINITY);
-    }
-    applyPostChangeRule();
-  },
-  { deep: true },
-);
+/** 筛选/排序/装置变化（方案 §6.3：有选中→跳其所在页；否则回第 1 页） */
+async function handleQueryChange() {
+  const sel = cockpitStore.loopsSelectedLoopId;
+  if (cockpitStore.loopsPage !== 1) cockpitStore.setLoopsPage(1);
+  await load({ ...currentQuery(), page: 1 }, { focusLoopId: sel });
+  await reconcileFocus();
+}
 
-// 翻页触及未加载区间 → 按需补拉（覆盖分页控件/‹›跨页/回跳等全部页码来源）
-watch(
-  () => cockpitStore.loopsPage,
-  async (p) => {
-    if (!needsFullData.value) {
-      await ensureMore(p * PAGE_SIZE - 1);
-    }
-  },
-);
-
-watch(
-  () => cockpitStore.loopsNodeId,
-  async () => {
-    await loadLoops();
-    applyPostChangeRule();
-  },
-);
+/** 翻页（分页控件 / focus 跳页 / ‹› 跨页共用；页码先行、加载后消费浏览目标） */
+let pendingBrowseGlobal: null | number = null;
+async function goToPage(page: number) {
+  cockpitStore.setLoopsPage(page);
+  await load(currentQuery());
+  consumePendingBrowse();
+}
 
 function onPageChange(page: number) {
-  cockpitStore.setLoopsPage(page);
+  void goToPage(page);
+}
+
+// ---------------------------------------------------------------------------
+// 视图模型（服务端已按当前页+排序返回，无客户端筛选/排序）
+// ---------------------------------------------------------------------------
+const models = computed<LoopCardModel[]>(() =>
+  items.value.map((item) => toLoopCardModel(item, gradingThresholds.value)),
+);
+const pageItems = computed<LoopCardModel[]>(() => models.value);
+
+const pageCount = computed(() =>
+  Math.max(1, Math.ceil(total.value / PAGE_SIZE)),
+);
+
+const selectedIndexInPage = computed(() =>
+  pageItems.value.findIndex((m) => m.loopId === cockpitStore.loopsSelectedLoopId),
+);
+
+/** 全局位次（服务端排序下的第 N 个，1 起；不在当前页为 -1） */
+const selectedIndex = computed(() =>
+  selectedIndexInPage.value >= 0
+    ? (cockpitStore.loopsPage - 1) * PAGE_SIZE + selectedIndexInPage.value
+    : -1,
+);
+
+// 详情面板 ‹ › 连续浏览：跨页自动翻页并保持卡片选中
+function browseLoop(delta: number) {
+  if (selectedIndexInPage.value < 0) return;
+  const globalIdx = selectedIndex.value;
+  const next = globalIdx + delta;
+  if (next < 0 || next >= total.value) return;
+  const nextPage = Math.floor(next / PAGE_SIZE) + 1;
+  if (nextPage === cockpitStore.loopsPage) {
+    const target = pageItems.value[next - (nextPage - 1) * PAGE_SIZE];
+    if (target) cockpitStore.selectLoop(target.loopId);
+  } else {
+    pendingBrowseGlobal = next;
+    void goToPage(nextPage);
+  }
+}
+
+function consumePendingBrowse() {
+  if (pendingBrowseGlobal == null) return;
+  const g = pendingBrowseGlobal;
+  pendingBrowseGlobal = null;
+  const idx = g - (cockpitStore.loopsPage - 1) * PAGE_SIZE;
+  const target = pageItems.value[idx];
+  if (target) cockpitStore.selectLoop(target.loopId);
+}
+
+function onCardSelect(loopId: string) {
+  cockpitStore.selectLoop(loopId);
 }
 
 // ---------------------------------------------------------------------------
@@ -339,8 +288,8 @@ const sparkMap = ref<Map<string, { ts: null | string; value: null | number }[]>>
 
 let sparkSeq = 0;
 
-async function loadSparks(items: LoopCardModel[]) {
-  if (items.length === 0) {
+async function loadSparks(itemsOnPage: LoopCardModel[]) {
+  if (itemsOnPage.length === 0) {
     sparkMap.value = new Map();
     return;
   }
@@ -349,9 +298,8 @@ async function loadSparks(items: LoopCardModel[]) {
   const end = new Date();
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
   const map = new Map<string, { ts: null | string; value: null | number }[]>();
-  const ids = items.map((m) => m.loopId);
-  // 2026-10-03 提速：chunk 间由串行 for 改全并行（首屏 30 卡=3 批并发，
-  // 旧实现 3 批串行等待是火花线区"加载很慢"的主因）
+  const ids = itemsOnPage.map((m) => m.loopId);
+  // 2026-10-03 提速：chunk 间全并行（首屏 30 卡=3 批并发）
   const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += 10) {
     chunks.push(ids.slice(i, i + 10));
@@ -384,22 +332,21 @@ watch(
 );
 
 // ---------------------------------------------------------------------------
-// WebSocket 实时刷新（PV/SP/OP/MODE 局部更新；断连 30s 轮询降级）
+// WebSocket 实时刷新（P5-04 节流：tagName 索引 + 短时合并 + 后台停更）
 // ---------------------------------------------------------------------------
 const realtime = useLoopRealtime();
 
-// 服务端订阅过滤：仅接收当前回路清单绑定的位号（慢链路防全量流冲垮）
-bindLoopInterest(() => allLoops.value.map((l) => l.tagName));
+/** tagName → 列表项索引（O(1) 消息定位，替代每消息线性扫描） */
+const itemByTag = computed(() => {
+  const map = new Map<string, LoopApi.MonitorListItem>();
+  for (const l of items.value) map.set(l.tagName, l);
+  return map;
+});
 
-function handleRealtimeMessage(msg: {
-  collectTime: string;
-  quality: number;
-  tagCode: string;
-  value: string;
-}) {
+function applyRealtimeMessage(msg: RealtimeMessage) {
   const parsed = parseTagCode(msg.tagCode);
   if (!parsed) return;
-  const item = allLoops.value.find((l) => l.tagName === parsed.tagName);
+  const item = itemByTag.value.get(parsed.tagName);
   if (!item) return;
   const cv = item.currentValues;
   // R06：共享数值契约——无效字面量（-1.#QNAN0/nan/Infinity/空串）→ null
@@ -407,7 +354,7 @@ function handleRealtimeMessage(msg: {
   switch (parsed.role) {
     case 'MODE': {
       // R17：按「回路 modeMapping（REST 下发）→ 默认映射 → Unknown」解析，
-      // 删除"所有正数=Auto"硬编码；未知值显式 Unknown，不保留旧标签冒充
+      // 未知值显式 Unknown，不保留旧标签冒充
       const label = resolveModeLabel(numValue, item.modeMapping);
       cv.mode = numValue;
       cv.modeLabel = label;
@@ -434,47 +381,76 @@ function handleRealtimeMessage(msg: {
   cv.readAt = msg.collectTime;
 }
 
+/** 短时合并缓冲（窗口内同位号只保留最新值；隐藏中不应用、可见时冲刷） */
+const realtimeBuffer = createRealtimeMergeBuffer<RealtimeMessage>(
+  (messages) => {
+    for (const msg of messages) applyRealtimeMessage(msg);
+  },
+  { windowMs: REALTIME_MERGE_WINDOW_MS },
+);
+
+const handleRealtimeMessage = (msg: RealtimeMessage) => realtimeBuffer.push(msg);
+
+// 服务端订阅过滤（P5-04 收缩：仅当前页可见卡片绑定的位号）。
+// O02-RT：owner=本组件实例唯一身份（Symbol 每实例一份）；可见卡片/翻页/筛选
+// 变化由 registerInterest 内部 watch 自动重订（对 WS 发送全部 owner 并集，
+// 驾驶舱内其他实例互不覆盖）；KeepAlive 停用→释放、恢复→重算 source 重注册；
+// 组件卸载→自动停止 watch 并释放。
+const realtimeInterestOwner = Symbol('cockpit-loops-realtime');
+registerInterest(realtimeInterestOwner, () => ({
+  loops: items.value.map((l) => l.tagName),
+}));
+
 // ---------------------------------------------------------------------------
 // 详情面板（两态 + ‹ › 连续浏览）
 // ---------------------------------------------------------------------------
-const selectedModel = computed<LoopCardModel | null>(() => {
-  const sel = cockpitStore.loopsSelectedLoopId;
-  return sel
-    ? (filteredSorted.value.find((m) => m.loopId === sel) ?? null)
-    : null;
-});
+const selectedModel = computed<LoopCardModel | null>(() =>
+  selectedIndexInPage.value >= 0
+    ? (pageItems.value[selectedIndexInPage.value] ?? null)
+    : null,
+);
 
 const panelView = computed<'aggregate' | 'loop'>(() =>
   selectedModel.value ? 'loop' : 'aggregate',
 );
 
-const selectedIndex = computed(() => {
-  const sel = cockpitStore.loopsSelectedLoopId;
-  return sel
-    ? filteredSorted.value.findIndex((m) => m.loopId === sel)
-    : -1;
-});
+// ---------------------------------------------------------------------------
+// C5 混合刷新（方案 §9）：当前页静默重拉 + 火花线 + 装置树角标 5min 定时 +
+// 顶栏暂停开关 + 手动刷新（store.refreshTick）；P5-04：后台页跳过、
+// 恢复可见补拉一次；刷新保留页码/筛选/选中（不关面板）
+// ---------------------------------------------------------------------------
+const AUTO_REFRESH_MS = 5 * 60_000;
+let pendingRefreshWhileHidden = false;
 
-function browseLoop(delta: number) {
-  const next = selectedIndex.value + delta;
-  if (next < 0 || next >= filteredSorted.value.length) return;
-  const target = filteredSorted.value[next];
-  if (!target) return;
-  cockpitStore.selectLoop(target.loopId);
-  // 跨页自动翻页，保持卡片选中高亮
-  cockpitStore.setLoopsPage(Math.floor(next / PAGE_SIZE) + 1);
+/** 当前页静默重拉（选中回路漂移跨页时跟随跳页保持选中） */
+async function refreshCurrentPage() {
+  const sel = cockpitStore.loopsSelectedLoopId;
+  await load(currentQuery(), { silent: true, focusLoopId: sel });
+  await reconcileFocus();
 }
 
-function onCardSelect(loopId: string) {
-  cockpitStore.selectLoop(loopId);
+async function refreshStatic() {
+  await Promise.all([refreshCurrentPage(), refreshTree()]);
+  void loadSparks(pageItems.value);
+}
+
+let autoTimer: null | ReturnType<typeof setInterval> = null;
+
+function onVisibilityChange() {
+  if (document.visibilityState !== 'visible') return;
+  // 恢复可见：冲刷缓冲的实时值 + 补拉隐藏期间跳过的刷新
+  realtimeBuffer.flush();
+  if (pendingRefreshWhileHidden) {
+    pendingRefreshWhileHidden = false;
+    void refreshStatic();
+  }
 }
 
 // ---------------------------------------------------------------------------
 // 初始化
 // ---------------------------------------------------------------------------
 onMounted(async () => {
-  // 定级阈值（等级色染）与装置树互不依赖 → 并行拉取（2026-10-03 提速：
-  // 原串行 4 级链 阈值→树→列表→火花线，砍掉首级等待）
+  // 定级阈值（等级色染）与装置树互不依赖 → 并行拉取（2026-10-03 提速）
   let nodeAutoSelected = false;
   const [thrRes, treeRes] = await Promise.allSettled([
     getGradingThresholdsApi(),
@@ -497,56 +473,43 @@ onMounted(async () => {
   }
   treeLoading.value = false;
 
-  // 未自动选根（树为空或已有选中节点）时由本处直接加载，避免与节点 watch 双发
+  // 未自动选根（树为空或 URL 恢复了节点）时由本处直接加载，
+  // 避免与节点 watch 双发；URL 恢复的选中回路经 focus 校正定位/清理
   if (!nodeAutoSelected) {
-    await loadLoops();
-    applyPostChangeRule();
+    await load(currentQuery(), {
+      focusLoopId: cockpitStore.loopsSelectedLoopId,
+    });
+    await reconcileFocus();
   }
 
   // WS 实时通道
   realtime.start();
   realtime.onMessage(handleRealtimeMessage);
+
+  // 5min 自动刷新：暂停/后台页跳过（后台页停止高频更新），可见后补拉
+  autoTimer = setInterval(() => {
+    if (cockpitStore.autoRefreshPaused) return;
+    if (document.hidden) {
+      pendingRefreshWhileHidden = true;
+      return;
+    }
+    void refreshStatic();
+  }, AUTO_REFRESH_MS);
+  document.addEventListener('visibilitychange', onVisibilityChange);
 });
 
+// 装置节点切换：有选中→focus 跳其所在页；否则回第 1 页
 watch(
-  () => realtime.connectionStatus.value,
-  (status, prev) => {
-    if (status === 'offline') {
-      realtime.startFallback(() => loadLoops(true));
-    } else if (status === 'online' && prev !== 'online') {
-      realtime.stopFallback();
-      void loadLoops(true);
-    }
-  },
+  () => cockpitStore.loopsNodeId,
+  () => void handleQueryChange(),
 );
 
-// ---------------------------------------------------------------------------
-// C5 混合刷新（方案 §9）：卡片墙主数据/火花线/装置树角标 5min 定时 +
-// 顶栏暂停开关 + 手动刷新（store.refreshTick）；实时值 WS 现状不动
-// ---------------------------------------------------------------------------
-const AUTO_REFRESH_MS = 5 * 60_000;
-
-/** 静态数据全量重拉：回路列表（静默）+ 火花线 + 装置树角标 */
-async function refreshStatic() {
-  await Promise.all([loadLoops(true), refreshTree()]);
-  void loadSparks(pageItems.value);
-}
-
-let autoTimer: null | ReturnType<typeof setInterval> = null;
-
-onMounted(() => {
-  // 5min 自动刷新：暂停时保持定时器但跳过拉取
-  autoTimer = setInterval(() => {
-    if (!cockpitStore.autoRefreshPaused) void refreshStatic();
-  }, AUTO_REFRESH_MS);
-});
-
-onUnmounted(() => {
-  if (autoTimer) {
-    clearInterval(autoTimer);
-    autoTimer = null;
-  }
-});
+// 筛选/排序变化：先回第 1 页探测 focus，再按返回页码跳转
+watch(
+  () => cockpitStore.loopsFilters,
+  () => void handleQueryChange(),
+  { deep: true },
+);
 
 // 恢复自动刷新（暂停→恢复）时立即补拉一次
 watch(
@@ -556,11 +519,47 @@ watch(
   },
 );
 
-// 顶栏手动刷新（store.refreshTick ++）→ 全页重拉
+// 顶栏手动刷新（store.refreshTick ++）→ 当前页重拉（保状态）
 watch(
   () => cockpitStore.refreshTick,
   () => void refreshStatic(),
 );
+
+// 状态变化同步 URL（F5 恢复依据；restore 在 setup 早期已完成，无回环）
+watch(
+  () =>
+    [
+      cockpitStore.loopsNodeId,
+      cockpitStore.loopsPage,
+      cockpitStore.loopsFilters.grades.join(','),
+      cockpitStore.loopsFilters.modes.join(','),
+      cockpitStore.loopsFilters.sortBy,
+      cockpitStore.loopsSelectedLoopId,
+    ].join('|'),
+  () => syncQueryToUrl(),
+);
+
+// WS 断连降级轮询：静默重拉当前页（保状态）
+watch(
+  () => realtime.connectionStatus.value,
+  (status, prev) => {
+    if (status === 'offline') {
+      realtime.startFallback(() => refreshCurrentPage());
+    } else if (status === 'online' && prev !== 'online') {
+      realtime.stopFallback();
+      void refreshCurrentPage();
+    }
+  },
+);
+
+onUnmounted(() => {
+  if (autoTimer) {
+    clearInterval(autoTimer);
+    autoTimer = null;
+  }
+  realtimeBuffer.dispose();
+  document.removeEventListener('visibilitychange', onVisibilityChange);
+});
 
 // ---------------------------------------------------------------------------
 // 工具条（等级五档多选 + 模式多选 + 排序）
@@ -663,29 +662,29 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
           <LoopPager
             :page="cockpitStore.loopsPage"
             :page-count="pageCount"
-            :total="filteredSorted.length"
+            :total="total"
             @change="onPageChange"
           />
         </div>
 
         <div class="cockpit-panel loops-wall__cards">
-          <div v-if="listLoading" class="loops-wall__hint">回路加载中…</div>
-          <div v-else-if="pagingLoading && pageItems.length === 0" class="loops-wall__hint">
-            下一页加载中…
-          </div>
+          <div v-if="!booted" class="loops-wall__hint">回路加载中…</div>
           <div v-else-if="pageItems.length === 0" class="loops-wall__hint">
-            当前条件下无回路
+            {{ busy ? '加载中…' : '当前条件下无回路' }}
           </div>
-          <div v-else class="loops-wall__grid">
-            <LoopCard
-              v-for="m in pageItems"
-              :key="m.loopId"
-              :loop="m"
-              :selected="cockpitStore.loopsSelectedLoopId === m.loopId"
-              :spark="sparkMap.get(m.loopId) ?? []"
-              @select="onCardSelect"
-            />
-          </div>
+          <template v-else>
+            <div v-if="busy" class="loops-wall__updating">更新中…</div>
+            <div class="loops-wall__grid">
+              <LoopCard
+                v-for="m in pageItems"
+                :key="m.loopId"
+                :loop="m"
+                :selected="cockpitStore.loopsSelectedLoopId === m.loopId"
+                :spark="sparkMap.get(m.loopId) ?? []"
+                @select="onCardSelect"
+              />
+            </div>
+          </template>
         </div>
       </main>
 
@@ -695,11 +694,11 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
           :view="panelView"
           :node-id="cockpitStore.loopsNodeId"
           :node-name="selectedNodeName"
-          :node-loop-count="nodeLoopTotal"
+          :node-loop-count="total"
           :mode-distribution="modeDistribution"
           :loop="selectedModel"
           :loop-index="selectedIndex + 1"
-          :loop-total="filteredSorted.length"
+          :loop-total="total"
           :grading-thresholds="gradingThresholds"
           @prev="browseLoop(-1)"
           @next="browseLoop(1)"
@@ -790,6 +789,7 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
 }
 
 .loops-wall__cards {
+  position: relative;
   flex: 1;
   min-height: 0;
 }
@@ -813,6 +813,17 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
   height: 100%;
   font-size: 12px;
   color: var(--ck-text-3);
+}
+
+/* P5-04：翻页/筛选请求在途的轻提示（旧卡片保留，不闪空墙） */
+.loops-wall__updating {
+  position: absolute;
+  top: 6px;
+  right: 14px;
+  z-index: 2;
+  font-size: 11px;
+  color: var(--ck-text-3);
+  pointer-events: none;
 }
 
 .loops-detail {

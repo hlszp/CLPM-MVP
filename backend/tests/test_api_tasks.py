@@ -20,6 +20,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.tasks.celery_app import PRIORITY_MANUAL
 from tests.conftest import TEST_USERS, mock_current_user
 
 # ---------------------------------------------------------------------------
@@ -401,7 +402,7 @@ class TestStandardTaskEvaluate:
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
             mock_current_user(TEST_USERS["ic_engineer"]),
         ):
-            mock_celery.delay.return_value = _mock_celery_result()
+            mock_celery.apply_async.return_value = _mock_celery_result()
             resp = client.post(
                 "/api/v1/tasks/standard/evaluate",
                 headers={"Authorization": "Bearer fake-token"},
@@ -416,8 +417,10 @@ class TestStandardTaskEvaluate:
         assert data["createdBy"] == "ic_engineer"
         assert data["taskId"]  # non-empty UUID
         # P1 #11: 验证 tsStart 透传给 Celery 任务；task_id 复用 API 层记录（防双写）
-        mock_celery.delay.assert_called_once_with(
-            ts_start="2026-06-22T08:00:00Z", task_id=data["taskId"]
+        # P5-02: 派发改 apply_async（带人工优先级，Redis 队列分桶）
+        mock_celery.apply_async.assert_called_once_with(
+            kwargs={"ts_start": "2026-06-22T08:00:00Z", "task_id": data["taskId"]},
+            priority=PRIORITY_MANUAL,
         )
         # 仅创建一条任务记录（Celery 侧不再重复建记录）
         task_keys = [k for k in task_redis._hashes if k.startswith("task:")]
@@ -429,7 +432,7 @@ class TestStandardTaskEvaluate:
             patch("app.tasks.kpi_calc.calculate_hourly_kpi") as mock_celery,
             mock_current_user(TEST_USERS["admin"]),
         ):
-            mock_celery.delay.return_value = _mock_celery_result()
+            mock_celery.apply_async.return_value = _mock_celery_result()
             resp = client.post(
                 "/api/v1/tasks/standard/evaluate",
                 headers={"Authorization": "Bearer fake-token"},
@@ -437,9 +440,11 @@ class TestStandardTaskEvaluate:
             )
         assert resp.status_code == 200
         # P1 #11: 未传 tsStart 时 ts_start=None（取上一个完整计算周期）
-        mock_celery.delay.assert_called_once()
-        assert mock_celery.delay.call_args.kwargs["ts_start"] is None
-        assert mock_celery.delay.call_args.kwargs["task_id"]
+        mock_celery.apply_async.assert_called_once()
+        assert mock_celery.apply_async.call_args.kwargs["kwargs"]["ts_start"] is None
+        assert mock_celery.apply_async.call_args.kwargs["kwargs"]["task_id"]
+        # P5-02: 人工优先级
+        assert mock_celery.apply_async.call_args.kwargs["priority"] == PRIORITY_MANUAL
 
     def test_standard_evaluate_sponsor_forbidden(self, client, task_redis, fake_redis) -> None:
         """SPONSOR 不能触发评估任务（403）."""
@@ -965,6 +970,54 @@ class TestHourlyWindowMutex:
         assert data["created_by"] == "system"
         assert data["status"] == "SUCCESS"
         assert "task:hourly_calc_lock:2026062208" not in task_redis._strings
+
+    async def test_beat_path_source_is_scheduled(self, task_redis, fake_redis) -> None:
+        """G5 前置立卡项1：Beat 路径（task_id=None）source 必须落 SCHEDULED.
+
+        回归背景（2026-10-13 批 1'）：来源判定 ``"MANUAL_STANDARD" if task_id
+        else "SCHEDULED"`` 在 Beat 路径创建 TaskRecord **之后**求值——task_id
+        已被赋为新记录 ID，判定恒走 MANUAL_STANDARD（判定顺序缺陷）；主成功
+        路径另漏传 source（见 test_g5_pre_card_fixes），两者叠加现场 1000 行
+        source=None。
+        """
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            mock_calc.return_value = expected
+            await _do_hourly_with_tracking(ts_start="2026-06-22T08:00:00Z")
+
+        kwargs = mock_calc.call_args.kwargs
+        assert kwargs["source"] == "SCHEDULED", (
+            "Beat 路径（无外部 task_id）source 必须为 SCHEDULED——"
+            "若为 MANUAL_STANDARD 说明来源判定发生在创建系统任务记录之后（判定顺序回归）"
+        )
+
+    async def test_manual_path_source_is_manual_standard(self, task_redis, fake_redis) -> None:
+        """G5 前置立卡项1：手动路径（带外部 task_id）source 必须落 MANUAL_STANDARD."""
+        from app.tasks.kpi_calc import _do_hourly_with_tracking
+
+        _save_task_to_redis(
+            task_redis,
+            task_id="task-src",
+            task_type="STANDARD",
+            status="PENDING",
+            celery_task_id="celery-src",
+        )
+        expected = {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+        with (
+            patch("app.core.redis.redis_client", task_redis),
+            patch("app.tasks.kpi_calc._do_calculate", new_callable=AsyncMock) as mock_calc,
+        ):
+            mock_calc.return_value = expected
+            await _do_hourly_with_tracking(ts_start="2026-06-22T08:00:00Z", task_id="task-src")
+
+        kwargs = mock_calc.call_args.kwargs
+        assert kwargs["source"] == "MANUAL_STANDARD"
+        assert kwargs["source_task_id"] == "task-src"
 
 
 # ---------------------------------------------------------------------------

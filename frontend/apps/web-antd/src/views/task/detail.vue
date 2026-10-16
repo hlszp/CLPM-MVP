@@ -273,7 +273,9 @@ onUnmounted(() => {
                 ? 'exception'
                 : task.status === 'SUCCESS'
                   ? 'success'
-                  : 'active'
+                  : task.status === 'CANCELLED'
+                    ? 'normal'
+                    : 'active'
             "
             :stroke-width="12"
           />

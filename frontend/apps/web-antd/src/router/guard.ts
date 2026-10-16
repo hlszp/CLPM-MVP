@@ -5,6 +5,7 @@ import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
 import { startProgress, stopProgress } from '@vben/utils';
 
+import { checkAuthzOnNavigate } from '#/composables/use-authz-live';
 import { fetchModules, getEnabledKeys } from '#/composables/use-modules';
 import {
   accessRoutes,
@@ -93,6 +94,13 @@ function setupAccessGuard(router: Router) {
 
     // 是否已经生成过动态路由
     if (accessStore.isAccessChecked) {
+      // P4-04 在线生效：导航前节流校验策略 revision（最低下一次路由前刷新）。
+      // revision 未变返回 null 放行；变更则重建路由表——失权目标路由已移除
+      // （直链落入 404 兜底），来源页失权时返回撤离 Location。
+      const authzRedirect = await checkAuthzOnNavigate();
+      if (authzRedirect) {
+        return authzRedirect;
+      }
       return true;
     }
 

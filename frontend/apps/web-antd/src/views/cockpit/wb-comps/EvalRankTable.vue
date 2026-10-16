@@ -24,7 +24,12 @@ import { computed, ref } from 'vue';
 
 import { buildAssessmentRankTree } from '../utils/assessment-rank-tree';
 import Spark from './Spark.vue';
-import { useCockpitDrill } from './use-drill';
+import {
+  buildSourceNodeUuidIndex,
+  type NodeLoopsDrillResult,
+  nodeLoopsDrillTarget,
+  useCockpitDrill,
+} from './use-drill';
 
 const props = defineProps<{
   /** node-tree（层级归组用；null=接口失败，走 parent_name 兜底） */
@@ -41,12 +46,31 @@ const emit = defineEmits<{ loseClick: [tag: string] }>();
 const { drill } = useCockpitDrill();
 
 /**
- * 追溯矩阵 §3 下钻：行点击 → 回路绩效清单（行名口径）。
- * 迁移版无范围选择器（恒 GLOBAL），清单为全厂口径、标题注明行名。
+ * P6-02b 装置排行下钻：行点击 → 该节点回路绩效清单（稳定 nodeId scope，
+ * 非全厂口径；清单内回显节点范围，统计数字与明细对账不丢参数）。
+ * G-N2 返修：行 id=int source_node_id，ranking 端点 plantNodeId 属
+ * plant_node UUID 空间——经 nodeTree 双身份（id+nodeId）解析为 UUID 再
+ * 下推；无稳定 ID/无映射/多映射的行不可下钻，行内显式标注原因，不回退全厂。
  */
+/** source_node_id(int) → plant_node UUID 索引（nodeTree 双身份；树缺失=空索引） */
+const uuidIndex = computed(() => buildSourceNodeUuidIndex(props.nodeTree));
+
+function drillResult(r: WorkbenchApi.AssessmentRankRow): NodeLoopsDrillResult {
+  return nodeLoopsDrillTarget(r, uuidIndex.value);
+}
+
 function onRowClick(r: WorkbenchApi.AssessmentRankRow) {
-  // D3 弹窗化：行点击 → 回路性能清单弹窗（全厂口径、标题注明行名）
-  void drill({ kind: 'loops', sortOrder: 'desc', title: `${r.name} · 回路性能清单（全厂口径）` });
+  const res = drillResult(r);
+  if (!res.ok) return; // 行已被 rowDrillDisabledReason 禁用并标注原因，防御性兜底
+  void drill(res.target);
+}
+
+/** 行不可下钻原因（null=可下钻）；无稳定 ID/无 UUID 映射/多映射报原因不降级全厂 */
+function rowDrillDisabledReason(
+  r: WorkbenchApi.AssessmentRankRow,
+): null | string {
+  const res = drillResult(r);
+  return res.ok ? null : res.reason;
 }
 
 const groups = computed(() =>
@@ -145,8 +169,9 @@ function onLose(tag: string) {
           <template v-for="g in groups" :key="groupKey(g.plant.id, g.plant.name)">
             <!-- 装置行 -->
             <tr
-              class="cursor-pointer border-b ckwb-border ckwb-hover"
-              :title="`点击查看该装置回路绩效明细（${g.units.length} 个单元，点击左侧箭头折叠/展开）`"
+              class="border-b ckwb-border"
+              :class="rowDrillDisabledReason(g.plant) ? 'opacity-60' : 'cursor-pointer ckwb-hover'"
+              :title="rowDrillDisabledReason(g.plant) ?? `点击查看该装置回路绩效明细（${g.units.length} 个单元，点击左侧箭头折叠/展开）`"
               @click="onRowClick(g.plant)"
             >
               <td class="py-1.5 text-center">
@@ -237,8 +262,9 @@ function onLose(tag: string) {
             >
               <tr
                 v-show="!isCollapsed(groupKey(g.plant.id, g.plant.name))"
-                class="cursor-pointer border-b ckwb-border last:border-0 ckwb-hover"
-                title="点击查看该单元回路绩效明细"
+                class="border-b ckwb-border last:border-0"
+                :class="rowDrillDisabledReason(u) ? 'opacity-60' : 'cursor-pointer ckwb-hover'"
+                :title="rowDrillDisabledReason(u) ?? '点击查看该单元回路绩效明细'"
                 @click="onRowClick(u)"
               >
               <td class="py-1 text-center">

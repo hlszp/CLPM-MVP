@@ -24,6 +24,7 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
+import { limitationDesc, limitationTitle } from '#/api/tuning';
 import { useClpmRoles } from '#/composables/use-clpm-roles';
 
 import { fmtNum2, tuningAlgoLabel } from '../constants';
@@ -73,6 +74,12 @@ function handleCheck(record: Record<string, any>) {
   const row = record as MatrixRow;
   if (!row.checked && checkedCount.value >= MAX_CHECKED) return; // 最多 5 组
   ctx.toggleRow(row);
+}
+
+/** R03：行级适用性限制 Tooltip（条目非空才渲染——按值判空不制造警告） */
+function limitationsTip(record: Record<string, any>): string {
+  const items = (record as MatrixRow).limitations ?? [];
+  return items.map((it) => `${limitationTitle(it)}：${limitationDesc(it)}`).join('\n');
 }
 
 const columns = [
@@ -189,9 +196,23 @@ const columns = [
             <Tooltip v-if="!record.ok" :title="record.error">
               <span class="text-red-500">计算失败</span>
             </Tooltip>
-            <span v-else class="text-xs text-neutral-500">{{
-              ALGO_NOTES[record.algorithm]
-            }}</span>
+            <template v-else>
+              <span class="text-xs text-neutral-500">{{
+                ALGO_NOTES[record.algorithm]
+              }}</span>
+              <!-- R03：该行建议的适用性限制（按值判空；null/空数组不渲染） -->
+              <Tooltip
+                v-if="record.limitations?.length"
+                :title="limitationsTip(record)"
+              >
+                <Tag
+                  color="warning"
+                  class="ml-1"
+                  data-testid="matrix-row-limitations"
+                  >限制 {{ record.limitations.length }}</Tag
+                >
+              </Tooltip>
+            </template>
           </template>
           <template v-else-if="column.key === 'tune'">
             <div

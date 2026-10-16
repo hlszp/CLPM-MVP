@@ -352,3 +352,124 @@ describe('订阅过滤协议（2026-09-06 接通）', () => {
     expect(frame).toEqual({ loops: [], tags: [], type: 'subscribe' });
   });
 });
+
+describe('P6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）', () => {
+  const ownerA = Symbol('page-a');
+  const ownerB = Symbol('page-b');
+
+  function lastFrame(s: FakeWebSocket) {
+    return JSON.parse(s.sent.at(-1)!);
+  }
+
+  it('双 owner 并集：open 发送 tags/loops 并集帧', () => {
+    realtimeWs.registerInterest(ownerA, { loops: ['L1'], tags: ['T1'] });
+    realtimeWs.registerInterest(ownerB, { tags: ['T2'] });
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    expect(lastFrame(s)).toEqual({
+      loops: ['L1'],
+      tags: ['T1', 'T2'],
+      type: 'subscribe',
+    });
+  });
+
+  it('释放 owner B 不影响 owner A；全部释放后显式空并集（零流量）', () => {
+    realtimeWs.registerInterest(ownerA, { loops: ['L1'], tags: ['T1'] });
+    realtimeWs.registerInterest(ownerB, { tags: ['T2'] });
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    realtimeWs.unregisterInterest(ownerB);
+    expect(lastFrame(s)).toEqual({
+      loops: ['L1'],
+      tags: ['T1'],
+      type: 'subscribe',
+    });
+    realtimeWs.unregisterInterest(ownerA);
+    expect(lastFrame(s)).toEqual({ loops: [], tags: [], type: 'subscribe' });
+  });
+
+  it('同 owner 重复注册幂等：内容相同零发送，内容变化整体替换', () => {
+    realtimeWs.registerInterest(ownerA, { tags: ['T1'] });
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    const sentBefore = s.sent.length;
+    realtimeWs.registerInterest(ownerA, { tags: ['T1'] });
+    expect(s.sent.length).toBe(sentBefore);
+    realtimeWs.registerInterest(ownerA, { tags: ['T1', 'T3'] });
+    expect(s.sent.length).toBe(sentBefore + 1);
+    expect(lastFrame(s).tags).toEqual(['T1', 'T3']);
+  });
+
+  it('释放不存在的 owner 为幂等空操作（不发帧不报错）', () => {
+    realtimeWs.registerInterest(ownerA, { tags: ['T1'] });
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    const sentBefore = s.sent.length;
+    realtimeWs.unregisterInterest(Symbol('never-registered'));
+    expect(s.sent.length).toBe(sentBefore);
+  });
+
+  it('断线重连后自动重发当前并集', async () => {
+    realtimeWs.registerInterest(ownerA, { loops: ['L1'], tags: ['T1'] });
+    realtimeWs.registerInterest(ownerB, { tags: ['T2'] });
+    realtimeWs.connect('test-token');
+    let s = lastSocket();
+    s.simulateOpen();
+    s.simulateCloseEvent(1006);
+    await vi.advanceTimersByTimeAsync(3000);
+    s = lastSocket();
+    s.simulateOpen();
+    expect(lastFrame(s)).toEqual({
+      loops: ['L1'],
+      tags: ['T1', 'T2'],
+      type: 'subscribe',
+    });
+  });
+
+  it('反复注册/释放无残留：全释放后新注册只含新 owner 内容', () => {
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    for (let i = 0; i < 5; i++) {
+      realtimeWs.registerInterest(ownerA, { tags: [`A${i}`] });
+      realtimeWs.registerInterest(ownerB, { tags: [`B${i}`] });
+      realtimeWs.unregisterInterest(ownerA);
+      realtimeWs.unregisterInterest(ownerB);
+    }
+    realtimeWs.registerInterest(Symbol('page-c'), { tags: ['TC'] });
+    expect(lastFrame(s)).toEqual({ loops: [], tags: ['TC'], type: 'subscribe' });
+  });
+
+  it('unregisterAllInterests 清空全部 owner 并发空并集；从未声明时空操作', () => {
+    // 从未声明：连接 open 后零发送，unregisterAll 不多发帧
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    expect(s.sent).toEqual([]);
+    realtimeWs.unregisterAllInterests();
+    expect(s.sent).toEqual([]);
+    // 有 owner：清空并发送空并集
+    realtimeWs.registerInterest(ownerA, { tags: ['T1'] });
+    realtimeWs.registerInterest(ownerB, { loops: ['L2'] });
+    realtimeWs.unregisterAllInterests();
+    expect(lastFrame(s)).toEqual({ loops: [], tags: [], type: 'subscribe' });
+    // 清空后新注册正常并集
+    realtimeWs.registerInterest(ownerA, { tags: ['T9'] });
+    expect(lastFrame(s).tags).toEqual(['T9']);
+  });
+
+  it('兼容层 subscribe 与 owner 并集共存：释放 owner 不影响兼容切片', () => {
+    realtimeWs.subscribe(['TL'], []);
+    realtimeWs.registerInterest(ownerA, { tags: ['T1'] });
+    realtimeWs.connect('test-token');
+    const s = lastSocket();
+    s.simulateOpen();
+    expect(lastFrame(s).tags).toEqual(['T1', 'TL']);
+    realtimeWs.unregisterInterest(ownerA);
+    expect(lastFrame(s).tags).toEqual(['TL']);
+  });
+});

@@ -12,9 +12,10 @@
 // 说明：LoopApi 类型复用下方 <script setup> 块的导入（两块编译为同一虚拟模块，
 // 各自重复 import 会产生 duplicate identifier）
 import {
-  bindLoopInterest,
   parseTagCode,
+  registerInterest,
   resolveModeLabel,
+  unregisterInterest,
 } from '#/composables/use-loop-realtime';
 import { parseFiniteNumber } from '#/utils/numeric';
 import { mapQualityToLabel } from '#/utils/quality-code';
@@ -637,6 +638,8 @@ const autoRefresh = ref(true);
 const refreshInterval = 30; // fallback 轮询间隔（秒），仅在 WS 断连时生效
 let wsUnsubscribe: (() => void) | null = null;
 let wsConnectionUnsubscribe: (() => void) | null = null;
+/** O02-RT 兴趣 owner：本组件实例唯一身份（setup 顶层每实例一份 Symbol） */
+const realtimeInterestOwner = Symbol('loop-monitor-realtime');
 
 /**
  * WS 断连 fallback 轮询：统一走 usePolling
@@ -1000,8 +1003,14 @@ function startAutoRefresh() {
       realtimeWs.connect(token);
     }
     wsUnsubscribe = realtimeWs.onMessage(handleRealtimeMessage);
-    // 服务端订阅过滤：仅接收当前页回路的位号（R15 后续接通）
-    bindLoopInterest(() => monitorList.value.map((l) => l.tagName));
+    // O02-RT：声明本页回路实时兴趣（服务端订阅过滤，仅接收当前页回路位号）。
+    // owner=realtimeInterestOwner（实例级）；列表/分页/筛选变化由
+    // registerInterest 内部 watch 自动重订；本函数可重入（onMounted 与用户
+    // toggle 两条路径）——同 owner 重复注册为整体替换，不积累 watch；
+    // 释放：stopAutoRefresh → unregisterInterest（幂等），组件卸载再兜底。
+    registerInterest(realtimeInterestOwner, () => ({
+      loops: monitorList.value.map((l) => l.tagName),
+    }));
     // P2 #38 UX14: WS 连接状态变化时切换轮询策略
     // - WS 在线 → 停止轮询（实时推送已覆盖）
     // - WS 断连 → 启动轮询 fallback
@@ -1032,6 +1041,11 @@ function stopAutoRefresh() {
     wsConnectionUnsubscribe();
     wsConnectionUnsubscribe = null;
   }
+  // O02-RT：停止自动刷新同时释放本实例兴趣（服务端停推，幂等）。
+  // 语义变化说明：旧版 bindLoopInterest 无法退订，toggle OFF 后兴趣仍挂
+  // （服务端白推流量）；现按"停用即释放"契约退订；组件 onUnmounted 经
+  // 本函数 + registerInterest scope dispose 双保险（均幂等）。
+  unregisterInterest(realtimeInterestOwner);
 }
 
 function handleToggleAutoRefresh(val: any) {

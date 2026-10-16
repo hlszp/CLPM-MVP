@@ -183,6 +183,21 @@ async def update_user(
             status_code=404,
         )
 
+    # P4-03：role/is_active 变更改变有效授权（策略变更者冻结清单）——
+    # 固定锁序 guard→主体：先取 guard 排他锁再改主体行，变更入账本
+    from app.services.authz_scope import (
+        domain_guard_enabled,
+        lock_guard_for_update,
+        record_domain_policy_change,
+    )
+
+    policy_changed = (role is not None and role != user.role) or (
+        is_active is not None and is_active != user.is_active
+    )
+    guard_rev = (
+        await lock_guard_for_update(db) if policy_changed and domain_guard_enabled() else None
+    )
+
     before = _user_to_dict(user)
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
@@ -195,6 +210,19 @@ async def update_user(
     if is_active is not None:
         user.is_active = is_active
     user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    if policy_changed and guard_rev is not None:
+        await record_domain_policy_change(
+            db,
+            current_revision=guard_rev,
+            operation="USER_STATE",
+            operator=operator,
+            reason="用户 role/is_active 变更（影响有效授权）",
+            user_id=user_id,
+            target=user.username,
+            before={"role": before.get("role"), "isActive": before.get("isActive")},
+            after={"role": user.role, "isActive": user.is_active},
+        )
 
     after = _user_to_dict(user)
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -235,8 +263,30 @@ async def disable_user(
     before = _user_to_dict(user)
     before_json = json.dumps(before, ensure_ascii=False, default=str)
 
+    # P4-03：禁用=策略变更者（guard 排他锁 + 入账）
+    from app.services.authz_scope import (
+        domain_guard_enabled,
+        lock_guard_for_update,
+        record_domain_policy_change,
+    )
+
+    guard_rev = await lock_guard_for_update(db) if domain_guard_enabled() else None
+
     user.is_active = False
     user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    if guard_rev is not None:
+        await record_domain_policy_change(
+            db,
+            current_revision=guard_rev,
+            operation="USER_STATE",
+            operator=operator,
+            reason="禁用用户（活跃连接/运行中任务据此撤权）",
+            user_id=user_id,
+            target=user.username,
+            before={"isActive": True},
+            after={"isActive": False},
+        )
 
     after = _user_to_dict(user)
     after_json = json.dumps(after, ensure_ascii=False, default=str)
@@ -275,8 +325,30 @@ async def reset_password(
             status_code=404,
         )
 
+    # P4-03：重置密码→撤销全部令牌=策略变更者（guard 排他锁 + TOKEN_REVOKE 入账）
+    from app.services.authz_scope import (
+        domain_guard_enabled,
+        lock_guard_for_update,
+        record_domain_policy_change,
+    )
+
+    guard_rev = await lock_guard_for_update(db) if domain_guard_enabled() else None
+
     user.password_hash = hash_password(new_password)
     user.updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    if guard_rev is not None:
+        await record_domain_policy_change(
+            db,
+            current_revision=guard_rev,
+            operation="TOKEN_REVOKE",
+            operator=operator,
+            reason="管理侧重置密码：撤销该用户全部已发令牌",
+            user_id=user_id,
+            target=user.username,
+            before=None,
+            after={"tokenRevoked": "ALL"},
+        )
 
     await _write_audit(
         db=db,

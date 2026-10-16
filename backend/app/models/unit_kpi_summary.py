@@ -87,5 +87,9 @@ class UnitKpiSummary(Base):
             name="ck_unit_kpi_summary_status",
         ),
         Index("ix_unit_kpi_summary_node_time", "node_id", "snapshot_time"),
+        # P5-03（03 号文 §8）：数据源代数读取 max(snapshot_time)（每聚合请求
+        # 一次）与 precalc 60d 跨窗单查的时间范围过滤走本索引——反向索引
+        # 扫描取 max，避免全表聚合
+        Index("ix_unit_kpi_summary_snapshot_time", "snapshot_time"),
         {"comment": "装置级KPI汇总表：仅基于标准任务（kpi_snapshot_hourly）聚合，自定义任务不参与"},
     )

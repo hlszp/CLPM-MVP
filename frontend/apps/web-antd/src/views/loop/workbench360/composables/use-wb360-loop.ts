@@ -1,45 +1,39 @@
+import type { Wb360Session } from './use-wb360-session';
+
 import type { LoopApi } from '#/api/loop';
-import type { PlantNodeApi } from '#/api/plant-node';
 import type { RealtimeUpdatable } from '#/composables/use-loop-realtime';
 
 /**
- * 回路工作台（新版）回路上下文 —— 清单/装置树/选中回路/实时值
+ * 回路工作台单回路对象上下文（P6-02a O02-CORE，2026-10-14 重写）
  *
- * 数据链路（对齐现有监控页，复用全局单例，禁止创建第二连接）：
- * - 清单：GET /loops/monitor（一次拉全量供本地筛选/搜索/虚拟滚动）
- * - 装置树：GET /plant-nodes（回路计数由前端按清单 unitName 聚合）
- * - 实时值：realtimeWs 推送经 useLoopRealtime().applyMessage 局部更新；
- *   bindLoopInterest 声明兴趣集合（服务端订阅过滤，非本页回路零流量）
- * - 量程：选中回路 → GET /loops/{id}/tags 取 PV/OP tagId → GET /tags/{id}
- *   取 rangeMin/Max/unit（趋势轴定标：PV/SP 左轴满量程、OP 右轴 OP 量程；
- *   量程缺失时趋势退回数据自适应域——诚实降级，不虚构量程）
+ * 仅供 SingleLoopWorkbench 实例会话使用；全目录（装置树/清单/筛选）在
+ * use-wb360-directory，二者不互调。
+ *
+ * 契约（01a §4.2/§4.3）：
+ * - 单对象读取：getLoopDetailApi / getLoopMonitorDetailApi / getLoopModeMappingApi
+ *   （+ getLoopTagsApi→getTagDetailApi 取量程）；禁止拉全厂 monitor 列表兜底；
+ * - 对象不存在/删除/越权：loadError 明确失败展示原因，不回退任何其他回路；
+ *   monitor 端点硬角色拒绝（如 SPONSOR）时 monitorError 如实显示不可用，
+ *   基本信息仍按 detail 呈现，不靠任何 prop 绕过权限；
+ * - 迟到响应（对象/证据切换后）：趋势/量程/对象读取落地前同时核对会话
+ *   上下文身份 + 请求代次（session.isCurrent），不符丢弃；
+ * - 实时兴趣经 Slice B 冻结 Interface 注册（owner=会话实例），
+ *   不直接调 subscribe / bindLoopInterest；关闭只释放本实例 handler/兴趣。
  */
-import { computed, ref, shallowRef } from 'vue';
-import { watch } from 'vue';
+import { ref, type Ref, watch } from 'vue';
 
-import { getLoopMonitorListApi, getLoopTagsApi } from '#/api/loop';
-import { getPlantNodeTreeApi } from '#/api/plant-node';
+import {
+  getLoopDetailApi,
+  getLoopModeMappingApi,
+  getLoopMonitorDetailApi,
+  getLoopTagsApi,
+} from '#/api/loop';
 import { getTagDetailApi } from '#/api/tag';
 import {
-  bindLoopInterest,
   parseTagCode,
+  registerInterest,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
-import { scoreToGradeInfo } from '#/constants/clpm-ui';
-
-/** 装置树节点（展示模型：plant → unit，unit 附回路计数） */
-export interface SpineTreeNode {
-  id: string;
-  name: string;
-  /** 回路计数（unit 层；plant 层为子单元求和） */
-  count: number;
-  parentId: null | string;
-  type: string;
-  units?: SpineTreeNode[];
-}
-
-/** 等级筛选档（A–E 对应 GRADE_THRESHOLDS 1–5 档；? = 无评分） */
-export type GradeFilter = 'A' | 'B' | 'C' | 'D' | 'E' | 'none';
 
 /** PV/OP 位号量程（趋势轴定标；缺失项为 null → 趋势退回数据域） */
 export interface Wb360Ranges {
@@ -48,186 +42,45 @@ export interface Wb360Ranges {
   pvUnit: null | string;
 }
 
-/** 清单拉取页大小（后端上限 100/页） */
-const LIST_PAGE_SIZE = 100;
-/** 余页拉取并发上限（monitor 列表是重查询，避免全部页同时压后端） */
-const LIST_PAGE_CONCURRENCY = 4;
-
-/** score → 等级字母（A–E 对应 GRADE_THRESHOLDS 1–5 档；P2 起单源 scoreToGradeInfo） */
-function scoreToGrade(score: null | number | undefined): GradeFilter | null {
-  const info = scoreToGradeInfo(score);
-  return info ? (info.letter as GradeFilter) : null;
+/** 实时点载荷（趋势层 onRealtimePoint 转发口径） */
+export interface Wb360RealtimePoint {
+  collectTime: number;
+  quality: null | string;
+  role: string;
+  tagName: string;
+  value: null | number;
 }
 
-export function useWb360Loop(initialLoopId: null | string) {
-  const loops = shallowRef<LoopApi.MonitorListItem[]>([]);
-  const loopsLoading = ref(false);
-  const loopsError = ref<null | string>(null);
-  const tree = shallowRef<SpineTreeNode[]>([]);
+/** 失败原因归类（请求错误对象 → 用户可读原因，不编造状态码） */
+function reasonOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
 
-  const selectedLoopId = ref<null | string>(initialLoopId);
-  const selectedUnit = ref<null | string>(null); // unitName（清单口径）
-  const keyword = ref('');
-  const gradeFilter = ref<'all' | GradeFilter>('all');
+/** 空实时值（monitor 不可用时的诚实占位：全部 null，不编造读数） */
+function emptyCurrentValues(): LoopApi.MonitorCurrentValues {
+  return {
+    mode: null,
+    modeLabel: null,
+    op: null,
+    pv: null,
+    pvQuality: null,
+    readAt: null,
+    sp: null,
+  };
+}
 
-  /** 实时值承载对象（applyMessage 鸭子类型；切换回路时整体重建） */
+export function useWb360Loop(
+  loopId: Ref<null | string>,
+  session: Wb360Session,
+) {
+  /** 当前回路对象（单对象接口装配；WS 局部更新实时值） */
   const current = ref<LoopApi.MonitorListItem | null>(null);
+  const loading = ref(false);
+  /** 对象级失败（不存在/删除/越权/全部来源失败）：明确展示原因，不回退 */
+  const loadError = ref<null | string>(null);
+  /** monitor 端点失败（如 SPONSOR 硬角色拒绝）：如实显示，基本对象仍呈现 */
+  const monitorError = ref<null | string>(null);
 
-  const { applyMessage, connectionStatus, lastMessageAt, onMessage, start } =
-    useLoopRealtime();
-
-  /** 拉取回路清单（分页拉全量，本地筛选；后端 pageSize 上限 100） */
-  /**
-   * 拉取回路清单（渐进加载，2026-10-03 生产 1209 回路提速）：
-   * 首页到达立即渲染（首屏解锁），余页按并发上限分批并行并入、
-   * 每批到达即更新（树/筛选为派生响应式，自动重算）；全量无截断。
-   */
-  async function loadLoops() {
-    loopsLoading.value = true;
-    loopsError.value = null;
-    try {
-      const fetchPage = (page: number) =>
-        getLoopMonitorListApi({
-          page,
-          pageSize: LIST_PAGE_SIZE,
-          sortBy: 'tagName',
-          sortOrder: 'asc',
-          // 回路工作台不消费 aggregate（全量聚合+Redis MODE 分布是每页
-          // 固定全量开销，生产 1209 回路下秒级——2026-10-03 提速必关）
-          withAggregate: false,
-        });
-      const first = await fetchPage(1);
-      loops.value = [...first.items];
-      loopsLoading.value = false; // 首页即解锁首屏（树/选中/趋势链路启动）
-      const totalPages = Math.ceil(first.total / LIST_PAGE_SIZE);
-      const rest: number[] = [];
-      for (let p = 2; p <= totalPages; p++) rest.push(p);
-      for (let i = 0; i < rest.length; i += LIST_PAGE_CONCURRENCY) {
-        const batch = await Promise.all(
-          rest.slice(i, i + LIST_PAGE_CONCURRENCY).map((p) => fetchPage(p)),
-        );
-        loops.value = [...loops.value, ...batch.flatMap((b) => b.items)];
-      }
-    } catch (error) {
-      loopsError.value =
-        error instanceof Error ? error.message : '回路清单加载失败';
-      loops.value = [];
-    } finally {
-      loopsLoading.value = false;
-    }
-  }
-
-  /** 装置树加载失败信息（null=无失败；失败后可重试 loadTree） */
-  const treeError = ref<null | string>(null);
-
-  /** 拉取装置树（节点只拉一次缓存；回路计数聚合随清单渐进到达自动重算）。
-   *  失败显式置 treeError（此前静默置空会被"加载中"文案掩盖，用户无感知无重试） */
-  async function loadTree() {
-    if (plantNodesCache) {
-      rebuildTree();
-      return;
-    }
-    treeError.value = null;
-    try {
-      plantNodesCache = await getPlantNodeTreeApi();
-      rebuildTree();
-    } catch {
-      tree.value = [];
-      treeError.value = '装置树加载失败，请检查网络后重试';
-    }
-  }
-
-  // 清单渐进到达（余页分批并入）→ 树计数自动重算
-  watch(loops, () => {
-    if (plantNodesCache) rebuildTree();
-  });
-
-  let plantNodesCache: null | PlantNodeApi.PlantNode[] = null;
-
-  /** 按当前清单重建 FACTORY→UNIT 两级树（AREA 归并展示为其 UNIT 子层） */
-  function rebuildTree() {
-    const nodes = plantNodesCache;
-    if (!nodes) return;
-    const plants: SpineTreeNode[] = [];
-    const unitCount = new Map<string, number>();
-    for (const l of loops.value) {
-      const key = l.unitName ?? '';
-      unitCount.set(key, (unitCount.get(key) ?? 0) + 1);
-    }
-    const walk = (node: PlantNodeApi.PlantNode): SpineTreeNode[] => {
-      const out: SpineTreeNode[] = [];
-      for (const child of node.children ?? []) {
-        if (child.type === 'UNIT') {
-          out.push({
-            count: unitCount.get(child.name) ?? 0,
-            id: child.id,
-            name: child.name,
-            parentId: node.id,
-            type: child.type,
-          });
-        } else {
-          out.push(...walk(child));
-        }
-      }
-      return out;
-    };
-    for (const n of nodes) {
-      const units = walk(n);
-      plants.push({
-        count: units.reduce((s, u) => s + u.count, 0),
-        id: n.id,
-        name: n.name,
-        parentId: null,
-        type: n.type,
-        units,
-      });
-    }
-    tree.value = plants;
-  }
-
-  /** 左脊柱过滤后的清单（单元/关键词/等级三重过滤） */
-  const filteredLoops = computed(() => {
-    const kw = keyword.value.trim().toLowerCase();
-    return loops.value.filter((l) => {
-      if (selectedUnit.value && l.unitName !== selectedUnit.value) return false;
-      if (kw && !l.tagName.toLowerCase().includes(kw)) return false;
-      if (gradeFilter.value !== 'all') {
-        const g = scoreToGrade(l.score);
-        if (gradeFilter.value === 'none' ? g !== null : g !== gradeFilter.value)
-          return false;
-      }
-      return true;
-    });
-  });
-
-  const selectedLoop = computed(() => current.value);
-
-  /** 选中回路（query 同步由页面层负责） */
-  function selectLoop(loopId: null | string) {
-    selectedLoopId.value = loopId;
-  }
-
-  // 选中/清单就绪 → 重建 current（初始值取清单行；query 指定未命中时回退首行）
-  watch(
-    [selectedLoopId, loops],
-    ([id, list]) => {
-      if (!list || list.length === 0) {
-        current.value = null;
-        return;
-      }
-      const hit =
-        (id ? list.find((l) => l.loopId === id) : undefined) ?? list[0]!;
-      if (current.value?.loopId !== hit.loopId) {
-        current.value = { ...hit, currentValues: { ...hit.currentValues } };
-      }
-      if (selectedLoopId.value !== hit.loopId) {
-        selectedLoopId.value = hit.loopId;
-      }
-    },
-    { immediate: true },
-  );
-
-  // ── PV/OP 量程（趋势轴定标，2026-10-02 终验需求）──
   const ranges = ref<Wb360Ranges>({
     opRange: null,
     pvRange: null,
@@ -235,7 +88,87 @@ export function useWb360Loop(initialLoopId: null | string) {
   });
   const rangesCache = new Map<string, Wb360Ranges>();
 
-  function validRange(d: null | { rangeMax?: null | number; rangeMin?: null | number }) {
+  const { applyMessage, connectionStatus, lastMessageAt, onMessage, start } =
+    useLoopRealtime();
+
+  /* ── 单对象装配（detail 为基本身份；monitor 为实时/KPI；mapping 为 MODE 映射） ── */
+  async function loadLoop(id: string) {
+    const token = session.beginRequest();
+    loading.value = true;
+    loadError.value = null;
+    monitorError.value = null;
+    const [detailR, monitorR, mappingR] = await Promise.allSettled([
+      getLoopDetailApi(id),
+      getLoopMonitorDetailApi(id),
+      getLoopModeMappingApi(id),
+    ]);
+    // 迟到响应：对象/证据已切换 → 整体丢弃（身份 + 代次双重核对）
+    if (!session.isCurrent(token)) return;
+
+    const detail = detailR.status === 'fulfilled' ? detailR.value : null;
+    const monitor = monitorR.status === 'fulfilled' ? monitorR.value : null;
+
+    if (!detail && !monitor) {
+      // 对象不存在/删除/越权：明确失败，不回退任何其他回路（A12/A21）
+      loadError.value =
+        `回路对象不可用（可能不存在、已删除或不在当前授权范围）：` +
+        `${reasonOf(detailR.status === 'rejected' ? detailR.reason : (monitorR.status === 'rejected' ? monitorR.reason : '未知错误'))}`;
+      current.value = null;
+      loading.value = false;
+      return;
+    }
+    if (monitorR.status === 'rejected') {
+      // monitor 硬角色拒绝（SPONSOR 等）/ 端点失败：如实显示不可用，
+      // 实时值/趋势区域按各自错误呈现，不靠任何 prop 绕过权限
+      monitorError.value = `监控数据不可用：${reasonOf(monitorR.reason)}`;
+    }
+
+    const mapping: Record<string, string> = {};
+    if (mappingR.status === 'fulfilled') {
+      for (const m of mappingR.value) {
+        mapping[String(m.modeValue)] = m.modeLabel;
+      }
+    }
+    // mapping 失败非致命：resolveModeLabel 链回退默认映射（R17 既有口径）
+
+    const basic = detail?.basicInfo;
+    const cv: LoopApi.MonitorCurrentValues = monitor
+      ? { ...monitor.currentValues, modeMapping: mapping }
+      : { ...emptyCurrentValues(), modeMapping: mapping };
+    // monitor 不可用时 controlMode/score 无诚实取值（null）——工作区不渲染
+    // 这两字段（页头控制模式读 currentValues.modeLabel），且 monitorError 已
+    // 显式呈现不可用原因；类型层面按 MonitorListItem 装配以兼容既有组件 props。
+    current.value = {
+      controlMode: (monitor?.runtimeParams.controlMode ??
+        null) as LoopApi.ControlMode,
+      currentValues: cv,
+      description: basic?.description ?? '',
+      isActive: basic?.isActive ?? true,
+      loopId: id,
+      loopStatus: (basic?.status ??
+        monitor?.loopStatus ??
+        null) as LoopApi.LoopStatus,
+      ...(basic?.loopType ? { loopType: basic.loopType } : {}),
+      modeMapping: mapping,
+      readAt: monitor?.currentValues.readAt ?? '',
+      score: (monitor?.kpiSummary.composite_score ?? null) as number,
+      tagName: basic?.tagName ?? monitor?.tagName ?? id,
+      unitName: basic?.unitName ?? '',
+      ...(monitor?.kpiStatus ? { kpiStatus: monitor.kpiStatus } : {}),
+    };
+    loading.value = false;
+
+    // 最近继续：对象确认成功加载（双来源失败已在上方 return，不产生最近项）；
+    // fire-and-forget，失败不阻塞作业（Slice G 接线）
+    void session.recordResume();
+
+    void loadRanges(id, token);
+  }
+
+  /* ── PV/OP 量程（趋势轴定标；迟到响应同样核对身份+代次） ── */
+  function validRange(
+    d: null | { rangeMax?: null | number; rangeMin?: null | number },
+  ) {
     if (
       d &&
       typeof d.rangeMax === 'number' &&
@@ -247,15 +180,15 @@ export function useWb360Loop(initialLoopId: null | string) {
     return null;
   }
 
-  async function loadRanges(loopId: string) {
-    const cached = rangesCache.get(loopId);
+  async function loadRanges(id: string, token: { generation: number; key: string }) {
+    const cached = rangesCache.get(id);
     if (cached) {
-      ranges.value = cached;
+      if (session.isCurrent(token)) ranges.value = cached;
       return;
     }
-    ranges.value = { opRange: null, pvRange: null, pvUnit: null };
     try {
-      const tags = await getLoopTagsApi(loopId);
+      const tags = await getLoopTagsApi(id);
+      if (!session.isCurrent(token)) return;
       const byRole = (role: string) =>
         tags.tags.find((t) => t.role === role && t.tagId) ?? null;
       const pvTag = byRole('PV');
@@ -268,39 +201,39 @@ export function useWb360Loop(initialLoopId: null | string) {
           ? getTagDetailApi(opTag.tagId).catch(() => null)
           : Promise.resolve(null),
       ]);
+      if (!session.isCurrent(token)) return;
       const next: Wb360Ranges = {
         opRange: validRange(opDetail),
         pvRange: validRange(pvDetail),
         pvUnit: pvDetail?.unit ?? null,
       };
-      rangesCache.set(loopId, next);
+      rangesCache.set(id, next);
       ranges.value = next;
     } catch {
       // 量程获取失败：保持空（趋势退回数据域），不阻塞主链路
     }
   }
 
+  // 对象变化 → 重置并重新单对象读取（会话代次随上下文身份递增，
+  // 本 watch 内发起的请求即当代；旧请求落地时被 isCurrent 丢弃）
   watch(
-    () => current.value?.loopId,
+    loopId,
     (id) => {
-      if (id) void loadRanges(id);
+      current.value = null;
+      loadError.value = null;
+      monitorError.value = null;
+      ranges.value = { opRange: null, pvRange: null, pvUnit: null };
+      if (id) void loadLoop(id);
     },
+    { immediate: true },
   );
 
-  // WS：兴趣集合跟随选中回路位号；消息更新头部实时值并转发趋势层
-  const realtimeHandlers = new Set<
-    (payload: {
-      collectTime: number;
-      quality: null | string;
-      role: string;
-      tagName: string;
-      value: null | number;
-    }) => void
-  >();
+  /* ── WS：兴趣经冻结 Interface 注册（owner=会话实例），消息局部更新并转发趋势层 ── */
+  const realtimeHandlers = new Set<(payload: Wb360RealtimePoint) => void>();
 
-  bindLoopInterest(() => {
+  registerInterest(session.owner, () => {
     const tag = current.value?.tagName;
-    return tag ? [tag] : [];
+    return { loops: tag ? [tag] : [] };
   });
 
   onMessage((msg) => {
@@ -320,8 +253,7 @@ export function useWb360Loop(initialLoopId: null | string) {
           ? Number.NaN
           : Number.parseFloat(msg.value);
       // WS 数值质量码（共享契约：1=Good 0=Bad）→ 趋势层字符串口径
-      const quality =
-        msg.quality === 0 ? 'BAD' : (msg.quality > 0 ? 'GOOD' : null);
+      const quality = msg.quality === 0 ? 'BAD' : (msg.quality > 0 ? 'GOOD' : null);
       h({
         collectTime: Number.isNaN(ts) ? Date.now() : ts,
         quality,
@@ -333,15 +265,7 @@ export function useWb360Loop(initialLoopId: null | string) {
   });
 
   /** 趋势层注册实时点回调（realtime 模式追加用） */
-  function onRealtimePoint(
-    handler: (payload: {
-      collectTime: number;
-      quality: null | string;
-      role: string;
-      tagName: string;
-      value: null | number;
-    }) => void,
-  ) {
+  function onRealtimePoint(handler: (payload: Wb360RealtimePoint) => void) {
     realtimeHandlers.add(handler);
     return () => {
       realtimeHandlers.delete(handler);
@@ -351,23 +275,12 @@ export function useWb360Loop(initialLoopId: null | string) {
   return {
     connectionStatus,
     current,
-    filteredLoops,
-    gradeFilter,
-    keyword,
     lastMessageAt,
-    loadLoops,
-    loadTree,
-    loops,
-    loopsError,
-    loopsLoading,
+    loadError,
+    loading,
+    monitorError,
     onRealtimePoint,
     ranges,
-    selectLoop,
-    selectedLoop,
-    selectedLoopId,
-    selectedUnit,
     startRealtime: start,
-    tree,
-    treeError,
   };
 }

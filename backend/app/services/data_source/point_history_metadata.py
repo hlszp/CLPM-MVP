@@ -527,7 +527,7 @@ async def upsert_anchor(
 
 
 async def applicable_anchors_batch(
-    session: Any,
+    session: Any,  # noqa: ARG001 — 保留签名兼容；热路径改走独立短会话（见 docstring）
     *,
     point_ids: list[str],
     window_start: datetime,
@@ -536,21 +536,33 @@ async def applicable_anchors_batch(
 
     语义与 :func:`applicable_anchor` 一致：anchor_ts ≤ 窗口起点且未被
     coverage_until 排除；同点多锚点取最新。
+
+    PG 连接风暴首发点修复（2026-10-13，G14 红线补全）：本函数是
+    DataPlanner ``_execute_query_plan`` 的 tagGroup 并发 gather 下唯一残留
+    的**共享调用方 AsyncSession** DB 访问——并发 execute 触发 SQLAlchemy
+    PROVISIONING_CONNECTION 竞态（"This session is provisioning a new
+    connection; concurrent operations are not permitted"）与 asyncpg
+    "another operation is in progress"，与 ``_metadata_execute`` 整改前
+    （2026-07-20 事故）同一根因。现改为内部独立短会话，彻底断开与调用方
+    session 的耦合（``session`` 参数保留仅为签名兼容）。
     """
+    from app.core.db import AsyncSessionLocal
+
     if not point_ids:
         return {}
     ws = _aware(window_start)
-    rows = (
-        (
-            await session.execute(
-                select(PointStateAnchor)
-                .where(PointStateAnchor.point_id.in_(point_ids))
-                .order_by(PointStateAnchor.point_id, PointStateAnchor.anchor_ts.desc())
+    async with AsyncSessionLocal() as own:
+        rows = (
+            (
+                await own.execute(
+                    select(PointStateAnchor)
+                    .where(PointStateAnchor.point_id.in_(point_ids))
+                    .order_by(PointStateAnchor.point_id, PointStateAnchor.anchor_ts.desc())
+                )
             )
+            .scalars()
+            .all()
         )
-        .scalars()
-        .all()
-    )
     out: dict[str, Any] = {}
     seen: set[str] = set()
     for row in rows:  # 每点按 anchor_ts 降序，首个适用即该点最新锚点

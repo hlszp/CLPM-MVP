@@ -39,7 +39,7 @@ from app.models.loop import LoopLedger  # noqa: E402
 PERF_PREFIX = "PERF_"
 NUM_LOOPS = 1000
 NUM_ALERTS_PER_LOOP = 10  # 1000 × 10 = 10000 关注项
-BASE_URL = "http://localhost:7101"
+BASE_URL = "http://localhost:17101"  # MVP 隔离端口（P5 批 α 修正；原 7101 是同机另一项目）
 API_PREFIX = "/api/v1"
 NUM_ROUNDS = 50  # 每个端点跑 50 轮取 p95
 P95_TARGET_MS = 500  # 目标 p95 ≤ 500ms

@@ -15,24 +15,34 @@ import type { Mock } from 'vitest';
 import type { RealtimeUpdatable } from '#/composables/use-loop-realtime';
 
 import { mount } from '@vue/test-utils';
-import { defineComponent, h } from 'vue';
+import { defineComponent, h, KeepAlive, nextTick, ref } from 'vue';
 
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  bindLoopInterest,
+  bindTagInterest,
+  type InterestOwner,
+  type InterestSource,
   parseTagCode,
+  registerInterest,
+  releaseAllInterests,
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
 import { realtimeWs } from '#/utils/realtime-ws';
 
 // mock realtimeWs 单例（避免真实 WS 连接；断言经导入的 mocked 实例进行）
 vi.mock('#/utils/realtime-ws', () => ({
+  LEGACY_INTEREST_OWNER: Symbol('clpm-realtime-legacy-interest'),
   realtimeWs: {
     connect: vi.fn(),
     isConnected: false,
     onConnectionChange: vi.fn(() => () => {}),
     onMessage: vi.fn(() => () => {}),
+    registerInterest: vi.fn(),
     status: 'offline',
+    unregisterAllInterests: vi.fn(),
+    unregisterInterest: vi.fn(),
   },
 }));
 
@@ -46,7 +56,10 @@ const wsMock = realtimeWs as unknown as {
   isConnected: boolean;
   onConnectionChange: Mock;
   onMessage: Mock;
+  registerInterest: Mock;
   status: string;
+  unregisterAllInterests: Mock;
+  unregisterInterest: Mock;
 };
 
 /** mount 宿主组件执行 setup，取回真实 composable 返回值 */
@@ -405,5 +418,202 @@ describe('useLoopRealtime（真实 composable）', () => {
     expect(pollCount).toBe(1);
     composable.stopFallback();
     expect(pollCount).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// P6 O02-RT：owner 兴趣注册（冻结 Interface）与兼容包装
+// ---------------------------------------------------------------------------
+
+/** mount 宿主组件执行 registerInterest，取回卸载句柄 */
+function setupInterestHost(owner: InterestOwner, source: InterestSource) {
+  const wrapper = mount(
+    defineComponent({
+      setup() {
+        registerInterest(owner, source);
+        return () => h('div');
+      },
+    }),
+  );
+  return {
+    unmount: () => wrapper.unmount(),
+  };
+}
+
+describe('P6 O02-RT：registerInterest（owner 注册/释放隔离/KeepAlive）', () => {
+  it('立即注册当前快照；source 变化自动重注册；内容相同（乱序）不重发', async () => {
+    const owner = Symbol('p');
+    const loops = ref(['L1']);
+    const host = setupInterestHost(owner, () => ({ loops: loops.value }));
+    expect(wsMock.registerInterest).toHaveBeenCalledTimes(1);
+    expect(wsMock.registerInterest).toHaveBeenLastCalledWith(owner, {
+      loops: ['L1'],
+    });
+    loops.value = ['L1', 'L2'];
+    await nextTick();
+    expect(wsMock.registerInterest).toHaveBeenCalledTimes(2);
+    expect(wsMock.registerInterest).toHaveBeenLastCalledWith(owner, {
+      loops: ['L1', 'L2'],
+    });
+    // 内容相同（顺序不同）→ 派生键不变 → 不触发重注册
+    loops.value = ['L2', 'L1'];
+    await nextTick();
+    expect(wsMock.registerInterest).toHaveBeenCalledTimes(2);
+    host.unmount();
+  });
+
+  it('卸载释放本 owner 并停止 watch：卸载后 source 变化不再注册', async () => {
+    const owner = Symbol('p');
+    const loops = ref(['L1']);
+    const host = setupInterestHost(owner, () => ({ loops: loops.value }));
+    host.unmount();
+    expect(wsMock.unregisterInterest).toHaveBeenCalledWith(owner);
+    const calls = wsMock.registerInterest.mock.calls.length;
+    loops.value = ['L2'];
+    await nextTick();
+    expect(wsMock.registerInterest.mock.calls.length).toBe(calls);
+  });
+
+  it('双 owner 互不影响：卸载 B 只释放 B，A 保持注册', () => {
+    const ownerA = Symbol('a');
+    const ownerB = Symbol('b');
+    const hostA = setupInterestHost(ownerA, () => ({ loops: ['LA'] }));
+    setupInterestHost(ownerB, () => ({ tags: ['TB'] })).unmount();
+    expect(wsMock.unregisterInterest).toHaveBeenCalledWith(ownerB);
+    expect(wsMock.unregisterInterest).not.toHaveBeenCalledWith(ownerA);
+    hostA.unmount();
+  });
+
+  it('同 owner 重复注册幂等：后者替换前者，旧 cleanup 不误伤新注册', () => {
+    const owner = Symbol('p');
+    const cleanup1 = registerInterest(owner, () => ({ loops: ['L1'] }));
+    const cleanup2 = registerInterest(owner, () => ({ loops: ['L2'] }));
+    expect(wsMock.registerInterest).toHaveBeenCalledTimes(2);
+    expect(wsMock.registerInterest).toHaveBeenLastCalledWith(owner, {
+      loops: ['L2'],
+    });
+    cleanup1(); // 已被后者替换：不得释放新注册
+    expect(wsMock.unregisterInterest).not.toHaveBeenCalled();
+    cleanup2();
+    expect(wsMock.unregisterInterest).toHaveBeenCalledWith(owner);
+    cleanup2(); // 幂等：不重复释放
+    expect(wsMock.unregisterInterest).toHaveBeenCalledTimes(1);
+  });
+
+  it('KeepAlive：停用释放本 owner；恢复重算兴趣源重注册（不缓存停用前快照）', async () => {
+    const owner = Symbol('ka');
+    const show = ref(true);
+    const loops = ref(['L1']);
+    const Child = defineComponent({
+      setup() {
+        registerInterest(owner, () => ({ loops: loops.value }));
+        return () => h('div');
+      },
+    });
+    const Placeholder = defineComponent({
+      setup: () => () => h('div'),
+    });
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          return () =>
+            h(KeepAlive, null, {
+              default: () => (show.value ? h(Child) : h(Placeholder)),
+            });
+        },
+      }),
+    );
+    await nextTick();
+    // 初始挂载的 activated 不多注册（active 守卫）
+    expect(wsMock.registerInterest).toHaveBeenCalledTimes(1);
+    // 停用 → 释放本 owner
+    show.value = false;
+    await nextTick();
+    expect(wsMock.unregisterInterest).toHaveBeenCalledWith(owner);
+    // 停用期间 source 变化不重注册
+    const calls = wsMock.registerInterest.mock.calls.length;
+    loops.value = ['L2'];
+    await nextTick();
+    expect(wsMock.registerInterest.mock.calls.length).toBe(calls);
+    // 恢复 → 重算兴趣源重注册（新内容，不缓存停用前快照）
+    show.value = true;
+    await nextTick();
+    expect(wsMock.registerInterest).toHaveBeenCalledTimes(calls + 1);
+    expect(wsMock.registerInterest).toHaveBeenLastCalledWith(owner, {
+      loops: ['L2'],
+    });
+    wrapper.unmount();
+  });
+
+  it('releaseAllInterests：停止全部 watch 并清空 registry（布局退出语义）', async () => {
+    const loops = ref(['L1']);
+    const host = setupInterestHost(Symbol('x'), () => ({
+      loops: loops.value,
+    }));
+    releaseAllInterests();
+    expect(wsMock.unregisterAllInterests).toHaveBeenCalledTimes(1);
+    const calls = wsMock.registerInterest.mock.calls.length;
+    loops.value = ['L2'];
+    await nextTick();
+    expect(wsMock.registerInterest.mock.calls.length).toBe(calls);
+    // 卸载兜底：cleanup 幂等，不再误触 registry
+    host.unmount();
+    expect(wsMock.unregisterInterest).not.toHaveBeenCalled();
+  });
+});
+
+describe('P6 O02-RT：bindLoopInterest/bindTagInterest 兼容包装', () => {
+  it('bindLoopInterest：注册 {loops} 快照；source 变化重注册；卸载释放本实例 owner', async () => {
+    const tags = ref(['A', 'B']);
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          bindLoopInterest(() => tags.value);
+          return () => h('div');
+        },
+      }),
+    );
+    const [owner, interest] = wsMock.registerInterest.mock.calls[0]!;
+    expect(String(owner)).toMatch(/^bind-loop:\d+$/);
+    expect(interest).toEqual({ loops: ['A', 'B'] });
+    tags.value = ['C'];
+    await nextTick();
+    expect(wsMock.registerInterest).toHaveBeenLastCalledWith(owner, {
+      loops: ['C'],
+    });
+    wrapper.unmount();
+    expect(wsMock.unregisterInterest).toHaveBeenCalledWith(owner);
+  });
+
+  it('bindTagInterest：注册 {tags} 快照', () => {
+    const wrapper = mount(
+      defineComponent({
+        setup() {
+          bindTagInterest(() => ['T1', 'T2']);
+          return () => h('div');
+        },
+      }),
+    );
+    const [owner, interest] = wsMock.registerInterest.mock.calls[0]!;
+    expect(String(owner)).toMatch(/^bind-tag:\d+$/);
+    expect(interest).toEqual({ tags: ['T1', 'T2'] });
+    wrapper.unmount();
+  });
+
+  it('同页双实例 bindLoopInterest 不互相覆盖：各自 owner 注册、各自释放', () => {
+    const Host = defineComponent({
+      setup() {
+        bindLoopInterest(() => ['X']);
+        return () => h('div');
+      },
+    });
+    const w1 = mount(Host);
+    const w2 = mount(Host);
+    const owners = wsMock.registerInterest.mock.calls.map((c) => c[0]);
+    expect(new Set(owners).size).toBe(2);
+    w1.unmount();
+    expect(wsMock.unregisterInterest).toHaveBeenCalledWith(owners[0]);
+    expect(wsMock.unregisterInterest).not.toHaveBeenCalledWith(owners[1]);
+    w2.unmount();
   });
 });

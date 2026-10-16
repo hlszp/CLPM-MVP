@@ -17,9 +17,11 @@ import {
   getTuningTaskStatusApi,
   identifyHistoryApi,
   identifyStepApi,
+  limitationItemsOf,
   saveTuningTaskApi,
   tuneMatrixApi,
   tuneSingleApi,
+  verifyTuningRobustnessApi,
 } from '#/api/tuning';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
 
@@ -72,6 +74,11 @@ export interface MatrixRow {
   recomputing: boolean;
   /** 算法风险评估（随方案保存落 risk_assessment，V62-P3-007） */
   risk?: null | Record<string, any>;
+  /**
+   * R03：该行建议的适用性限制（tune/matrix 响应 applicabilityLimitations
+   * 按值判空后的条目；null=该行无有效响应，空数组=授权来源无已知限制）
+   */
+  limitations?: null | TuningApi.ApplicabilityLimitationItem[];
 }
 
 /** 仿真候选组（当前 PID + 勾选推荐组） */
@@ -123,6 +130,10 @@ export function useTuningWorkbench() {
     simResult: null as null | TuningApi.SimulationResult,
     simCandidates: [] as SimCandidate[],
     simError: '' as string,
+    // ③b 可信集合鲁棒验证（R01 三态 / R02 setConstruction / R03 限制）
+    robustLoading: false,
+    robustError: '' as string,
+    robustReport: null as null | TuningApi.RobustnessReport,
     // ④ 确认
     finalLabel: '' as string,
     saving: false,
@@ -288,6 +299,9 @@ export function useTuningWorkbench() {
     state.simResult = null;
     state.simCandidates = [];
     state.simError = '';
+    state.robustLoading = false;
+    state.robustError = '';
+    state.robustReport = null;
     state.finalLabel = '';
     state.savedRecordId = '';
   }
@@ -305,6 +319,8 @@ export function useTuningWorkbench() {
     state.matrixRows = [];
     state.simResult = null;
     state.simCandidates = [];
+    state.robustError = '';
+    state.robustReport = null;
     state.finalLabel = '';
     state.identifying = true;
     state.identifyProgress = 0;
@@ -431,6 +447,8 @@ export function useTuningWorkbench() {
   async function runMatrix() {
     state.matrixLoading = true;
     state.matrixError = '';
+    state.robustError = '';
+    state.robustReport = null;
     try {
       const res = await withRiskConfirm((rc) => tuneMatrixApi(matrixRequestBase(rc)));
       state.matrixRows = res.rows.map((r) => ({
@@ -442,6 +460,8 @@ export function useTuningWorkbench() {
         paramValue: 1,
         recomputing: false,
         risk: r.ok ? (r.result?.risk ?? null) : null,
+        // R03：逐行限制按值判空携带（null/缺键/空数组 → []，不制造警告）
+        limitations: r.ok ? limitationItemsOf(r.result?.applicabilityLimitations) : null,
       }));
       // 第 6 行：手动整定（P/I/D 工程师手工设定；预填当前 PID 便于起步）
       state.matrixRows.push({
@@ -453,6 +473,7 @@ export function useTuningWorkbench() {
         checked: false,
         paramValue: 1,
         recomputing: false,
+        limitations: null,
       });
     } catch (error: any) {
       state.matrixError = error?.message || '矩阵计算失败';
@@ -478,6 +499,8 @@ export function useTuningWorkbench() {
     };
     state.simResult = null;
     state.simCandidates = [];
+    state.robustError = '';
+    state.robustReport = null;
     state.finalLabel = '';
     state.savedRecordId = '';
     await runMatrix();
@@ -500,6 +523,10 @@ export function useTuningWorkbench() {
       row.ok = true;
       row.error = undefined;
       row.risk = res.risk ?? null;
+      // R03：重算后限制随新建议按值判空刷新；旧鲁棒验证结论随之失效
+      row.limitations = limitationItemsOf(res.applicabilityLimitations);
+      state.robustError = '';
+      state.robustReport = null;
     } catch (error: any) {
       row.ok = false;
       row.error = error?.message || '重算失败';
@@ -526,6 +553,8 @@ export function useTuningWorkbench() {
     state.simulating = true;
     state.simError = '';
     state.simResult = null;
+    state.robustError = '';
+    state.robustReport = null;
     try {
       const candidates: TuningApi.PidParamsWithLabel[] = [];
       const simCandidates: SimCandidate[] = [];
@@ -571,6 +600,66 @@ export function useTuningWorkbench() {
       state.simError = error?.message || '仿真失败';
     } finally {
       state.simulating = false;
+    }
+  }
+
+  // ===== ③b 可信集合鲁棒验证（R01 三态 / R02 setConstruction / R03 限制证据）=====
+  /** 可发起鲁棒验证：矩阵已就绪且至少勾选 1 组算法推荐行（手动整定行无算法分派） */
+  const canRunRobustness = computed(
+    () =>
+      canTune.value &&
+      checkedRows.value.some((r) => r.algorithm !== 'MANUAL_TUNING' && r.pid),
+  );
+
+  /**
+   * 鲁棒验证（POST /tuning/tune/robustness）：验证对象 = ④已选定组优先，
+   * 否则首个勾选算法行；recommendedPid 由调用方携带（CALLER_PROVIDED），
+   * 来源身份与推荐/矩阵/保存链同源（outcomeModelSource 单源推导）。
+   */
+  async function runRobustness() {
+    if (!state.outcome) return;
+    // P2 IA优化：L0/L1 硬拦截（与辨识/仿真同口径，后端 _ensure_tuning_fitness 同拒）
+    if (tuningDisabled.value) {
+      message.error(tuningDisabledReason.value || '当前回路适用性不足，不允许鲁棒验证。');
+      return;
+    }
+    state.robustError = '';
+    const chosenCand = state.simCandidates.find(
+      (c) => c.label === state.finalLabel && !c.isCurrent,
+    );
+    const row = chosenCand
+      ? state.matrixRows.find((r) => r.algorithm === chosenCand.algorithm)
+      : checkedRows.value.find((r) => r.algorithm !== 'MANUAL_TUNING');
+    if (!row || row.algorithm === 'MANUAL_TUNING' || !row.pid) {
+      state.robustError =
+        '鲁棒验证需勾选算法推荐行（手动整定行无算法分派，不经验证链）';
+      return;
+    }
+    state.robustLoading = true;
+    state.robustReport = null;
+    try {
+      const outcome = state.outcome;
+      const paramKey = ALGO_PARAM_KEY[row.algorithm];
+      state.robustReport = await withRiskConfirm((rc) =>
+        verifyTuningRobustnessApi({
+          loopId: state.loopId,
+          modelType: outcome.modelType,
+          modelParams: outcome.params,
+          algorithm: row.algorithm,
+          algorithmParams: paramKey
+            ? { [paramKey]: row.paramValue }
+            : undefined,
+          recommendedPid: row.pid,
+          // 来源声明经 outcomeModelSource 单源推导（fallback_step 按 STEP_EXPERIMENT）
+          sourceRecordId: outcome.recordId ?? undefined,
+          modelSource: outcomeModelSource(outcome),
+          riskConfirmed: rc,
+        }),
+      );
+    } catch (error: any) {
+      state.robustError = error?.message || '鲁棒验证失败';
+    } finally {
+      state.robustLoading = false;
     }
   }
 
@@ -621,6 +710,7 @@ export function useTuningWorkbench() {
     canTune,
     canSimulate,
     canConfirm,
+    canRunRobustness,
     checkedRows,
     clearLoop,
     selectLoop,
@@ -630,6 +720,7 @@ export function useTuningWorkbench() {
     recomputeRow,
     toggleRow,
     runSimulate,
+    runRobustness,
     savePlan,
     resetDownstream,
     // P2 IA优化：fitness 门禁（各 section 按钮 disabled/Tooltip/Toast）

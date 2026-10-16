@@ -71,14 +71,31 @@ def run_diagnosis_batch(
     triggered_by: str = "user",
     operators: list[str] | None = None,
     trigger_type: str = "MANUAL",
+    subject_user_id: str = "",
+    subject_role: str = "",
+    subject_action: str = "diagnosis:trigger",
+    policy_revision: int = 0,
 ) -> dict:
     """批量诊断入口（同步壳，异步执行）。
 
     operators=单算子细选白名单；trigger_type=MANUAL/SCHEDULED/EVENT（§12）。
+    P4-03 主体绑定：subject_* 为人工来源提交时快照（MANUAL）；定时/事件
+    调度来源不带 subject_user_id → SYSTEM 独立身份（不可撤权）。
     """
     return self.run_async(
         _do_run_batch(
-            loop_ids, start, end, task_id, operator_group, triggered_by, operators, trigger_type
+            loop_ids,
+            start,
+            end,
+            task_id,
+            operator_group,
+            triggered_by,
+            operators,
+            trigger_type,
+            subject_user_id=subject_user_id,
+            subject_role=subject_role,
+            subject_action=subject_action,
+            policy_revision=policy_revision,
         )
     )
 
@@ -209,13 +226,31 @@ async def _do_run_batch(
     triggered_by: str,
     operators: list[str] | None = None,
     trigger_type: str = "MANUAL",
+    *,
+    subject_user_id: str = "",
+    subject_role: str = "",
+    subject_action: str = "diagnosis:trigger",
+    policy_revision: int = 0,
 ) -> dict:
+    from app.services.authz_task_fence import SubjectRevokedError, TaskSubject
+
+    # P4-03 主体绑定：人工来源携带 subject 快照；调度来源（无 subject_user_id）
+    # = SYSTEM 独立身份（不可撤权，人工来源不得伪造——端点才写 subject_*）
+    subject = TaskSubject(
+        subject_user_id=subject_user_id,
+        subject_role=subject_role,
+        action=subject_action,
+        policy_revision=policy_revision,
+        loop_ids=[str(x) for x in loop_ids],
+        is_system=not subject_user_id,
+    )
     start_dt = datetime.fromisoformat(start)
     end_dt = datetime.fromisoformat(end)
     n = len(loop_ids)
     ok_count = 0
     resumed_done = 0
     cancelled_count = 0
+    revoked_count = 0
     failed: list[dict[str, str]] = []
 
     await update_status(
@@ -284,11 +319,22 @@ async def _do_run_batch(
                     operators=operators,
                     trigger_type=trigger_type,
                     progress_cb=_progress,
+                    subject=subject,
                 )
                 if run is None:
                     failed.append({"loopId": loop_id, "error": "回路不存在或缺少 PV Tag"})
                 else:
                     ok_count += 1
+        except SubjectRevokedError as exc:
+            # P4-03：提交栅栏判定主体失权——不发布结果/建议（仅 REVOKED 审计，
+            # 审计行已在栅栏内落账），其余回路继续按各自复核结果处理
+            revoked_count += 1
+            logger.warning(
+                "诊断回路 %s 因主体失权未发布（REVOKED）: task=%s reason=%s",
+                loop_id,
+                task_id,
+                exc.reason,
+            )
         except DiagnosisTaskCancelledError:
             # 在途回路取消：写审计行（不计失败、不发布建议），余下回路全部取消
             await _record_cancelled_run(
@@ -334,6 +380,8 @@ async def _do_run_batch(
     else:
         done = ok_count + resumed_done
         summary = f"完成 {done}/{n}" + (f"，失败 {len(failed)}" if failed else "")
+        if revoked_count:
+            summary += f"，撤权未发布 {revoked_count}"
         if resumed_done:
             summary += f"（含幂等跳过 {resumed_done}）"
         await update_status(task_id, TaskStatus.SUCCESS, progress=1.0, current_stage=summary)
@@ -345,6 +393,8 @@ async def _do_run_batch(
     result: dict = {"ok": ok_count, "failed": failed}
     if resumed_done:
         result["resumedDone"] = resumed_done
+    if revoked_count:
+        result["revoked"] = revoked_count
     if cancelled_count:
         result["cancelled"] = cancelled_count
     if stats is not None:

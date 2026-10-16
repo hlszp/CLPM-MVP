@@ -17,6 +17,7 @@ from app.models.algorithm_parameter import AlgorithmParameter
 from app.models.assessment_release import AssessmentReleaseRegistry  # P3-08a
 from app.models.audit import SysAuditLog
 from app.models.authz import (  # P4-01
+    PolicyPublicationGuard,
     SysAuthzPolicy,
     SysPermission,
     SysRolePermission,
@@ -25,6 +26,7 @@ from app.models.authz import (  # P4-01
 from app.models.base import Base, TimestampMixin
 from app.models.calc_dataset_snapshot import CalculationDatasetSnapshot  # P2-03
 from app.models.calculation_result import (
+    CalculationResultAttempt,
     CalculationResultLegacyMap,
     CalculationResultRecord,
 )
@@ -46,6 +48,7 @@ from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.loop_action_item import LoopActionItem
 from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
 from app.models.loop_health_flag import LoopHealthFlag  # 运维健康标记
+from app.models.loop_investigation import LoopInvestigation  # P6-05 E1 核查最小实体
 from app.models.metric import (
     KpiSnapshotCustom,
     KpiSnapshotHourly,
@@ -59,6 +62,11 @@ from app.models.node_kpi import (
     KpiNodeSnapshotDaily,
     KpiNodeSnapshotHourly,
     KpiNodeSnapshotMonthly,
+)
+from app.models.personal_workspace import (  # P6-05 个人关系分片
+    UserLoopFollow,
+    UserWorkResume,
+    UserWorkspacePreference,
 )
 from app.models.plant_node import PlantNode
 from app.models.point_history import (  # tag-timeseries-refactor P1
@@ -94,14 +102,19 @@ __all__ = [
     "SysPermission",
     "SysRolePermission",
     "SysUserScope",
+    "PolicyPublicationGuard",
     "Base",
     "LoopHealthFlag",
+    "LoopInvestigation",  # P6-05 E1 回路核查最小实体（来源+问题去重）
     "TimestampMixin",
     "AlgorithmParameter",
     "AssessmentReleaseRegistry",  # P3-08a 评估发布代际登记
     "SysDictItem",
     "SysUser",
     "PlantNode",
+    "UserLoopFollow",  # P6-05 回路关注（取消留版本墓碑）
+    "UserWorkspacePreference",  # P6-05 账号工作偏好（按 key 独立版本）
+    "UserWorkResume",  # P6-05 最近继续（generation 清空栅栏）
     "HistoryCoverageSegment",  # tag-timeseries-refactor P1 覆盖区间
     "HistoryLayoutManifest",  # 布局清单
     "HistoryPointConflict",  # 同 ts 冲突登记
@@ -120,6 +133,7 @@ __all__ = [
     "MetricConfig",
     "CalculationResultRecord",  # P1-05 结果账本
     "CalculationResultLegacyMap",  # P1-05 旧 ID 映射
+    "CalculationResultAttempt",  # P5-02 计算尝试日志（G2 遗留③）
     "CalculationDatasetSnapshot",  # P2-03 不可变输入包元数据
     "ConfigOverride",  # P2-02 分层配置覆盖
     "ConfigPublication",  # P2-02 统一配置发布快照

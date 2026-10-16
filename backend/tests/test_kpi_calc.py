@@ -34,12 +34,15 @@ from app.contracts.data_types import (
     QualitySummary,
     TagGroup,
 )
+from app.services.loop_fitness import FitnessResult
+from app.tasks.celery_app import PRIORITY_NIGHTLY
 from app.tasks.kpi_calc import (
     _ALL_METRIC_CODES_DB,
     _CALCULATOR_TO_DB_METRIC_CODE,
     _DB_TO_CALCULATOR_METRIC_CODE,
     ALGORITHM_VERSION,
     _build_config_bundle,
+    _build_fitness_kwargs_from_result,
     _build_ts_index,
     _build_weights_map,
     _calculate_loop_kpi,
@@ -834,6 +837,146 @@ class TestCalculateLoopKpi:
         assert call_kwargs["control_type"] == ControlType.TEMPERATURE
 
 
+class TestInconclusiveBranchSourceThreading:
+    """G5-γ1（2026-10-13 批 1 实测）：INCONCLUSIVE 分支 source/版本透传守护.
+
+    缺陷形态：综合评分 None（E 级）分支中，source/source_task_id 原放在
+    fitness_kwargs 初始 dict，被 ``_build_fitness_kwargs_from_result(fresult)``
+    整体替换吞掉（该函数只含 fitness/三性七键，见
+    ``test_build_fitness_kwargs_key_set_excludes_source``）→ ``_timed_persist``
+    缺参 → 快照/record/latest 的 source 与版本列全 NULL（容量屏障九条件之
+    source/run_binding/algorithm_version/latest 四条违约，批 1 现场 100 行
+    DATA_INSUFFICIENT）。修复口径：显式字段在 ``_timed_persist`` 调用点平铺
+    （对齐主路径），lineage_info 前移共享（algorithm_version 同源）。
+
+    本类通过捕获 ``_persist_snapshot`` 实收 kwargs 断言（其写投影/账本/latest
+    全部取参于此，是四条违约的共同上游）。
+    """
+
+    SOURCE = "SCHEDULED"
+    SOURCE_TASK_ID = "0bfded49-cd47-4e8c-a467-69e26aaa5b59"
+
+    @staticmethod
+    def _fitness_l0() -> FitnessResult:
+        """批 1 触发形态：compute_fitness 成功返回 L0/DATA_INSUFFICIENT."""
+        return FitnessResult(
+            level="L0",
+            tags=["DATA_INSUFFICIENT"],
+            detail={"conclusion": "DATA_INSUFFICIENT"},
+            assess_level="L0",
+            diagnose_level="L0",
+            tune_level="L0",
+        )
+
+    @classmethod
+    async def _run(cls, monkeypatch, composite_value: float | None) -> dict:
+        """跑 _calculate_loop_kpi 并捕获 _persist_snapshot 实收 kwargs.
+
+        composite_value=None → INCONCLUSIVE 分支（缺陷现场）；非 None →
+        主路径（对照基线）。compute_fitness 恒成功（触发整体替换路径）。
+        """
+        loop = _make_loop()
+        db = AsyncMock()
+        db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
+        db.add = MagicMock()
+
+        mock_planner = AsyncMock()
+        mock_planner.request_bundles = AsyncMock(return_value=[_make_bundle("accuracy_rate")])
+
+        metric_results = _make_full_metric_results(effective_auto=None)
+        composite_result = MetricResult(
+            metric_code="composite_score",
+            value=composite_value,
+            confidence_level="E" if composite_value is None else "A",
+            lineage=_make_data_lineage(),
+        )
+
+        captured: dict = {}
+
+        async def fake_persist(**kwargs: object) -> dict:
+            captured.update(kwargs)
+            return {"loopId": str(loop.id), "status": kwargs.get("status")}
+
+        monkeypatch.setattr("app.tasks.kpi_calc._persist_snapshot", fake_persist)
+        monkeypatch.setattr(
+            "app.tasks.kpi_calc._compute_kpis_three_layer",
+            MagicMock(return_value=(metric_results, composite_result)),
+        )
+        monkeypatch.setattr(
+            "app.tasks.kpi_calc.compute_fitness", MagicMock(return_value=cls._fitness_l0())
+        )
+
+        await _calculate_loop_kpi(
+            db=db,
+            loop=loop,
+            metric_configs={},
+            ts_start=datetime(2026, 10, 13, 20, 0, 0, tzinfo=UTC),
+            ts_end=datetime(2026, 10, 13, 21, 0, 0, tzinfo=UTC),
+            data_planner=mock_planner,
+            source=cls.SOURCE,
+            source_task_id=cls.SOURCE_TASK_ID,
+        )
+        return captured
+
+    @pytest.mark.asyncio
+    async def test_inconclusive_persist_receives_source_and_version(self, monkeypatch) -> None:
+        """INCONCLUSIVE 快照（compute_fitness 成功 L0）必须携带 source/版本.
+
+        修复前形态：fitness_level=L0（fitness 计算成功、kwargs 已被整体替换）
+        但 kwargs 无 source/source_task_id/algorithm_version → 快照与 latest
+        版本列 NULL、record logical_run_id 无绑定。
+        """
+        captured = await self._run(monkeypatch, composite_value=None)
+
+        assert captured["status"] == "INCONCLUSIVE"
+        # fitness 计算成功且被整体替换（缺陷触发条件）的证明
+        assert captured["fitness_level"] == "L0"
+        assert captured["fitness_tags"] == {"tags": ["DATA_INSUFFICIENT"]}
+        # 来源标注存活（不再被 _build_fitness_kwargs_from_result 吞掉）
+        assert captured["source"] == self.SOURCE
+        assert captured["source_task_id"] == self.SOURCE_TASK_ID
+        # 血缘字段到位（algorithm_version 闭合快照/latest 版本列违约）
+        assert captured["algorithm_version"] == ALGORITHM_VERSION
+        assert captured["confidence_level"] == "E"
+        assert captured["sampling_freq"] is not None
+
+    @pytest.mark.asyncio
+    async def test_inconclusive_source_parity_with_main_path(self, monkeypatch) -> None:
+        """对照主路径：SUCCESS 行同参透传，INCONCLUSIVE 行传参集对齐（不劣于）."""
+        main_captured = await self._run(monkeypatch, composite_value=76.0)
+        assert main_captured["status"] == "SUCCESS"
+        assert main_captured["source"] == self.SOURCE
+        assert main_captured["source_task_id"] == self.SOURCE_TASK_ID
+        assert main_captured["algorithm_version"] == ALGORITHM_VERSION
+
+        inc_captured = await self._run(monkeypatch, composite_value=None)
+        # 来源/版本三键与主路径完全同值；confidence_level 分支口径不同（E 级），
+        # 仅要求非 NULL（E 兜底经 lineage_info 携带）
+        for key in ("source", "source_task_id", "algorithm_version"):
+            assert inc_captured[key] == main_captured[key], (
+                f"INCONCLUSIVE 分支 {key} 与主路径口径分叉"
+            )
+        assert inc_captured["confidence_level"] is not None
+
+    def test_build_fitness_kwargs_key_set_excludes_source(self) -> None:
+        """键集守护：_build_fitness_kwargs_from_result 永不携带来源/血缘键.
+
+        该函数的返回值会整体替换调用方的 fitness_kwargs——若把 source 塞进
+        它（看似更近的修法），None 入参分支会再度恒丢。来源/血缘键只能在
+        _timed_persist 调用点平铺传递。
+        """
+        expected_keys = {
+            "fitness_level",
+            "fitness_tags",
+            "fitness_detail",
+            "assess_level",
+            "diagnose_level",
+            "tune_level",
+        }
+        assert set(_build_fitness_kwargs_from_result(self._fitness_l0())) == expected_keys
+        assert set(_build_fitness_kwargs_from_result(None)) == expected_keys
+
+
 # ===========================================================================
 # 4. 批量计算编排辅助函数测试
 # ===========================================================================
@@ -874,8 +1017,12 @@ class TestDoCalculate:
         mock_session.execute = AsyncMock(return_value=_make_scalars_mock([]))
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
 
             result = await _do_calculate()
 
@@ -908,8 +1055,12 @@ class TestDoCalculate:
                 return_value={},
             ),
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
 
             result = await _do_calculate()
@@ -945,8 +1096,12 @@ class TestDoCalculate:
                 return_value={},
             ),
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {
                 "status": "INCONCLUSIVE",
                 "loopId": str(loop.id),
@@ -990,8 +1145,12 @@ class TestDoCalculate:
                 return_value={},
             ),
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.side_effect = RuntimeError("calc failed")
 
             with pytest.raises(RuntimeError, match="系统性故障") as exc_info:
@@ -1033,8 +1192,12 @@ class TestDoCalculate:
             ),
             patch("app.tasks.kpi_calc.calculate_node_kpi_hourly") as mock_node_task,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
 
             result = await _do_calculate(ts_start="2026-06-24T05:00:00")
@@ -1042,8 +1205,10 @@ class TestDoCalculate:
         assert result["ts_start"] == "2026-06-24T05:00:00"
         assert result["ts_end"] == "2026-06-24T06:00:00"
         # 级联节点聚合显式携带原窗（历史窗，而非当前系统时间上一小时）
-        mock_node_task.delay.assert_called_once_with(
-            ts_start="2026-06-24T05:00:00", ts_end="2026-06-24T06:00:00"
+        # P5-02：派发改 apply_async（夜间优先级，Redis 队列分桶）
+        mock_node_task.apply_async.assert_called_once_with(
+            kwargs={"ts_start": "2026-06-24T05:00:00", "ts_end": "2026-06-24T06:00:00"},
+            priority=PRIORITY_NIGHTLY,
         )
 
 
@@ -1073,8 +1238,12 @@ class TestDoCalculateNodeKpiWindow:
                 return_value={"total": 1, "success": 1, "skipped": 0, "failed": 0},
             ) as mock_batch,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
 
             result = await _do_calculate_node_kpi("2026-06-24T05:00:00Z", "2026-06-24T06:00:00Z")
 
@@ -1101,8 +1270,12 @@ class TestDoCalculateNodeKpiWindow:
                 return_value={"total": 1, "success": 1, "skipped": 0, "failed": 0},
             ) as mock_batch,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
 
             before = datetime.now(UTC).replace(tzinfo=None)
             await _do_calculate_node_kpi()
@@ -1132,8 +1305,12 @@ class TestDoCalculateSingleLoop:
         mock_session.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
 
         with patch("app.core.db.AsyncSessionLocal") as mock_factory:
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
 
             result = await _do_calculate_single_loop("nonexistent", None)
 
@@ -1161,8 +1338,12 @@ class TestDoCalculateSingleLoop:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"loopId": str(loop.id), "status": "SUCCESS"}
 
             result = await _do_calculate_single_loop(str(loop.id), None)
@@ -1190,8 +1371,12 @@ class TestDoCalculateSingleLoop:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"loopId": str(loop.id), "status": "SUCCESS"}
 
             await _do_calculate_single_loop(str(loop.id), "2026-06-22T08:00:00Z")
@@ -1220,8 +1405,12 @@ class TestDoCalculateSingleLoop:
                 new_callable=AsyncMock,
             ) as mock_calc,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"loopId": str(loop.id), "status": "SUCCESS"}
 
             await _do_calculate_single_loop(str(loop.id), "2026-06-22T08:00:00")
@@ -1453,8 +1642,12 @@ class TestDoCalculateCustomLoopTimeWindow:
                 "app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock
             ) as mock_weights,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
             mock_weights.return_value = {}
 
@@ -1504,8 +1697,12 @@ class TestDoCalculateCustomLoopTimeWindow:
                 "app.services.loop_config.get_loop_type_weights_map", new_callable=AsyncMock
             ) as mock_weights,
         ):
-            mock_factory.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_factory.return_value.__aexit__ = AsyncMock(return_value=None)
+            # 连接风暴止血①改造后 _calculate_once 直接调用 AsyncSessionLocal()
+            # （非 async with）——factory 返回值即 session 本体，同时保留
+            # async with 形态（_do_calculate 主 session 仍用上下文管理器）。
+            mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session.__aexit__ = AsyncMock(return_value=None)
+            mock_factory.return_value = mock_session
             mock_calc.return_value = {"status": "SUCCESS", "loopId": str(loop.id)}
             mock_weights.return_value = {}
 

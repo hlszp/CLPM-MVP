@@ -30,6 +30,7 @@ from contextlib import contextmanager
 from datetime import UTC
 from typing import TYPE_CHECKING, Any
 
+from app.core import g5_trace
 from app.core.config import settings
 
 if TYPE_CHECKING:
@@ -155,16 +156,22 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
     """
 
     def _execute() -> list[dict[str, Any]]:
-        with TDengineConnectionPool.get_connection() as conn:
+        with (
+            g5_trace.span("td.connection_lifecycle"),
+            TDengineConnectionPool.get_connection() as conn,
+        ):
             cursor = conn.cursor()
             try:
-                cursor.execute(sql)
-                rows = cursor.fetchall()
+                with g5_trace.span("td.execute"):
+                    cursor.execute(sql)
+                with g5_trace.span("td.fetch"):
+                    rows = cursor.fetchall()
                 # description: [[name, type, bytes], ...]
                 fields = [desc[0] for desc in cursor.description] if cursor.description else []
                 if not rows or not fields:
                     return []
-                return [dict(zip(fields, row, strict=False)) for row in rows]
+                with g5_trace.span("td.rows_to_dict", rowCount=len(rows)):
+                    return [dict(zip(fields, row, strict=False)) for row in rows]
             finally:
                 cursor.close()
 
@@ -172,8 +179,9 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
     # 取消无法中断已阻塞线程；此处超时向上抛错，调用方（flush 循环）下一拍
     # 重试，避免写入协程被单条慢查询无限期钉死。
     # 专用线程池：与默认执行器隔离，实时写入不与趋势/分析长查询争抢
-    loop = asyncio.get_running_loop()
-    return await asyncio.wait_for(loop.run_in_executor(_TDNATIVE_EXECUTOR, _execute), timeout=90)
+    return await asyncio.wait_for(
+        g5_trace.threaded("td.executor", _execute, executor=_TDNATIVE_EXECUTOR), timeout=90
+    )
 
 
 async def execute_native_effective(sql: str) -> int:

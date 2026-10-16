@@ -481,9 +481,15 @@ export function getBoardTrendApi(params?: {
 /**
  * 节点树形聚合 KPI（2026-10-03 明细表可折叠视图）
  * 一次返回整棵子树（嵌套 children），每节点带窗口聚合字段
+ * P6-02b：startTime/endTime 类型化（后端本已接收；此前靠展开绕过类型，
+ * timeWindow=custom 时必填，否则后端回退 today 口径——数字对不上窗口）
  */
 export function getBoardTreeApi(params?: {
+  /** 自定义窗口结束（ISO 8601 UTC，timeWindow=custom 时必填） */
+  endTime?: string;
   plantId?: string;
+  /** 自定义窗口起始（ISO 8601 UTC，timeWindow=custom 时必填） */
+  startTime?: string;
   timeWindow?: string;
 }) {
   return requestClient.get<DashboardApi.BoardTreeResult>(

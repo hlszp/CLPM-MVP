@@ -18,12 +18,13 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import get_current_user, get_scope_ctx, require_perms
 from app.core.db import get_db
 from app.core.exceptions import BizError
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
@@ -45,6 +46,14 @@ from app.schemas.performance import (
     SnapshotBatchDeleteRequest,
 )
 from app.services import result_ledger
+from app.services.authz_scope import (
+    ScopeContext,
+    ensure_loops_in_scope,
+    ensure_node_in_scope,
+    scoped_loop_id_filter,
+    scoped_plant_node_id,
+    scoped_plant_node_ids,
+)
 from app.services.gate_overview import get_gate_overview
 from app.services.performance import (
     SNAPSHOT_SORT_COLUMNS,
@@ -65,6 +74,40 @@ router = APIRouter(prefix="/performance", tags=["performance"])
 
 # 跨表归并排序兜底（ts_start 为 None 的行恒排末尾）
 _FLOOR_DT = datetime(1970, 1, 1)
+
+
+def _require_uuid(value: str, *, field: str) -> str:
+    """UUID 参数校验（与 parse_iso_datetime 同口径：非法输入 400，绝不变 500）.
+
+    plant_node/loop/record 等 id 列均为 UUID——非 UUID 形态直达 asyncpg 报
+    invalid UUID 500（G-N2：ranking?plantNodeId=int source_node_id 实证）。
+    合法输入归一为小写连字符形态（PG UUID 按值比较，语义不变）。
+    """
+    raw = value.strip()
+    try:
+        return str(UUID(raw))
+    except (ValueError, AttributeError, TypeError):
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"{field} 不是合法 UUID: {raw}",
+            status_code=status.HTTP_400_BAD_REQUEST,
+        ) from None
+
+
+def _parse_uuid_arg(value: str | None, *, field: str) -> str | None:
+    """可选 UUID 参数解析：空值（None/空串）视为未指定返回 None（空值语义同
+    ``_parse_dt`` 口径不变）；非空非 UUID → 400。"""
+    if not value or not value.strip():
+        return None
+    return _require_uuid(value, field=field)
+
+
+def _parse_uuid_list(value: list[str] | None, *, field: str) -> list[str] | None:
+    """UUID 列表参数校验：None/空列表原样透传（既有空值语义不变）；
+    任一元素非 UUID → 400。"""
+    if not value:
+        return value
+    return [_require_uuid(item, field=field) for item in value]
 
 
 @router.get(
@@ -117,7 +160,7 @@ async def update_metric_endpoint(
     """
     data = await update_metric_config(
         db=db,
-        metric_id=metric_id,
+        metric_id=_require_uuid(metric_id, field="metricId"),
         operator=user.username,
         metric_name=body.metricName,
         formula=body.formula,
@@ -158,7 +201,7 @@ async def update_rule_endpoint(
     """更新引擎规则（仅 ADMIN）。"""
     data = await update_engine_rule(
         db=db,
-        rule_id=rule_id,
+        rule_id=_require_uuid(rule_id, field="ruleId"),
         operator=user.username,
         rule_name=body.ruleName,
         params=body.params,
@@ -201,6 +244,7 @@ async def get_ranking_endpoint(
     ),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """低效回路排行（所有角色）。
 
@@ -214,6 +258,10 @@ async def get_ranking_endpoint(
             return None
         return to_naive_utc(parse_iso_datetime(s, field="startTime/endTime"))
 
+    # G-N2：非 UUID 输入（如 int source_node_id）→ 400，不放行到 asyncpg 500
+    plantNodeId = _parse_uuid_arg(plantNodeId, field="plantNodeId")
+    # P4-03：ALL/NODE_SUBTREE 与筛选取交集（越界显式筛选→哨兵空结果）
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)
     data = await get_ranking(
         db=db,
         plant_node_id=plantNodeId,
@@ -247,8 +295,11 @@ async def get_analytics_endpoint(
     granularity: str = Query("day", description="粒度：hour/day/week/month"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """性能统计报表数据（所有角色）。"""
+    plantNodeId = _parse_uuid_arg(plantNodeId, field="plantNodeId")
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)  # P4-03 范围交集
     data = await get_analytics(
         db=db,
         start_time=startTime,
@@ -269,13 +320,16 @@ async def export_analytics_endpoint(
     body: ExportRequest,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> PlainTextResponse:
     """导出统计报表为 CSV（所有角色）。"""
+    plant_node_id = _parse_uuid_arg(body.plantNodeId, field="plantNodeId")
+    plant_node_id = scoped_plant_node_id(scope, plant_node_id)  # P4-03 范围交集
     csv_content = await export_analytics_csv(
         db=db,
         start_time=body.startTime,
         end_time=body.endTime,
-        plant_node_id=body.plantNodeId,
+        plant_node_id=plant_node_id,
         metric_key=body.metricKey,
         granularity=body.granularity,
     )
@@ -300,6 +354,7 @@ async def get_realtime_auto_rate_endpoint(
     plantNodeId: str | None = Query(None, description="工厂节点 ID（不传则全厂）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> ApiResponse[dict]:
     """获取实时自控率统计（用于仪表盘组件）。
 
@@ -312,6 +367,8 @@ async def get_realtime_auto_rate_endpoint(
     from app.services.node_performance import query_realtime_auto_rate
 
     # 收集回路 ID
+    plantNodeId = _parse_uuid_arg(plantNodeId, field="plantNodeId")
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)  # P4-03 范围交集
     stmt = select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
     plant_node_name = None
     if plantNodeId:
@@ -425,6 +482,7 @@ async def get_grade_distribution_endpoint(
     loopTagName: str | None = Query(None, description="回路编号模糊搜索"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """各性能等级回路数分布（所有角色）.
 
@@ -437,6 +495,12 @@ async def get_grade_distribution_endpoint(
     plant_node_ids = (
         [s.strip() for s in plantNodeId.split(",") if s.strip()] if plantNodeId else None
     )
+    # 非 UUID 元素 → 400（不放行到 UUID 列比较 500）
+    loop_ids = _parse_uuid_list(loop_ids, field="loopId")
+    plant_node_ids = _parse_uuid_list(plant_node_ids, field="plantNodeId")
+    # P4-03：范围交集（回路剔除越界；节点交集，越界显式筛选→哨兵空结果）
+    loop_ids = await scoped_loop_id_filter(db, scope, loop_ids)
+    plant_node_ids = scoped_plant_node_ids(scope, plant_node_ids)
 
     data = await get_grade_distribution(
         db=db,
@@ -467,6 +531,7 @@ async def get_valve_alerts_endpoint(
     limit: int = Query(10, ge=1, le=100, description="返回条数（默认 10，最多 100）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """阀门运行区间异常回路 TOP N（OP 行程越限 5%~95%，所有角色）.
 
@@ -474,6 +539,8 @@ async def get_valve_alerts_endpoint(
     返回 ``{"total": 越限回路总数, "items": [前 limit 条]}``。
     2026-10-03 评估总览改版：替代前端全量翻页拉快照的客户端聚合。
     """
+    plantNodeId = _parse_uuid_arg(plantNodeId, field="plantNodeId")
+    plantNodeId = scoped_plant_node_id(scope, plantNodeId)  # P4-03 范围交集
     now = datetime.now(UTC).replace(tzinfo=None)
     if timeWindow == "custom" and startTime and endTime:
         start = to_naive_utc(parse_iso_datetime(startTime, field="startTime"))
@@ -554,6 +621,7 @@ async def list_loop_snapshots_endpoint(
     pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """查询回路小时指标快照列表（所有角色可查看）.
 
@@ -571,6 +639,12 @@ async def list_loop_snapshots_endpoint(
     plant_node_ids = (
         [s.strip() for s in plantNodeId.split(",") if s.strip()] if plantNodeId else None
     )
+    # 非 UUID 元素 → 400（不放行到 UUID 列比较 500）
+    loop_ids = _parse_uuid_list(loop_ids, field="loopId")
+    plant_node_ids = _parse_uuid_list(plant_node_ids, field="plantNodeId")
+    # P4-03：范围交集（回路剔除越界；节点交集，越界显式筛选→哨兵空结果）
+    loop_ids = await scoped_loop_id_filter(db, scope, loop_ids)
+    plant_node_ids = scoped_plant_node_ids(scope, plant_node_ids)
 
     start_dt = _parse_dt(startTime)
     end_dt = _parse_dt(endTime)
@@ -767,6 +841,7 @@ async def get_loop_metric_series_endpoint(
     endTime: str | None = Query(None, description="结束时间（ISO 8601）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """批量查询单指标 × 多回路时间序列（指标矩阵页列头趋势对比）.
 
@@ -780,6 +855,8 @@ async def get_loop_metric_series_endpoint(
             ERR_METRIC_SERIES_LOOPS（回路数超限或为空）
     """
     loop_ids = [s.strip() for s in loopIds.split(",") if s.strip()]
+    loop_ids = _parse_uuid_list(loop_ids, field="loopIds")
+    loop_ids = await scoped_loop_id_filter(db, scope, loop_ids)  # P4-03 剔除越界回路
     start_dt = _parse_dt(startTime)
     end_dt = _parse_dt(endTime)
 
@@ -815,6 +892,7 @@ async def window_agg_snapshots_endpoint(
     loopId: str | None = Query(None, description="回路 ID（逗号分隔多值）"),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """回路级窗口聚合（均值）快照——指标矩阵 8h/24h/168h 时间窗口径（2026-10-10）.
 
@@ -824,10 +902,16 @@ async def window_agg_snapshots_endpoint(
     from app.services.performance import window_agg_snapshots
 
     loop_ids = [x.strip() for x in loopId.split(",") if x.strip()] if loopId else None
+    # 非 UUID 元素 → 400（不放行到 UUID 列比较 500）
+    loop_ids = _parse_uuid_list(loop_ids, field="loopId")
+    plant_node_id = _parse_uuid_arg(plantNodeId, field="plantNodeId")
+    # P4-03：范围交集（回路剔除越界；节点交集）
+    loop_ids = await scoped_loop_id_filter(db, scope, loop_ids)
+    plant_node_ids = scoped_plant_node_ids(scope, [plant_node_id] if plant_node_id else None)
     items = await window_agg_snapshots(
         db,
         loop_ids=loop_ids,
-        plant_node_ids=[plantNodeId] if plantNodeId else None,
+        plant_node_ids=plant_node_ids,
         start=_parse_iso_arg(startTime),
         end=_parse_iso_arg(endTime),
     )
@@ -854,6 +938,7 @@ async def batch_delete_snapshots_endpoint(
     body: SnapshotBatchDeleteRequest,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("metric:snapshot-manage")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """按筛选条件批量删除历史快照（dryRun 默认 True 仅预览计数）。
 
@@ -862,11 +947,19 @@ async def batch_delete_snapshots_endpoint(
     """
     from app.services.performance import batch_delete_snapshots
 
+    # 非 UUID 元素 → 400（不放行到 UUID 列比较 500）
+    loop_ids = _parse_uuid_list(body.loopIds, field="loopIds")
+    plant_node_id = _parse_uuid_arg(body.plantNodeId, field="plantNodeId")
+    # P4-03：批量写先验证全部对象（跨 scope 目标 → 整体通用拒绝）
+    if loop_ids:
+        await ensure_loops_in_scope(db, scope, loop_ids, action="批量删除快照")
+    if plant_node_id:
+        ensure_node_in_scope(scope, plant_node_id, action="批量删除快照")
     try:
         data = await batch_delete_snapshots(
             db,
-            loop_ids=body.loopIds,
-            plant_node_id=body.plantNodeId,
+            loop_ids=loop_ids,
+            plant_node_id=plant_node_id,
             start=_parse_iso_arg(body.startTime),
             end=_parse_iso_arg(body.endTime),
             status=body.status,
@@ -896,6 +989,7 @@ async def get_result_record_endpoint(
     record_id: str,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """结果账本记录详情（P1-05，所有角色可查看）.
 
@@ -905,13 +999,30 @@ async def get_result_record_endpoint(
     各指标分母）；datasetSnapshotId 为空即"该结果不可完整复现"（P2-03 前
     的 P1 记录均如此，属显式事实而非缺数）。
     """
-    record, matched_via = await result_ledger.find_record_any_id(db, record_id)
+    record, matched_via = await result_ledger.find_record_any_id(
+        db, _require_uuid(record_id, field="recordId")
+    )
     if record is None:
         raise BizError(
             code="ERR_RESULT_RECORD_NOT_FOUND",
             message=f"结果记录 {record_id} 不存在（既非 recordId 也无法按旧 ID 映射）",
             status_code=status.HTTP_404_NOT_FOUND,
         )
+    # P4-03：结果记录按对象归属执行数据范围（LOOP=回路范围 / NODE=节点范围；
+    # 越界通用拒绝，不回显记录内容）
+    from app.services.authz_scope import loops_in_scope
+
+    if scope.allowed_node_ids is not None:
+        obj_id = str(record.object_id)
+        if record.object_kind == "LOOP":
+            if not await loops_in_scope(db, scope, [obj_id]):
+                raise BizError(
+                    code="ERR_SCOPE_FORBIDDEN",
+                    message="无权访问该数据范围外的对象",
+                    status_code=403,
+                )
+        else:
+            ensure_node_in_scope(scope, obj_id)
     data = result_ledger.record_to_dict(record)
     data["matchedVia"] = matched_via
     return success(data=data)
@@ -929,7 +1040,7 @@ async def delete_snapshot_endpoint(
     """删除单条历史快照。"""
     from app.services.performance import delete_snapshot_by_id
 
-    deleted = await delete_snapshot_by_id(db, snapshot_id)
+    deleted = await delete_snapshot_by_id(db, _require_uuid(snapshot_id, field="snapshotId"))
     if not deleted:
         raise BizError(
             code="ERR_SNAPSHOT_NOT_FOUND",

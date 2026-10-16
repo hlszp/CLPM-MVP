@@ -26,9 +26,10 @@ const routes: RouteRecordRaw[] = [
       // 仅 ADMIN 可访问的子页（链路/指标/诊断/预警规则配置）由各自 authority 守卫。
       authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
       icon: 'lucide:settings-2',
+      module: 'config',
+      navGroup: 'system',
       order: 8,
       title: '参数配置',
-      module: 'config',
     },
     children: [
       {
@@ -151,6 +152,25 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN'],
           hideInMenu: true,
           title: 'PID 结构模板',
+        },
+      },
+      // P2-04 工程模板维护（P6 Slice M：版本/覆盖预览/发布/批量应用/回退）
+      {
+        name: 'ConfigEngTemplates',
+        path: '/config/eng-templates',
+        component: () =>
+          import('#/views/config/engineering-templates/index.vue'),
+        meta: {
+          // permCode=page:config.eng-templates：后端权限目录/种子下发由主协调
+          // （O-INTEGRATE）整合——先例 cockpit.ts page:my-work.main；未下发前
+          // 页面码过滤将该页整棵移除（菜单/直链同步受限，降级安全）
+          permCode: 'page:config.eng-templates',
+          // 读/预览 ADMIN/IC/PE（config:view）；写动作由页内按钮级降级
+          // （发布/回拨=ADMIN、覆盖发布/回退=config:publish、批量=loop:batch-config）
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER'],
+          icon: 'lucide:layout-template',
+          order: 11,
+          title: '工程模板',
         },
       },
       // ===== legacy redirect：旧路径 → 新路径（保护书签/E2E） =====

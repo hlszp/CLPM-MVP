@@ -36,7 +36,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import delete, func, insert, select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -108,7 +108,8 @@ def _a(
 
 
 CATALOG: dict[str, PermDef] = {
-    # ---------------- 页面组（10 组 = 一级导航） ----------------
+    # ---------------- 页面组（11 组 = 一级导航；P6-06 新增 page:my-work） ----------------
+    "page:my-work": _g(None, "我的工作（工程师个人首页：责任/建议/关注/接续）", -1),
     "page:cockpit": _g(None, "驾驶舱（全局观察入口，不受模块开关约束）", 0),
     "page:workbench": _g(None, "工作台（回路全生命周期单页）", 1),
     "page:monitor": _g("monitor", "回路监控", 2),
@@ -127,6 +128,8 @@ CATALOG: dict[str, PermDef] = {
     "page:cockpit.diagnosis": _p("page:cockpit", "驾驶舱-诊断", "五角色", "diagnosis", False, 40),
     "page:cockpit.tuning": _p("page:cockpit", "驾驶舱-整定", "五角色", "tuning", False, 50),
     "page:cockpit.handling": _p("page:cockpit", "驾驶舱-处置", "五角色", "handling", False, 60),
+    # 我的工作（P6-06，/my-work；五角色可见，内容按权限/scope 收敛）
+    "page:my-work.main": _p("page:my-work", "我的工作", "五角色", None, False, 10),
     # 工作台（/loop/workbench360；SPONSOR 不可见）
     "page:workbench.main": _p(
         "page:workbench", "工作台主页（回路 360 全生命周期）", "ADMIN/IC/PE/EXPERT", None, False, 10
@@ -188,6 +191,7 @@ CATALOG: dict[str, PermDef] = {
     "page:config.ledger": _p("page:config", "回路台账", "ADMIN/IC/PE", "config", False, 40),
     "page:config.factory": _p("page:config", "工厂配置", "ADMIN/IC/PE", "config", False, 50),
     "page:config.datasource": _p("page:config", "数据导入", "ADMIN/IC/PE", "config", False, 60),
+    "page:config.eng-templates": _p("page:config", "工程模板", "ADMIN/IC/PE", "config", False, 65),
     "page:config.metric": _p("page:config", "指标配置", "ADMIN", "config", False, 70),
     "page:config.diagnosis": _p("page:config", "诊断配置", "ADMIN", "config", False, 80),
     "page:config.alert-rules": _p("page:config", "预警规则", "ADMIN", "config", False, 90),
@@ -455,6 +459,7 @@ _ACTION_CODES = {
 }
 
 # 页面码集合按角色（来源：前端路由 authority 实际矩阵；PAGE_GROUP 不参与授权）
+_MY_WORK_PAGES = frozenset({"page:my-work.main"})
 _COCKPIT_PAGES = frozenset(
     {
         "page:cockpit.overview",
@@ -510,6 +515,7 @@ _CONFIG_PAGES_ENG = frozenset(
         "page:config.ledger",
         "page:config.factory",
         "page:config.datasource",
+        "page:config.eng-templates",
     }
 )
 _SYSTEM_PAGES_ALL = frozenset(
@@ -527,7 +533,8 @@ _SYSTEM_PAGES_ALL = frozenset(
 
 _PAGE_CODES = {
     "ADMIN": frozenset(c for c, d in CATALOG.items() if d.kind == "PAGE"),
-    "IC_ENGINEER": _COCKPIT_PAGES
+    "IC_ENGINEER": _MY_WORK_PAGES
+    | _COCKPIT_PAGES
     | {"page:workbench.main"}
     | _MONITOR_PAGES_COMMON
     | {"page:monitor.table"}
@@ -540,7 +547,8 @@ _PAGE_CODES = {
     | {"page:reports.benefit"}
     | _CONFIG_PAGES_ENG
     | {"page:task.detail"},
-    "PE_ENGINEER": _COCKPIT_PAGES
+    "PE_ENGINEER": _MY_WORK_PAGES
+    | _COCKPIT_PAGES
     | {"page:workbench.main"}
     | _MONITOR_PAGES_COMMON
     | {"page:monitor.table"}
@@ -552,7 +560,8 @@ _PAGE_CODES = {
     | {"page:reports.benefit"}
     | _CONFIG_PAGES_ENG
     | {"page:task.detail"},
-    "SPONSOR": _COCKPIT_PAGES
+    "SPONSOR": _MY_WORK_PAGES
+    | _COCKPIT_PAGES
     | _MONITOR_PAGES_COMMON
     | _ASSESS_PAGES_COMMON
     | _DIAG_PAGES
@@ -560,7 +569,8 @@ _PAGE_CODES = {
     | _HANDLING_PAGES
     | _REPORTS_PAGES_COMMON
     | {"page:reports.benefit"},
-    "EXPERT": _COCKPIT_PAGES
+    "EXPERT": _MY_WORK_PAGES
+    | _COCKPIT_PAGES
     | {"page:workbench.main"}
     | _MONITOR_PAGES_COMMON
     | _ASSESS_PAGES_COMMON
@@ -727,10 +737,15 @@ def validate_role_matrix(
 
 
 async def get_current_revision(db: AsyncSession) -> int:
-    """当前策略 revision（无账本行=0：尚未播种的空库）。"""
-    result = await db.execute(select(func.max(SysAuthzPolicy.revision)))
-    rev = result.scalar_one_or_none()
-    return int(rev) if rev is not None else 0
+    """当前策略 revision（P4-03 起读 policy_publication_guard 行）.
+
+    guard 行缺失（迁移未应用环境）回退账本 max；无账本行=0（尚未播种的空库）。
+    guard revision 涵盖授权域（角色矩阵/scope/回退）与域外策略变更者
+    （节点归属/tag 改绑/用户状态/令牌撤销，见 authz_scope）。
+    """
+    from app.services.authz_scope import read_guard_revision
+
+    return await read_guard_revision(db)
 
 
 async def get_role_grants(db: AsyncSession, role: str) -> dict[str, list[str]]:
@@ -871,7 +886,11 @@ async def update_role_grants(
     """
     merged = validate_role_matrix(role, page_codes, action_codes)
 
-    current = await get_current_revision(db)
+    # P4-03 提交栅栏：先取 guard 排他锁（固定锁序 guard→主体→对象），
+    # 持锁校验 expectedRevision——并发双写恰一方过锁，另一方 409
+    from app.services.authz_scope import lock_guard_for_update, set_guard_revision
+
+    current = await lock_guard_for_update(db)
     if expected_revision != current:
         raise _revision_conflict(current)
 
@@ -898,6 +917,7 @@ async def update_role_grants(
             before={"revision": current, **before},
             after=after,
         )
+        await set_guard_revision(db, current + 1)
         await db.commit()
     except IntegrityError as exc:  # 并发兜底：revision 主键冲突=另一方已提交
         await db.rollback()
@@ -962,7 +982,10 @@ async def update_user_scope(
                 status_code=400,
             )
 
-    current = await get_current_revision(db)
+    # P4-03 提交栅栏：guard 排他锁（scope 变更直接改变数据范围，必须入栅栏）
+    from app.services.authz_scope import lock_guard_for_update, set_guard_revision
+
+    current = await lock_guard_for_update(db)
     if expected_revision != current:
         raise _revision_conflict(current)
 
@@ -990,6 +1013,7 @@ async def update_user_scope(
             before={"revision": current, **(before or {})},
             after={"scopeType": scope_type, "nodeId": node_id, "username": user.username},
         )
+        await set_guard_revision(db, current + 1)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()
@@ -1061,7 +1085,10 @@ async def rollback_revision(
             status_code=400,
         )
 
-    current = await get_current_revision(db)
+    # P4-03 提交栅栏：guard 排他锁（回退=发布逆操作，同入栅栏）
+    from app.services.authz_scope import lock_guard_for_update, set_guard_revision
+
+    current = await lock_guard_for_update(db)
     if expected_revision != current:
         raise _revision_conflict(current)
 
@@ -1097,6 +1124,7 @@ async def rollback_revision(
                 after=after,
                 rollback_of=revision,
             )
+            await set_guard_revision(db, current + 1)
             await db.commit()
         except IntegrityError as exc:
             await db.rollback()
@@ -1158,6 +1186,7 @@ async def rollback_revision(
             after=after,
             rollback_of=revision,
         )
+        await set_guard_revision(db, current + 1)
         await db.commit()
     except IntegrityError as exc:
         await db.rollback()

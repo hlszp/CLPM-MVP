@@ -19,6 +19,8 @@ import { useAccessStore, useUserStore } from '@vben/stores';
 import { Alert, Button, Popover } from 'ant-design-vue';
 
 import { ClpmOnboardingTour, ClpmRealtimeStatus } from '#/components/clpm';
+import { bindAuthzLiveRouter, useAuthzLive } from '#/composables/use-authz-live';
+import { releaseAllInterests } from '#/composables/use-loop-realtime';
 import { applySiteLogoToPreferences } from '#/composables/use-site-branding';
 import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
@@ -102,6 +104,10 @@ const accessStore = useAccessStore();
 const { destroyWatermark, updateWatermark } = useWatermark();
 const { isDark } = usePreferences();
 
+// P4-04 在线生效：布局级轮询挂载（≤30s 比对 policyRevision；失权撤离/清理）
+bindAuthzLiveRouter(router);
+useAuthzLive();
+
 // ===== P2-05：全局实时数据状态指示 =====
 const wsStatus = ref(realtimeWs.status);
 const wsLastRefresh = ref<string>('');
@@ -158,8 +164,9 @@ watch(
   { immediate: true },
 );
 
-// 路由离开实时页面时清空兴趣集合：非实时页面零推送流量（服务端订阅过滤，
-// 2026-09-06 接通）。新页面挂载后由 bindLoopInterest/bindTagInterest 重订。
+// 路由离开时清空兼容层兴趣切片（O02-RT：页面 owner 兴趣由各页面停用/卸载时
+// 经 registerInterest 生命周期接线自行释放；此处仅清无实例兼容注册的残留，
+// 作"非实时页面零流量"安全网）。新页面挂载后由 bind/registerInterest 重订。
 const route = useRoute();
 watch(
   () => route.path,
@@ -231,6 +238,9 @@ onUnmounted(() => {
   alertWs.disconnect();
   // R19：布局卸载时停止降级轮询（不留悬挂定时器）
   stopWsFallbackPolling();
+  // O02-RT：断开连接前先停止全部页面 owner 兴趣（并集置空、通知服务端停推）；
+  // 页面组件正常已先行卸载并各自释放，这里兜底全局/无实例注册的残留
+  releaseAllInterests();
   // 全局布局卸载时断开 WebSocket（用户登出/关闭页面）
   realtimeWs.disconnect();
 });

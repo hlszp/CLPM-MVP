@@ -845,6 +845,13 @@ def _run_operators(
     """
     selected = set(operators) if operators else None
     results: dict[str, OperatorResult] = {}
+    # P5-01（同输入多算子共享唯一数据块/mask）：point 轴下按 required_signals
+    # 数值信号集缓存 _scoped_operator_input 切片——同集算子共享同一切片
+    # （公共掩码/切片/连续段目录每集只算一次），不重复预处理。纯函数等价：
+    # 同 key 同输入必同输出（等价证据：tests/test_p5_01_shared_features.py
+    # TestScopedInputSharing）；key 的 numeric 过滤条件与
+    # _scoped_operator_input 内部推导逐字一致。
+    scoped_cache: dict[tuple[str, ...], tuple[OperatorInput, str | None]] = {}
     for name, (meta, fn) in OPERATOR_REGISTRY.items():
         if operator_group == "fast" and not meta.fast_group:
             results[name] = OperatorResult(
@@ -890,7 +897,16 @@ def _run_operators(
             )
             fn_input = op_input
             if op_input.meta.get("point_axis"):
-                fn_input, scope_skip = _scoped_operator_input(op_input, meta)
+                scope_key = tuple(
+                    sig
+                    for sig in meta.required_signals
+                    if sig in ("pv", "sp", "op", "mode") and sig in op_input.signals
+                )
+                if scope_key not in scoped_cache:
+                    # 缓存整个 (scoped_input, skip 原因) 元组——skip 与否
+                    # 同样只依赖 (输入, key)，同集算子共享同一判定
+                    scoped_cache[scope_key] = _scoped_operator_input(op_input, meta)
+                fn_input, scope_skip = scoped_cache[scope_key]
                 if scope_skip is not None:
                     results[name] = OperatorResult(
                         name,
@@ -966,12 +982,16 @@ async def run_diagnosis_for_loop(
     operators: list[str] | None = None,
     trigger_type: str = "MANUAL",
     progress_cb: ProgressCb | None = None,
+    subject: Any = None,
 ) -> DiagnosisRun | None:
     """单回路一次诊断：返回落库后的 DiagnosisRun；回路不存在返回 None。
 
     operator_group: full/fast；operators 非空时按单算子细选白名单执行
     （落库 operator_group 记为 custom）。
     trigger_type: MANUAL/SCHEDULED/EVENT（§12 自动诊断三层触发）。
+    subject: P4-03 人工任务主体快照（authz_task_fence.TaskSubject；None=无
+    主体信息=SYSTEM 调度语义，不撤权）——业务提交前经 guard 共享锁栅栏
+    复核，失权不发布结果（仅 REVOKED 审计）。
     """
 
     async def _report(frac: float, stage: str) -> None:
@@ -1419,9 +1439,42 @@ async def run_diagnosis_for_loop(
         finished_at=finished_at,
         duration_ms=int((finished_at - started_at).total_seconds() * 1000),
     )
+    # P4-03 提交栅栏（01§3.5）：业务提交前在写事务内以 guard 共享锁复核
+    # 主体（存在/未禁用/角色未变/动作码仍在/回路仍在范围）——复核与 commit
+    # 之间撤权事务（guard 排他锁）无法插入；失权 → 仅 REVOKED 审计，不发布
+    if subject is not None:
+        from app.services.authz_task_fence import (
+            SubjectRevokedError,
+            audit_revoked,
+            validate_for_commit,
+        )
+
+        try:
+            await validate_for_commit(db, subject, str(loop_id))
+        except SubjectRevokedError as exc:
+            audit_revoked(db, subject, str(loop_id), exc.reason)
+            await db.commit()  # 仅审计行提交（不发布结果/模型）
+            raise
+
     db.add(run)
     await db.commit()
     # A3：诊断落库即时生成 SYSTEM 处置建议（失败仅记日志，不阻塞主链路）
+    # P4-03：派生建议发布前再次提交栅栏复核（共享锁跨建议事务持有——
+    # 撤权完成后无新建议；失权 → 跳过生成，仅 REVOKED 审计）
+    if subject is not None:
+        from app.services.authz_task_fence import (
+            SubjectRevokedError,
+            audit_revoked,
+            validate_for_commit,
+        )
+
+        try:
+            await validate_for_commit(db, subject, str(loop_id))
+        except SubjectRevokedError as exc:
+            audit_revoked(db, subject, str(loop_id), f"建议未发布: {exc.reason}")
+            await db.commit()
+            await _report(1.0, "完成（主体失权，建议未发布）")
+            return run
     await generate_system_actions_best_effort(db, run)
 
     await _report(1.0, "完成")

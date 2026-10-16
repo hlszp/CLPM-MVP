@@ -30,7 +30,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_perms, require_roles
+from app.api.deps import get_scope_ctx, require_perms, require_roles
 from app.api.upload_guard import read_excel_upload
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -54,6 +54,7 @@ from app.schemas.loop import (
     LoopUpdateResult,
 )
 from app.schemas.loop_batch import LoopBatchConfigRequest, LoopBatchConfigResult
+from app.services.authz_scope import ScopeContext, ensure_loop_in_scope
 from app.services.loop import (
     batch_group_loops,
     create_loop,
@@ -121,8 +122,9 @@ async def list_loops_endpoint(
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("loop:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """分页查询回路列表。"""
+    """分页查询回路列表（P4-03：数据范围与筛选取交集）。"""
     # 防御：plantNodeId 非法 UUID 直接 400（否则 PG UUID 列比较抛 500）
     if plantNodeId is not None:
         try:
@@ -133,12 +135,15 @@ async def list_loops_endpoint(
                 message="plantNodeId 格式非法（应为 UUID）",
                 status_code=400,
             ) from None
+    # P4-03：ALL/NODE_SUBTREE 与筛选取交集（显式筛选不在范围内 → 空结果）
+    scope_node_ids = scope.intersect_node_ids([plantNodeId] if plantNodeId is not None else None)
     # v5.3 对齐 DDS v4.1：level → importanceLevel（保留 level 向后兼容）
     effective_level = importanceLevel if importanceLevel is not None else level
     try:
         data = await list_loops(
             db=db,
             plant_node_id=plantNodeId,
+            scope_node_ids=scope_node_ids,
             control_mode=controlMode,
             is_active=isActive,
             status=status,
@@ -386,22 +391,55 @@ async def list_loop_monitor_endpoint(
         description="最高评分（不含，0-100；与 minScore 构成半开区间 [min, max)）",
     ),
     unscored: bool = Query(False, description="只看无评分回路（无任何评估快照）"),
+    grades: str | None = Query(
+        None,
+        description="按评分等级筛选（P5-04 服务端执行，驾驶舱回路墙）："
+        "EXCELLENT/GOOD/FAIR/WARNING/POOR 逗号分隔多选；"
+        "与 minScore/maxScore/unscored 互斥",
+    ),
+    modes: str | None = Query(
+        None,
+        description="按 MODE 原始值分桶筛选（P5-04 服务端执行，驾驶舱回路墙）："
+        "AUTO/CAS/REMOTE/MANUAL/APC 逗号分隔多选；与 controlMode 互斥",
+    ),
+    focusLoopId: str | None = Query(
+        None,
+        description="定位回路（P5-04）：返回该回路在当前筛选+排序下的位次"
+        "（focusIndex/focusPage，不在结果集内为 null）",
+    ),
     withAggregate: bool = Query(
         True,
         description="是否返回全量聚合统计 aggregate（分页不受影响）；"
         "监视页微型卡已删不消费聚合，可传 false 跳过全量计算提速",
     ),
-    sortBy: str = Query("score", description="排序字段：score/tagName"),
+    sortBy: str = Query(
+        "score",
+        description="排序字段：score/tagName/scoreDelta。scoreDelta=劣化排序，"
+        "取 workbench_loop_latest 5min 周期预计算列（score - prev_score，NULL 恒排最后）；"
+        "卡片显示的 delta 徽标为行内实时计算值，与排序键存在 ≤5min 窗口差（如实声明）",
+    ),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     page: int = Query(1, ge=1),
     pageSize: int = Query(20, ge=1, le=100),
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("loop:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。"""
+    """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分；P4-03 范围交集）。
+
+    P5-04：筛选/排序/总数/分页全部服务端执行（scope 收窄语义保持——
+    modes/grades 均作用在与授权范围交集之后的候选集上）。
+
+    sortBy=scoreDelta 口径（如实声明）：排序读 workbench_loop_latest 预计算列
+    （5min Celery 全量重算），卡片 delta 徽标为行内实时计算——二者存在
+    ≤5min 窗口差；且预计算以刷新时刻 is_active 为基数，覆盖外回路（如本
+    周期内重新投用的参评回路）徽标仍显行内值，但排序按预计算列 NULL 置底
+    （NULLS LAST）。
+    """
     data = await list_loop_monitor(
         db=db,
         plant_node_id=plantNodeId,
+        scope_node_ids=scope.intersect_node_ids([plantNodeId] if plantNodeId is not None else None),
         view=view,
         keyword=keyword,
         loop_type=loopType,
@@ -410,6 +448,9 @@ async def list_loop_monitor_endpoint(
         min_score=minScore,
         max_score=maxScore,
         unscored=unscored,
+        grades=grades,
+        modes=modes,
+        focus_loop_id=focusLoopId,
         with_aggregate=withAggregate,
         sort_by=sortBy,
         sort_order=sortOrder,
@@ -493,8 +534,10 @@ async def get_loop_detail_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("loop:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """获取回路详情。"""
+    """获取回路详情（P4-03：越界通用拒绝）。"""
+    await ensure_loop_in_scope(db, scope, loop_id)
     data = await get_loop_detail(db=db, loop_id=loop_id)
     return success(data=data)
 
@@ -535,8 +578,11 @@ async def update_loop_endpoint(
     body: LoopUpdate,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("loop:edit")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """更新回路（描述/所属单元/评分权重/启用状态/备注/回路类型/控制类型/重要等级/参评/APC位号/保留周期/OP输出限位/理想稳态时间/复杂回路分组）。"""
+    # P4-03：跨 scope 对象拒绝（目标回路须在范围内；改挂 unit 同理）
+    await ensure_loop_in_scope(db, scope, loop_id)
     score_weights = None
     if body.scoreWeights is not None:
         score_weights = body.scoreWeights.model_dump()
@@ -590,13 +636,15 @@ async def delete_loop_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("loop:delete")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """删除回路（仅 ADMIN，硬删除）。
+    """删除回路（仅 ADMIN，硬删除；P4-03 越界拒绝）。
 
     级联解绑：删除 LoopTagMapping 关联记录后硬删回路本体，
     ON DELETE CASCADE 自动清理 kpi_snapshot/action_tracker/diagnosis_result 等关联数据。
     批量删除保持软删除（可恢复），单删为硬删除（不可恢复，与前端弹窗承诺一致）。
     """
+    await ensure_loop_in_scope(db, scope, loop_id)
     data = await delete_loop(db=db, loop_id=loop_id, operator=user.username)
     return success(data=data, message="删除成功")
 
@@ -611,8 +659,10 @@ async def get_loop_tags_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("loop:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """获取回路 7 个 Tag 槽位关联状态。"""
+    """获取回路 7 个 Tag 槽位关联状态（P4-03 越界拒绝）。"""
+    await ensure_loop_in_scope(db, scope, loop_id)
     data = await get_loop_tags(db=db, loop_id=loop_id)
     return success(data=data)
 
@@ -623,8 +673,9 @@ async def update_loop_tags_endpoint(
     body: LoopTagMappingUpdate,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("loop:edit")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """批量更新回路 Tag 关联。
+    """批量更新回路 Tag 关联（P4-03 越界拒绝）。
 
     PV/SP/OP/MODE 必填，缺失时 status→PARTIAL（API 调用成功，不报错）。
     PID_P/PID_I/PID_D 可选。
@@ -632,6 +683,7 @@ async def update_loop_tags_endpoint(
     Tag 不存在于 tag_registry → ERR_TAG_NOT_FOUND。
     tag 名发生变更时响应带 warnings（历史数据在新 subtable 下重新开始）。
     """
+    await ensure_loop_in_scope(db, scope, loop_id)
     # P2：变更前记录各角色 tag 名，用于检测 tag 重关联（历史数据孤儿化风险）。
     # 回路不存在时由 update_loop_tags 抛出 ERR_LOOP_NOT_FOUND，此处查询返回空 dict
     before_role_tags = await get_loop_role_tag_names(db, loop_id)
@@ -682,8 +734,10 @@ async def get_loop_monitor_detail_endpoint(
     # WS-D 性能#7 R1：SPONSOR 只读工作台，禁止下钻回路监控详情（趋势/性能）
     _: SysUser = Depends(require_roles("ADMIN", "IC_ENGINEER", "PE_ENGINEER", "EXPERT")),
     _perm: SysUser = Depends(require_perms("loop:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """回路运行详情（7 Tag 当前值、PID 参数、波形数据）。"""
+    """回路运行详情（7 Tag 当前值、PID 参数、波形数据；P4-03 越界拒绝）。"""
+    await ensure_loop_in_scope(db, scope, loop_id)
     data = await get_loop_monitor_detail(
         db=db,
         loop_id=loop_id,
@@ -704,12 +758,14 @@ async def get_loop_confidence_latest_endpoint(
     loop_id: str,
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(require_perms("loop:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
-    """获取回路最新一次可信度评估记录（含 12 子指标值与各自可信度）。
+    """获取回路最新一次可信度评估记录（P4-03 越界拒绝；含 12 子指标值与各自可信度）。
 
     无评估记录时返回 ``data=null``（HTTP 200，不抛 404），
     前端据此展示"暂无评估记录"。
     """
+    await ensure_loop_in_scope(db, scope, loop_id)
     result = await db.execute(
         select(LoopConfidenceLatest).where(LoopConfidenceLatest.loop_id == loop_id)
     )

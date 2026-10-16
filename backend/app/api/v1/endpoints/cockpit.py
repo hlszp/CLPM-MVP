@@ -14,10 +14,11 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import require_perms
+from app.api.deps import get_scope_ctx, require_perms
 from app.core.db import get_db
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
+from app.services.authz_scope import ScopeContext
 from app.services.cockpit_overview import (
     build_backend_access_roles,
     build_node_tree,
@@ -34,13 +35,18 @@ async def get_cockpit_overview(
     window: str = Query("24h", pattern="^(24h|7d|30d)$", description="时间窗口：24h/7d/30d"),
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("portal:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """驾驶舱总览：KPI 指标带（评分/自控率/回路数/劣化/待办/预警）+ 闭环治理漏斗。
 
     环比口径：当前窗口 vs 上一等长窗口（unit_kpi_summary 加权均值）。
     部分失败容错：单块异常返回空/None，不阻断其余块。
+    P5 批 α（聚合收窄）：NODE_SUBTREE 范围按授权节点集收窄——各统计块
+    仅计范围内回路，score/autoRate 取范围内窗口加权均值（ALL 仍消费
+    GLOBAL 预计算行）；缓存 key 含范围 hash，跨范围不共用聚合缓存。
     """
-    data = await build_overview(db, window=window)
+    unit_ids = None if scope.is_all else sorted(scope.allowed_node_ids)
+    data = await build_overview(db, window=window, unit_ids=unit_ids)
     return success(data=data)
 
 
@@ -61,11 +67,28 @@ async def get_backend_access_roles(
 async def get_node_tree(
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("portal:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """工厂→装置→单元三层树 + 各节点回路计数。
 
     每节点：{id=source_node_id(int), nodeId=plant_node.id, name, type, loopCount,
     children}；loopCount 为 loop_ledger 活跃回路按 unit_id 计数后向上累加。
+    P4-03：NODE_SUBTREE 范围仅暴露范围内节点（子树封闭，保留范围内结构）。
     """
-    data = await build_node_tree(db)
+
+    def _filter_tree(nodes: list[dict]) -> list[dict]:
+        if scope.allowed_node_ids is None:
+            return nodes
+        kept: list[dict] = []
+        for n in nodes:
+            children = _filter_tree(n.get("children") or [])
+            if str(n.get("nodeId")) in scope.allowed_node_ids or children:
+                node = {**n, "children": children}
+                # 范围外祖先仅作路径保留：回路计数按范围内子孙重算
+                if str(n.get("nodeId")) not in scope.allowed_node_ids:
+                    node["loopCount"] = sum(c.get("loopCount") or 0 for c in children)
+                kept.append(node)
+        return kept
+
+    data = _filter_tree(await build_node_tree(db))
     return success(data=data)

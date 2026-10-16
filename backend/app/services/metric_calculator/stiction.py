@@ -254,10 +254,15 @@ class StictionIndexCalculator(MetricCalculatorBase):
     def _estimate_lag(pv: np.ndarray, op: np.ndarray, max_lag: int) -> tuple[int, float]:
         """互相关估计纯滞后 θ̂（采样点数）.
 
-        c[l] = Σ pv[i+l]·op[i]（去均值，full 模式取非负滞后段）。
+        c[l] = Σ pv[i+l]·op[i]（去均值，0..max_lag 有界滞后段）。
         PV 跟随 OP 滞后 θ 时 c[l] 在 l=θ 处取峰。搜索 0..max_lag，
         取首个最大峰对应滞后；峰值显著性为最佳滞后处归一化相关系数
         c[θ̂]/(‖pv‖·‖op‖)，低于 MIN_CORR_PEAK 时返回 lag=0（不补偿）。
+
+        P5-01：有界 lag 直接计算（np.dot 顺序累加）替代 full 互相关——
+        原实现计算 2n-1 个 lag 后只取 max_lag+1 个（O(n²) 浪费）；
+        两者逐位一致（等价证据：tests/test_p5_01_shared_features.py
+        TestStictionCrossCorrelation）。
 
         Returns:
             (lag_samples, corr_peak) — 滞后采样点数 / 峰值相关系数
@@ -270,8 +275,13 @@ class StictionIndexCalculator(MetricCalculatorBase):
         if denom <= 0:
             return 0, 0.0
         n = len(x)
-        corr = np.correlate(x, y, mode="full")
-        window = corr[n - 1 : n + max_lag]
+        # 与 full 相关窗口 corr[n-1 : n+max_lag] 的有效长度对齐（防御
+        # max_lag ≥ n 的直调方：窗口实际长度 min(max_lag+1, n)）
+        effective_lag = min(max_lag, n - 1)
+        window = np.empty(effective_lag + 1)
+        window[0] = np.dot(x, y)
+        for lag in range(1, effective_lag + 1):
+            window[lag] = np.dot(x[lag:], y[: n - lag])
         lag = int(np.argmax(window))
         peak = float(window[lag]) / denom
         if peak < MIN_CORR_PEAK:
@@ -368,6 +378,7 @@ def assess_stiction_features(
     sample_interval: float = 1.0,
     pv_range: float | None = None,
     op_range: float | None = None,
+    limit_cycle_gate: tuple[bool, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """诊断侧复用入口：极限环门控 + θ 补偿 + 椭圆拟合（与 KPI 同口径）.
 
@@ -382,6 +393,10 @@ def assess_stiction_features(
         sample_interval: 采样间隔（秒），用于 θ 估计与换算
         pv_range: PV 量程；缺省用数据 max-min
         op_range: OP 量程；缺省用数据 max-min
+        limit_cycle_gate: 预计算的极限环门控结果（P5-01 同输入重复特征
+            共享——调用方已在同一 pv 上算过 ``_detect_limit_cycle`` 时传入
+            避免重算；None=内部自算。传入方保证 gate 来自**同一截断后**
+            pv 数组，否则门控语义漂移）
 
     Returns:
         特征字典：
@@ -414,7 +429,10 @@ def assess_stiction_features(
     op_vals = np.asarray(op[:n], dtype=float)
 
     # 极限环门控：粘滞椭圆只在极限环振荡时才有物理意义（Kano/Choudhury 前提）
-    is_limit_cycle, gate_info = StictionIndexCalculator._detect_limit_cycle(pv_vals)
+    if limit_cycle_gate is not None:
+        is_limit_cycle, gate_info = limit_cycle_gate
+    else:
+        is_limit_cycle, gate_info = StictionIndexCalculator._detect_limit_cycle(pv_vals)
     info.update(gate_info)
     if not is_limit_cycle:
         info["reason"] = "no_limit_cycle"

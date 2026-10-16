@@ -5,8 +5,17 @@
  * 预填辨识时间窗（诊断 run timeWindow）与上下文说明（主分类/置信度），不发新请求。
  * 整定剖面在辨识步骤消费该状态（唯一事实源，对齐 use-diag-prefill 模式）；
  * 发起辨识或用户手动清除后清空（下钻契约：携带参数必须消费并回显、可清除）。
+ *
+ * P6-02a（O02-CORE，2026-10-14）：预填状态从模块级 reactive 迁入实例会话
+ * （use-wb360-session，含对象身份；对象/证据切换自动失效，双实例互不污染）。
+ * 本模块保留原导出签名作会话委托，TuningSection 零改动（读 inject / 写栈顶）。
  */
-import { reactive, readonly } from 'vue';
+import { inject, reactive, readonly } from 'vue';
+
+import {
+  currentWb360Session,
+  WB360_SESSION_KEY,
+} from './use-wb360-session';
 
 export interface TuningPrefill {
   /** 主分类文案（上下文提示用） */
@@ -20,13 +29,23 @@ export interface TuningPrefill {
   tsStart: null | string;
 }
 
-const prefill = reactive<TuningPrefill>({
+/** 无会话兜底（兼容态：仅在会话外误用时承载，不跨实例共享真实预填） */
+const legacyFallback = reactive<TuningPrefill>({
   categoryLabel: null,
   from: null,
   primaryConfidence: null,
   tsEnd: null,
   tsStart: null,
 });
+
+function readTarget(): TuningPrefill {
+  const session = inject(WB360_SESSION_KEY, null);
+  return session?.tuningPrefill ?? legacyFallback;
+}
+
+function writeTarget(): TuningPrefill {
+  return currentWb360Session()?.tuningPrefill ?? legacyFallback;
+}
 
 /** 设置整定预填（诊断抽屉「基于此结论发起整定」调用） */
 export function setTuningPrefill(payload: {
@@ -35,23 +54,25 @@ export function setTuningPrefill(payload: {
   tsEnd: string;
   tsStart: string;
 }) {
-  prefill.from = 'diag';
-  prefill.categoryLabel = payload.categoryLabel ?? null;
-  prefill.primaryConfidence = payload.primaryConfidence ?? null;
-  prefill.tsStart = payload.tsStart;
-  prefill.tsEnd = payload.tsEnd;
+  const t = writeTarget();
+  t.from = 'diag';
+  t.categoryLabel = payload.categoryLabel ?? null;
+  t.primaryConfidence = payload.primaryConfidence ?? null;
+  t.tsStart = payload.tsStart;
+  t.tsEnd = payload.tsEnd;
 }
 
 /** 清除预填（发起辨识后或用户手动清除时调用） */
 export function clearTuningPrefill() {
-  prefill.from = null;
-  prefill.categoryLabel = null;
-  prefill.primaryConfidence = null;
-  prefill.tsStart = null;
-  prefill.tsEnd = null;
+  const t = writeTarget();
+  t.from = null;
+  t.categoryLabel = null;
+  t.primaryConfidence = null;
+  t.tsStart = null;
+  t.tsEnd = null;
 }
 
-/** 只读预填状态（整定剖面消费） */
+/** 只读预填状态（整定剖面消费；实例会话内调用即得本实例预填） */
 export function useTuningPrefill() {
-  return readonly(prefill);
+  return readonly(readTarget());
 }

@@ -1,3 +1,150 @@
+<script lang="ts">
+/**
+ * P6-02b（O02-CONTEXT/PL）：指标分析页深链 query 解析/构造纯函数。
+ * 独立 <script> 块导出供 vitest 直接覆盖（不依赖 vue）：
+ * - parseIndicatorQuery：消费全部携带参数（metric/window/tsStart/tsEnd/tz/
+ *   fitness/plantNodeId/plantNodeName/from）；无效参数 notices 显式列出，不
+ *   静默丢弃；tsStart/tsEnd 精确窗优先于 window 滚动窗枚举（禁止近似替换）。
+ * - buildIndicatorQuery：状态 → query（syncQuery 真相源；customWindow 激活时
+ *   写精确窗键不写 window；from 原样保留）。
+ * - equalLengthPrevRange：等长环比窗口 [start-Δ, start]（PL-02 等长比较）。
+ */
+import { localTimezone } from '#/views/cockpit/wb-comps/use-drill';
+
+export interface IndicatorCustomWindow {
+  end: string;
+  start: string;
+  timezone: string;
+}
+
+export interface IndicatorQueryState {
+  customWindow: IndicatorCustomWindow | null;
+  fitness: string;
+  from: null | string;
+  metric: string;
+  notices: string[];
+  plantNodeId: string | undefined;
+  plantNodeName: string;
+  window: string;
+}
+
+function queryStr(v: unknown): string {
+  if (Array.isArray(v)) return typeof v[0] === 'string' ? v[0] : '';
+  return typeof v === 'string' ? v : '';
+}
+
+export function parseIndicatorQuery(
+  q: Record<string, unknown>,
+  opts: {
+    defaultMetric: string;
+    defaultWindow: string;
+    validMetrics: string[];
+    validWindows: string[];
+  },
+): IndicatorQueryState {
+  const notices: string[] = [];
+
+  let metric = opts.defaultMetric;
+  const rawMetric = queryStr(q.metric);
+  if (rawMetric) {
+    if (opts.validMetrics.includes(rawMetric)) {
+      metric = rawMetric;
+    } else {
+      notices.push(`无法识别的指标参数“${rawMetric}”，已按默认指标展示`);
+    }
+  }
+
+  let window = opts.defaultWindow;
+  let customWindow: IndicatorCustomWindow | null = null;
+  const tsStart = queryStr(q.tsStart);
+  const tsEnd = queryStr(q.tsEnd);
+  const rawWin = queryStr(q.window);
+  if (tsStart || tsEnd) {
+    const a = Date.parse(tsStart);
+    const b = Date.parse(tsEnd);
+    if (tsStart && tsEnd && Number.isFinite(a) && Number.isFinite(b) && b > a) {
+      customWindow = {
+        end: new Date(b).toISOString(),
+        start: new Date(a).toISOString(),
+        timezone: queryStr(q.tz) || localTimezone(),
+      };
+    } else {
+      notices.push('时间窗参数（tsStart/tsEnd）缺失或无效，已忽略并按默认窗口展示');
+    }
+  }
+  if (!customWindow && rawWin) {
+    if (opts.validWindows.includes(rawWin)) {
+      window = rawWin;
+    } else {
+      notices.push(`无法识别的时间窗参数“${rawWin}”，已按默认窗口展示`);
+    }
+  }
+
+  const fitness = queryStr(q.fitness);
+  const plantNodeId = queryStr(q.plantNodeId) || undefined;
+  const plantNodeName = plantNodeId
+    ? queryStr(q.plantNodeName) || '指定节点'
+    : '全厂';
+  const from = queryStr(q.from) || null;
+
+  return {
+    customWindow,
+    fitness,
+    from,
+    metric,
+    notices,
+    plantNodeId,
+    plantNodeName,
+    window,
+  };
+}
+
+export function buildIndicatorQuery(s: {
+  customWindow: IndicatorCustomWindow | null;
+  fitness: string;
+  fitnessFilterOn: boolean;
+  from: null | string;
+  metric: string;
+  plantNodeId: string | undefined;
+  plantNodeName: string;
+  window: string;
+}): Record<string, string> {
+  const query: Record<string, string> = { metric: s.metric };
+  if (s.customWindow) {
+    query.tsStart = s.customWindow.start;
+    query.tsEnd = s.customWindow.end;
+    query.tz = s.customWindow.timezone;
+  } else {
+    query.window = s.window;
+  }
+  if (s.plantNodeId) {
+    query.plantNodeId = s.plantNodeId;
+    // 占位符不写入 URL；仅携带真实节点名（展示用途，随深链可还原）
+    if (s.plantNodeName && s.plantNodeName !== '指定节点') {
+      query.plantNodeName = s.plantNodeName;
+    }
+  }
+  // fitness 仅在过滤仍关闭时保留（用户重新打开过滤即失效，不残留）
+  if (s.fitness && !s.fitnessFilterOn) query.fitness = s.fitness;
+  if (s.from) query.from = s.from;
+  return query;
+}
+
+/** 等长环比窗口 [start-Δ, start]（PL-02：等长比较；自定义窗无滚动窗枚举可比） */
+export function equalLengthPrevRange(
+  start: string,
+  end: string,
+): { endTime: string; startTime: string } {
+  const a = Date.parse(start);
+  const b = Date.parse(end);
+  const dur = b - a;
+  return {
+    endTime: new Date(a).toISOString(),
+    startTime: new Date(a - dur).toISOString(),
+  };
+}
+</script>
+
 <script setup lang="ts">
 /**
  * 指标分析页（评估模块第 5 页，docs/MVP设计/12-指标分析页设计方案.md）
@@ -19,6 +166,10 @@
  *
  * fitness 过滤默认开：L0/L1 不适用回路不进入图表与清单（与 TOP5 口径一致）。
  * 深链：?metric=&plantNodeId=&window= 为真相源，控件切换时 replace 同步。
+ * P6-02b：新增 tsStart/tsEnd/tz 精确窗（优先于 window 滚动窗枚举，禁近似
+ * 替换）与 from 来源消费——回显于窗口下拉首项（allow-clear 单项清除回退
+ * 原预设），无效参数逐条提示不静默丢弃；回路下钻携精确窗口/节点 scope/
+ * from 至回路工作台，返回恢复本页筛选现场。
  */
 import type { TableColumnsType } from 'ant-design-vue';
 
@@ -35,6 +186,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { Page } from '@vben/common-ui';
 import { IconifyIcon } from '@vben/icons';
 import { EchartsUI, useEcharts } from '@vben/plugins/echarts';
+import { useUserStore } from '@vben/stores';
 
 import {
   Button,
@@ -50,7 +202,6 @@ import {
 import { getNodeRankingApi, getRankingApi } from '#/api/metric';
 import {
   ClpmDataCanvas,
-  ClpmLoopLink,
   ClpmPageToolbar,
   ClpmStandardActions,
 } from '#/components/clpm';
@@ -59,11 +210,16 @@ import PlantNodeTree from '#/components/plant-node/plant-node-tree.vue';
 import { useClpmTheme } from '#/composables/use-clpm-theme';
 import { useEchartsPreset } from '#/composables/use-echarts-preset';
 import { showPageHelp, usePageToolbar } from '#/composables/use-page-toolbar';
+import {
+  canOpenWorkbench360,
+  wb360DrillQuery,
+} from '#/views/cockpit/wb-comps/use-drill';
 
 defineOptions({ name: 'IndicatorAnalysis' });
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStore();
 const { isDark, themeColors } = useClpmTheme();
 const { axisBase } = useEchartsPreset();
 
@@ -205,6 +361,14 @@ function prevWindowRange(
 
 const selectedMetricKey = ref('auto_mode_rate');
 const timeWindow = ref('today');
+/** 02b：深链精确窗（tsStart/tsEnd/tz 消费）；激活时优先于 timeWindow 预设 */
+const customWindow = ref<IndicatorCustomWindow | null>(null);
+/** 02b：深链来源（from 消费；返回按钮恢复来源页筛选现场） */
+const fromRef = ref<null | string>(null);
+/** 02b：深链无效参数提示（不静默丢弃，逐条回显） */
+const queryNotices = ref<string[]>([]);
+/** 深链 fitness 原值（L0/L1 → 关闭适用性过滤；syncQuery 仅过滤仍关时回写） */
+const fitnessRaw = ref('');
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref('全厂');
 const fitnessFilter = ref(true);
@@ -226,12 +390,26 @@ const nodeItems = ref<MetricApi.NodeRankingItem[]>([]);
 const loading = ref(false);
 const loadError = ref(false);
 
+/** 02b：生效窗口 API 参数（深链精确窗优先；预设滚动窗兜底） */
+const windowApiParams = computed<
+  | { endTime: string; startTime: string; timeWindow: 'custom' }
+  | { timeWindow: TimeWindowParam }
+>(() =>
+  customWindow.value
+    ? {
+        timeWindow: 'custom',
+        startTime: customWindow.value.start,
+        endTime: customWindow.value.end,
+      }
+    : { timeWindow: timeWindow.value as TimeWindowParam },
+);
+
 async function loadAll() {
   loading.value = true;
   loadError.value = false;
   prevLoadFailed.value = false;
   const params: MetricApi.RankingQueryParams = {
-    timeWindow: timeWindow.value as TimeWindowParam,
+    ...windowApiParams.value,
     sortBy: metricMeta.value.sortKey,
     sortOrder: 'asc',
     limit: 100,
@@ -241,9 +419,12 @@ async function loadAll() {
     fitnessFilter: fitnessFilter.value,
   };
   if (selectedPlantNodeId.value) params.plantNodeId = selectedPlantNodeId.value;
-  // 环比：上一等长滚动窗口（custom 窗口）；拉取失败不阻塞主数据（catch 内静默降级）；
+  // 环比：上一等长窗口（PL-02 等长比较——预设=滚动窗 [now-2Δ, now-Δ]，
+  // 深链精确窗=[start-Δ, start]）；拉取失败不阻塞主数据（catch 内静默降级）；
   // 过滤口径与当前窗口一致，保证环比双方回路集合可比
-  const prevRange = prevWindowRange(timeWindow.value);
+  const prevRange = customWindow.value
+    ? equalLengthPrevRange(customWindow.value.start, customWindow.value.end)
+    : prevWindowRange(timeWindow.value);
   const prevParams: MetricApi.RankingQueryParams | undefined = prevRange
     ? {
         timeWindow: 'custom',
@@ -265,7 +446,7 @@ async function loadAll() {
       // 不指定 nodeType——回路挂载层级随环境而异（zpdev 生产挂 AREA、种子环境
       // 挂 UNIT），由 sortedNodes 按「有数据的最深层级」自适应取用
       getNodeRankingApi({
-        timeWindow: timeWindow.value as TimeWindowParam,
+        ...windowApiParams.value,
         sortBy: 'score',
         sortOrder: 'desc',
         limit: 200,
@@ -527,70 +708,120 @@ const unitChartEmptyText = computed(() =>
   nodeItems.value.length > 0 ? '该指标暂无装置聚合数据' : '暂无装置聚合数据',
 );
 
-// ===== 深链（query 为真相源）=====
+// ===== 深链（query 为真相源；02b：消费全部参数+回显+单项清除+返回恢复）=====
 
 function applyQuery(q: RouteLocationNormalizedLoaded['query']): boolean {
+  const parsed = parseIndicatorQuery(q as Record<string, unknown>, {
+    defaultMetric: 'auto_mode_rate',
+    defaultWindow: 'today',
+    validMetrics: METRIC_OPTIONS.map((m) => m.sortKey),
+    validWindows: timeWindowOptions.map((o) => o.value),
+  });
+  queryNotices.value = parsed.notices;
   let changed = false;
-  const metric = typeof q.metric === 'string' ? q.metric : '';
-  if (
-    METRIC_OPTIONS.some((m) => m.sortKey === metric) &&
-    metric !== selectedMetricKey.value
-  ) {
-    selectedMetricKey.value = metric;
+  if (parsed.metric !== selectedMetricKey.value) {
+    selectedMetricKey.value = parsed.metric;
     changed = true;
   }
-  const win = typeof q.window === 'string' ? q.window : '';
-  if (
-    timeWindowOptions.some((o) => o.value === win) &&
-    win !== timeWindow.value
-  ) {
-    timeWindow.value = win;
+  // 精确窗激活时预设窗保留为用户兜底（清除精确窗后回原预设，不回默认档）
+  if (!parsed.customWindow && parsed.window !== timeWindow.value) {
+    timeWindow.value = parsed.window;
+    changed = true;
+  }
+  const nextCw = parsed.customWindow;
+  const cwKey = (c: IndicatorCustomWindow | null) =>
+    c ? `${c.start}~${c.end}@${c.timezone}` : '';
+  if (cwKey(nextCw) !== cwKey(customWindow.value)) {
+    customWindow.value = nextCw;
     changed = true;
   }
   // 追溯矩阵 G6：fitness=L0/L1 深链（整定 Tab 适用性环形图下钻）时关闭适用性
   // 过滤，否则 L0/L1 目标回路会被默认过滤排除，下钻落地看不到任何数据
-  const fitness = typeof q.fitness === 'string' ? q.fitness : '';
-  if ((fitness === 'L0' || fitness === 'L1') && fitnessFilter.value) {
+  fitnessRaw.value = parsed.fitness;
+  if (
+    (parsed.fitness === 'L0' || parsed.fitness === 'L1') &&
+    fitnessFilter.value
+  ) {
     fitnessFilter.value = false;
     changed = true;
   }
-  const qNodeId =
-    typeof q.plantNodeId === 'string' && q.plantNodeId
-      ? q.plantNodeId
-      : undefined;
-  if (qNodeId !== selectedPlantNodeId.value) {
-    selectedPlantNodeId.value = qNodeId;
+  if (parsed.plantNodeId !== selectedPlantNodeId.value) {
+    selectedPlantNodeId.value = parsed.plantNodeId;
     changed = true;
   }
   // 节点名随 query 携带（syncQuery 写入）：query 变化后恢复时无名称则显示占位符“指定节点”
-  const name = typeof q.plantNodeName === 'string' ? q.plantNodeName : '';
-  selectedPlantNodeName.value = selectedPlantNodeId.value
-    ? name || '指定节点'
+  selectedPlantNodeName.value = parsed.plantNodeId
+    ? parsed.plantNodeName || '指定节点'
     : '全厂';
+  fromRef.value = parsed.from;
   return changed;
 }
 
 function syncQuery() {
   router.replace({
-    query: {
+    query: buildIndicatorQuery({
+      customWindow: customWindow.value,
+      fitness: fitnessRaw.value,
+      fitnessFilterOn: fitnessFilter.value,
+      from: fromRef.value,
       metric: selectedMetricKey.value,
+      plantNodeId: selectedPlantNodeId.value,
+      plantNodeName: selectedPlantNodeName.value,
       window: timeWindow.value,
-      ...(selectedPlantNodeId.value
-        ? {
-            plantNodeId: selectedPlantNodeId.value,
-            // 占位符不写入 URL；仅携带真实节点名（展示用途，随深链可还原）
-            ...(selectedPlantNodeName.value === '指定节点'
-              ? {}
-              : { plantNodeName: selectedPlantNodeName.value }),
-          }
-        : {}),
-    },
+    }),
   });
 }
 
 function onControlChange() {
+  // 用户手动重开适用性过滤 → 深链 fitness 触发条件失效，不残留回写
+  if (fitnessFilter.value) fitnessRaw.value = '';
   syncQuery();
   loadAll();
+}
+
+/** 02b：窗口下拉（精确窗作为临时首项回显；allow-clear=单项清除精确窗） */
+const CUSTOM_WINDOW_VALUE = '__custom';
+
+const customWindowLabel = computed(() => {
+  const c = customWindow.value;
+  if (!c) return '';
+  const fmt = (iso: string) => {
+    const d = new Date(iso);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
+  return `${fmt(c.start)} ~ ${fmt(c.end)}（${c.timezone}）`;
+});
+
+const windowSelectOptions = computed(() =>
+  customWindow.value
+    ? [
+        { label: `指定窗口：${customWindowLabel.value}`, value: CUSTOM_WINDOW_VALUE },
+        ...timeWindowOptions,
+      ]
+    : timeWindowOptions,
+);
+
+const windowSelectValue = computed({
+  get: () => (customWindow.value ? CUSTOM_WINDOW_VALUE : timeWindow.value),
+  set: (v: string | undefined) => {
+    if (!v || v === CUSTOM_WINDOW_VALUE) {
+      if (!v && customWindow.value) {
+        // allow-clear 单项清除：仅移除精确窗，回退用户原预设，其余筛选不动
+        customWindow.value = null;
+        onControlChange();
+      }
+      return;
+    }
+    customWindow.value = null;
+    timeWindow.value = v;
+    onControlChange();
+  },
+});
+
+/** 02b：返回来源页（from 消费；来源 query 原样恢复其筛选现场） */
+function goBackFrom() {
+  if (fromRef.value) void router.push(fromRef.value);
 }
 
 function onTreeSelect(node: null | PlantNodeApi.PlantNode) {
@@ -617,6 +848,50 @@ function clearPlantNode() {
   selectedPlantNodeId.value = undefined;
   selectedPlantNodeName.value = '全厂';
   onControlChange();
+}
+
+// ===== 02b：回路 → 回路工作台（发送端接通 wb360 上下文协议）=====
+
+/** 当前生效窗口的精确起止/时区（禁止滚动窗枚举近似替换） */
+function effectivePreciseWindow(): {
+  timezone: string;
+  tsEnd: string;
+  tsStart: string;
+} {
+  if (customWindow.value) {
+    return {
+      timezone: customWindow.value.timezone,
+      tsEnd: customWindow.value.end,
+      tsStart: customWindow.value.start,
+    };
+  }
+  const dur = WINDOW_DURATIONS_MS[timeWindow.value] ?? WINDOW_DURATIONS_MS.today!;
+  const now = Date.now();
+  return {
+    timezone: localTimezone(),
+    tsEnd: new Date(now).toISOString(),
+    tsStart: new Date(now - dur).toISOString(),
+  };
+}
+
+/** SPONSOR 无工作台路由权限 → 纯文本降级，不造死链（同 ClpmLoopLink 口径） */
+const canOpenWorkbench = computed(() =>
+  canOpenWorkbench360(userStore.userInfo?.roles ?? []),
+);
+
+function openLoopInWorkbench(loopId: string) {
+  const { path, query } = wb360DrillQuery(
+    {
+      loopId,
+      window: effectivePreciseWindow(),
+      ...(selectedPlantNodeId.value
+        ? { scope: { nodeId: selectedPlantNodeId.value } }
+        : {}),
+    },
+    // from=当前完整 query：返回恢复本页 metric/窗口/节点/fitness 筛选现场
+    { from: route.fullPath },
+  );
+  void router.push({ path, query });
 }
 
 // ===== B/C 区图表 =====
@@ -672,16 +947,14 @@ async function renderCharts() {
         },
       ],
     });
-    // B 区条形点击 → 回路工作台：echarts 实例级事件（模板 @click 只能收到 DOM
-    // 事件拿不到数据项）；主题切换重建实例后随每次渲染重绑，off 防重复
+    // B 区条形点击 → 回路工作台（02b：携带精确窗口/节点 scope/from 返回）：
+    // echarts 实例级事件（模板 @click 只能收到 DOM 事件拿不到数据项）；
+    // 主题切换重建实例后随每次渲染重绑，off 防重复
     topChart?.off('click');
     topChart?.on('click', (params) => {
       const data = params.data as undefined | { loopId?: string };
       if (params.componentType === 'series' && data?.loopId) {
-        router.push({
-          path: '/loop/workbench360',
-          query: { loopId: data.loopId },
-        });
+        openLoopInWorkbench(data.loopId);
       }
     });
   }
@@ -934,6 +1207,17 @@ onMounted(() => {
       <!-- 控制条 -->
       <Card :body-style="{ padding: '12px 16px' }">
         <div class="flex flex-wrap items-center gap-3">
+          <Button
+            v-if="fromRef"
+            size="small"
+            title="返回来源页（恢复其筛选现场）"
+            @click="goBackFrom"
+          >
+            <template #icon>
+              <IconifyIcon icon="lucide:arrow-left" />
+            </template>
+            返回来源
+          </Button>
           <Select
             v-model:value="selectedMetricKey"
             :options="
@@ -942,11 +1226,12 @@ onMounted(() => {
             style="width: 140px"
             @change="onControlChange"
           />
+          <!-- 02b：精确窗作为首项回显；allow-clear=单项清除（回退原预设窗） -->
           <Select
-            v-model:value="timeWindow"
-            :options="timeWindowOptions"
-            style="width: 120px"
-            @change="onControlChange"
+            v-model:value="windowSelectValue"
+            :options="windowSelectOptions"
+            :allow-clear="!!customWindow"
+            style="min-width: 120px"
           />
           <Button size="small" @click="treeDrawerOpen = true">
             <template #icon>
@@ -973,6 +1258,14 @@ onMounted(() => {
           <span class="ml-auto text-xs text-gray-400">
             {{ metricMeta.label }}：{{ metricMeta.help }}
           </span>
+        </div>
+        <!-- 02b：深链无效参数逐条回显（不静默丢弃） -->
+        <div
+          v-if="queryNotices.length > 0"
+          class="mt-2 rounded border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs text-amber-700"
+          role="alert"
+        >
+          <div v-for="(n, i) in queryNotices" :key="i">{{ n }}</div>
         </div>
       </Card>
 
@@ -1291,11 +1584,23 @@ onMounted(() => {
                 >
                   <template #bodyCell="{ column, record }">
                     <template v-if="column.key === 'tagName'">
-                      <ClpmLoopLink
-                        :loop-id="(record as MetricApi.RankingItem).loopId"
-                        :tag-name="(record as MetricApi.RankingItem).tagName"
-                        default-target="detail"
-                      />
+                      <!-- 02b：位号 → 回路工作台（携带精确窗口/节点 scope/from
+                           返回，恢复本页筛选现场）；无权角色降级纯文本 -->
+                      <a
+                        v-if="canOpenWorkbench"
+                        class="clpm-indicator__loop-link"
+                        :title="`${(record as MetricApi.RankingItem).tagName} · 在回路工作台打开（携带当前窗口与节点范围，可返回本页）`"
+                        @click="
+                          openLoopInWorkbench(
+                            (record as MetricApi.RankingItem).loopId,
+                          )
+                        "
+                      >
+                        {{ (record as MetricApi.RankingItem).tagName }}
+                      </a>
+                      <span v-else class="clpm-indicator__loop-link--static">
+                        {{ (record as MetricApi.RankingItem).tagName }}
+                      </span>
                     </template>
                     <template v-else-if="column.key === 'metricValue'">
                       <span class="font-mono font-medium">
@@ -1406,5 +1711,25 @@ onMounted(() => {
 .indicator-canvas :deep(.clpm-data-canvas__body) {
   display: flex;
   flex-direction: column;
+}
+
+/* 02b：位号 → 回路工作台上下文深链（等宽字体口径同原 ClpmLoopLink） */
+.clpm-indicator__loop-link {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 13px;
+  font-weight: 500;
+  color: hsl(var(--status-info));
+  cursor: pointer;
+}
+
+.clpm-indicator__loop-link:hover {
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
+.clpm-indicator__loop-link--static {
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 13px;
+  font-weight: 500;
 }
 </style>

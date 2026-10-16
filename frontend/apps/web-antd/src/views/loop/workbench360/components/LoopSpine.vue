@@ -5,7 +5,7 @@
   宽度由页面 vsplit 拖拽控制（--spine-w，180-420px）。
 -->
 <script setup lang="ts">
-import type { GradeFilter, SpineTreeNode } from '../composables/use-wb360-loop';
+import type { GradeFilter, SpineTreeNode } from '../composables/use-wb360-directory';
 
 import type { LoopApi } from '#/api/loop';
 
@@ -24,7 +24,8 @@ const props = defineProps<{
   loopsError: null | string;
   loopsLoading: boolean;
   selectedLoopId: null | string;
-  selectedUnit: null | string;
+  /** 选中单元身份：稳定 nodeId（P6-02a A21 同名节点不混；名称经树解析展示） */
+  selectedUnitNodeId: null | string;
   tree: SpineTreeNode[];
   /** 装置树加载失败信息（null=无失败；失败态显示重试入口） */
   treeError: null | string;
@@ -34,7 +35,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: 'retryTree'): void;
   (e: 'selectLoop', loopId: string): void;
-  (e: 'selectUnit', unit: null | string): void;
+  (e: 'selectUnit', unitNodeId: null | string): void;
   (e: 'update:gradeFilter', v: 'all' | GradeFilter): void;
   (e: 'update:keyword', v: string): void;
 }>();
@@ -57,9 +58,22 @@ function togglePlant(id: string) {
   collapsed.value = next;
 }
 
-function selectUnit(unitName: null | string) {
-  emit('selectUnit', props.selectedUnit === unitName ? null : unitName);
+function selectUnit(unitNodeId: null | string) {
+  emit(
+    'selectUnit',
+    props.selectedUnitNodeId === unitNodeId ? null : unitNodeId,
+  );
 }
+
+/** 选中单元展示名（nodeId → 树节点名；页脚计数文案用） */
+const selectedUnitName = computed(() => {
+  if (!props.selectedUnitNodeId) return null;
+  for (const plant of props.tree) {
+    const hit = plant.units?.find((u) => u.id === props.selectedUnitNodeId);
+    if (hit) return hit.name;
+  }
+  return null;
+});
 
 /** 行内评分等级类（g1 优秀~g5 不合格；无评分=无类=默认色）。
  *  判定收敛单源 scoreToGradeInfo（minScore 降序首个命中）。
@@ -77,8 +91,8 @@ const { containerRef, onScroll, offsetY, totalHeight, visibleItems } =
 
 const footerText = computed(() => {
   const shown = props.loops.length;
-  return props.selectedUnit
-    ? `${props.selectedUnit} · ${shown} / ${props.unitTotal} 回路`
+  return selectedUnitName.value
+    ? `${selectedUnitName.value} · ${shown} / ${props.unitTotal} 回路`
     : `全部单元 · ${shown} 回路`;
 });
 </script>
@@ -99,8 +113,8 @@ const footerText = computed(() => {
               v-for="unit in plant.units ?? []"
               :key="unit.id"
               class="tnode unit"
-              :class="{ on: selectedUnit === unit.name }"
-              @click="selectUnit(unit.name)"
+              :class="{ on: selectedUnitNodeId === unit.id }"
+              @click="selectUnit(unit.id)"
             >
               <span class="tw"></span>
               <span class="tname">{{ unit.name }}</span>

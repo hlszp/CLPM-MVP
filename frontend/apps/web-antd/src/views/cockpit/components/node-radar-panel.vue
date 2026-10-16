@@ -12,20 +12,49 @@ import type { RankSelection } from '../utils/score-rank';
  * - R2（2026-10-12）：默认显示全厂（FACTORY 根节点快照）；排名区点击
  *   装置/单元行切换，取消选中回退全厂。node=null（树加载失败）才空态
  * - 中心=综合评分 + 五档等级（复用 cockpit-radar）
+ * - P6-02b：页脚「节点回路」下钻 → 回路工作台全回路模式（稳定 nodeId
+ *   scope + from 返回来源；FACTORY 全厂不携带 scope；SPONSOR 无权限不渲染）
  */
 import type { MetricApi } from '#/api/metric';
 
 import { computed, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+
+import { useUserStore } from '@vben/stores';
 
 import { getNodeSnapshotApi } from '#/api/metric';
 
 import { resolveGrade, sixDimsFromNodeSnapshot } from '../loops-shared';
+import { canOpenWorkbench360, wb360DrillQuery } from '../wb-comps/use-drill';
 import CockpitRadar from './cockpit-radar.vue';
 
 const props = defineProps<{
   /** 排名区选中节点（null=未选中，显示空态提示） */
   node?: null | RankSelection;
 }>();
+
+const route = useRoute();
+const router = useRouter();
+const userStore = useUserStore();
+
+/** 02b：节点回路清单入口（wb360 全回路模式 + 稳定 nodeId scope） */
+const canOpenWorkbench = computed(() =>
+  canOpenWorkbench360(userStore.userInfo?.roles ?? []),
+);
+
+function openNodeLoops() {
+  if (!props.node) return;
+  const { path, query } = wb360DrillQuery(
+    {
+      loopId: '',
+      ...(props.node.type === 'FACTORY'
+        ? {}
+        : { scope: { nodeId: props.node.nodeId } }),
+    },
+    { from: route.fullPath, mode: 'all' },
+  );
+  void router.push({ path, query });
+}
 
 const dims = ref<null | SixDimValues>(null);
 const score = ref<null | number>(null);
@@ -88,6 +117,15 @@ const typeZh = computed(() => {
         <div v-if="loopCount !== null" class="radar__ft">
           {{ typeZh }} · 参评回路 <b>{{ loopCount }}</b>
         </div>
+        <button
+          v-if="canOpenWorkbench"
+          class="radar__drill"
+          type="button"
+          :title="`在回路工作台查看${typeZh}「${node.name}」回路清单（携带节点范围，可返回本页）`"
+          @click="openNodeLoops"
+        >
+          节点回路 →
+        </button>
       </template>
     </div>
   </div>
@@ -125,5 +163,21 @@ const typeZh = computed(() => {
 .radar__ft b {
   font-variant-numeric: tabular-nums;
   color: var(--ck-text-2);
+}
+
+.radar__drill {
+  position: absolute;
+  bottom: 8px;
+  left: 12px;
+  padding: 0;
+  font-size: 10px;
+  color: var(--ck-accent);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+}
+
+.radar__drill:hover {
+  text-decoration: underline;
 }
 </style>

@@ -49,7 +49,7 @@ from sqlalchemy import select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import get_current_user, require_perms
+from app.api.deps import get_current_user, get_scope_ctx, require_perms
 from app.api.v1.endpoints.diagnosis_v2 import _CATEGORY_LABELS
 from app.core.db import get_db
 from app.core.exceptions import BizError
@@ -650,6 +650,23 @@ def _suggestion_list_row_to_dict(r: Any, unit_paths: dict[str, str]) -> dict[str
     }
 
 
+def _apply_scope_to_unit_ids(args: dict[str, Any], scope: Any) -> None:
+    """P4-03：数据范围与装置筛选交集写入 args["unit_ids"]（ALL 不加条件）.
+
+    NODE_SUBTREE：显式 unit_ids 存在则取交集（空交集=空结果），无显式
+    筛选则以范围节点集为筛选；scope 对象经 deps.get_scope_ctx 注入，
+    单测环境为 ALL（无操作）。
+    """
+    allowed = getattr(scope, "allowed_node_ids", None)
+    if allowed is None:
+        return
+    requested = args.get("unit_ids")
+    if requested is None:
+        args["unit_ids"] = sorted(allowed)
+    else:
+        args["unit_ids"] = sorted(set(requested) & set(allowed))
+
+
 def _build_suggestion_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
     """建议清单 WHERE 子句（仅追加出现的条件，参数走 named params）。"""
     # 2026-10-10 停用裁决：停用回路在处置建议列表不显示（count/rows 共用本 builder）
@@ -689,6 +706,7 @@ def _build_suggestion_filters(params: dict[str, Any], args: dict[str, Any]) -> s
 async def list_suggestions(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: Any = Depends(get_scope_ctx),
     status: str | None = Query(None, description="状态多值，逗号分隔"),
     source: str | None = Query(None, pattern="^(SYSTEM|MANUAL)$"),
     plantNodeId: str | None = Query(None, description="装置节点（递归下钻到单元）"),
@@ -712,6 +730,7 @@ async def list_suggestions(
     }
     if plantNodeId is not None:
         args["unit_ids"] = await _load_subtree_unit_ids(db, plantNodeId)
+    _apply_scope_to_unit_ids(args, scope)  # P4-03 范围交集
 
     params: dict[str, Any] = {}
     where = _build_suggestion_filters(params, args)
@@ -1072,6 +1091,7 @@ def _build_order_filters(params: dict[str, Any], args: dict[str, Any]) -> str:
 async def list_orders(
     db: AsyncSession = Depends(get_db),
     _: SysUser = Depends(get_current_user),
+    scope: Any = Depends(get_scope_ctx),
     status: str | None = Query(None, description="工单状态（单值）"),
     actionType: str | None = Query(None),
     source: str | None = Query(None, pattern="^(DIAGNOSIS|MANUAL)$"),
@@ -1115,6 +1135,7 @@ async def list_orders(
     }
     if plantNodeId is not None:
         args["unit_ids"] = await _load_subtree_unit_ids(db, plantNodeId)
+    _apply_scope_to_unit_ids(args, scope)  # P4-03 范围交集
 
     params: dict[str, Any] = {}
     where = _build_order_filters(params, args)

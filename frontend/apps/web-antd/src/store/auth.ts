@@ -20,18 +20,21 @@ import { setGrantedPageCodes } from '#/router/routes';
  * FP-P0-08：后端 auth.py ROLE_DEFAULT_HOME 已对齐本表，事实源统一。
  * 角色映射优先于后端 defaultHome 返回值（双保险），二者口径一致。
  *
- * - 0930 用户口径：默认落地统一 /workbench 工作台（驾驶舱保留在菜单首位可随时进入）
+ * - 2026-10-14 P6-06（IAR-D1/D2）：工程师（IC/PE/EXPERT）首页为我的工作
+ *   /my-work；管理员/观察者（ADMIN/SPONSOR）为驾驶舱 /cockpit。
+ *   个人 default_home 偏好（/me/workspace-preferences，合法站内路径）优先
+ *   于本角色默认——见 resolveUserHomePath。
  */
 const ROLE_DEFAULT_HOME: Record<string, string> = {
   ADMIN: '/cockpit',
-  EXPERT: '/cockpit',
-  IC_ENGINEER: '/cockpit',
-  PE_ENGINEER: '/cockpit',
+  EXPERT: '/my-work',
+  IC_ENGINEER: '/my-work',
+  PE_ENGINEER: '/my-work',
   SPONSOR: '/cockpit',
 };
 
 /**
- * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /workbench
+ * 计算用户默认首页：前端角色映射优先，回退后端 defaultHome，最终兜底 /cockpit
  */
 function resolveHomePath(
   role: string,
@@ -40,7 +43,32 @@ function resolveHomePath(
   return ROLE_DEFAULT_HOME[role] ?? backendDefaultHome ?? '/cockpit';
 }
 
-export { resolveHomePath, ROLE_DEFAULT_HOME };
+/**
+ * 登录/首页解析（F-G2 default_home 消费链）：个人 default_home 偏好（服务端
+ * 持久、合法站内路径）优先于角色映射；加载失败/无偏好/非法值回退角色映射，
+ * **不阻断登录**。
+ *
+ * 时序：登录令牌与用户信息就绪后、router.push 前读取（避免"先跳角色首页
+ * 再替换"的闪烁）；路径合法性经 isValidHomePath 双端校验，越权路径由路由
+ * 守卫按既有口径兜底（与书签/旧链接一致）。
+ */
+async function resolveUserHomePath(
+  role: string,
+  backendDefaultHome?: null | string,
+): Promise<string> {
+  const roleHome = resolveHomePath(role, backendDefaultHome);
+  try {
+    const { fetchDefaultHomePreference, isValidHomePath } = await import(
+      '#/composables/use-clpm-preferences'
+    );
+    const preferred = await fetchDefaultHomePreference();
+    return preferred && isValidHomePath(preferred) ? preferred : roleHome;
+  } catch {
+    return roleHome;
+  }
+}
+
+export { resolveHomePath, resolveUserHomePath, ROLE_DEFAULT_HOME };
 
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
@@ -87,11 +115,15 @@ export const useAuthStore = defineStore('auth', () => {
         // 页面码写入路由表模块（守卫在 generateAccess 前消费）
         setGrantedPageCodes(currentUser.pageCodes ?? []);
 
-        // 4. 转换为框架 UserInfo 并存储（首页按角色映射，见 ROLE_DEFAULT_HOME）
+        // 4. 转换为框架 UserInfo 并存储（首页：个人 default_home 偏好优先于
+        //    角色映射；router.push 前解析完毕，无闪烁）
         userInfo = {
           avatar: '',
           desc: currentUser.email,
-          homePath: resolveHomePath(currentUser.role, currentUser.defaultHome),
+          homePath: await resolveUserHomePath(
+            currentUser.role,
+            currentUser.defaultHome,
+          ),
           realName: currentUser.displayName,
           roles: [currentUser.role],
           token: accessToken,
@@ -101,6 +133,18 @@ export const useAuthStore = defineStore('auth', () => {
 
         userStore.setUserInfo(userInfo);
         accessStore.setAccessCodes(accessCodes);
+
+        // P6-06：登记本次登录稳定用户 ID——与上次登录不同（换账号）时清理
+        // 本部署账户维度偏好缓存（上一个人的内容不能展示给下一个人）。
+        // 动态 import 避免 auth → composables → api/request → store 初始化环。
+        try {
+          const { noteClpmAccountLogin } = await import(
+            '#/composables/use-clpm-preferences'
+          );
+          noteClpmAccountLogin(String(currentUser.id));
+        } catch {
+          /* 缓存清理失败不阻断登录 */
+        }
 
         // 5. 跳转首页或回调
         if (accessStore.loginExpired) {
@@ -188,6 +232,16 @@ export const useAuthStore = defineStore('auth', () => {
       }
       accessStore.setLoginExpired(false);
       accessStore.setIsLoggingOut(false);
+      // P6-06：退出清理账户维度偏好缓存与模块状态（服务端数据不受影响；
+      // 换设备/换账号/清理浏览器后由服务端恢复，不在本机残留上一个人内容）。
+      try {
+        const { handleClpmAccountLogout } = await import(
+          '#/composables/use-clpm-preferences'
+        );
+        handleClpmAccountLogout();
+      } catch {
+        /* 缓存清理失败不阻断登出 */
+      }
       const targetQuery = redirect
         ? { redirect: encodeURIComponent(currentFullPath) }
         : {};
@@ -213,7 +267,10 @@ export const useAuthStore = defineStore('auth', () => {
     const userInfo: UserInfo = {
       avatar: '',
       desc: currentUser.email,
-      homePath: resolveHomePath(currentUser.role, currentUser.defaultHome),
+      homePath: await resolveUserHomePath(
+        currentUser.role,
+        currentUser.defaultHome,
+      ),
       realName: currentUser.displayName,
       roles: [currentUser.role],
       token: accessStore.accessToken || '',

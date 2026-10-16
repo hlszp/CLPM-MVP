@@ -382,6 +382,32 @@ COMMENT ON COLUMN calculation_result_record.status IS '终态：COMPLETED/FAILED
 COMMENT ON COLUMN calculation_result_record.payload IS '完整结果；NODE 记录含 loopRecordIds 与各指标分母';
 COMMENT ON TABLE  calculation_result_legacy_map IS '旧投影表 ID→结果账本 recordId 映射（P1-05 迁移归档）';
 
+-- 8.9b calculation_result_attempt（计算尝试日志，P5-02=G2 遗留③，迁移 p502attm01）
+--   暂态重试只写本表，不落终态 record；第 3 次 attempt 仍失败才追加
+--   status=FAILED 不可变终态 record（P0-02 冻结 v2 §2.2，DEC-10 按推荐）。
+--   logical_run_id 不设外键：record 表该列非唯一（批逻辑运行覆盖 N 对象），
+--   且 attempt 须在尚无 record 时可写（暂态失败先于首次落库正是主场景）。
+CREATE TABLE IF NOT EXISTS calculation_result_attempt (
+    id                  UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+    logical_run_id      UUID            NOT NULL,
+    attempt_no          INTEGER         NOT NULL,
+    started_at          TIMESTAMP       NOT NULL DEFAULT (timezone('UTC', now())),
+    finished_at         TIMESTAMP,
+    error_class         VARCHAR(200),
+    error_message       VARCHAR(2000),
+    worker_pid          VARCHAR(32),
+    CONSTRAINT uq_calc_attempt_run_no UNIQUE (logical_run_id, attempt_no)
+);
+
+CREATE INDEX IF NOT EXISTS idx_calc_attempt_logical_run_id
+    ON calculation_result_attempt (logical_run_id);
+
+COMMENT ON TABLE  calculation_result_attempt IS '计算尝试日志（暂态重试不落终态，P5-02 G2遗留③）';
+COMMENT ON COLUMN calculation_result_attempt.logical_run_id IS '逻辑运行身份（与 record 表同源；无 FK：非唯一且须先于 record 可写）';
+COMMENT ON COLUMN calculation_result_attempt.attempt_no IS '尝试序号：1=首跑，2/3=重试（上限 3 次，DEC-10 冻结）';
+COMMENT ON COLUMN calculation_result_attempt.finished_at IS '尝试结束时间（NULL=进行中）';
+COMMENT ON COLUMN calculation_result_attempt.error_class IS '失败异常类名（成功完成为 NULL）';
+
 -- =============================================================================
 -- 9. kpi_snapshot_hourly (每小时性能评估快照)
 -- =============================================================================
@@ -502,6 +528,8 @@ CREATE TABLE IF NOT EXISTS kpi_node_snapshot_hourly (
     created_at          TIMESTAMP       NOT NULL DEFAULT NOW(),
     -- P1-05 结果账本投影指针（迁移 p105resledger01）
     result_record_id    UUID,
+    -- 节点名册/可评分统计（迁移 p3d608ds01，P3-08d；旧行 NULL=历史不可追溯）
+    assessment_stats    JSONB,
     CONSTRAINT fk_kpi_node_snapshot_node FOREIGN KEY (plant_node_id) REFERENCES plant_node(id) ON DELETE CASCADE,
     CONSTRAINT fk_kpi_node_snapshot_hourly_result_record FOREIGN KEY (result_record_id) REFERENCES calculation_result_record(id) ON DELETE SET NULL,
     CONSTRAINT ck_kpi_node_snapshot_status CHECK (status IN ('EXCELLENT','GOOD','FAIR','WARNING','POOR','INCONCLUSIVE')),
@@ -1514,6 +1542,9 @@ CREATE INDEX IF NOT EXISTS ix_kpi_snapshot_custom_fitness_level ON kpi_snapshot_
 CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_loop_status ON diagnosis_tag (loop_id, status);
 CREATE INDEX IF NOT EXISTS ix_diagnosis_tag_severity ON diagnosis_tag (severity, triggered_at);
 CREATE INDEX IF NOT EXISTS ix_unit_kpi_summary_node_time ON unit_kpi_summary (node_id, snapshot_time);
+-- P5-03（迁移 p503cache01）：snapshot_time 单列索引——agg_cache 数据代数取
+-- max(snapshot_time) 的反向索引扫描；60d 跨窗范围过滤与上面复合索引二选一由规划器决定
+CREATE INDEX IF NOT EXISTS ix_unit_kpi_summary_snapshot_time ON unit_kpi_summary (snapshot_time);
 CREATE INDEX IF NOT EXISTS idx_report_config_period ON report_config (report_period);
 CREATE INDEX IF NOT EXISTS idx_report_config_is_enabled ON report_config (is_enabled);
 CREATE INDEX IF NOT EXISTS idx_dcs_vendor_sort ON dcs_vendor (sort_order);
@@ -1837,6 +1868,15 @@ CREATE TABLE IF NOT EXISTS handling_order (
     kpi_after     JSONB,
     tuning_record_id UUID,
     cancel_reason VARCHAR(200),
+    -- P3-05 实施记录与验证证据（迁移 p305evd001，DEC-06）：
+    -- implemented_at=实际实施时刻（与 submitted_at 补录分离）；
+    -- closure_evidence=闭环证据三分类；actual_rollback_confirmed 独立于 verify_result
+    implemented_at TIMESTAMP,
+    closure_evidence VARCHAR(32),
+    actual_rollback_confirmed BOOLEAN NOT NULL DEFAULT FALSE,
+    rollback_confirmed_at TIMESTAMP,
+    rollback_confirmed_by VARCHAR(64),
+    rollback_note VARCHAR(200),
     status        VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
     created_at    TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at    TIMESTAMP    NOT NULL DEFAULT now(),
@@ -1847,7 +1887,10 @@ CREATE TABLE IF NOT EXISTS handling_order (
         ('TUNING', 'VALVE', 'INSTRUMENT', 'LINK', 'PROCESS',
          'UTILIZATION', 'RECONFIG', 'OTHER')),
     CONSTRAINT ck_handling_order_verify_result CHECK
-        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE'))
+        (verify_result IS NULL OR verify_result IN ('EFFECTIVE', 'INEFFECTIVE')),
+    CONSTRAINT ck_handling_order_closure_evidence CHECK
+        (closure_evidence IS NULL OR closure_evidence IN
+         ('MANUAL_CONFIRMATION', 'DATA_VERIFIED', 'COMPARABLE_CONDITION_VERIFIED'))
 );
 COMMENT ON TABLE handling_order IS '处置工单（处置模块 v2.0：排程-执行-验证-闭环执行载体）';
 CREATE INDEX IF NOT EXISTS idx_handling_order_status  ON handling_order (status, updated_at DESC);
@@ -2024,6 +2067,11 @@ CREATE TABLE IF NOT EXISTS workbench_loop_latest (
     unit_name VARCHAR(128),
     factory_name VARCHAR(128),
     score NUMERIC(6, 2),
+    -- P5-04 服务端劣化排序（迁移 p504srvflt01）：prev_score=今日 0 点前最新
+    -- 参评快照评分；score_delta=score - prev_score（任一 NULL 则 NULL）。
+    -- 排序读预计算列（5min Celery 全量重算），替代每请求全表 DISTINCT ON。
+    prev_score NUMERIC(6, 2),
+    score_delta NUMERIC(7, 2),
     fitness_level VARCHAR(8),
     fitness_tags JSONB,
     fitness_detail JSONB,
@@ -2708,7 +2756,7 @@ CREATE TABLE IF NOT EXISTS sys_authz_policy (
     after_value JSONB,
     rollback_of INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
-    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION')),
+    CONSTRAINT ck_sys_authz_policy_operation CHECK (operation IN ('SEED', 'ROLE_GRANT', 'USER_SCOPE', 'ROLLBACK', 'CATALOG_EXTENSION', 'NODE_REBIND', 'TAG_REBIND', 'USER_STATE', 'TOKEN_REVOKE')),
     CONSTRAINT uq_sys_authz_policy_rollback_of UNIQUE (rollback_of)
 );
 CREATE INDEX IF NOT EXISTS idx_sys_authz_policy_operation ON sys_authz_policy (operation);
@@ -2718,6 +2766,127 @@ COMMENT ON TABLE sys_permission IS '页面码/动作码目录（P4-01；无机�
 COMMENT ON TABLE sys_role_permission IS '五角色授权矩阵（P4-01）';
 COMMENT ON TABLE sys_user_scope IS '用户数据范围 ALL/NODE_SUBTREE（P4-01；消费在 P4-03）';
 COMMENT ON TABLE sys_authz_policy IS '授权策略版本账本（P4-01；不可变追加式）';
+
+-- P4-03（迁移 p403scope01 同批）：单一 policy_publication_guard 行——全部授权
+-- 相关变更（角色授权/用户scope/禁用/令牌撤销/节点归属/tag改绑）先取该行排他锁
+-- 并递增 revision；任务提交/WS 发送批取同一行共享锁再读主体策略（栅栏）。
+CREATE TABLE IF NOT EXISTS policy_publication_guard (
+    id INTEGER PRIMARY KEY,
+    revision INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE policy_publication_guard IS '授权发布栅栏行（P4-03；单行 id=1，排他/共享锁序列化策略变更与提交/发送）';
+
+-- =============================================================================
+-- P6-05 个人关系分片（与迁移 p605person01 同批同内容，契约 01a §3）
+-- PostgreSQL 为真相来源：账号关注/跨设备偏好/最近继续；版本墓碑与代际栅栏
+-- 防迟到请求复活；撤权保留关系不泄露对象信息。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS user_loop_follow (
+    user_id UUID NOT NULL REFERENCES sys_user (id) ON DELETE CASCADE,
+    loop_id UUID NOT NULL REFERENCES loop_ledger (id) ON DELETE CASCADE,
+    is_followed BOOLEAN NOT NULL,
+    revision INTEGER NOT NULL,
+    last_request_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, loop_id),
+    CONSTRAINT ck_user_loop_follow_revision CHECK (revision >= 1)
+);
+CREATE INDEX IF NOT EXISTS idx_user_loop_follow_user_list ON user_loop_follow (user_id, is_followed, updated_at);
+COMMENT ON TABLE user_loop_follow IS '回路关注关系（P6-05；取消关注留 is_followed=false 版本墓碑不物理删行）';
+
+CREATE TABLE IF NOT EXISTS user_workspace_preference (
+    user_id UUID NOT NULL REFERENCES sys_user (id) ON DELETE CASCADE,
+    preference_key VARCHAR(64) NOT NULL,
+    payload JSONB NOT NULL,
+    schema_version INTEGER NOT NULL,
+    revision INTEGER NOT NULL,
+    last_request_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, preference_key),
+    CONSTRAINT ck_user_workspace_preference_revision CHECK (revision >= 1),
+    CONSTRAINT ck_user_workspace_preference_schema_version CHECK (schema_version >= 1)
+);
+COMMENT ON TABLE user_workspace_preference IS '账号工作偏好（P6-05；按 key 独立 revision；保留键 resume_generation 服务端专用）';
+
+CREATE TABLE IF NOT EXISTS user_work_resume (
+    user_id UUID NOT NULL REFERENCES sys_user (id) ON DELETE CASCADE,
+    resource_kind VARCHAR(32) NOT NULL,
+    resource_id VARCHAR(64) NOT NULL,
+    context JSONB NOT NULL,
+    revision INTEGER NOT NULL,
+    generation INTEGER NOT NULL,
+    last_visited_at TIMESTAMP NOT NULL,
+    deleted_at TIMESTAMP,
+    last_request_id VARCHAR(64),
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (user_id, resource_kind, resource_id),
+    CONSTRAINT ck_user_work_resume_revision CHECK (revision >= 1),
+    CONSTRAINT ck_user_work_resume_generation CHECK (generation >= 1)
+);
+CREATE INDEX IF NOT EXISTS idx_user_work_resume_user_visited ON user_work_resume (user_id, last_visited_at);
+COMMENT ON TABLE user_work_resume IS '最近继续位置（P6-05；generation 对齐清空栅栏，deleted_at 单项删除墓碑）';
+
+-- =============================================================================
+-- P6-05 后续分片一（E1）回路核查最小实体（与迁移 p605invest01 同批同内容，契约 01a §2.1）
+-- 阶段机 TODO/IN_PROGRESS/WAITING/CLOSED + 四结束结果；WAITING 三要素必填；
+-- 来源身份+问题身份去重（未结束部分唯一）；owner_id 稳定身份、owner_name
+-- 仅显示快照；HANDED_OFF 必有目标核查回链；取消≠回路正常。
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS loop_investigation (
+    id UUID PRIMARY KEY,
+    loop_id UUID NOT NULL REFERENCES loop_ledger (id) ON DELETE CASCADE,
+    source_kind VARCHAR(32) NOT NULL,
+    source_id VARCHAR(64) NOT NULL,
+    problem_key VARCHAR(128) NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    detail VARCHAR(500),
+    stage VARCHAR(16) NOT NULL DEFAULT 'TODO',
+    outcome VARCHAR(24),
+    outcome_note VARCHAR(500),
+    owner_id UUID REFERENCES sys_user (id) ON DELETE SET NULL,
+    owner_name VARCHAR(100),
+    wait_reason VARCHAR(200),
+    wait_review_condition VARCHAR(200),
+    wait_responsible VARCHAR(120),
+    close_target_kind VARCHAR(32),
+    close_target_id VARCHAR(64),
+    handoff_source_id UUID REFERENCES loop_investigation (id) ON DELETE SET NULL,
+    revision INTEGER NOT NULL DEFAULT 1,
+    last_request_id VARCHAR(64),
+    created_by UUID REFERENCES sys_user (id) ON DELETE SET NULL,
+    closed_by UUID REFERENCES sys_user (id) ON DELETE SET NULL,
+    closed_at TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    CONSTRAINT ck_loop_investigation_stage
+        CHECK (stage IN ('TODO', 'IN_PROGRESS', 'WAITING', 'CLOSED')),
+    CONSTRAINT ck_loop_investigation_outcome
+        CHECK ((stage = 'CLOSED' AND outcome IS NOT NULL AND outcome IN
+            ('NO_FURTHER_ACTION', 'ANSWERED', 'HANDED_OFF', 'CANCELLED')
+            AND closed_at IS NOT NULL)
+            OR (stage <> 'CLOSED' AND outcome IS NULL AND closed_at IS NULL)),
+    CONSTRAINT ck_loop_investigation_waiting
+        CHECK ((stage = 'WAITING' AND wait_reason IS NOT NULL
+            AND wait_review_condition IS NOT NULL AND wait_responsible IS NOT NULL)
+            OR (stage <> 'WAITING' AND wait_reason IS NULL
+            AND wait_review_condition IS NULL AND wait_responsible IS NULL)),
+    CONSTRAINT ck_loop_investigation_handoff_target
+        CHECK (outcome IS NULL OR outcome <> 'HANDED_OFF' OR
+            (close_target_kind = 'loop_investigation' AND close_target_id IS NOT NULL)),
+    CONSTRAINT ck_loop_investigation_revision CHECK (revision >= 1)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS uk_loop_investigation_active_identity
+    ON loop_investigation (loop_id, source_kind, source_id, problem_key)
+    WHERE stage <> 'CLOSED';
+CREATE INDEX IF NOT EXISTS idx_loop_investigation_loop_list
+    ON loop_investigation (loop_id, stage, created_at);
+CREATE INDEX IF NOT EXISTS idx_loop_investigation_owner
+    ON loop_investigation (owner_id, stage);
+COMMENT ON TABLE loop_investigation IS '回路核查最小实体（P6-05 E1；来源+问题去重，取消≠回路正常）';
 
 -- =============================================================================
 -- 脚本结束

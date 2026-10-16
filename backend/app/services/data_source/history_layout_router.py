@@ -75,10 +75,11 @@ async def _load_manifest_rows(db, loop_id: str) -> list[tuple[datetime, datetime
         return cached[1]
 
     own_session = db is None
+    if own_session:
+        from app.core.db import AsyncSessionLocal, close_session_guarded
+
     try:
         if own_session:
-            from app.core.db import AsyncSessionLocal
-
             db = AsyncSessionLocal()
         rows_result = await asyncio.wait_for(
             db.execute(
@@ -98,10 +99,10 @@ async def _load_manifest_rows(db, loop_id: str) -> list[tuple[datetime, datetime
         return []
     finally:
         if own_session:
-            try:
-                await db.close()
-            except Exception:  # noqa: BLE001
-                pass
+            # 止血①（2026-10-13 连接风暴）：wait_for 超时取消可把 session 留在
+            # provisioning 态，裸 close 抛错即泄漏连接（原 except: pass 静默吞掉）；
+            # guarded close 兜底回收（延迟重试 → terminate）。
+            await close_session_guarded(db, label="layout-manifest")
     parts: list[tuple[datetime, datetime | None, str, int]] = []
     prio = {"loop": 2, "source": 1, "global": 0}
     for scope_type, scope_id, valid_from, valid_to, layout in raw_rows:

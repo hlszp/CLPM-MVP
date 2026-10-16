@@ -24,7 +24,7 @@ import dayjs from 'dayjs';
 import utc from 'dayjs/plugin/utc';
 
 import { getHandlingOrdersApi } from '#/api/handling';
-import { getTuningTasksApi } from '#/api/tuning';
+import { getTuningTasksApi, limitationItemsOf } from '#/api/tuning';
 import { fitnessTagToLabel } from '#/constants/clpm-ui';
 import { formatLocalTime } from '#/utils/format';
 import IdentifySection from '#/views/tuning/components/identify-section.vue';
@@ -240,6 +240,14 @@ const verifySuggested = computed(() => {
   return null;
 });
 
+/**
+ * R03 重读链（G3 增量纠偏）：最新整定记录的适用性限制按值判空——
+ * null/缺键/空数组 → [] 不制造警告；记录身份（recordId/创建时间）随限制同显
+ */
+const latestLimitationItems = computed(() =>
+  limitationItemsOf(latestTask.value?.applicabilityLimitations),
+);
+
 /* ── ④ 方案确认（本地变体：页内创建处置项，保存逻辑同 ctx） ── */
 const saving = computed(() => ctx.saving.value);
 const confirmOptions = computed(() =>
@@ -424,6 +432,27 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
         }}</span>
         <span v-if="modelCard" class="cell-note">来源：{{ modelCard.source }}</span>
       </div>
+    </div>
+
+    <!-- R03：最新整定记录适用性限制（按值判空；记录身份随证据同显） -->
+    <div
+      v-if="latestLimitationItems.length > 0"
+      class="limit-box"
+      data-testid="wb360-tuning-limitations"
+    >
+      <div class="limit-box__head">
+        <b>最新整定记录适用性限制</b>
+        <span class="dim mono"
+          >记录 {{ latestTask?.id }} ·
+          {{ fmtTs(latestTask?.createdAt) }}</span
+        >
+      </div>
+      <ul class="limit-box__list">
+        <li v-for="item in latestLimitationItems" :key="item.reasonCode">
+          <span class="mono">{{ item.reasonCode }}</span>
+          <template v-if="item.statement">：{{ item.statement }}</template>
+        </li>
+      </ul>
     </div>
 
     <!-- 四步流水（①②③整件复用，与旧工作台同序同锁；④本地变体页内创建处置项） -->
@@ -620,6 +649,36 @@ const fmtTs = (iso?: null | string) => formatLocalTime(iso, 'MM-DD HH:mm');
 .xbadge:hover {
   color: hsl(var(--primary));
   border-color: hsl(var(--primary));
+}
+
+/* R03：最新记录适用性限制条（按值判空渲染） */
+.limit-box {
+  padding: 8px 12px;
+  font-size: 12px;
+  background: hsl(var(--warning) / 8%);
+  border: 1px solid hsl(var(--warning) / 40%);
+  border-radius: 6px;
+}
+
+.limit-box__head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.limit-box__head b {
+  font-size: 12px;
+}
+
+.limit-box__list {
+  padding-left: 18px;
+  margin: 6px 0 0;
+  color: hsl(var(--muted-foreground));
+}
+
+.limit-box__list .mono {
+  font-family: var(--font-mono, monospace);
 }
 
 /* ④ 确认卡 */

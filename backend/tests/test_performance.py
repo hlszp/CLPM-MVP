@@ -296,11 +296,11 @@ class TestMetricConfigUpdate:
         assert body["data"]["metricName"] == "好值率（更新）"
 
     def test_update_metric_not_found(self, client, mock_db, fake_redis) -> None:
-        """指标不存在返回 404。"""
+        """指标不存在返回 404（合法 UUID 但未登记；非 UUID 由 G-N2 守卫 400）。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/performance/metrics/nonexistent",
+                "/api/v1/performance/metrics/00000000-0000-0000-0000-000000000999",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"weight": 25},
             )
@@ -371,11 +371,11 @@ class TestEngineRuleUpdate:
         assert body["data"]["ruleName"] == "计算周期（更新）"
 
     def test_update_rule_not_found(self, client, mock_db, fake_redis) -> None:
-        """规则不存在返回 404。"""
+        """规则不存在返回 404（合法 UUID 但未登记；非 UUID 由 G-N2 守卫 400）。"""
         mock_db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
         with mock_current_user(TEST_USERS["admin"]):
             resp = client.put(
-                "/api/v1/performance/rules/nonexistent",
+                "/api/v1/performance/rules/00000000-0000-0000-0000-000000000998",
                 headers={"Authorization": "Bearer fake-token"},
                 json={"ruleName": "更新"},
             )
@@ -931,3 +931,161 @@ class TestSnapshotDelete:
         db.execute = AsyncMock(side_effect=[ok, miss])
         assert await delete_snapshot_by_id(db, "s-1") is True
         assert await delete_snapshot_by_id(db, "s-2") is False
+
+
+# ---------------------------------------------------------------------------
+# G-N2：UUID 参数守卫（非 UUID → 400 ERR_PARAM，绝不让 asyncpg invalid UUID 变 500）
+# ---------------------------------------------------------------------------
+
+
+class TestUuidParamGuard:
+    """performance.py 全部 UUID 路径/查询参数：非 UUID 输入 400（先于 DB 访问）.
+
+    G-N2 实证：ranking?plantNodeId=int source_node_id → 500（asyncpg
+    invalid UUID）。合法 UUID 路径零行为变化；空值语义不变（=未指定）。
+    """
+
+    # ---- G-N2 原发端点：ranking ----
+
+    def test_ranking_non_uuid_plant_node_id_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/ranking?plantNodeId=not-a-uuid")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_ranking_int_plant_node_id_400(self, client, mock_db) -> None:
+        """G-N2 实证形态：02b 把排行行 int source_node_id 直推 plantNodeId."""
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/ranking?plantNodeId=1279311030")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_ranking_valid_uuid_passes_normalized(self, client, mock_db) -> None:
+        """合法 UUID 零行为变化：透传服务层（归一为小写连字符，PG 按值比较等价）."""
+        with (
+            patch(
+                "app.api.v1.endpoints.performance.get_ranking",
+                new=AsyncMock(return_value=[]),
+            ) as m,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/performance/ranking?plantNodeId=AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
+            )
+        assert resp.status_code == 200
+        assert m.await_args.kwargs["plant_node_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+
+    def test_ranking_empty_plant_node_id_semantics_unchanged(self, client, mock_db) -> None:
+        """空值=未指定（与 _parse_dt 同口径）：None 透传不制造筛选."""
+        with (
+            patch(
+                "app.api.v1.endpoints.performance.get_ranking",
+                new=AsyncMock(return_value=[]),
+            ) as m,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get("/api/v1/performance/ranking?plantNodeId=")
+        assert resp.status_code == 200
+        assert m.await_args.kwargs["plant_node_id"] is None
+
+    # ---- 同文件同类隐患：单值 plantNodeId ----
+
+    def test_analytics_non_uuid_plant_node_id_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/analytics"
+                "?startTime=2026-10-01T00:00:00Z&endTime=2026-10-02T00:00:00Z"
+                "&plantNodeId=123"
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_analytics_export_non_uuid_plant_node_id_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/performance/analytics/export",
+                json={
+                    "startTime": "2026-10-01T00:00:00Z",
+                    "endTime": "2026-10-02T00:00:00Z",
+                    "plantNodeId": "123",
+                },
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_realtime_auto_rate_non_uuid_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/realtime-auto-rate?plantNodeId=abc")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_valve_alerts_non_uuid_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/valve-alerts?plantNodeId=abc")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    # ---- 同文件同类隐患：逗号分隔 UUID 列表 ----
+
+    def test_grade_distribution_bad_list_element_400(self, client, mock_db) -> None:
+        valid = "00000000-0000-0000-0000-000000000111"
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(f"/api/v1/performance/grade-distribution?loopId={valid},bogus")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_snapshots_non_uuid_plant_node_id_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/loops/snapshots?plantNodeId=42")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_metric_series_non_uuid_loop_ids_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/loops/metric-series?loopIds=abc&metricKey=score")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_window_agg_non_uuid_loop_id_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get(
+                "/api/v1/performance/loops/snapshots/window-agg"
+                "?startTime=2026-10-01T00:00:00Z&endTime=2026-10-02T00:00:00Z&loopId=xyz"
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_batch_delete_non_uuid_body_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.post(
+                "/api/v1/performance/loops/snapshots/batch-delete",
+                json={"plantNodeId": "123"},
+            )
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    # ---- 同文件同类隐患：UUID 路径参数 ----
+
+    def test_update_metric_non_uuid_path_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put("/api/v1/performance/metrics/not-a-uuid", json={})
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_update_rule_non_uuid_path_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.put("/api/v1/performance/rules/123", json={})
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_result_record_non_uuid_path_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.get("/api/v1/performance/loops/result-records/not-a-uuid")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"
+
+    def test_delete_snapshot_non_uuid_path_400(self, client, mock_db) -> None:
+        with mock_current_user(TEST_USERS["admin"]):
+            resp = client.delete("/api/v1/performance/loops/snapshots/123")
+        assert resp.status_code == 400
+        assert resp.json()["code"] == "ERR_PARAM"

@@ -53,7 +53,7 @@ class TestLogin:
         assert "*" not in user["permissions"]
         assert "loop:delete" in user["permissions"]
         assert "page:system.users" in user["pageCodes"]
-        assert user["defaultHome"] == "/workbench"
+        assert user["defaultHome"] == "/cockpit"  # P6-06：ADMIN→驾驶舱（2026-10-14）
 
     def test_login_success_all_roles(self, client, mock_db, fake_redis) -> None:
         """Each role returns the correct permission list."""
@@ -122,6 +122,7 @@ class TestLogin:
                     "page:monitor.alerts",
                     "page:monitor.attention",
                     "page:monitor.loops",
+                    "page:my-work.main",
                     "page:reports.alert-statistics",
                     "page:reports.benefit",
                     "page:reports.data-quality",
@@ -422,7 +423,7 @@ class TestMe:
         assert "*" not in data["permissions"]
         assert "loop:delete" in data["permissions"]
         assert "page:system.users" in data["pageCodes"]
-        assert data["defaultHome"] == "/workbench"
+        assert data["defaultHome"] == "/cockpit"  # P6-06：ADMIN→驾驶舱（2026-10-14）
 
     def test_me_no_token(self, client) -> None:
         """Request without token returns 401."""
@@ -790,15 +791,17 @@ class TestRolePermissions:
 
         2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench。
         2026-09-30 用户口径：全角色统一 /workbench 工作台。
+        2026-10-14 P6-06（IAR-D1/D2）：工程师（IC/PE/EXPERT）→/my-work，
+        管理员/观察者（ADMIN/SPONSOR）→/cockpit；前端 store/auth.ts 同批对齐。
         """
         from app.services.auth import get_default_home
 
         expected = {
-            "ADMIN": "/workbench",
-            "IC_ENGINEER": "/workbench",
-            "PE_ENGINEER": "/workbench",
-            "SPONSOR": "/workbench",
-            "EXPERT": "/workbench",
+            "ADMIN": "/cockpit",
+            "IC_ENGINEER": "/my-work",
+            "PE_ENGINEER": "/my-work",
+            "SPONSOR": "/cockpit",
+            "EXPERT": "/my-work",
         }
         for role, home in expected.items():
             assert get_default_home(role) == home, f"{role} 默认首页应为 {home}"

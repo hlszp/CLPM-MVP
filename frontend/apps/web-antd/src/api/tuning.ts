@@ -102,6 +102,27 @@ export namespace TuningApi {
     params: Record<string, any>[];
   }
 
+  /**
+   * R03 适用性限制条目（G3 增量纠偏 2026-10-13；reasonCode 为后端稳定身份：
+   * LOW_SNR_PARAM_UNCOMMITTED=低 SNR 不承诺参数级精度 /
+   * CI95_UNCALIBRATED=ci95 未校准仅证明被测集合成员）
+   */
+  export interface ApplicabilityLimitationItem {
+    reasonCode: string;
+    scope?: null | string;
+    calibrationStatus?: null | string;
+    evidence?: null | Record<string, any>;
+    statement?: null | string;
+  }
+
+  /**
+   * 适用性限制载体。G3 F3 登记：HTTP 层无限制时以 null 序列化（键在场值空），
+   * 消费方必须按值判空（limitationItemsOf），勿按键存在性制造警告
+   */
+  export interface ApplicabilityLimitations {
+    items?: ApplicabilityLimitationItem[] | null;
+  }
+
   /** 单算法整定结果 */
   export interface TuneResult {
     algorithm: string;
@@ -116,6 +137,8 @@ export namespace TuningApi {
       riskLevel: string;
     };
     rollbackPid?: null | PidParams;
+    /** R03：适用性限制（普通建议链/矩阵逐行同源同文；null=授权来源无已知限制） */
+    applicabilityLimitations?: ApplicabilityLimitations | null;
   }
 
   /** 全算法矩阵行（09 §4.2：单行失败不阻断） */
@@ -150,6 +173,102 @@ export namespace TuningApi {
     recommendedMetrics: SimulationMetrics;
     improvement: Record<string, null | number>;
     candidateResponses?: CandidateResponse[] | null;
+  }
+
+  /** R01 鲁棒验证总体三态（INCONCLUSIVE=窗内证据不足，绝不代表通过） */
+  export type RobustnessOverallStatus = 'FAIL' | 'INCONCLUSIVE' | 'PASS';
+
+  /** R01 仿真证据充分性自述（窗末 ±2% 稳定带判据；G3 增量纠偏加性块） */
+  export interface SimulationEvidence {
+    criterion?: null | string;
+    insufficientMemberIndexes?: null | number[];
+    insufficientMembers?: null | number;
+    note?: null | string;
+    settlingBandPct?: null | number;
+    simDurationSeconds?: null | number;
+    tailFraction?: null | number;
+    tailMinPoints?: null | number;
+  }
+
+  /** R02 可信集合构造说明（请求/实际成员、退化维、补样次数、原因码） */
+  export interface SetConstruction {
+    actualMemberCount?: null | number;
+    degenerateKeysFixed?: null | string[];
+    fillAttempts?: null | number;
+    note?: null | string;
+    reasonCodes?: null | string[];
+    requestedMembers?: null | number;
+  }
+
+  /** 可信集合基础（R03：calibrationStatus=uncalibrated 与 membershipScope 不得隐藏） */
+  export interface RobustSetBasis {
+    bounds?: null | Record<string, [number, number]>;
+    calibrationStatus?: null | string;
+    fixedKeys?: null | string[];
+    freeKeys?: null | string[];
+    memberCount?: null | number;
+    membershipScope?: null | string;
+    note?: null | string;
+    setConstruction?: null | SetConstruction;
+    source?: null | string;
+  }
+
+  /** 验证身份与预算（记录/模型身份随证据同显：02b 快照语义） */
+  export interface RobustnessSources {
+    algorithmParams?: null | Record<string, any>;
+    algorithmVersion?: null | string;
+    datasetSnapshotId?: null | string;
+    modelSource?: null | string;
+    modelVersionId?: null | string;
+    simulationEngineVersion?: null | string;
+    sourceRecordId?: null | string;
+  }
+
+  /** POST /tuning/tune/robustness 验证报告（R15 冻结指标 + 可信集合） */
+  export interface RobustnessReport {
+    algorithm?: null | string;
+    applicabilityLimitations?: ApplicabilityLimitations | null;
+    divergedMembers?: null | number;
+    frozenThresholds?: null | {
+      gainMarginMin?: null | number;
+      maxSetMembers?: null | number;
+      overshootMaxPct?: null | number;
+      phaseMarginMinDeg?: null | number;
+    };
+    indicators?: null | {
+      [key: string]: any;
+      gainMargin?: null | { pass?: boolean; threshold?: null | number; worst?: null | number };
+      opLimits?: null | {
+        limits?: null | { lower?: number; upper?: number };
+        pass?: boolean;
+        worstSaturationSteps?: null | number;
+      };
+      overshoot?: null | {
+        evidenceInsufficientMembers?: null | number;
+        pass?: boolean;
+        status?: null | string;
+        thresholdPct?: null | number;
+        worstPct?: null | number;
+      };
+      phaseMargin?: null | { pass?: boolean; threshold?: null | number; worst?: null | number };
+    };
+    loopId?: null | string;
+    lowSnrDisclaimer?: null | {
+      disclaimer?: null | string;
+      mode?: null | string;
+      snrDb?: null | number;
+      thresholdDb?: null | number;
+    };
+    memberCount?: null | number;
+    modelType?: null | string;
+    overallPass?: boolean | null;
+    overallStatus?: null | RobustnessOverallStatus | string;
+    setBasis?: null | RobustSetBasis;
+    simulationEvidence?: null | SimulationEvidence;
+    sources?: null | RobustnessSources;
+    verifiedPid?: null | PidParams;
+    verifiedPidSource?: null | string;
+    [key: string]: any;
   }
 
   /** 整定任务列表项 */
@@ -195,6 +314,13 @@ export namespace TuningApi {
       standard?: null | PidParams;
       status?: string;
     };
+    /** V62-P3-005：模型版本引用（新记录非空，遗留记录为 null） */
+    processModelVersionId?: null | string;
+    /**
+     * R03（G3 增量纠偏）：适用性限制回读——保存时冻结于 calc_context，
+     * 旧记录无该键 → null（显式未知不伪补；按值判空）
+     */
+    applicabilityLimitations?: ApplicabilityLimitations | null;
   }
 
   export interface TuningTaskDetail extends TuningTaskItem {
@@ -437,6 +563,100 @@ export function comparePidsApi(data: {
     '/tuning/compare',
     data,
   );
+}
+
+/**
+ * 可信集合鲁棒性验证（P3-07 R15 冻结指标；G3 增量纠偏 R01/R02/R03 证据链接通）
+ *
+ * 在可信模型集合（终验通过模型 ± 参数 95% CI 采样，≤64 成员）上验证同一建议：
+ * overallStatus 三态（窗内证据不足=INCONCLUSIVE，不得总体 PASS）+
+ * simulationEvidence + setBasis.setConstruction（成员/退化维/次数/原因码）+
+ * applicabilityLimitations（按值判空）。
+ */
+export function verifyTuningRobustnessApi(data: {
+  algorithm: TuningApi.TuningAlgorithm;
+  algorithmParams?: null | Record<string, any>;
+  loopId: string;
+  modelParams: TuningApi.ModelParams;
+  modelSource?: string;
+  modelType: TuningApi.ModelType;
+  noiseStd?: null | number;
+  recommendedPid?: null | TuningApi.PidParams;
+  riskConfirmed?: boolean;
+  setpointStep?: number;
+  simDuration?: number;
+  simStep?: number;
+  sourceRecordId?: null | string;
+}) {
+  return requestClient.post<TuningApi.RobustnessReport>(
+    '/tuning/tune/robustness',
+    data,
+  );
+}
+
+/**
+ * R03 按值判空（G3 F3 登记）：HTTP 层无限制时 applicabilityLimitations 以
+ * null 序列化（键在场值空）——null/缺键/空数组一律返回 []，不制造警告；
+ * 值缺失不编造限制。
+ */
+export function limitationItemsOf(
+  al?: null | TuningApi.ApplicabilityLimitations,
+): TuningApi.ApplicabilityLimitationItem[] {
+  const items = al?.items;
+  if (!Array.isArray(items)) return [];
+  return items.filter((i): i is TuningApi.ApplicabilityLimitationItem =>
+    Boolean(i) && typeof i === 'object',
+  );
+}
+
+/** R03 限制条目 reasonCode 中文标签（原始码同显——码为稳定身份） */
+export const LIMITATION_CODE_LABELS: Record<string, string> = {
+  CI95_UNCALIBRATED: 'ci95 区间未校准（仅证明被测集合成员）',
+  LOW_SNR_PARAM_UNCOMMITTED: '低 SNR · 不承诺参数级精度',
+};
+
+/** 限制条目标题（原始码 + 中文标签；未知码原样展示不编造） */
+export function limitationTitle(
+  item: TuningApi.ApplicabilityLimitationItem,
+): string {
+  const label = LIMITATION_CODE_LABELS[item.reasonCode];
+  return label ? `${item.reasonCode} · ${label}` : item.reasonCode;
+}
+
+/** 限制条目描述（后端 statement 原文 + 证据数值；不为缺失证据编造内容） */
+export function limitationDesc(
+  item: TuningApi.ApplicabilityLimitationItem,
+): string {
+  const parts: string[] = [];
+  if (item.statement) parts.push(item.statement);
+  const ev = item.evidence ?? {};
+  const bits: string[] = [];
+  if (ev.snrDb != null) bits.push(`snrDb=${ev.snrDb}`);
+  if (ev.thresholdDb != null) bits.push(`thresholdDb=${ev.thresholdDb}`);
+  if (ev.mode) bits.push(`mode=${ev.mode}`);
+  if (ev.basis) bits.push(`basis=${ev.basis}`);
+  if (ev.ciSource) bits.push(`ciSource=${ev.ciSource}`);
+  if (bits.length > 0) parts.push(`证据：${bits.join('，')}`);
+  if (item.calibrationStatus) parts.push(`校准状态：${item.calibrationStatus}`);
+  return parts.join('；');
+}
+
+/**
+ * R01 总体三态显示口径（UI 防线，与后端同向）：窗内证据不足
+ * （simulationEvidence.insufficientMembers>0）或 overallStatus=INCONCLUSIVE
+ * 一律按 INCONCLUSIVE 显示——窗内不足不得显示总体通过；INCONCLUSIVE 不冒充 PASS。
+ */
+export function robustOverallOf(
+  report?: null | TuningApi.RobustnessReport,
+): 'FAIL' | 'INCONCLUSIVE' | 'PASS' | 'UNKNOWN' {
+  if (!report) return 'UNKNOWN';
+  const insufficient =
+    (report.simulationEvidence?.insufficientMembers ?? 0) > 0;
+  const raw = String(report.overallStatus ?? '').toUpperCase();
+  if (insufficient || raw === 'INCONCLUSIVE') return 'INCONCLUSIVE';
+  if (raw === 'PASS') return 'PASS';
+  if (raw === 'FAIL') return 'FAIL';
+  return 'UNKNOWN';
 }
 
 /**

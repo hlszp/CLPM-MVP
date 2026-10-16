@@ -1,3 +1,89 @@
+<script lang="ts">
+/**
+ * P6-02b（O02-CONTEXT/PL）：评估历史「指定快照」下钻纯函数。
+ *
+ * A09/A10 语义：历史可信度按指定快照打开（recordId + profile 版本 + 该快照
+ * 自己的窗口）——昨天成功/今天不足/迟到旧成功互不混：无 resultRecordId 的
+ * 行返回 null（不拿 latest 或其他记录顶替）；窗口/profile 仅在值有效时
+ * 携带（按值判空：null/空串=缺失，不以键存在制造数据）。
+ */
+import {
+  localTimezone,
+  wb360DrillQuery,
+} from '#/views/cockpit/wb-comps/use-drill';
+
+export interface SnapshotDrillRow {
+  algorithmVersion?: null | string;
+  resultRecordId?: null | string;
+  semanticLinkStatus?: null | string;
+  tsEnd?: null | string;
+  tsStart?: null | string;
+}
+
+function nonEmpty(v: null | string | undefined): null | string {
+  return typeof v === 'string' && v.trim() !== '' ? v : null;
+}
+
+/** 指定快照 → wb360 下钻目标；无账本记录身份/无 loopId 返回 null */
+export function snapshotDrillQuery(
+  row: SnapshotDrillRow,
+  opts: { from?: null | string; loopId: string },
+): null | { path: string; query: Record<string, string> } {
+  const recordId = nonEmpty(row.resultRecordId);
+  if (!recordId || !opts.loopId) return null;
+  const a = Date.parse(row.tsStart ?? '');
+  const b = Date.parse(row.tsEnd ?? '');
+  const window =
+    Number.isFinite(a) && Number.isFinite(b) && b > a
+      ? {
+          timezone: localTimezone(),
+          tsEnd: new Date(b).toISOString(),
+          tsStart: new Date(a).toISOString(),
+        }
+      : null;
+  const version = nonEmpty(row.algorithmVersion);
+  return wb360DrillQuery(
+    {
+      loopId: opts.loopId,
+      section: 'assess',
+      ...(window ? { window } : {}),
+      evidenceRefs: [
+        { id: recordId, kind: 'kpi_snapshot', ...(version ? { version } : {}) },
+      ],
+      ...(version ? { profileRef: version } : {}),
+    },
+    { from: opts.from },
+  );
+}
+
+/**
+ * 快照语义链路提示（按值判空）：
+ * - 有 resultRecordId → null（渲染「打开快照」入口，无需提示）；
+ * - BROKEN → 警告（新 profile 缺语义=真断链，显式暴露）；
+ * - NOT_TRACEABLE / UNLINKED → 中性说明（历史不可追溯/未链接，非故障）；
+ * - 其余（AVAILABLE/null/未知值/键缺失）→ null，不制造警告。
+ */
+export function snapshotTraceNote(
+  row: SnapshotDrillRow,
+): null | { text: string; tone: 'neutral' | 'warning' } {
+  if (nonEmpty(row.resultRecordId)) return null;
+  switch (row.semanticLinkStatus) {
+    case 'BROKEN': {
+      return { text: '语义链路断链', tone: 'warning' };
+    }
+    case 'NOT_TRACEABLE': {
+      return { text: '历史不可追溯', tone: 'neutral' };
+    }
+    case 'UNLINKED': {
+      return { text: '未链接账本', tone: 'neutral' };
+    }
+    default: {
+      return null;
+    }
+  }
+}
+</script>
+
 <script lang="ts" setup>
 /**
  * 可信度详情内容（P2-3 从 loop-performance.vue 抽取）
@@ -17,6 +103,9 @@
 import type { KpiSnapshotItem, LoopConfidenceLatestItem } from '#/api/metric';
 
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+
+import { useUserStore } from '@vben/stores';
 
 import {
   Badge,
@@ -26,11 +115,13 @@ import {
   Table,
   Tag,
 } from 'ant-design-vue';
+import { getActivePinia } from 'pinia';
 
 import { getLoopConfidenceLatestApi, getLoopSnapshotsApi } from '#/api/metric';
 import { ClpmLoadErrorAlert } from '#/components/clpm';
 import { useLatestRequest } from '#/composables/use-latest-request';
 import { useScoreColor } from '#/composables/use-score-color';
+import { canOpenWorkbench360 } from '#/views/cockpit/wb-comps/use-drill';
 
 import {
   CONF_METRIC_COLUMNS,
@@ -52,6 +143,39 @@ const props = defineProps<{
   /** 回路 ID（空则不加载） */
   loopId?: null | string;
 }>();
+
+// ===== P6-02b：评估历史「指定快照」下钻（recordId/profile + 快照自身窗口） =====
+const route = useRoute();
+const router = useRouter();
+
+/**
+ * SPONSOR 无工作台路由权限 → 纯文本降级不造死链。
+ * 本组件为纯内容组件（抽屉宿主直挂，单测无 pinia 上下文）——无活动
+ * pinia 时按无权处理不渲染入口，store 延迟到 computed 内取用。
+ */
+const canOpenWorkbench = computed(() => {
+  if (!getActivePinia()) return false;
+  return canOpenWorkbench360(useUserStore().userInfo?.roles ?? []);
+});
+
+function snapshotDrillOf(row: SnapshotDrillRow) {
+  return snapshotDrillQuery(row, {
+    // 真实抽屉宿主必经路由注入；无 router 注入（单测直挂）时 from 缺省，
+    // 不阻断表格渲染
+    from: (route as undefined | { fullPath?: string })?.fullPath ?? null,
+    loopId: props.loopId ?? '',
+  });
+}
+
+function traceNoteOf(row: SnapshotDrillRow) {
+  return snapshotTraceNote(row);
+}
+
+function openSnapshot(row: SnapshotDrillRow) {
+  const target = snapshotDrillOf(row);
+  if (!target || !(router as unknown)) return; // 无账本身份/无路由注入不动作
+  void router.push(target);
+}
 
 // ===== G3-R03：latest 概要与评估历史各自独立竞态守卫（复用 useLatestRequest） =====
 const latestGuard = useLatestRequest<string>();
@@ -171,6 +295,8 @@ const historyColumns = [
     title: '算法版本',
     width: 110,
   },
+  // 02b：recordId 指定快照入口（无账本身份按值判空显示链路说明，不顶替）
+  { key: 'snapshotRecord', title: '指定快照', width: 96 },
 ];
 
 /** 评分颜色（原 scoreColor 判定链） */
@@ -355,7 +481,7 @@ onBeforeUnmount(() => {
         }"
         row-key="tsStart"
         size="small"
-        :scroll="{ x: 520 }"
+        :scroll="{ x: 620 }"
         @change="
           (pag: { current?: number }) => {
             if (props.loopId) loadHistory(props.loopId, pag.current ?? 1);
@@ -396,6 +522,37 @@ onBeforeUnmount(() => {
             <span class="font-mono text-xs">
               {{ record.algorithmVersion || '—' }}
             </span>
+          </template>
+          <!-- 02b：recordId 指定快照（A09/A10：昨天成功/今天不足/迟到旧成功
+               不混——仅该行自身账本身份可打开；无身份按值判空显示链路说明） -->
+          <template v-else-if="column.key === 'snapshotRecord'">
+            <a
+              v-if="snapshotDrillOf(record) && canOpenWorkbench"
+              class="text-xs"
+              :title="`按该快照记录打开回路工作台（记录 ${record.resultRecordId}，窗口与版本随快照，不取最新替代）`"
+              @click="openSnapshot(record)"
+            >
+              打开快照
+            </a>
+            <span
+              v-else-if="snapshotDrillOf(record)"
+              class="text-xs text-gray-400"
+              title="当前角色无回路工作台权限"
+            >
+              打开快照
+            </span>
+            <span
+              v-else-if="traceNoteOf(record)"
+              class="text-xs"
+              :class="
+                traceNoteOf(record)?.tone === 'warning'
+                  ? 'text-amber-600'
+                  : 'text-gray-400'
+              "
+            >
+              {{ traceNoteOf(record)?.text }}
+            </span>
+            <span v-else class="text-xs text-gray-400">—</span>
           </template>
         </template>
         <!-- G3-R03：空态文案与错误态分开——HTTP 成功 0 条才显示"暂无记录" -->

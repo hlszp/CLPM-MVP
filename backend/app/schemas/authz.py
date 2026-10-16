@@ -97,6 +97,25 @@ class RollbackResponse(BaseModel):
     rollbackOf: int
 
 
+class UserScopeView(BaseModel):
+    """当前用户数据范围视图（P4-04 /auth/effective-access 下发）。"""
+
+    scopeType: str = Field(description="ALL / NODE_SUBTREE（无显式行按 ALL）")
+    nodeId: str | None = Field(default=None, description="NODE_SUBTREE 下的 plant_node id")
+
+
+class MyEffectiveAccess(BaseModel):
+    """GET /auth/effective-access 响应（01§3.5 建议接口，P4-04 在线生效锚点）。"""
+
+    policyRevision: int = Field(description="当前授权策略 revision（前端轮询比对锚）")
+    role: str
+    pages: list[str] = Field(description="显式授权页面码（菜单可达页口径）")
+    actions: list[str] = Field(description="有效动作码（依赖闭包展开；与 require_perms 判定同源）")
+    unavailableByModule: dict[str, list[str]] = Field(description="模块禁用下不可用的已授权码")
+    scope: UserScopeView
+    note: str
+
+
 class PolicyRevisionInfo(BaseModel):
     revision: int
     operation: str

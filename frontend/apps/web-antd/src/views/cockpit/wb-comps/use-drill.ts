@@ -8,6 +8,12 @@
  *
  * 原 drill 的时间窗（G1）与节点（G2）query 参数转为弹窗数据过滤条件；
  * 时间窗取驾驶舱 store（三 pill 全舱共享）。
+ *
+ * P6-02b（O02-CONTEXT/PL，2026-10-14）：舱内下钻发送端接通 Slice C 冻结的
+ * workbench 上下文协议——纯函数构造点（wb360DrillQuery / preciseCockpitWindow /
+ * nodeLoopsDrillTarget）仅供出 wb360QueryFromContext 兼容的 query：稳定
+ * nodeId/loopId、精确 tsStart/tsEnd/timezone（禁止近似滚动窗替换）、from 来源；
+ * 无稳定节点 ID 的行返回 null（调用方显式报原因，不回退全厂口径）。
  */
 import type { MetricApi } from '#/api/metric';
 
@@ -22,9 +28,155 @@ import { getTuningTasksApi } from '#/api/tuning';
 import { useCockpitStore } from '#/store/cockpit';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 import { categoryOrJudgementLabel } from '#/views/diagnosis/components/assessment-labels';
+import {
+  wb360QueryFromContext,
+  type WorkbenchContext,
+} from '#/views/loop/workbench360/workbench-context';
 
 import { GRADE_LABELS, gradeOfScore } from '../composables/use-cockpit-theme';
-import { WINDOW_MAP, windowStartDate } from '../utils/format';
+import {
+  WINDOW_HOURS,
+  WINDOW_MAP,
+  windowStartDate,
+} from '../utils/format';
+
+/* ── 02b 发送端纯函数（本组页面共用，vitest 直接覆盖） ── */
+
+/** 当前 IANA 时区（下钻上下文携带，目标页同口径回显） */
+export function localTimezone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
+/**
+ * 驾驶舱时间窗（24h/7d/30d）→ 精确起止 + 时区（02b：禁止以滚动窗枚举
+ * 近似替换——下钻落地页按该精确起止取数，数字才对得上）。
+ */
+export function preciseCockpitWindow(
+  win: '7d' | '24h' | '30d',
+  now: Date = new Date(),
+): { timezone: string; tsEnd: string; tsStart: string } {
+  const end = now.getTime();
+  return {
+    timezone: localTimezone(),
+    tsEnd: new Date(end).toISOString(),
+    tsStart: new Date(end - WINDOW_HOURS[win] * 3_600_000).toISOString(),
+  };
+}
+
+/** 回路工作台路由角色门禁（loop-workbench.ts authority；SPONSOR 无入口） */
+export const WB360_ROLES = [
+  'ADMIN',
+  'EXPERT',
+  'IC_ENGINEER',
+  'PE_ENGINEER',
+] as const;
+
+/** 当前角色集合是否可打开回路工作台（无权时发送端降级为纯文本，不造死链） */
+export function canOpenWorkbench360(roles: readonly string[]): boolean {
+  return roles.some((r) => (WB360_ROLES as readonly string[]).includes(r));
+}
+
+/**
+ * 构造 wb360 下钻目标（发送端统一构造点）：
+ * wb360QueryFromContext 受管键（mode/loopId/tsStart/tsEnd/tz/recordKind/
+ * recordId/recordVersion/workKind/workId/nodeId/profile/configRevision）+
+ * from 返回来源（非受管键，Adapter 原样保留并用于返回恢复）。
+ * 消费/回显/单项清除由 Slice C 核心实现。
+ */
+export function wb360DrillQuery(
+  context: WorkbenchContext,
+  opts: { from?: null | string; mode?: 'all' | 'single' } = {},
+): { path: string; query: Record<string, string> } {
+  const query = wb360QueryFromContext(opts.mode ?? 'single', context);
+  // section 为一次性消费键（wb360QueryFromContext 不回写），发送端显式携带：
+  // Adapter 解析为初始剖面后随下次宿主回写自然清除
+  if (context.section) query.section = context.section;
+  if (opts.from) query.from = opts.from;
+  return { path: '/loop/workbench360', query };
+}
+
+/**
+ * plant-node 树节点双身份最小结构（G-N2）：
+ * `id`=int source_node_id（评估排名行主键）；`nodeId`=plant_node UUID
+ * （ranking 端点 plantNodeId 过滤的同一空间）。01_schema 双身份实证：
+ * plant_node.id=UUID PK、source_node_id=BIGINT。
+ */
+export interface NodeDualIdentity {
+  children?: NodeDualIdentity[] | null;
+  id?: null | number;
+  name?: string;
+  nodeId?: null | string;
+}
+
+/**
+ * plant-node 树 → source_node_id(int) → plant_node UUID 集合索引。
+ * 树缺失/节点缺 nodeId 不计入（调用方按无映射显式失败）；同一 int 映射
+ * 多个 UUID 可检出（多映射=无法唯一定位）。
+ */
+export function buildSourceNodeUuidIndex(
+  tree: null | readonly NodeDualIdentity[] | undefined,
+): Map<number, string[]> {
+  const index = new Map<number, string[]>();
+  const walk = (nodes: readonly NodeDualIdentity[]) => {
+    for (const n of nodes) {
+      if (typeof n.id === 'number' && typeof n.nodeId === 'string' && n.nodeId) {
+        const list = index.get(n.id) ?? [];
+        if (!list.includes(n.nodeId)) list.push(n.nodeId);
+        index.set(n.id, list);
+      }
+      if (n.children?.length) walk(n.children);
+    }
+  };
+  walk(tree ?? []);
+  return index;
+}
+
+/** 装置排行节点下钻结果：ok=drill 意图；失败=显式原因（行内标注，不回退全厂） */
+export type NodeLoopsDrillResult =
+  | { ok: false; reason: string }
+  | { ok: true; target: Extract<DrillTarget, { kind: 'loops' }> };
+
+/**
+ * 装置/单元行 → 该节点回路清单 drill 意图（02b 装置排行下钻：稳定 nodeId
+ * scope，非全厂）。G-N2 返修：行 id=int source_node_id，ranking 端点
+ * plantNodeId 属 plant_node.id UUID 空间——必须经 plant-node 树解析为
+ * UUID 再下推（int 直推触发后端 500，Slice N 浏览器/API 实证）。
+ * 解析失败（无稳定行 id/无映射/多映射）显式报原因，不回退全厂、不静默丢弃。
+ */
+export function nodeLoopsDrillTarget(
+  row: { id?: null | number; name: string },
+  uuidIndex: ReadonlyMap<number, readonly string[]>,
+): NodeLoopsDrillResult {
+  if (row.id === null || row.id === undefined) {
+    return {
+      ok: false,
+      reason: `「${row.name}」缺少稳定节点 ID，无法定位节点范围，暂不可下钻（不回退全厂口径）`,
+    };
+  }
+  const uuids = uuidIndex.get(row.id) ?? [];
+  if (uuids.length === 0) {
+    return {
+      ok: false,
+      reason: `「${row.name}」节点（source_node_id=${row.id}）未在工厂树解析到 plant_node UUID（节点树缺失或无映射），暂不可下钻（不回退全厂口径）`,
+    };
+  }
+  if (uuids.length > 1) {
+    return {
+      ok: false,
+      reason: `「${row.name}」节点（source_node_id=${row.id}）在工厂树存在 ${uuids.length} 个 UUID 映射，无法唯一定位，暂不可下钻（不回退全厂口径）`,
+    };
+  }
+  return {
+    ok: true,
+    target: {
+      kind: 'loops',
+      nodeName: row.name,
+      plantNodeId: uuids[0]!,
+      sortOrder: 'desc',
+      title: `${row.name} · 回路绩效清单`,
+    },
+  };
+}
 
 /** 下钻意图（E1~E11 + 跨页签），字段语义对齐原 workbench drill 的 query 参数 */
 export type DrillTarget =
@@ -41,7 +193,10 @@ export type DrillTarget =
   | {
       grade?: string;
       kind: 'loops';
-      plantNodeId?: null | number;
+      /** 节点范围回显名（02b：装置排行下钻该节点清单，行内解释该节点） */
+      nodeName?: string;
+      /** plant_node UUID（G-N2：行 int source_node_id 必须经工厂树解析后下推） */
+      plantNodeId?: null | number | string;
       sortOrder?: 'asc' | 'desc';
       title?: string;
     }
@@ -62,7 +217,10 @@ export type DrillTarget =
   | {
       kind: 'metric';
       metric: string;
-      plantNodeId?: null | number;
+      /** 节点范围回显名（同 loops 口径） */
+      nodeName?: string;
+      /** plant_node UUID（同 loops 口径） */
+      plantNodeId?: null | number | string;
     }
   // E7/E9 工单清单（OrderQuery.status 单值，多状态由 statuses 数组多次请求合并）
   | { kind: 'sla' }
@@ -228,11 +386,23 @@ export function useCockpitDrill() {
 
   function pct(v: null | number | undefined): string {
     if (v === null || v === undefined) return '—';
-    return `${(v * 100).toFixed(2)}%`;
+    // G-N1 返修（Slice N 对账）：ranking 率字段为 0–100 口径（实测
+    // steadyRate=65.42/goodValueRate=100.0），直接拼接 %——原按 0–1 假设
+    // ×100 → '6542.00%'，与 pid-dashboard/reports/热力格同数据集矛盾。
+    // （loadTuneTasks 的 fittingScore 为 0–1 口径，其 ×100 在调用处内联，
+    //  不经过本函数，不受影响）
+    return `${v.toFixed(2)}%`;
   }
 
   // ---------------- E1 回路性能清单 ----------------
   async function loadLoops(t: Extract<DrillTarget, { kind: 'loops' }>) {
+    // 02b：范围口径必须随清单回显（对账：节点 scope ≠ 全厂，不丢参数）
+    const conditions = [
+      t.nodeName
+        ? `范围：节点「${t.nodeName}」（nodeId=${t.plantNodeId}）`
+        : '范围：全厂',
+      t.grade ? `等级过滤：${t.grade}` : '',
+    ].filter(Boolean);
     openList({
       columns: [
         { key: 'tagName', label: '回路号' },
@@ -241,7 +411,7 @@ export function useCockpitDrill() {
         { key: 'scoreText', label: '综合评分', width: '90px' },
         { key: 'grade', label: '等级', width: '80px' },
       ],
-      description: t.grade ? `等级过滤：${t.grade}` : undefined,
+      description: conditions.join(' · '),
       rowAction: 'loop',
       title: t.title ?? '回路性能清单',
     });
@@ -307,7 +477,12 @@ export function useCockpitDrill() {
         { key: 'scoreText', label: '综合评分', width: '90px' },
         { key: 'grade', label: '等级', width: '80px' },
       ],
-      description: `指标：${meta?.label ?? t.metric}（按该指标值降序）`,
+      description: [
+        `指标：${meta?.label ?? t.metric}（按该指标值降序）`,
+        t.nodeName
+          ? `范围：节点「${t.nodeName}」（nodeId=${t.plantNodeId}）`
+          : '范围：全厂',
+      ].join(' · '),
       rowAction: 'loop',
       title: '回路指标清单',
     });
