@@ -1,0 +1,83 @@
+{
+  "package": "clpm-engineering-default-templates",
+  "formatVersion": 1,
+  "generatedAt": "2026-10-16",
+  "description": "CLPM 工程模板默认包（P7-03 交付）：温度/流量/压力/液位四类回路响应特征模板。T′（理想稳态时间）取自 P2-04 模板体系类型默认表 app/utils/ideal_settling_time.DEFAULT_SETTLING_TIMES，不含任何编造工程值。",
+  "source": "backend/app/utils/ideal_settling_time.py DEFAULT_SETTLING_TIMES（FLOW=30.0s, PRESSURE=60.0s, TEMPERATURE=180.0s, LEVEL=600.0s）",
+  "import": {
+    "steps": [
+      "1. 登录获取 token（ADMIN 角色；需 config:view 权限）",
+      "2. 逐模板调 POST /api/v1/engineering-templates 创建实体（body=templates[].create，返回模板 id）",
+      "3. 查全局配置账本当前 revision：GET /api/v1/configs/publish/revision（或从模板页取）",
+      "4. 逐模板调 POST /api/v1/engineering-templates/{id}/versions 发布 v1（body=templates[].publish，expected_revision=第 3 步取值；多模板连续发布时每次以最新返回 revision 递进，冲突 409 时以响应内 currentRevision 重试）",
+      "5. 回路经 loop_ledger.engineering_template_id 关联模板（参数配置-回路配置页操作）"
+    ],
+    "notes": [
+      "expected_revision 是 P2-02 统一发布链的全局 config_publication revision（非每模板独立），发布链含 409 乐观锁/审计/广播",
+      "profile.allowedDeviation（A 容限，工程允许偏差）为厂区工程核实项，默认包不含该键——缺失时评估侧按 UNKNOWN 来源回落配置链（P3-03 B1-5 口径），核实后发布 v2 版本补入",
+      "模板版本不可变（追加式）：改值=发布新版本；已固定引用（回路 pin 版本）解析结果不变"
+    ]
+  },
+  "templates": [
+    {
+      "template_key": "resp-flow-default",
+      "create": {
+        "template_key": "resp-flow-default",
+        "name": "流量回路响应特征默认模板",
+        "category": "RESPONSE",
+        "description": "流量类回路响应特征默认档案：响应快、噪声大。T′=30s（类型默认表）。"
+      },
+      "publish": {
+        "profile": {
+          "idealSettlingTimeSeconds": 30.0
+        },
+        "reason": "工程默认包 v1 导入（P7-03）：流量类 T′ 类型默认值"
+      }
+    },
+    {
+      "template_key": "resp-pressure-default",
+      "create": {
+        "template_key": "resp-pressure-default",
+        "name": "压力回路响应特征默认模板",
+        "category": "RESPONSE",
+        "description": "压力类回路响应特征默认档案：响应较快。T′=60s（类型默认表）。"
+      },
+      "publish": {
+        "profile": {
+          "idealSettlingTimeSeconds": 60.0
+        },
+        "reason": "工程默认包 v1 导入（P7-03）：压力类 T′ 类型默认值"
+      }
+    },
+    {
+      "template_key": "resp-temperature-default",
+      "create": {
+        "template_key": "resp-temperature-default",
+        "name": "温度回路响应特征默认模板",
+        "category": "RESPONSE",
+        "description": "温度类回路响应特征默认档案：响应慢、惯性大。T′=180s（类型默认表）。"
+      },
+      "publish": {
+        "profile": {
+          "idealSettlingTimeSeconds": 180.0
+        },
+        "reason": "工程默认包 v1 导入（P7-03）：温度类 T′ 类型默认值"
+      }
+    },
+    {
+      "template_key": "resp-level-default",
+      "create": {
+        "template_key": "resp-level-default",
+        "name": "液位回路响应特征默认模板",
+        "category": "RESPONSE",
+        "description": "液位类回路响应特征默认档案：积分特性。T′=600s（类型默认表）。"
+      },
+      "publish": {
+        "profile": {
+          "idealSettlingTimeSeconds": 600.0
+        },
+        "reason": "工程默认包 v1 导入（P7-03）：液位类 T′ 类型默认值"
+      }
+    }
+  ]
+}
