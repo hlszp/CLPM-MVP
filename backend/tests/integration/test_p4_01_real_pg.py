@@ -6,9 +6,13 @@ PostgreSQL 上验证——
 1. **新装路径**：bootstrap SQL（01_schema+02_seed）→ alembic stamp head →
    零漂移（alembic autogenerate 无差异）+ 种子三方一致
    （引导 SQL == services.authz_catalog.CATALOG/ROLE_SEED）
-2. **存量升级路径**：alembic upgrade（head-1）→ 插入存量用户 →
-   upgrade head → 矩阵/目录/存量用户 scope=ALL 与新装路径完全一致
-   （核验问题 1：迁移前后有效授权一致）
+2. **存量升级路径**：git 基线（p204engtpl01 同批 commit）引导 SQL →
+   stamp p204engtpl01 → 插入存量用户 → upgrade head → 矩阵/目录/存量用户
+   scope=ALL 与新装路径完全一致（核验问题 1：迁移前后有效授权一致）
+   ——2026-10-16 P7-03 重订：旧版 bootstrap 从 git 历史基线整体取用，
+   不再按 §9 段标记剥离当前 SQL（P3-08a/P5-02/P6-05 等批次向 §9 标记
+   之前插入建表/列增量后，剥离结果不再等价于 p204 时刻旧版，
+   p308arele01 撞 assessment_release_registry already exists）
 3. **并发 409 双会话**：两个独立 AsyncSession 同 expectedRevision 真实
    并发 update_role_grants——恰一方成功、恰一方 409、账本 revision 唯一
    （主键约束实跑，非进程内 mock）
@@ -101,28 +105,39 @@ def _alembic(dsn: str, *args: str, timeout: int = 600) -> subprocess.CompletedPr
     )
 
 
-# 引导 SQL 的 P4-01 段标记（剥离后=存量库"迁移前"的旧版 bootstrap 口径）
-_P401_SCHEMA_MARKER = "-- §9 授权目录与持久策略"
-_P401_SEED_MARKER = "-- 15. 授权目录与五角色矩阵种子"
-_TAIL_MARKER = (
-    "-- =============================================================================\n"
-    "-- 脚本结束\n"
-    "-- ============================================================================="
-)
+# 存量升级路径的基线口径：p204engtpl01 时刻 = P2-04 同批 commit
+# （"feat(templates): P2-04 工程模板模型/迁移与引导SQL同批"）。
+# 2026-10-16 P7-03 重订剥离边界：此前按 "-- §9 授权目录与持久策略" 段
+# 标记剥离当前 01_schema.sql 造"旧版"，但 P3-08a（2d29235a 之后合入）起
+# 各批次的建表/列增量插在 §9 标记**之前**，剥离假设失效；改从 git 历史
+# 整体取用基线引导 SQL——存量库=对应基线引导 SQL 打出来的库（真实口径）。
+_LEGACY_BASELINE_REF = "2d29235a"
 
 
 def _legacy_bootstrap_pair() -> tuple[str, str]:
-    """旧版（P4-01 前）bootstrap SQL 对：剥离 P4-01 段的 01/02。
+    """旧版（P4-01 前）bootstrap SQL 对：git 基线（p204engtpl01 同批）的 01/02。
 
-    存量升级路径的真实口径：存量库=旧版 bootstrap 完整 schema + stamp
-    parent head（老迁移链从空库不可全链 upgrade——init schema 历史断裂，
+    存量升级路径的真实口径：存量库 = 基线 bootstrap 完整 schema + stamp
+    p204engtpl01（老迁移链从空库不可全链 upgrade——init schema 历史断裂，
     与 P2-02 存量演示口径一致：迁移前版本已在库中）。
+    git 基线不可读时 skip（浅克隆/历史改写等环境限制），不猜测回落。
     """
-    schema = _SCHEMA_SQL.read_text(encoding="utf-8")
-    seed = _SEED_SQL.read_text(encoding="utf-8")
-    schema_legacy = schema.split(_P401_SCHEMA_MARKER)[0] + _TAIL_MARKER + "\n"
-    seed_legacy = seed.split(_P401_SEED_MARKER)[0] + _TAIL_MARKER + "\n"
-    return schema_legacy, seed_legacy
+
+    def _show(rel: str) -> str | None:
+        proc = subprocess.run(
+            ["git", "show", f"{_LEGACY_BASELINE_REF}:{rel}"],
+            cwd=_ROOT,
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        return proc.stdout if proc.returncode == 0 else None
+
+    schema = _show("db/postgresql/01_schema.sql")
+    seed = _show("db/postgresql/02_seed_data.sql")
+    if not schema or not seed:
+        pytest.skip(f"git 基线 {_LEGACY_BASELINE_REF} 不可读（需完整 git 历史）")
+    return schema, seed
 
 
 @pytest.fixture
