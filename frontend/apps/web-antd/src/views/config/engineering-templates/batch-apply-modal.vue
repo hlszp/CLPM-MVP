@@ -44,6 +44,7 @@ import { getLoopListApi } from '#/api/loop';
 import { getPlantNodeTreeApi } from '#/api/plant-node';
 import { flattenNodes } from '#/utils/plant-node';
 
+import BatchRestoreModal from './batch-restore-modal.vue';
 import {
   BATCH_STATUS_LABEL,
   canConfirmPublish,
@@ -100,6 +101,16 @@ const resultItems = ref<ResultItem[]>([]);
 /** 已完成分批数（失败时如实展示进度） */
 const doneChunks = ref(0);
 const totalChunks = ref(0);
+const snapshotIds = ref<string[]>([]);
+const restoreOpen = ref(false);
+const previewChunks = ref<
+  {
+    ids: string[];
+    operationId: string;
+    tokens: Record<string, string>;
+    updates: EngineeringTemplateApi.LoopBatchEngineeringUpdates;
+  }[]
+>([]);
 
 const summary = computed(() => summarizeBatchResults(resultItems.value));
 
@@ -153,9 +164,7 @@ async function loadPlantNodes() {
       let current: (typeof nodes)[number] | undefined = node;
       while (current) {
         path.unshift(current.name);
-        current = current.parentId
-          ? nodeMap.get(current.parentId)
-          : undefined;
+        current = current.parentId ? nodeMap.get(current.parentId) : undefined;
       }
       return { label: path.join(' / '), value: node.id };
     });
@@ -176,7 +185,9 @@ async function loadContext() {
     ]);
     versions.value = versionRes.items;
     pinVersion.value =
-      props.template.currentVersion ?? versionRes.items[0]?.version ?? undefined;
+      props.template.currentVersion ??
+      versionRes.items[0]?.version ??
+      undefined;
   } catch (error: any) {
     flowError.value = `加载回路/版本失败：${errorMessage(error)}`;
   } finally {
@@ -195,6 +206,8 @@ watch(
       doneChunks.value = 0;
       totalChunks.value = 0;
       flowError.value = '';
+      previewChunks.value = [];
+      snapshotIds.value = [];
       loopFilters.keyword = '';
       loopFilters.plantNodeId = undefined;
       loadContext();
@@ -232,6 +245,7 @@ function mergeSelection(keys: string[]) {
 function buildUpdates(): EngineeringTemplateApi.LoopBatchEngineeringUpdates {
   const updates: EngineeringTemplateApi.LoopBatchEngineeringUpdates = {
     engineeringTemplateId: props.template?.id,
+    engineeringTemplateVersion: null,
   };
   if (pinMode.value === 'pin' && pinVersion.value !== undefined) {
     updates.engineeringTemplateVersion = pinVersion.value;
@@ -248,12 +262,29 @@ async function startPreview() {
   loading.value = true;
   flowError.value = '';
   try {
-    const res = await batchApplyLoopsApi({
-      loopIds: selectedLoopIds.value,
-      updates: buildUpdates(),
-      dryRun: true,
-    });
-    resultItems.value = res.results ?? [];
+    previewChunks.value = [];
+    resultItems.value = [];
+    for (const ids of chunkLoopIds(selectedLoopIds.value)) {
+      const chunk = {
+        ids,
+        operationId: crypto.randomUUID(),
+        tokens: {} as Record<string, string>,
+        updates: buildUpdates(),
+      };
+      const res = await batchApplyLoopsApi({
+        loopIds: ids,
+        updates: chunk.updates,
+        operationId: chunk.operationId,
+        dryRun: true,
+      });
+      const items = res.results ?? [];
+      checkCompleteResults(ids, items);
+      for (const item of items) {
+        if (item.stateToken) chunk.tokens[item.loopId] = item.stateToken;
+      }
+      previewChunks.value.push(chunk);
+      resultItems.value.push(...items);
+    }
     step.value = reducePublishFlow(step.value, 'PREVIEW_OK');
   } catch (error: any) {
     flowError.value = `dry-run 预览失败：${errorMessage(error)}`;
@@ -267,10 +298,24 @@ function backToEdit() {
   step.value = reducePublishFlow(step.value, 'BACK_TO_EDIT');
 }
 
+function checkCompleteResults(ids: string[], items: ResultItem[]) {
+  const returned = new Set(items.map((item) => item.loopId));
+  if (
+    items.length !== ids.length ||
+    returned.size !== ids.length ||
+    ids.some((id) => !returned.has(id))
+  ) {
+    throw new Error(
+      `批次结果不完整：请求 ${ids.length} 条，收到 ${items.length} 条，已停止后续操作`,
+    );
+  }
+}
+
 /** 步骤 3→4/5：确认执行（顺序分批 ≤200/批；FAIL 跳过、OK 应用） */
 async function confirmExecute() {
   if (!props.template || !canConfirmPublish(step.value)) return;
-  const chunks = chunkLoopIds(selectedLoopIds.value);
+  const chunks = previewChunks.value;
+  if (chunks.length === 0) return;
   step.value = reducePublishFlow(step.value, 'CONFIRM_PUBLISH');
   executing.value = true;
   flowError.value = '';
@@ -279,12 +324,22 @@ async function confirmExecute() {
   const merged: ResultItem[] = [];
   try {
     for (let i = 0; i < chunks.length; i++) {
-      executeProgress.value = `第 ${i + 1}/${chunks.length} 批（${chunks[i]?.length ?? 0} 条）`;
+      const chunk = chunks[i]!;
+      executeProgress.value = `第 ${i + 1}/${chunks.length} 批（${chunk.ids.length} 条）`;
       const res = await batchApplyLoopsApi({
-        loopIds: chunks[i] ?? [],
-        updates: buildUpdates(),
+        loopIds: chunk.ids,
+        updates: chunk.updates,
+        operationId: chunk.operationId,
+        expectedStateTokens: chunk.tokens,
         dryRun: false,
       });
+      checkCompleteResults(chunk.ids, res.results ?? []);
+      if (!res.snapshotId)
+        throw new Error(
+          '服务端未返回恢复快照引用，请到批次历史核对，禁止盲目重试',
+        );
+      if (!snapshotIds.value.includes(res.snapshotId))
+        snapshotIds.value.push(res.snapshotId);
       merged.push(...(res.results ?? []));
       doneChunks.value = i + 1;
     }
@@ -302,6 +357,7 @@ async function confirmExecute() {
 }
 
 function handleClose() {
+  if (executing.value) return;
   open.value = false;
 }
 
@@ -310,6 +366,8 @@ const STATUS_COLOR: Record<string, string> = {
   UNCHANGED: 'default',
   FAIL: 'red',
   NOT_FOUND: 'orange',
+  CONFLICT: 'red',
+  ALREADY_RESTORED: 'default',
 };
 
 const loopColumns: TableColumnsType = [
@@ -336,7 +394,10 @@ function changesText(item: ResultItem): string {
   if (item.error) return item.error;
   if (item.changes.length === 0) return '—';
   return item.changes
-    .map((c) => `${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`)
+    .map(
+      (c) =>
+        `${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`,
+    )
     .join('；');
 }
 </script>
@@ -347,6 +408,8 @@ function changesText(item: ResultItem): string {
     :title="`批量应用 — ${template?.name ?? ''}（${template?.templateKey ?? ''}）`"
     :footer="null"
     width="780px"
+    :closable="!executing"
+    :mask-closable="false"
     @cancel="handleClose"
   >
     <Spin :spinning="loading && step === 'edit'">
@@ -385,7 +448,8 @@ function changesText(item: ResultItem): string {
           </span>
           <!-- DEF-4：指引与实际能力对齐（选择面含未关联回路；筛选+翻页+自动分批） -->
           <span class="text-xs text-gray-400" data-testid="loops-note">
-            选择面为全部回路（含未关联本模板的回路）；可按装置/位号筛选并翻页，跨页勾选自动保留；执行按单批 ≤200 自动分批提交
+            选择面为全部回路（含未关联本模板的回路）；可按装置/位号筛选并翻页，跨页勾选自动保留；执行按单批
+            ≤200 自动分批提交
           </span>
         </div>
         <!-- DEF-1：选择面筛选复用 /loops 既有参数（装置 + 位号） -->
@@ -443,9 +507,15 @@ function changesText(item: ResultItem): string {
             </template>
             <template v-else-if="column.key === 'isActive'">
               <Tag
-                :color="(record as LoopApi.LoopListItem).isActive ? 'green' : 'default'"
+                :color="
+                  (record as LoopApi.LoopListItem).isActive
+                    ? 'green'
+                    : 'default'
+                "
               >
-                {{ (record as LoopApi.LoopListItem).isActive ? '监控中' : '停用' }}
+                {{
+                  (record as LoopApi.LoopListItem).isActive ? '监控中' : '停用'
+                }}
               </Tag>
             </template>
           </template>
@@ -462,7 +532,7 @@ function changesText(item: ResultItem): string {
           type="info"
           show-icon
           class="mb-2"
-          message="dry-run 预览（零写入）：以下为将发生的逐回路差异与部分失败状态，确认后执行。"
+          message="操作前快照预览（零写入）：逐回路原值与差异可审查；确认后快照与变更同事务保存。预览后发生修改的回路会报冲突并跳过。"
         />
         <Alert
           v-else-if="step === 'done'"
@@ -493,7 +563,9 @@ function changesText(item: ResultItem): string {
         >
           <template #bodyCell="{ column, record }">
             <template v-if="column.key === 'tagName'">
-              {{ (record as ResultItem).tagName ?? (record as ResultItem).loopId }}
+              {{
+                (record as ResultItem).tagName ?? (record as ResultItem).loopId
+              }}
             </template>
             <template v-else-if="column.key === 'status'">
               <Tag
@@ -504,9 +576,22 @@ function changesText(item: ResultItem): string {
               </Tag>
             </template>
             <template v-else-if="column.key === 'detail'">
+              <details
+                v-if="(record as ResultItem).beforeState"
+                class="mb-1 text-xs"
+              >
+                <summary>操作前完整工程属性（null 为原始空值）</summary>
+                <pre>{{
+                  JSON.stringify((record as ResultItem).beforeState, null, 2)
+                }}</pre>
+              </details>
               <span
                 class="text-xs"
-                :class="(record as ResultItem).status === 'FAIL' ? 'text-red-500' : 'text-gray-500'"
+                :class="
+                  (record as ResultItem).status === 'FAIL'
+                    ? 'text-red-500'
+                    : 'text-gray-500'
+                "
               >
                 {{ changesText(record as ResultItem) }}
               </span>
@@ -517,6 +602,12 @@ function changesText(item: ResultItem): string {
 
       <!-- 底部操作条 -->
       <div class="mt-4 flex items-center justify-end gap-2">
+        <Button
+          v-if="snapshotIds.length > 0 && !executing"
+          data-testid="btn-review-restore"
+          @click="restoreOpen = true"
+          >审查并恢复操作前快照（{{ snapshotIds.length }} 批）</Button
+        >
         <span v-if="executing" class="mr-auto text-xs text-gray-500">
           {{ executeProgress }}
         </span>
@@ -531,7 +622,9 @@ function changesText(item: ResultItem): string {
         >
           dry-run 预览
         </Button>
-        <Button v-if="step === 'previewed'" @click="backToEdit">返回修改</Button>
+        <Button v-if="step === 'previewed'" @click="backToEdit"
+          >返回修改</Button
+        >
         <Button
           v-if="step === 'previewed'"
           type="primary"
@@ -553,8 +646,15 @@ function changesText(item: ResultItem): string {
         >
           重试执行
         </Button>
-        <Button v-if="step === 'done'" type="primary" @click="handleClose">完成</Button>
+        <Button v-if="step === 'done'" type="primary" @click="handleClose"
+          >完成</Button
+        >
       </div>
     </Spin>
   </Modal>
+  <BatchRestoreModal
+    v-model:open="restoreOpen"
+    :snapshot-ids="snapshotIds"
+    @restored="emit('applied')"
+  />
 </template>

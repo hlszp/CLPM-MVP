@@ -50,6 +50,7 @@ import { hasPermission } from '#/directives/permission';
 import { formatTime } from '#/utils/format';
 
 import BatchApplyModal from './batch-apply-modal.vue';
+import BatchRestoreModal from './batch-restore-modal.vue';
 import OverridePublishModal from './override-publish-modal.vue';
 import PublicationsTab from './publications-tab.vue';
 import PublishVersionModal from './publish-version-modal.vue';
@@ -77,6 +78,7 @@ const BATCH_ONLY_TIP = '需要 loop:batch-config 权限（ADMIN）';
 
 // ===== 模板列表 =====
 const loading = ref(false);
+const restoreOpen = ref(false);
 const loadError = ref('');
 const templates = ref<EngineeringTemplateApi.TemplateItem[]>([]);
 const lastRefresh = ref('');
@@ -104,8 +106,20 @@ const columns: TableColumnsType = [
   { title: '名称', dataIndex: 'name', key: 'name', width: 180 },
   { title: '类别', key: 'category', width: 100, align: 'center' },
   { title: '当前版本', key: 'currentVersion', width: 90, align: 'center' },
-  { title: '版本数', dataIndex: 'versionCount', key: 'versionCount', width: 80, align: 'center' },
-  { title: '关联回路', dataIndex: 'loopCount', key: 'loopCount', width: 90, align: 'center' },
+  {
+    title: '版本数',
+    dataIndex: 'versionCount',
+    key: 'versionCount',
+    width: 80,
+    align: 'center',
+  },
+  {
+    title: '关联回路',
+    dataIndex: 'loopCount',
+    key: 'loopCount',
+    width: 90,
+    align: 'center',
+  },
   { title: '更新时间', key: 'updatedAt', width: 170 },
   { title: '操作', key: 'action', width: 90, fixed: 'right' },
 ];
@@ -158,7 +172,9 @@ async function submitCreate() {
       templateKey: form.templateKey.trim(),
       name: form.name.trim(),
       category: form.category,
-      ...(form.description.trim() ? { description: form.description.trim() } : {}),
+      ...(form.description.trim()
+        ? { description: form.description.trim() }
+        : {}),
     });
     createOpen.value = false;
     message.success('模板已创建（尚未发布版本）');
@@ -227,7 +243,9 @@ onMounted(loadTemplates);
     <div class="mt-4 flex flex-col gap-3 p-3">
       <div class="flex items-center justify-between">
         <span class="text-xs text-gray-500">
-          共 {{ templates.length }} 个模板；版本追加式不可变，固定引用（pin）不受新发布影响。
+          共
+          {{ templates.length }}
+          个模板；版本追加式不可变，固定引用（pin）不受新发布影响。
         </span>
         <Tooltip :title="isAdmin ? '' : ADMIN_ONLY_TIP">
           <Button
@@ -266,21 +284,34 @@ onMounted(loadTemplates);
           </template>
           <template v-else-if="column.key === 'category'">
             <Tag>
-              {{ TEMPLATE_CATEGORY_LABEL[(record as EngineeringTemplateApi.TemplateItem).category] ?? (record as EngineeringTemplateApi.TemplateItem).category }}
+              {{
+                TEMPLATE_CATEGORY_LABEL[
+                  (record as EngineeringTemplateApi.TemplateItem).category
+                ] ?? (record as EngineeringTemplateApi.TemplateItem).category
+              }}
             </Tag>
           </template>
           <template v-else-if="column.key === 'currentVersion'">
             <Tag
-              v-if="(record as EngineeringTemplateApi.TemplateItem).currentVersion !== null"
+              v-if="
+                (record as EngineeringTemplateApi.TemplateItem)
+                  .currentVersion !== null
+              "
               color="blue"
             >
-              v{{ (record as EngineeringTemplateApi.TemplateItem).currentVersion }}
+              v{{
+                (record as EngineeringTemplateApi.TemplateItem).currentVersion
+              }}
             </Tag>
             <span v-else class="text-xs text-gray-400">未发布</span>
           </template>
           <template v-else-if="column.key === 'updatedAt'">
             <span class="text-xs">
-              {{ formatTime((record as EngineeringTemplateApi.TemplateItem).updatedAt) }}
+              {{
+                formatTime(
+                  (record as EngineeringTemplateApi.TemplateItem).updatedAt,
+                )
+              }}
             </span>
           </template>
           <template v-else-if="column.key === 'action'">
@@ -300,7 +331,11 @@ onMounted(loadTemplates);
     <!-- 模板维护抽屉 -->
     <Drawer
       v-model:open="detailOpen"
-      :title="activeTemplate ? `${activeTemplate.name}（${activeTemplate.templateKey}）` : ''"
+      :title="
+        activeTemplate
+          ? `${activeTemplate.name}（${activeTemplate.templateKey}）`
+          : ''
+      "
       width="920"
     >
       <template v-if="activeTemplate">
@@ -378,7 +413,9 @@ onMounted(loadTemplates);
     >
       <div class="space-y-3">
         <div>
-          <div class="mb-1 text-sm">模板键（全局唯一，TEMPLATE 层作用域标识）</div>
+          <div class="mb-1 text-sm">
+            模板键（全局唯一，TEMPLATE 层作用域标识）
+          </div>
           <Input
             v-model:value="createForm.templateKey"
             :maxlength="64"
@@ -408,7 +445,11 @@ onMounted(loadTemplates);
         </div>
         <div>
           <div class="mb-1 text-sm">描述（可选）</div>
-          <Textarea v-model:value="createForm.description" :rows="2" :maxlength="500" />
+          <Textarea
+            v-model:value="createForm.description"
+            :rows="2"
+            :maxlength="500"
+          />
         </div>
         <Alert
           v-if="createError"
@@ -425,6 +466,13 @@ onMounted(loadTemplates);
       :template="activeTemplate"
       @published="handleChanged"
     />
+    <Button
+      :disabled="!canBatchApply"
+      data-testid="btn-batch-history-restore"
+      @click="restoreOpen = true"
+      >本人批量维护历史与恢复</Button
+    >
+    <BatchRestoreModal v-model:open="restoreOpen" @restored="loadTemplates" />
     <BatchApplyModal
       v-model:open="batchOpen"
       :template="activeTemplate"
