@@ -1,6 +1,7 @@
-"""Prepare synthetic INPUTS for real KPI E2E, only in disposable GitHub CI services.
+"""Prepare synthetic INPUTS for real KPI E2E in explicitly disposable services.
 
---plan is read-only. --execute refuses non-CI hosts/databases. No result or score
+--plan is read-only. Writers reject every identity outside the two guarded profiles.
+The local profile is keeper-only and never impersonates GitHub. No result or score
 is seeded: the browser suite submits a real custom calculation and checks its
 immutable result record. The runner's PG/Redis/TD services are discarded at job
 end, including failed runs; they must never be shared development services.
@@ -14,6 +15,7 @@ import hashlib
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -41,8 +43,69 @@ CI_SERVICE_CONFIG = {
 }
 
 
-def isolation_errors(env: dict[str, str], api_url: str) -> list[str]:
+def execution_identity(env: dict[str, str]) -> dict[str, str]:
+    if env.get("E2E_EXECUTION_ENV") == "disposable-local":
+        return {
+            "environment": "disposable-local",
+            "location": "local-keeper",
+            "prefix": "CRITICAL-LOCAL",
+            "runId": env.get("LOCAL_RUN_ID", ""),
+            "attempt": env.get("LOCAL_RUN_ATTEMPT", "1"),
+            "sourceSha": env.get("CLPM_BUILD_CODE_SHA", ""),
+        }
+    return {
+        "environment": "disposable-github-ci",
+        "location": env.get("E2E_EXECUTION_LOCATION", "github-actions"),
+        "prefix": "CRITICAL-E2E",
+        "runId": env.get("GITHUB_RUN_ID", ""),
+        "attempt": env.get("GITHUB_RUN_ATTEMPT", "1"),
+        "sourceSha": env.get("GITHUB_SHA", ""),
+    }
+
+
+def local_isolation_errors(env: dict[str, str], api_url: str) -> list[str]:
     errors = []
+    required = {
+        "POSTGRES_HOST": "127.0.0.1",
+        "POSTGRES_PORT": "17102",
+        "POSTGRES_DB": "clpm_critical_20261017_local",
+        "REDIS_HOST": "127.0.0.1",
+        "REDIS_PORT": "17124",
+        "REDIS_DB": "0",
+        "TDENGINE_HOST": "127.0.0.1",
+        "TDENGINE_PORT": "17104",
+        "TDENGINE_DB": "clpm_critical_20261017_local_ts",
+        "E2E_BASE_URL": "http://127.0.0.1:17266",
+    }
+    for key, value in required.items():
+        if env.get(key) != value:
+            errors.append(f"{key} must be {value} for disposable-local")
+    if api_url != "http://127.0.0.1:17261/api/v1":
+        errors.append("disposable-local API must be http://127.0.0.1:17261/api/v1")
+    if env.get("GITHUB_ACTIONS") == "true":
+        errors.append("disposable-local must not impersonate GITHUB_ACTIONS")
+    if not re.fullmatch(r"\d{8,20}", env.get("LOCAL_RUN_ID", "")):
+        errors.append("LOCAL_RUN_ID must be 8-20 digits")
+    if not re.fullmatch(r"[1-9]\d*", env.get("LOCAL_RUN_ATTEMPT", "1")):
+        errors.append("LOCAL_RUN_ATTEMPT must be a positive integer")
+    source_sha = env.get("CLPM_BUILD_CODE_SHA", "")
+    if not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        errors.append("CLPM_BUILD_CODE_SHA must identify the fixed local checkout")
+    else:
+        actual = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=ROOT, capture_output=True, text=True
+        )
+        if actual.returncode or actual.stdout.strip() != source_sha:
+            errors.append("CLPM_BUILD_CODE_SHA must equal this checkout's actual HEAD")
+    return errors
+
+
+def isolation_errors(env: dict[str, str], api_url: str) -> list[str]:
+    if env.get("E2E_EXECUTION_ENV") == "disposable-local":
+        return local_isolation_errors(env, api_url)
+    errors = []
+    if env.get("E2E_EXECUTION_ENV", "disposable-github-ci") != "disposable-github-ci":
+        errors.append("unknown E2E_EXECUTION_ENV")
     for key in ("CI", "GITHUB_ACTIONS"):
         if env.get(key) != "true":
             errors.append(f"{key}=true is required")
@@ -96,7 +159,7 @@ async def configure_services(output: Path) -> None:
     finally:
         await connection.close()
     payload = {
-        "candidateSha": os.environ["GITHUB_SHA"],
+        "candidateSha": execution_identity(dict(os.environ))["sourceSha"],
         "configurationWritten": True,
         "database": os.environ["POSTGRES_DB"],
         "values": actual,
@@ -131,7 +194,8 @@ async def prepare(api_url: str, output: Path) -> None:
         point_subtable,
     )
 
-    prefix = f"CRITICAL-E2E-{os.environ['GITHUB_RUN_ID']}-{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
+    identity = execution_identity(dict(os.environ))
+    prefix = f"{identity['prefix']}-{identity['runId']}-{identity['attempt']}"
     tag_name = f"{prefix}-FLOW001"
     api = ApiClient(api_url, "admin", "admin123")
     responses: dict = {}
@@ -249,9 +313,9 @@ async def prepare(api_url: str, output: Path) -> None:
         "schemaVersion": 1,
         "synthetic": True,
         "inputOnly": True,
-        "environment": "disposable-github-ci",
-        "executionLocation": os.environ.get("E2E_EXECUTION_LOCATION", "github-actions"),
-        "candidateSha": os.environ["GITHUB_SHA"],
+        "environment": identity["environment"],
+        "executionLocation": identity["location"],
+        "candidateSha": identity["sourceSha"],
         "loopId": loop_id,
         "loopTagName": tag_name,
         "windowStart": start.isoformat(),
@@ -297,7 +361,7 @@ def main() -> int:
                     "loops": 1,
                     "tags": 7,
                     "data": "synthetic INPUT; no results seeded",
-                    "cleanup": "disposable GitHub job services removed even on failure",
+                    "cleanup": "GitHub job services discarded; local services owned and stopped by keeper",
                     "serviceIsolationBeforeLifespan": CI_SERVICE_CONFIG,
                     "executionPreconditions": isolation_errors(
                         dict(os.environ), args.api_url
