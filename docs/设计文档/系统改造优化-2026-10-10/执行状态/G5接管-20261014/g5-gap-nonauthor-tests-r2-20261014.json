@@ -1,0 +1,41 @@
+{
+  "return_code": 0,
+  "network_attempts": [],
+  "source_stable": true,
+  "sha256_before": {
+    "backend/app/contracts/series_context.py": "5854de663228bd652bcb3576977d5e21574cd88ad9a96c5e5efb780e5b962fab",
+    "backend/app/services/data_source/logical_wide_builder.py": "a52d86fc2722b4ff7a68837e8ec06fd51806fdc0021157d8672c02b0e3d32da8",
+    "backend/app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+    "backend/scripts/generate_capacity_dataset.py": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+    "backend/app/tasks/kpi_calc.py": "6b06db499b46bf7d8935d4758bf75b7c17a8a1519529bdf88ec31bdced7ee6eb",
+    "backend/app/services/data_planner.py": "f34187ca049a577d6bdf2b213f3f8cd2b6eefcad53a076e158d915de0136c84f",
+    "backend/app/core/g5_trace.py": "c7045ced8489a8a6f55a6767c263cf0c4469f00f276dd153190931d996ae818d",
+    "backend/tests/test_g5_gap_coverage_regression.py": "8e5bcf670993254e99dde307458c3fe6e6d27386edea4c2ac0c5e8161faf9fda",
+    "backend/tests/test_g5_kpi_zero_coverage.py": "8303d1bb3a92078b07ae6eb77c508f7e22ff899804144ff60b5fa192622c4248",
+    "backend/tests/test_generate_capacity_dataset.py": "59343107f1c19084e1467644b2e1aec536ee01945f191cef2baf99e7b0e75f5f",
+    "backend/tests/test_kpi_r14_sparse_admission.py": "9a4cd7536289b2c8418eb542c856586f85c8a0890209b4a878cb61708afb06b1",
+    "backend/tests/test_held_mask_r2r3.py": "a7363184fbef60634d882438d191f87e3cb401bbb7a1392deb3755c37c8ddbfc",
+    "backend/tests/test_held_tiered_r1.py": "8736ed99bcce478b871ebc79f66e4b0efa60847ca2856e06404274137eb66012",
+    "backend/tests/test_p3_08bc_time_quality.py": "a3e44e9530f0699121f4040f9774bead5120aea5d608c064757878cd92b6334e",
+    "backend/tests/test_preprocessing/test_pipeline.py": "d449ff8a5da6d943fd58b9c6853c24c0c6cb9e3a8f2359130982a871a81c304a",
+    "backend/tests/test_preprocessing/test_quality_summary.py": "24f080f3c1b490ec02dd1debccc8abe7be163b15350847ef62c25fdafd68349e"
+  },
+  "sha256_after": {
+    "backend/app/contracts/series_context.py": "5854de663228bd652bcb3576977d5e21574cd88ad9a96c5e5efb780e5b962fab",
+    "backend/app/services/data_source/logical_wide_builder.py": "a52d86fc2722b4ff7a68837e8ec06fd51806fdc0021157d8672c02b0e3d32da8",
+    "backend/app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+    "backend/scripts/generate_capacity_dataset.py": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+    "backend/app/tasks/kpi_calc.py": "6b06db499b46bf7d8935d4758bf75b7c17a8a1519529bdf88ec31bdced7ee6eb",
+    "backend/app/services/data_planner.py": "f34187ca049a577d6bdf2b213f3f8cd2b6eefcad53a076e158d915de0136c84f",
+    "backend/app/core/g5_trace.py": "c7045ced8489a8a6f55a6767c263cf0c4469f00f276dd153190931d996ae818d",
+    "backend/tests/test_g5_gap_coverage_regression.py": "8e5bcf670993254e99dde307458c3fe6e6d27386edea4c2ac0c5e8161faf9fda",
+    "backend/tests/test_g5_kpi_zero_coverage.py": "8303d1bb3a92078b07ae6eb77c508f7e22ff899804144ff60b5fa192622c4248",
+    "backend/tests/test_generate_capacity_dataset.py": "59343107f1c19084e1467644b2e1aec536ee01945f191cef2baf99e7b0e75f5f",
+    "backend/tests/test_kpi_r14_sparse_admission.py": "9a4cd7536289b2c8418eb542c856586f85c8a0890209b4a878cb61708afb06b1",
+    "backend/tests/test_held_mask_r2r3.py": "a7363184fbef60634d882438d191f87e3cb401bbb7a1392deb3755c37c8ddbfc",
+    "backend/tests/test_held_tiered_r1.py": "8736ed99bcce478b871ebc79f66e4b0efa60847ca2856e06404274137eb66012",
+    "backend/tests/test_p3_08bc_time_quality.py": "a3e44e9530f0699121f4040f9774bead5120aea5d608c064757878cd92b6334e",
+    "backend/tests/test_preprocessing/test_pipeline.py": "d449ff8a5da6d943fd58b9c6853c24c0c6cb9e3a8f2359130982a871a81c304a",
+    "backend/tests/test_preprocessing/test_quality_summary.py": "24f080f3c1b490ec02dd1debccc8abe7be163b15350847ef62c25fdafd68349e"
+  }
+}

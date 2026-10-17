@@ -21,6 +21,8 @@ import type {
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
+import { refreshFollows } from '#/composables/use-loop-follow';
+
 import AllLoopWorkbenchHost from './components/AllLoopWorkbenchHost.vue';
 import SingleLoopWorkbench from './components/SingleLoopWorkbench.vue';
 import {
@@ -150,9 +152,15 @@ function onNavigateRequest(payload: Wb360NavigateRequest) {
   }
 }
 
-/* ── result-changed：路由页宿主当前无额外汇聚清单需刷新（核心已就地刷新） ── */
-function onResultChanged(_payload: Wb360ResultChangedPayload) {
-  // 预留：后续我的工作/关注清单接入后在此定向刷新
+/* ── result-changed ──
+ * 关注状态变化（页头 ★ toggle，P6-05）：宿主定向刷新共享关注集——
+ * 核心（SingleLoopWorkbench）经 use-loop-follow 已就地乐观更新并按
+ * 服务端确认收敛，此处强制对齐一次服务端真相（跨页/跨实例一致兜底），
+ * 兑现原"预留：后续我的工作/关注清单接入后在此定向刷新"注释。 */
+function onResultChanged(payload: Wb360ResultChangedPayload) {
+  if (payload.changeKind === 'loop-follow-changed') {
+    void refreshFollows(true);
+  }
 }
 
 /* ── 模板派生 ── */

@@ -1,0 +1,12 @@
+{
+  "sessionId": "sess_be0351df-0012-4f3e-8f9a-16faf29bd60d",
+  "partId": "part_mv5uj8uj_07b95914-6f9c-4059-b8aa-92684550fee2",
+  "role": "user",
+  "timeCreatedMs": 1791845479819,
+  "excerpt": [
+    "你将继续担任 CLPM-MVP「系统改造优化-2026-10-10」执行包的主协调（goal 模式长程执行：多智能体分工、非作者验收制、Gate 通过自动晋级，只在 Git 合 main、生产操作、新 DEC 裁决处停下等我）。",
+    "【已定政策（勿重问）】push github 常设授权；合 main=用户界面审核后显式要求；所有 DEC 已裁（含 λ=7.0/S1-b/R02-R07/W6/W8/DEC-04）；巡检 cron automation-f3be3512 跨会话持久；keeper 纪律=TD/PG 大量写入须确认。"
+  ],
+  "scope": "GitHub任务分支备份与主协调；不含合main/生产发布/DCS；正常hook全项必须过；运行操作仍由Keeper。",
+  "verification": "直接只读查询原始人类user text；不是任务通知或文件自述。"
+}

@@ -1,0 +1,29 @@
+{
+  "parentTaskId": "36bf36c0-02e0-44f9-984f-ffac3e9b257e",
+  "window": {
+    "tsStart": "2026-10-14T05:00:00"
+  },
+  "firstMet": {
+    "ledger": 20.277,
+    "source": 20.277,
+    "run_binding": 20.277,
+    "algorithm_version": 20.277,
+    "latest": 20.277,
+    "nodes": 20.277,
+    "celery_parent_terminal": 2122.503
+  },
+  "totalSeconds": 5415.445,
+  "wallClockFrom": "2026-10-15T10:42:27+00:00",
+  "watcherNote": "观察器于投递后启动，firstMet 以投递时刻为基准；启动前已达成的条件记为该时刻下限",
+  "allMet": false,
+  "lastCounts": {
+    "records": 4767,
+    "snapshots": 1030,
+    "bound": 4767,
+    "versioned": 4767,
+    "ok_status": 0,
+    "latest": 1032,
+    "nodeSnaps": 26
+  },
+  "observedAt": "2026-10-15T12:12:42.444582+00:00"
+}

@@ -1,0 +1,16 @@
+[06:06:24] batch 1 scenario=b window=2026-10-15T23:00:00 generating
+[06:08:23] batch 1 manifest=capacity_dataset/manifest_b_2026101523.json submitting
+[06:21:08] batch 1 tool rc=0
+[06:21:08] batch 2 scenario=a window=2026-10-16T00:00:00 generating
+[06:23:01] batch 2 manifest=capacity_dataset/manifest_a_2026101600.json submitting
+[06:35:45] batch 2 tool rc=0
+[06:35:45] batch 3 scenario=a window=2026-10-16T01:00:00 generating
+[06:37:37] batch 3 manifest=capacity_dataset/manifest_a_2026101601.json submitting
+[06:50:17] batch 3 tool rc=0
+[06:50:17] batch 4 scenario=a window=2026-10-16T02:00:00 generating
+[06:52:08] batch 4 manifest=capacity_dataset/manifest_a_2026101602.json submitting
+[07:04:45] batch 4 tool rc=0
+[07:04:45] batch 5 scenario=a window=2026-10-16T03:00:00 generating
+[07:06:36] batch 5 manifest=capacity_dataset/manifest_a_2026101603.json submitting
+[07:19:12] batch 5 tool rc=0
+[07:19:12] SEGMENT-1 (batch1-5) DONE

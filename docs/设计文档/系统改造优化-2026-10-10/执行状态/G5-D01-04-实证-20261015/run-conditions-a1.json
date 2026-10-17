@@ -1,0 +1,17 @@
+{
+  "phase": "D01-A1 归因批（trace=1）",
+  "date": "2026-10-15",
+  "baselineSha": "6c92cf6944d40bc2c92c9296110711933be28ec7",
+  "runtimeTree": "/Users/zhangping/DEV/clpm-g5-runtime-20261015（detached，持久路径；/tmp 树因机器重启丢失后重建，见 STATE 环境事件行）",
+  "processChain": {"api": 26346, "beat": 26382, "workerMaster": 26384, "prefork": [26441, 26442, 26443, 26444]},
+  "trace": "CLPM_G5_TRACE=1",
+  "window": {"tsStart": "2026-10-14T05:00:00", "tsEnd": "2026-10-14T06:00:00", "note": "同窗重投（语义幂等已证）；b1000 manifest 1d238a9d 复用，1030 全分母"},
+  "parentTaskId": "39ebe2b8-a3df-4757-b59f-5cf69623087b",
+  "dispatchedAt": "2026-10-15T03:57:22Z",
+  "sampler": {"file": "resource-a1.jsonl", "cadence": "约 9s/行（ps+docker stats+PG+Redis）", "preWarmSeconds": 62},
+  "samples": ["sample-a1-master-1.txt（master 26384，STARTED+90s）", "sample-a1-child-1.txt（最忙 prefork 子）"],
+  "barrierWatch": "barrier-a1.log/json（九条件 firstMet 15s 轮询）",
+  "barrierFidelity": "观察器为近似级：ledger/source/run_binding/version 按窗口累计行（含既往批次），firstMet 仅供归因时间形态参考；终态类条件（taskrecord/celery）精确；expected_status 因状态枚举形态在本观察器恒 0（实由正式审计脚本复核）；门禁级屏障判定留 D01-E 正式批复用 b1000 冻结审计脚本",
+  "backgroundLoad": "常态 Beat/巡检不抑制（H7 不归因）；**实际发生**：12:00 CST（04:00Z）自然批 a3427d40 与 A1 全并发（A1 超时未如预期收尾）——A1 绝对耗时受此污染仅作阶段形态归因；A2 改排自然批完成后净窗投递",
+  "notes": "A1 仅作归因对照，不作 SLO 批；A2（trace=0）须重启认证后另行投递"
+}

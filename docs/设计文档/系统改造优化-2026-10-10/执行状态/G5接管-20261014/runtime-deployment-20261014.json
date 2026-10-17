@@ -1,0 +1,967 @@
+{
+  "startedAtUTC": "2026-10-13T21:54:59.102453+00:00",
+  "owner": "Codex root, user authorized Keeper transfer",
+  "candidateSHA": "6c92cf6944d40bc2c92c9296110711933be28ec7",
+  "traceEnabled": true,
+  "stages": [
+    {
+      "kind": "ready",
+      "observedAtUTC": "2026-10-13T21:54:59.391417+00:00",
+      "rollbackSHA": "bd223e39f12cfc2d93ea691ea6b9c379b550aa95",
+      "rollbackPath": "/private/tmp/clpm-g5-rollback-bd223e39-20261014",
+      "envFileHash": "fea4f8ff99d9c8242ccb763dac7302a35e91a1ebc295f7346c2ca451958ceca4",
+      "sourceFiles": {
+        "backend/app/contracts/series_context.py": "5854de663228bd652bcb3576977d5e21574cd88ad9a96c5e5efb780e5b962fab",
+        "backend/app/core/g5_trace.py": "1bc9287441b27aea6c89383af2f0cf04266e1524e23f0e355649841141cf6b95",
+        "backend/app/core/tdengine_native.py": "7769d8cb9edd6e2742675543fac600a6a4032859315f9d912096f55e0dcd76b7",
+        "backend/app/services/data_planner.py": "f34187ca049a577d6bdf2b213f3f8cd2b6eefcad53a076e158d915de0136c84f",
+        "backend/app/services/data_source/logical_wide_builder.py": "7b593be73763c2d294a61fc8ed3128e9741227eaafd6078ddf820896d6c256be",
+        "backend/app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+        "backend/app/tasks/kpi_calc.py": "6b06db499b46bf7d8935d4758bf75b7c17a8a1519529bdf88ec31bdced7ee6eb",
+        "backend/scripts/g5_capacity_log_audit.py": "ef383f10169179de4c680c55db10691a810eb4ab6c5d1639b0901ddce890fd1b",
+        "backend/scripts/generate_capacity_dataset.py": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+        "backend/tests/golden/refactor_protected_manifest.json": "f49efd12c5e4a6956ef779729a81ac04879e6536812233a6a8d00e4e607cf8f0",
+        "backend/tests/test_g5_capacity_log_audit.py": "f33fbdfb0680a46e682f5de73c5d348eadbcebebf4f5f739fa76e1d033ad42cd",
+        "backend/tests/test_g5_gap_coverage_regression.py": "8e5bcf670993254e99dde307458c3fe6e6d27386edea4c2ac0c5e8161faf9fda",
+        "backend/tests/test_g5_kpi_zero_coverage.py": "8303d1bb3a92078b07ae6eb77c508f7e22ff899804144ff60b5fa192622c4248",
+        "backend/tests/test_g5_trace.py": "0476a94d65879942d37db5c7fa4d137391038dbb65a48abb04917c288afdea38",
+        "backend/tests/test_generate_capacity_dataset.py": "59343107f1c19084e1467644b2e1aec536ee01945f191cef2baf99e7b0e75f5f"
+      }
+    },
+    {
+      "kind": "signal",
+      "observedAtUTC": "2026-10-13T21:54:59.520801+00:00",
+      "pid": 29810,
+      "signal": "SIGSTOP"
+    },
+    {
+      "kind": "scheduler_paused_for_drain",
+      "observedAtUTC": "2026-10-13T21:54:59.521212+00:00",
+      "oldFamily": {
+        "48390": {
+          "pid": 48390,
+          "ppid": 48347,
+          "description": "Tue Oct 13 19:42:40 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname CLPM-MVP-p1int@%h"
+        },
+        "6601": {
+          "pid": 6601,
+          "ppid": 48390,
+          "description": "Wed Oct 14 05:34:49 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname CLPM-MVP-p1int@%h"
+        },
+        "99515": {
+          "pid": 99515,
+          "ppid": 48390,
+          "description": "Wed Oct 14 05:04:01 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname CLPM-MVP-p1int@%h"
+        },
+        "29810": {
+          "pid": 29810,
+          "ppid": 48347,
+          "description": "Wed Oct 14 00:03:59 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/CLPM-MVP-p1int/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/CLPM-MVP-p1int/backend/logs/celerybeat-schedule"
+        },
+        "90555": {
+          "pid": 90555,
+          "ppid": 48390,
+          "description": "Wed Oct 14 04:20:03 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname CLPM-MVP-p1int@%h"
+        },
+        "48347": {
+          "pid": 48347,
+          "ppid": 48345,
+          "description": "Tue Oct 13 19:42:38 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 17101"
+        },
+        "9116": {
+          "pid": 9116,
+          "ppid": 48390,
+          "description": "Wed Oct 14 05:45:05 2026     /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname CLPM-MVP-p1int@%h"
+        }
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:03.687926+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:09.882061+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:16.020715+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:22.137570+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:28.270086+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:34.430777+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:40.566438+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:46.685919+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:52.831890+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:55:58.982646+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:05.126718+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:11.290697+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:17.412362+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:23.508905+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:29.588087+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:35.751038+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:41.874612+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:48.005928+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:56:54.145363+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:00.223752+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:06.260519+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": [
+          {
+            "id": "734a11c9-78d1-4b4b-8aaf-90a90c360f77",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8090541,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 9116
+          },
+          {
+            "id": "09055e98-de3d-4387-a2b6-f6868d0e4886",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8134687,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 6601
+          }
+        ]
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:12.318214+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": [
+          {
+            "id": "734a11c9-78d1-4b4b-8aaf-90a90c360f77",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8090541,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 9116
+          },
+          {
+            "id": "09055e98-de3d-4387-a2b6-f6868d0e4886",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8134687,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 6601
+          }
+        ]
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:18.363925+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": [
+          {
+            "id": "734a11c9-78d1-4b4b-8aaf-90a90c360f77",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8090541,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 9116
+          },
+          {
+            "id": "09055e98-de3d-4387-a2b6-f6868d0e4886",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8134687,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 6601
+          }
+        ]
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:24.428948+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": [
+          {
+            "id": "734a11c9-78d1-4b4b-8aaf-90a90c360f77",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8090541,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 9116
+          },
+          {
+            "id": "09055e98-de3d-4387-a2b6-f6868d0e4886",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8134687,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 6601
+          }
+        ]
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 2,
+        "unackedIndex": 2
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:30.535256+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": [
+          {
+            "id": "734a11c9-78d1-4b4b-8aaf-90a90c360f77",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8090541,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 9116
+          },
+          {
+            "id": "09055e98-de3d-4387-a2b6-f6868d0e4886",
+            "name": "app.tasks.alert_patrol.run_alert_patrol",
+            "args": [],
+            "kwargs": {},
+            "type": "app.tasks.alert_patrol.run_alert_patrol",
+            "hostname": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro",
+            "time_start": 1791928617.8134687,
+            "acknowledged": false,
+            "delivery_info": {
+              "exchange": "",
+              "routing_key": "default",
+              "priority": 0,
+              "redelivered": true
+            },
+            "worker_pid": 6601
+          }
+        ]
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 0,
+        "unackedIndex": 0
+      }
+    },
+    {
+      "kind": "drain",
+      "observedAtUTC": "2026-10-13T21:57:36.691869+00:00",
+      "active": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "reserved": {
+        "CLPM-MVP-p1int@zhangpingdeMacBook-Pro": []
+      },
+      "broker": {
+        "queues": {
+          "'default'": 0,
+          "'default\\x06\\x163'": 0,
+          "'default\\x06\\x166'": 0,
+          "'default\\x06\\x169'": 0,
+          "'dead_letter'": 0,
+          "'dead_letter\\x06\\x163'": 0,
+          "'dead_letter\\x06\\x166'": 0,
+          "'dead_letter\\x06\\x169'": 0
+        },
+        "unackedHash": 0,
+        "unackedIndex": 0
+      }
+    },
+    {
+      "kind": "signal",
+      "observedAtUTC": "2026-10-13T21:57:36.768615+00:00",
+      "pid": 48347,
+      "signal": "SIGTERM"
+    },
+    {
+      "kind": "signal",
+      "observedAtUTC": "2026-10-13T21:57:36.839489+00:00",
+      "pid": 29810,
+      "signal": "SIGCONT"
+    },
+    {
+      "kind": "old_runtime_stopped",
+      "observedAtUTC": "2026-10-13T21:58:13.248791+00:00"
+    },
+    {
+      "kind": "new_api_started",
+      "observedAtUTC": "2026-10-13T21:58:13.254070+00:00",
+      "pid": 13326,
+      "cwd": "/private/tmp/clpm-g5-followup-20261014/backend",
+      "log": "/private/tmp/clpm-g5-followup-20261014/backend/logs/uvicorn-g5-20261014.log",
+      "trace": "1"
+    },
+    {
+      "kind": "deployment_certified",
+      "observedAtUTC": "2026-10-13T21:58:21.349422+00:00",
+      "health": {
+        "status": 200,
+        "body": "{\"status\":\"ok\",\"version\":\"7.1.0\"}"
+      },
+      "newFamily": {
+        "13354": {
+          "pid": 13354,
+          "ppid": 13326,
+          "description": "Wed Oct 14 05:58:15 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /private/tmp/clpm-g5-followup-20261014/backend/logs/celerybeat.pid --schedule /private/tmp/clpm-g5-followup-20261014/backend/logs/celerybeat-schedule"
+        },
+        "13356": {
+          "pid": 13356,
+          "ppid": 13326,
+          "description": "Wed Oct 14 05:58:15 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-followup-20261014@%h"
+        },
+        "13326": {
+          "pid": 13326,
+          "ppid": 12378,
+          "description": "Wed Oct 14 05:58:13 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 17101"
+        },
+        "13363": {
+          "pid": 13363,
+          "ppid": 13356,
+          "description": "Wed Oct 14 05:58:17 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-followup-20261014@%h"
+        },
+        "13364": {
+          "pid": 13364,
+          "ppid": 13356,
+          "description": "Wed Oct 14 05:58:17 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-followup-20261014@%h"
+        },
+        "13366": {
+          "pid": 13366,
+          "ppid": 13356,
+          "description": "Wed Oct 14 05:58:17 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-followup-20261014@%h"
+        },
+        "13367": {
+          "pid": 13367,
+          "ppid": 13356,
+          "description": "Wed Oct 14 05:58:17 2026     /private/tmp/clpm-g5-followup-20261014/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-followup-20261014@%h"
+        }
+      },
+      "afterSourceFiles": {
+        "backend/app/contracts/series_context.py": "5854de663228bd652bcb3576977d5e21574cd88ad9a96c5e5efb780e5b962fab",
+        "backend/app/core/g5_trace.py": "1bc9287441b27aea6c89383af2f0cf04266e1524e23f0e355649841141cf6b95",
+        "backend/app/core/tdengine_native.py": "7769d8cb9edd6e2742675543fac600a6a4032859315f9d912096f55e0dcd76b7",
+        "backend/app/services/data_planner.py": "f34187ca049a577d6bdf2b213f3f8cd2b6eefcad53a076e158d915de0136c84f",
+        "backend/app/services/data_source/logical_wide_builder.py": "7b593be73763c2d294a61fc8ed3128e9741227eaafd6078ddf820896d6c256be",
+        "backend/app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+        "backend/app/tasks/kpi_calc.py": "6b06db499b46bf7d8935d4758bf75b7c17a8a1519529bdf88ec31bdced7ee6eb",
+        "backend/scripts/g5_capacity_log_audit.py": "ef383f10169179de4c680c55db10691a810eb4ab6c5d1639b0901ddce890fd1b",
+        "backend/scripts/generate_capacity_dataset.py": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+        "backend/tests/golden/refactor_protected_manifest.json": "f49efd12c5e4a6956ef779729a81ac04879e6536812233a6a8d00e4e607cf8f0",
+        "backend/tests/test_g5_capacity_log_audit.py": "f33fbdfb0680a46e682f5de73c5d348eadbcebebf4f5f739fa76e1d033ad42cd",
+        "backend/tests/test_g5_gap_coverage_regression.py": "8e5bcf670993254e99dde307458c3fe6e6d27386edea4c2ac0c5e8161faf9fda",
+        "backend/tests/test_g5_kpi_zero_coverage.py": "8303d1bb3a92078b07ae6eb77c508f7e22ff899804144ff60b5fa192622c4248",
+        "backend/tests/test_g5_trace.py": "0476a94d65879942d37db5c7fa4d137391038dbb65a48abb04917c288afdea38",
+        "backend/tests/test_generate_capacity_dataset.py": "59343107f1c19084e1467644b2e1aec536ee01945f191cef2baf99e7b0e75f5f"
+      }
+    }
+  ],
+  "status": "DEPLOYED_SOURCE_AND_NEW_PROCESS_CHAIN_CERTIFIED",
+  "realSmokePassed": false,
+  "capacityPassed": false
+}

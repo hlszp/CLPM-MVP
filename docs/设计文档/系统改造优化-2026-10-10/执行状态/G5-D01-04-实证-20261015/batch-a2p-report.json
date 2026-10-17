@@ -1,0 +1,99 @@
+{
+  "window": {
+    "tsStart": "2026-10-15T14:00:00",
+    "tsEnd": "2026-10-15T15:00:00"
+  },
+  "parentTaskId": "e8dc67f1-ff16-47ab-8be7-1ff1de966958",
+  "parentState": "SUCCESS",
+  "taskRecordStatus": "SUCCESS",
+  "freezePath": "capacity_dataset/run_freezes/freeze_b_2026101514.json",
+  "observedAt": "2026-10-15T13:25:34.239753+00:00",
+  "completionReason": "BARRIER_PASSED",
+  "totalSeconds": 751.1709187089982,
+  "sloSeconds": 600.0,
+  "sloPassed": false,
+  "gate": {
+    "ok": true,
+    "conditions": {
+      "ledger": true,
+      "source": true,
+      "run_binding": true,
+      "algorithm_version": true,
+      "expected_status": true,
+      "latest": true,
+      "nodes": true,
+      "task_terminal": true,
+      "parent_terminal": true
+    },
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 850,
+        "INCONCLUSIVE": 150
+      },
+      "expectedHistogram": {
+        "EVALUATED": 800,
+        "INCONCLUSIVE(DATA_INSUFFICIENT)": 100,
+        "EVALUATED(ELIGIBLE内终态; MODE=MANUAL, auto表现照常评估)": 50,
+        "INCONCLUSIVE(窗口覆盖不足——缺口段按 held/coverage 语义)": 50
+      },
+      "success": 850,
+      "inconclusive": 150,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": {
+        "count": 0,
+        "sample": []
+      },
+      "foreignSource": {
+        "count": 0,
+        "sample": []
+      },
+      "runBinding": {
+        "count": 0,
+        "sample": []
+      },
+      "algorithmVersion": {
+        "count": 0,
+        "sample": []
+      },
+      "expectedStatus": {
+        "count": 0,
+        "sample": []
+      },
+      "latestMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "latestBad": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeBadVersion": {
+        "count": 0,
+        "sample": []
+      }
+    },
+    "window": "2026-10-15T14:00:00"
+  },
+  "firstMetSeconds": {
+    "ledger": 747.1284940000005,
+    "source": 747.128494624998,
+    "run_binding": 747.1284950000008,
+    "algorithm_version": 747.1284951669986,
+    "expected_status": 747.128495334,
+    "latest": 747.1284955839983,
+    "task_terminal": 747.1284958340002,
+    "parent_terminal": 747.1284959999975,
+    "nodes": 751.1701867919983
+  },
+  "childTaskObservation": "not-observed"
+}

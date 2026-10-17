@@ -1,0 +1,55 @@
+{
+  "blockerKey": "KEEPER_CONTACT_AND_K00_RECEIPT_MISSING",
+  "consecutiveBlockedGoalTurns": 3,
+  "lastObservedUTC": "2026-10-13T17:49:45Z",
+  "previousGoalTurnClassification": "no_progress: same Keeper blocker revalidated",
+  "currentGoalTurnClassification": "no_progress: same blocker; no meaningful safe next action without external change",
+  "observed": {
+    "keeperReceiptPresent": false,
+    "callableZcodeKeeperToolCount": 0,
+    "candidateSHA": "6c92cf6944d40bc2c92c9296110711933be28ec7",
+    "candidateTrackedClean": true,
+    "allChildAgentsTerminal": true
+  },
+  "goalStatus": "blocked",
+  "safeNextAction": "Await Keeper contact entry or K00 receipt; no shared runtime/DB/cache/data generation/task dispatch by Codex",
+  "remainingRequirements": [
+    "Keeper K00 runtime/config/queue identity certification",
+    "Candidate deployment and four real smoke scenarios",
+    "Real provider-query localization and evidence-based optimization",
+    "Fixed final candidate alpha capacity, browser/API/resource and R05 continuous two-window full barriers <=600s"
+  ],
+  "promotion": "G5 NOT_PASSED; P6/P7 NOT_STARTED",
+  "monitorStatus": "PAUSED",
+  "usage": {
+    "usedPercent": 75,
+    "remainingPercent": 25,
+    "lowQuotaTriggered": false
+  },
+  "goalToolResult": {
+    "goal": {
+      "threadId": "01a1360a-0f97-70e1-b2c2-ebe4bd5e3aed",
+      "objective": "接管 CLPM-MVP G5 主协调、隔离修复和非作者验收，完成 v2 输入验证、分层性能观测与必要整改；运行操作交唯一 zcode Keeper，固定候选在批准 α 范围内真实通过后才收口，P6/P7 保持 NOT_STARTED。按用户阈值定期检查额度，剩余低于10%暂停并保存小结。",
+      "status": "blocked",
+      "tokensUsed": 872566,
+      "timeUsedSeconds": 5394,
+      "createdAt": 1791908398,
+      "updatedAt": 1791913792
+    },
+    "remainingTokens": null,
+    "completionBudgetReport": null
+  },
+  "monitorToolResult": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Updated automation in the app."
+      },
+      {
+        "type": "text",
+        "text": "{\"automationId\":\"clpm-g5\",\"mode\":\"update\",\"status\":\"PAUSED\"}"
+      }
+    ],
+    "isError": false
+  }
+}

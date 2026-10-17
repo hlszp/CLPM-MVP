@@ -1,0 +1,24 @@
+[
+  {
+    "deliveryTag": "ae4f2b3f-9589-424b-bc1b-f86bdcd46384",
+    "taskId": "734a11c9-78d1-4b4b-8aaf-90a90c360f77",
+    "task": "app.tasks.alert_patrol.run_alert_patrol",
+    "exchange": "",
+    "routing": "default",
+    "unackedAtUTC": "2026-10-13T00:32:21.444243+00:00",
+    "resultState": "STARTED",
+    "rawRecord": "[{\"body\": \"W1tdLCB7fSwgeyJjYWxsYmFja3MiOiBudWxsLCAiZXJyYmFja3MiOiBudWxsLCAiY2hhaW4iOiBudWxsLCAiY2hvcmQiOiBudWxsfV0=\", \"content-encoding\": \"utf-8\", \"content-type\": \"application/json\", \"headers\": {\"lang\": \"py\", \"task\": \"app.tasks.alert_patrol.run_alert_patrol\", \"id\": \"734a11c9-78d1-4b4b-8aaf-90a90c360f77\", \"shadow\": null, \"eta\": null, \"expires\": null, \"group\": null, \"group_index\": null, \"retries\": 0, \"timelimit\": [null, null], \"root_id\": \"734a11c9-78d1-4b4b-8aaf-90a90c360f77\", \"parent_id\": null, \"argsrepr\": \"()\", \"kwargsrepr\": \"{}\", \"origin\": \"gen47118@zhangpingdeMacBook-Pro\", \"ignore_result\": false, \"replaced_task_nesting\": 0, \"stamped_headers\": null, \"stamps\": {}}, \"properties\": {\"correlation_id\": \"734a11c9-78d1-4b4b-8aaf-90a90c360f77\", \"reply_to\": \"ed20b455-3057-3326-921d-46ef748c0f1e\", \"delivery_mode\": 2, \"delivery_info\": {\"exchange\": \"\", \"routing_key\": \"default\"}, \"priority\": 0, \"body_encoding\": \"base64\", \"delivery_tag\": \"ae4f2b3f-9589-424b-bc1b-f86bdcd46384\"}}, \"\", \"default\"]",
+    "score": 1791851541.444243
+  },
+  {
+    "deliveryTag": "75dab032-6e1e-40bc-b4d9-c2ba06c81cf3",
+    "taskId": "09055e98-de3d-4387-a2b6-f6868d0e4886",
+    "task": "app.tasks.alert_patrol.run_alert_patrol",
+    "exchange": "",
+    "routing": "default",
+    "unackedAtUTC": "2026-10-13T00:32:13.955448+00:00",
+    "resultState": "STARTED",
+    "rawRecord": "[{\"body\": \"W1tdLCB7fSwgeyJjYWxsYmFja3MiOiBudWxsLCAiZXJyYmFja3MiOiBudWxsLCAiY2hhaW4iOiBudWxsLCAiY2hvcmQiOiBudWxsfV0=\", \"content-encoding\": \"utf-8\", \"content-type\": \"application/json\", \"headers\": {\"lang\": \"py\", \"task\": \"app.tasks.alert_patrol.run_alert_patrol\", \"id\": \"09055e98-de3d-4387-a2b6-f6868d0e4886\", \"shadow\": null, \"eta\": null, \"expires\": null, \"group\": null, \"group_index\": null, \"retries\": 0, \"timelimit\": [null, null], \"root_id\": \"09055e98-de3d-4387-a2b6-f6868d0e4886\", \"parent_id\": null, \"argsrepr\": \"()\", \"kwargsrepr\": \"{}\", \"origin\": \"gen36634@zhangpingdeMacBook-Pro\", \"ignore_result\": false, \"replaced_task_nesting\": 0, \"stamped_headers\": null, \"stamps\": {}, \"redelivered\": true}, \"properties\": {\"correlation_id\": \"09055e98-de3d-4387-a2b6-f6868d0e4886\", \"reply_to\": \"f1bd6316-c98c-3638-928d-5f7dfb2bf03a\", \"delivery_mode\": 2, \"delivery_info\": {\"exchange\": \"\", \"routing_key\": \"default\", \"redelivered\": true}, \"priority\": 0, \"body_encoding\": \"base64\", \"delivery_tag\": \"75dab032-6e1e-40bc-b4d9-c2ba06c81cf3\"}}, \"\", \"default\"]",
+    "score": 1791851533.9554482
+  }
+]

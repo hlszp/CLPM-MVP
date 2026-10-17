@@ -1,0 +1,12 @@
+{
+  "capturedAt": "2026-10-13T16:38:29.952474Z",
+  "root": "/private/tmp/clpm-g5-followup-20261014/backend",
+  "files": {
+    "app/core/g5_trace.py": "c7045ced8489a8a6f55a6767c263cf0c4469f00f276dd153190931d996ae818d",
+    "app/core/tdengine_native.py": "7769d8cb9edd6e2742675543fac600a6a4032859315f9d912096f55e0dcd76b7",
+    "app/services/data_planner.py": "f34187ca049a577d6bdf2b213f3f8cd2b6eefcad53a076e158d915de0136c84f",
+    "app/services/data_source/logical_wide_builder.py": "a52d86fc2722b4ff7a68837e8ec06fd51806fdc0021157d8672c02b0e3d32da8",
+    "app/tasks/kpi_calc.py": "6b06db499b46bf7d8935d4758bf75b7c17a8a1519529bdf88ec31bdced7ee6eb",
+    "tests/test_g5_trace.py": "bf192e6c5a9b169a40c86137a165e758d2cc087ff12fa6e64e85e08c859d6f24"
+  }
+}

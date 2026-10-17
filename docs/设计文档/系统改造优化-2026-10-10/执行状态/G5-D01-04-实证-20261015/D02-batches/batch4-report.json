@@ -1,0 +1,130 @@
+{
+  "window": {
+    "tsStart": "2026-10-16T02:00:00",
+    "tsEnd": "2026-10-16T03:00:00"
+  },
+  "parentTaskId": "4886b5f5-d41f-4269-bb2c-9e1ab0ccc62a",
+  "parentState": "SUCCESS",
+  "taskRecordStatus": "SUCCESS",
+  "freezePath": "capacity_dataset/run_freezes/freeze_a_2026101602.json",
+  "observedAt": "2026-10-15T23:04:45.082615+00:00",
+  "completionReason": "TERMINAL_MISMATCH",
+  "totalSeconds": 755.2127027079987,
+  "sloSeconds": 600.0,
+  "sloPassed": false,
+  "gate": {
+    "ok": false,
+    "conditions": {
+      "ledger": true,
+      "source": true,
+      "run_binding": true,
+      "algorithm_version": false,
+      "expected_status": false,
+      "latest": false,
+      "nodes": false,
+      "task_terminal": true,
+      "parent_terminal": true
+    },
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 999,
+        "INCONCLUSIVE": 1
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 999,
+      "inconclusive": 1,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": {
+        "count": 0,
+        "sample": []
+      },
+      "foreignSource": {
+        "count": 0,
+        "sample": []
+      },
+      "runBinding": {
+        "count": 0,
+        "sample": []
+      },
+      "algorithmVersion": {
+        "count": 1,
+        "sample": [
+          {
+            "loopTag": "PERF-T0892",
+            "algorithmVersion": null
+          }
+        ]
+      },
+      "expectedStatus": {
+        "count": 1,
+        "sample": [
+          {
+            "loopTag": "PERF-T0892",
+            "expected": "EVALUATED",
+            "actualStatus": "INCONCLUSIVE",
+            "actualScore": null,
+            "actualTags": [
+              "DATA_INSUFFICIENT"
+            ]
+          }
+        ]
+      },
+      "latestMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "latestBad": {
+        "count": 1,
+        "sample": [
+          {
+            "loopTag": "PERF-T0892",
+            "algorithmVersion": null,
+            "recordLogicalRunId": "4886b5f5-d41f-4269-bb2c-9e1ab0ccc62a"
+          }
+        ]
+      },
+      "nodeMissing": {
+        "count": 16,
+        "sample": [
+          "0a9a64a6-00ff-4561-9386-5677d6fcd197",
+          "18cc1c14-a83a-4adb-b76a-abdafdce913f",
+          "33908868-1824-4f1b-bf11-8b6d2b9d1fd7",
+          "5218fbc8-6d27-4b46-8ec2-e7fd9a622966",
+          "8a179995-e1b1-4368-a512-4186e3a69515",
+          "901a6e81-58b0-4e73-975f-39a1e783cdf6",
+          "a089b60f-18f3-4a67-bdf0-add087d6b5c1",
+          "a341b5e0-9e7a-4a81-9ab6-809a2472fd68",
+          "ac08bd78-6bdd-4789-9b58-064f642d0fc2",
+          "ada95482-72fe-446d-8af8-5e50507c17d9",
+          "afc7bf18-b610-4741-a29e-f1df5dadbd5e",
+          "b0914c41-3f74-470d-bcbe-3b79a6a77891",
+          "b55c303f-70c4-46ca-a9e5-549b63b2f138",
+          "c9e698f5-b598-40a8-ad8d-8d21b174fbcd",
+          "d547fd49-4481-4200-a9af-7264bc76faf8",
+          "f12df131-e45d-4a59-9c53-67b0c1771e64"
+        ]
+      },
+      "nodeBadVersion": {
+        "count": 0,
+        "sample": []
+      }
+    },
+    "window": "2026-10-16T02:00:00"
+  },
+  "firstMetSeconds": {
+    "ledger": 755.2120189999987,
+    "source": 755.2120197080003,
+    "run_binding": 755.2120200420031,
+    "task_terminal": 755.2120203750019,
+    "parent_terminal": 755.2120205419997
+  },
+  "childTaskObservation": "not-observed"
+}

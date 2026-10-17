@@ -1,0 +1,105 @@
+{
+  "window": {
+    "tsStart": "2026-10-16T11:00:00",
+    "tsEnd": "2026-10-16T12:00:00"
+  },
+  "parentTaskId": "ac8b2bca-da8c-4f56-9520-ac20787c65f0",
+  "parentState": "SUCCESS",
+  "taskRecordStatus": "SUCCESS",
+  "freezePath": "capacity_dataset/run_freezes/freeze_a_2026101611.json",
+  "observedAt": "2026-10-16T08:50:39.543897+00:00",
+  "completionReason": "BARRIER_PASSED",
+  "totalSeconds": 1421.9036038329941,
+  "sloSeconds": 600.0,
+  "sloPassed": false,
+  "gate": {
+    "ok": true,
+    "conditions": {
+      "ledger": true,
+      "source": true,
+      "run_binding": true,
+      "algorithm_version": true,
+      "expected_status": true,
+      "latest": true,
+      "nodes": true,
+      "task_terminal": true,
+      "parent_terminal": true
+    },
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": {
+        "count": 0,
+        "sample": []
+      },
+      "foreignSource": {
+        "count": 0,
+        "sample": []
+      },
+      "runBinding": {
+        "count": 0,
+        "sample": []
+      },
+      "algorithmVersion": {
+        "count": 0,
+        "sample": []
+      },
+      "expectedStatus": {
+        "count": 0,
+        "sample": []
+      },
+      "latestMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "latestBad": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeBadVersion": {
+        "count": 0,
+        "sample": []
+      }
+    },
+    "window": "2026-10-16T11:00:00"
+  },
+  "firstMetSeconds": {
+    "ledger": 1421.9028690409905,
+    "source": 1421.902869832993,
+    "run_binding": 1421.9028702079959,
+    "algorithm_version": 1421.902870416001,
+    "expected_status": 1421.9028705829987,
+    "latest": 1421.9028706660029,
+    "nodes": 1421.9028707910038,
+    "task_terminal": 1421.9028709159902,
+    "parent_terminal": 1421.9028710409912
+  },
+  "childTaskObservation": [
+    {
+      "id": "127bce8a-99b4-430f-be3b-03728bc2dc59",
+      "args": [],
+      "kwargs": {
+        "ts_start": "2026-10-16T11:00:00",
+        "ts_end": "2026-10-16T12:00:00"
+      },
+      "worker": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro"
+    }
+  ]
+}

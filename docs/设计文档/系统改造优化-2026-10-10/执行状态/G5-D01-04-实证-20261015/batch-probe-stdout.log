@@ -1,0 +1,27 @@
+[preflight] 三条件参评回路数检查（DB 权威口径）
+  window: 2026-10-15T22:00:00 ~ 2026-10-15T23:00:00 (naive UTC)
+  barrier_loop_prefix: PERF-T
+  manifest: capacity_dataset/manifest_b_2026101522.json (scenario=b, totalLoops=1000)
+  eligible(is_active+READY+include_in_evaluation): 1000
+  excluded(不可参评，单列不缩分母): 0
+  独立 loopId 断言: 1000 unique = expect ✓（与 manifest 身份一致 ✓）
+  R05 latest 冲突预检: 0 冲突 ✓（本窗非迟到窗，latest 屏障可达）
+  预定节点(结构推导，独立于运行结果): 20
+  冻结算法版本: KPI_CALC_v2.0
+  manifest expected 分布: {'EVALUATED': 800, 'INCONCLUSIVE(DATA_INSUFFICIENT)': 100, 'EVALUATED(ELIGIBLE内终态; MODE=MANUAL, auto表现照常评估)': 50, 'INCONCLUSIVE(窗口覆盖不足——缺口段按 held/coverage 语义)': 50}
+  投递前既有同窗行: ledger=0 latest=0 node=0 ✓
+[freeze] 冻结件已落盘（投递前）: capacity_dataset/run_freezes/freeze_b_2026101522.json
+[submit] calculate_hourly_kpi.delay(ts_start='2026-10-15T22:00:00') （经既有 Celery 入口，复用唯一 lifespan Worker，不新增开放触发 API）
+[submit] parent_task_id=727126d7-f571-49d7-864a-0dcdfc78be6d
+[barrier] 完成屏障判定（冻结件 × DB 回查 × 任务终态；父任务终态不单独作为屏障）：
+  分母: 冻结 eligible=1000 excluded(跳过)=0
+  小时账本: 1000 行（SUCCESS=850 INCONCLUSIVE=150 PARTIAL=0）
+  manifest 独立预期: {'EVALUATED': 800, 'INCONCLUSIVE(DATA_INSUFFICIENT)': 100, 'EVALUATED(ELIGIBLE内终态; MODE=MANUAL, auto表现照常评估)': 50, 'INCONCLUSIVE(窗口覆盖不足——缺口段按 held/coverage 语义)': 50}
+  各条件: {'ledger': True, 'source': True, 'run_binding': True, 'algorithm_version': True, 'expected_status': True, 'latest': True, 'nodes': True, 'task_terminal': True, 'parent_terminal': True}
+  parent_task_id(logicalRunId): 727126d7-f571-49d7-864a-0dcdfc78be6d
+  TaskRecord 终态: SUCCESS
+  各条件首次满足时刻(s): {'algorithm_version': 820.3, 'expected_status': 820.3, 'latest': 820.3, 'ledger': 820.3, 'nodes': 824.4, 'parent_terminal': 820.3, 'run_binding': 820.3, 'source': 820.3, 'task_terminal': 820.3}
+  节点子任务取证: not-observed（kpi_calc 级联节点任务不带父 run 标识，子任务完成以节点结果行核验为准）
+  total_seconds: 824.396
+  SLO <= 600s: 失败（分母: 冻结 1000 / 成功 850 / 违约 0 / 跳过(excluded) 0）
+[report] 报告已落盘: /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/batch-probe-report.json

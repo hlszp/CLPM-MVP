@@ -1,0 +1,92 @@
+{
+ "batch": 1,
+ "window": {
+  "tsStart": "2026-10-13T20:00:00",
+  "tsEnd": "2026-10-13T21:00:00"
+ },
+ "scenario": "b",
+ "coldHot": "近冷（17:27 部署重启后首个测量大任务；验收期投递曾预热进程缓存）",
+ "manifest": "capacity_dataset/manifest_b_2026101320.json",
+ "submitAt": "2026-10-13T17:32:25 (worker received)",
+ "parentCeleryTask": "acf99914-71b2-4331-9617-049d1d72a768",
+ "taskRecord": "0bfded49-cd47-4e8c-a467-69e26aaa5b59",
+ "computeElapsedSeconds": 1302.365,
+ "computeLogLine": "并发计算完成: loops=1030, concurrency=12, elapsed=1302.365s, avg=1.264s/loop",
+ "barrierCountsClosedAt": "2026-10-13T18:03 (ledger 1000 / latest 1000 / node 26)",
+ "totalSecondsApprox": 1860,
+ "slo": {
+  "target": 600,
+  "verdict": "FAIL",
+  "note": "并发计算即超限 2.17 倍；全屏障闭合约 1860s"
+ },
+ "gate": {
+  "conditions": {
+   "ledger": true,
+   "source": false,
+   "run_binding": false,
+   "algorithm_version": false,
+   "expected_status": true,
+   "latest": false,
+   "nodes": true,
+   "task_terminal": true,
+   "parent_terminal": true
+  },
+  "verdict": "FAIL",
+  "violations": {
+   "source": {
+    "count": 100,
+    "form": "source IS NULL（INCONCLUSIVE 快照）"
+   },
+   "run_binding": {
+    "count": 100,
+    "form": "source_task_id NULL → recordLogicalRunId 无绑定"
+   },
+   "algorithmVersion": {
+    "count": 100,
+    "form": "algorithm_version IS NULL ≠ KPI_CALC_v2.0"
+   },
+   "latest": {
+    "count": 100,
+    "form": "latest 1000 行中 100 行 algorithm_version NULL（result_record_id 全非空）"
+   }
+  },
+  "passing": {
+   "ledger": "1000/1000 行（missing=0）",
+   "expected_status": "900 SUCCESS 全 score 非空；100 INCONCLUSIVE 且 fitness_tags 含 DATA_INSUFFICIENT",
+   "nodes": "26/26 节点行（PERF-T 20+真实树 6）版本全 KPI_CALC_v2.0",
+   "task_terminal": "TaskRecord=SUCCESS",
+   "parent_terminal": "Celery 父任务 succeeded（17:54:08）"
+  }
+ },
+ "denominators": {
+  "frozenEligible": 1000,
+  "excluded": 0,
+  "snapshotStatusCounts": {
+   "SUCCESS": 900,
+   "INCONCLUSIVE": 100
+  },
+  "expectedHistogram": {
+   "EVALUATED": 800,
+   "INCONCLUSIVE(DATA_INSUFFICIENT)": 100,
+   "EVALUATED(ELIGIBLE内终态; MODE=MANUAL)": 50,
+   "INCONCLUSIVE(窗口覆盖不足)": 50
+  },
+  "note": "manifest 50 个 gap 回路实落 SUCCESS（缺口段 held/coverage 语义下可评）——expected_status 条件以映射口径过"
+ },
+ "defect": {
+  "id": "G5-gamma-1",
+  "rootCause": "kpi_calc.py L2644 分支（综合评分为 None→INCONCLUSIVE）：fitness_kwargs 被 _build_fitness_kwargs_from_result(fresult) 整体替换，该函数（L1992）返回不含 source/source_task_id → _timed_persist 缺参 → 快照/latest 写 NULL。主路径 L2799 显式传 source 故 900 SUCCESS 行健康。",
+  "trigger": "composite value=None（可信度 E 级）且 compute_fitness 成功（L0）——scenario b 100 个 PV 70% BAD 数据不足回路全命中",
+  "impact": "九条件之 source/run_binding/algorithm_version/latest 不可闭合；scenario a（批 2~10 全正常）不走此分支不受影响"
+ },
+ "environment": {
+  "cpuPeakPct": 313,
+  "rssMB": "1189-1269",
+  "pgConnections": "8-39",
+  "pgFATALstorm": 0,
+  "queueDepth": 0,
+  "note": "连接风暴未复发（1b8c69a4 修复有效）；原始采样见 批1-环境采样.txt"
+ },
+ "toolNote": "工具进程 18:25 后被外部 SIGKILL（exit 137），未出自動终报；本 JSON 为测量执行者依冻结件+DB 回查手工取证补全（取证 SQL 见 /tmp/q2.py 逻辑，九条件语义与 _evaluate_run_gate 对齐）",
+ "rawOutput": "批1-原始输出.txt（工具 stdout 缓冲未刷出，为空；执行事实以 worker 日志+DB 为准）"
+}

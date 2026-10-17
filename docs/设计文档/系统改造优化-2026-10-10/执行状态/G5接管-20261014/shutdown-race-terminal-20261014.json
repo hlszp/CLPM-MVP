@@ -1,0 +1,20 @@
+[
+  {
+    "id": "c72e6b85-e5f8-40c4-8d2b-28e99215f745",
+    "state": "SUCCESS",
+    "dateDone": "2026-10-14T05:58:20.654536+08:00",
+    "result": "{'status': 'ok', 'written': 102, 'errors': 0, 'pruned': 102}"
+  },
+  {
+    "id": "fb69b413-68c9-4c12-bb80-b91d8096be64",
+    "state": "SUCCESS",
+    "dateDone": "2026-10-14T05:59:14.275359+08:00",
+    "result": "{'total_loops': 1030, 'triggered': 26, 'dispatched': 1, 'recovered': 0}"
+  },
+  {
+    "id": "81dd6173-3cd4-4ef6-ac6e-c7ad92e9bc70",
+    "state": "SUCCESS",
+    "dateDone": "2026-10-14T05:58:18.697377+08:00",
+    "result": "{'status': 'ok', 'refreshed': ['mv_staff_workload', 'mv_diagnosis_pareto', 'mv_handling_funnel']}"
+  }
+]

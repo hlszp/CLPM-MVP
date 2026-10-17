@@ -43,6 +43,7 @@ import { DatePicker, message } from 'ant-design-vue';
 import dayjs from 'dayjs';
 
 import { useClpmTheme } from '#/composables/use-clpm-theme';
+import { useLoopFollow } from '#/composables/use-loop-follow';
 import { resolveModeLabel } from '#/composables/use-loop-realtime';
 import {
   WB360_DEFAULT_WINDOW_KEY,
@@ -604,6 +605,32 @@ const trendEvents = computed<TrendEventMark[]>(() => {
 /* ── 关注抽屉（页头 🔔 唤起，全局通知性质例外） ── */
 const attentionOpen = ref(false);
 
+/* ── 页头 ★ 个人关注（P6-05 关注入口；与回路监视列表/我的工作同一共享集） ── */
+const follow = useLoopFollow();
+const followLoadedOnce = ref(false);
+
+async function ensureFollowLoaded() {
+  if (followLoadedOnce.value) return;
+  followLoadedOnce.value = true; // 失败不重复弹提示；刷新经共享集 refresh
+  const ok = await follow.ensureLoaded();
+  if (!ok) {
+    message.warning('关注状态加载失败，星标初始态可能不准确（点击仍以服务端结果为准）');
+  }
+}
+
+async function onToggleFollow() {
+  const loopId = validLoopId.value;
+  if (!loopId) return;
+  const outcome = await follow.toggle(
+    loopId,
+    loop.current.value?.tagName ?? null,
+  );
+  if (outcome.ok) {
+    // 关注状态变化 → 通知宿主定向刷新（兑现路由 Adapter 预留注释）
+    emit('resultChanged', { changeKind: 'loop-follow-changed', loopId });
+  }
+}
+
 /* ── 剖面内数据变化 → 刷新页头摘要 + 通知宿主定向刷新（不关闭工单/不冒充闭环） ── */
 function onJourneyDirty() {
   journey.refresh();
@@ -644,6 +671,7 @@ onMounted(() => {
   offRealtime = loop.onRealtimePoint((p) => {
     trend.appendRealtimePoint(p.collectTime, p.role, p.value, p.quality);
   });
+  void ensureFollowLoaded();
 });
 
 onBeforeUnmount(() => {
@@ -707,9 +735,14 @@ const wsName = computed(
       <LoopHeader
         :connection-status="loop.connectionStatus.value"
         :fitness-level="fitness.level"
+        :follow-busy="follow.isBusy(validLoopId ?? '')"
+        :is-followed="
+          validLoopId ? follow.isFollowed(validLoopId) : false
+        "
         :last-message-at="loop.lastMessageAt.value"
         :loop="loop.current.value"
         @open-attention="attentionOpen = true"
+        @toggle-follow="onToggleFollow"
       />
 
       <!-- 携带上下文回显条（window/record/work/scope/profile/configRevision，

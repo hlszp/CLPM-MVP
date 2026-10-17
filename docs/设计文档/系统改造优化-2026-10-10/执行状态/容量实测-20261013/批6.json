@@ -1,0 +1,77 @@
+{
+ "batch": 6,
+ "window": {
+  "tsStart": "2026-10-14T01:00:00",
+  "tsEnd": "2026-10-14T02:00:00"
+ },
+ "scenario": "a",
+ "coldHot": "Redis 冷（投前 DEL agg_cache:*：1 键 workbench-roots→0，23:17:02 执行于 23:00 Beat 终结后）；进程热（worker 19:42 进程连跑批 3/4/5）+TD 页缓存热（01:00 窗数据 22:2x 生成）",
+ "codeVersion": "bd223e39（G5-γ1 修复合入版）",
+ "manifest": "capacity_dataset/manifest_a_2026101401.json（22:2x 第四代生成 93s，TD 实测 7,207,000 行=manifest tdWritten.__total__ 一致，生成于批 5 succeeded 22:24:29 后未污染批 5 计时）",
+ "freeze": "capacity_dataset/run_freezes/freeze_a_2026101401.json（23:17 落盘）",
+ "submitAt": "2026-10-13T23:17:26.900 (worker received；投前错峰检查：23:00 Beat ba4aa223 23:12:34.400 succeeded（754.288s，无数据窗同型 261+769）+ 距 00:00 整点 44 分钟 ≥25 ✓)",
+ "parentCeleryTask": "31176d10-8b0f-443b-a67f-8538d49be6b3",
+ "taskRecord": "db9bd9f9-147c-4734-974b-35edf0c7a4e5",
+ "computeElapsedSeconds": 747.677,
+ "computeLogLine": "并发计算完成: loops=1030, concurrency=12, elapsed=747.401s, avg=0.726s/loop（23:29:54,556）",
+ "phaseTiming": {
+  "read": "p50=7.03s p95=8.20s max=8.55s sum=7085.8s",
+  "compute": "p50=0.09s p95=0.17s max=0.39s sum=102.8s",
+  "persist": "p50=1.26s p95=2.96s max=4.15s sum=1461.5s",
+  "note": "[批量计时] 窗口=10-14 01:00 回路=1030/1030 —— read(TD 历史读)仍为绝对瓶颈（≈590s wall/12 并发），persist ≈122s wall——与批 2~5 同构"
+ },
+ "barrierClosedAt": "2026-10-13T23:29:55.259（节点级联 59bdada8 succeeded 26/26；ledger/latest 随父任务 23:29:54.580 闭合）",
+ "totalSecondsApprox": 748.36,
+ "slo": {
+  "target": 600,
+  "verdict": "FAIL",
+  "note": "并发计算 747.4s 超限 1.25 倍；无 Beat 并发=干净样本；Redis 冷 747.4s vs 热批 5 752.1s——agg_cache 单键（workbench-roots）非计算路径缓存，DEL 对 KPI 批计时无可测影响（冷热差主要在进程/页缓存维度，见汇总冷热两维解读）"
+ },
+ "gate": {
+  "conditions": {
+   "ledger": true,
+   "source": true,
+   "run_binding": true,
+   "algorithm_version": true,
+   "expected_status": false,
+   "latest": true,
+   "nodes": true,
+   "task_terminal": true,
+   "parent_terminal": true
+  },
+  "verdict": "FAIL（8 过+expected_status 单行违约——修复版预期形态，批 3/4/5 同型）",
+  "violations": {
+   "expectedStatus": {
+    "count": 1,
+    "form": "PERF-T0949 期望 EVALUATED，实际 INCONCLUSIVE（actualScore=null，actualTags=[DATA_INSUFFICIENT]）——综合评分 None E 级数据形态与 manifest 期望口径差，非缺陷"
+   }
+  },
+  "passing": {
+   "ledger": "1000/1000 行（missingLedger=0）",
+   "source": "1000/1000 ∈ {SCHEDULED, MANUAL_STANDARD}（foreignSource=0）",
+   "run_binding": "1000/1000（runBinding=0）",
+   "algorithm_version": "1000/1000 = KPI_CALC_v2.0（algorithmVersion=0）",
+   "latest": "1000/1000 行（latestMissing=0 latestBad=0）",
+   "nodes": "20/20 预定节点（nodeMissing=0 nodeBadVersion=0）",
+   "task_terminal": "TaskRecord db9bd9f9=SUCCESS",
+   "parent_terminal": "Celery succeeded（23:29:54.580, 747.677s）"
+  }
+ },
+ "denominators": {
+  "frozenEligible": 1000,
+  "excluded": 0,
+  "snapshotStatusCounts": {"SUCCESS": 999, "INCONCLUSIVE": 1},
+  "expectedHistogram": {"EVALUATED": 1000},
+  "fullWindowLedger": "01:00 窗全账本 total=1030（success 1004/inconclusive 26=PERF-T0949+25 真实无数据回路，failed=0——父任务返回 payload）"
+ },
+ "environment": {
+  "sampling": "批6-环境采样.txt（30s×60 轮，23:17:51 起由第四代启动；cpu 228-233%、rss ~1437-1510MB、q_celery=0、pg_conn 7-25 无连接风暴）",
+  "redisCold": "DEL 前 agg_cache 1 键（workbench-roots:30d:all:r25）→0"
+ },
+ "beatObservation": {
+  "concurrentWithBeat": "无（干净样本；投递于 23:00 Beat 终结后 5 分钟）",
+  "beat23": "754.288s（23:00:00.107 received→23:12:34.400 succeeded；UTC 14:00~15:00 无数据窗 261 SUCCESS+769 INCONCLUSIVE）",
+  "beatSeries": "17:00=645.0 / 18:02=1776.5 / 19:00=626.4 / 20:00=635.2 / 21:00=619.0 / 22:00=623.8 / 23:00=754.3"
+ },
+ "toolNote": "第四代执行者手工取证（脚本 /tmp/q4_batch6_gate.py，复刻批 2/3/5 先例 import 工具模块保真）；工具进程后台轮询中（--timeout 1800，预计 00:47 前自然 timeout 出终报落 批6-报告.json——expected_status 单行违约使屏障永不满足属预期）；批6-原始输出.txt python 块缓冲暂空，投递事实以 freeze 落盘+worker 日志为准"
+}

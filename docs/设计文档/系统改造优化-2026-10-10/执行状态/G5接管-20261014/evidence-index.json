@@ -1,0 +1,1014 @@
+{
+  "items": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/G5阻塞审计-20261014.json",
+      "bytes": 2217,
+      "sha256": "5a9f199432aa67b8469c74e49ef7eede687e584c823a6e98f9f6f5cd8aa0d76d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/K00-Keeper看板更新-核对前.md",
+      "bytes": 9091,
+      "sha256": "ace0f3ef85a1f07608177e8fb971b48a92f5824c17e822ada5e087c9ff86753c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/K00首轮回执-原件.md",
+      "bytes": 6592,
+      "sha256": "b3e2525157d9214f587b099c18a3317ce8a66bbac2a78ac4ced10ea8be67635a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/barrier-report.json",
+      "bytes": 2552,
+      "sha256": "a0c1402caeebf6f8f0e80ead358901bf14d06d3e2103c0f0970c8ecb8941820e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/enabled26-observed.json",
+      "bytes": 814956,
+      "sha256": "5c63d8f662d6f5b2b0b329952c8cec284b540419841d5cae756a718118462a1a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/freeze_b_2026101405.json",
+      "bytes": 221052,
+      "sha256": "c1a0df3d50e8364303560f9afa524d133c75c848f84bc3ca5c2ab77b979b4c77"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-dry-run-20261014.log",
+      "bytes": 1594,
+      "sha256": "3589bf8b227d11ec7ffbde3df0a8a95c47ec758983af4b47119dd7f335a88750"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-export-20261014.log",
+      "bytes": 717,
+      "sha256": "02975f1cba18447010028d86a969cda55337f604d7d03548d1f06691ced62c63"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-export-runbook-20261014.md",
+      "bytes": 3308,
+      "sha256": "baeb49af06b97be592e99c403965b1f7b12d40ec1e1cbe2ef8e49515360e1361"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-export-script-freeze-20261014.json",
+      "bytes": 831,
+      "sha256": "8abf900175cb8df003c8c388fbd07affc2fc85350f2bffcb617ffb37593058fb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-independent-20261014.json",
+      "bytes": 2895251,
+      "sha256": "0ae1dad75d5d30ef4faf679de05a6be6f00c16634c03503225d3f9937c9b48a3"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-independent-20261014.md",
+      "bytes": 10039,
+      "sha256": "2d3278dc4a8e652fad060a3d37f442e1ec046916e30911bda47ce9e3e9eb473d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-independent-audit-20261014.py",
+      "bytes": 20596,
+      "sha256": "f93895ebd018a604f1e828eec3b4c85a97751dd5716979b98bcf69eb4a9ec1c3"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-pre-b-weight-baseline-20261014.json",
+      "bytes": 1137,
+      "sha256": "2c2afe9627a902e082dd133a1a495e413fcb920a58aa2c55e72e5a1fac1e2d10"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-prepare-20261014.log",
+      "bytes": 719,
+      "sha256": "cb1036e282d93c7624e55acb581461724fe187a7f461d7586f27b9ab06585e1c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-prepare-runbook-20261014.md",
+      "bytes": 3876,
+      "sha256": "71b8109a9dda85a99646740201511bff2f6bff90c5db97e16208fa0868461f26"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-resource-20261014.log",
+      "bytes": 8403,
+      "sha256": "abc4bd294f13a8964012424e5112f7c3974108e26ec85272c085c58cbe56cb5f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-run-20261014.log",
+      "bytes": 2834,
+      "sha256": "37815e91cd989cf6b7f38289782735f1ffad7d1cf4a442d394c6fcebe6e1dee9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-script-freeze-20261014.json",
+      "bytes": 704,
+      "sha256": "d7e4a4d7265c9de9f6d3001e8dd79a1375b3b5a76b009da5b6a8dbeeac2618e7"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5-b1000-write-20261014.log",
+      "bytes": 559,
+      "sha256": "e99a6393033eca7cd85dccbb0bd368cc6820626519ff06e47ee507015cdb2b0c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5_b1000_export_20261014.py",
+      "bytes": 19697,
+      "sha256": "cd1b1078e4033ba8ac8f3cff5fd35c21ec8793504b722e4258652173acd832c3"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/g5_b1000_prepare_20261014.py",
+      "bytes": 19853,
+      "sha256": "de713967e97f4b64d98c041efb35a9afdb3b854bdce74c1445355c13994f9edd"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/manifest_b_2026101405.json",
+      "bytes": 12401160,
+      "sha256": "1d238a9d153619f96afb9adb108b123d02aba8ced90ce1ecf0f1fd4c0ea21e7b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/observed.json",
+      "bytes": 44268996,
+      "sha256": "ba97ba29da5c97b7fcfb8df93d68b980ed6835280724816e59f060f9244b23e5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/root-enabled26-crosscheck.json",
+      "bytes": 856,
+      "sha256": "bcb95cfc83d74d672f6904d6fcd7371896e4a934fe8f14f1b114fe5f44f023b6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/run-conditions.json",
+      "bytes": 1312,
+      "sha256": "6c5578add88a9a6201f33afe17db69c4eafe8558b7a995d129b9eae439532230"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/write.json",
+      "bytes": 737,
+      "sha256": "5e2d482023b5b3ed817a524f2f1553dbcc88b09b043c549f5c837edf3026a6ab"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/evidence-index-pre-runtime-and-waiver-20261014.json",
+      "bytes": 37830,
+      "sha256": "efcf7a90ff7178c3b6cb27706e9a541c9ec753054a763bf72b3f95caa09a0ba9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-candidate-focused-20261014.log",
+      "bytes": 614,
+      "sha256": "d979d1c62123af9a5e5f6a5fe429a99defc21b00054e6cff65bdc8b211cffffb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-candidate-source-freeze-20261014.json",
+      "bytes": 1490,
+      "sha256": "727a7fea6a8840fa6d1f34807e6c7bf733bb8389648c33e58c0c5b33ff4e0db4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-collector-root-independent-20261014.json",
+      "bytes": 2073563,
+      "sha256": "180f4d30441bd2ec07e6f5707f9414dbadae4f9088e0f13c4755456609f01deb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-collector-root-independent-20261014.log",
+      "bytes": 101,
+      "sha256": "db6039ae128743615cf6b180836da5adffbe36705e245083d763e7073186d0be"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-collector-root-tests-20261014.log",
+      "bytes": 614,
+      "sha256": "86c09681be80c9da74ce31196fa804dfc0e2740933bf9b89a7d31b588848931b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-final-candidate-freeze-20261014.json",
+      "bytes": 1933,
+      "sha256": "843896411dff8466fa2e22241e655cedab524c979c7220821c30509693cb93aa"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-final-candidate-freeze-v2-20261014.json",
+      "bytes": 2101,
+      "sha256": "683090161f4e5a52626f539640dc0f470567120c766223b201d8cde8f99c66f0"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-final-candidate.patch",
+      "bytes": 89887,
+      "sha256": "28f6c5e9e40ee7249c48bcd3ac3e2115c34cd71252414f1fb172d3406c67451a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-frontend-type-20261014.log",
+      "bytes": 54,
+      "sha256": "138c0d458a13935d2e95adddcce37bf9daf75da7e7856c41179607d7ac6fed3d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-frontend-type-final-20261014.log",
+      "bytes": 1698,
+      "sha256": "f9796e4166a0dae245353fae0acfa84d4316fc31e6c62c565d36740cf10a90bf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-full-offline-final-20261014.log",
+      "bytes": 60293,
+      "sha256": "e31e1d1d505aaa1ddfb46a960e84597890ec510e2b7405eb9bf2cc9055345c15"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-20261014.md",
+      "bytes": 17748,
+      "sha256": "e65a6ee8e9ff5041b5518edf00c853dd59a69381d4ff6d58db28ebf99e27e09c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-baseline-full-20261014.log",
+      "bytes": 6213,
+      "sha256": "c312882c89f0bb620a53ec2991691614a2004becc270a3b94f7ec4a2487a2c39"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-baseline-full-r2-20261014.json",
+      "bytes": 471342,
+      "sha256": "a5d34cf2c2082e73bffbddedb91bc3bab09e09afc67980be5a0df731e2e621d6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-baseline-full-r2-20261014.log",
+      "bytes": 4797,
+      "sha256": "e3a417cce1e9a5956f6d62cfeb94bb33fc1c3e4861fe71a7dcaf6362ffd4f00d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-candidate-20261014.json",
+      "bytes": 468745,
+      "sha256": "431093a9602f223fdad31b61a678c4f072a7b56d7aabb13c8418ed31fd1b36e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-candidate-20261014.log",
+      "bytes": 4814,
+      "sha256": "206356aac266774c02f60ef1f30f316c6b10d952f3e069a3afa9143b77e3b980"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-candidate-r2-20261014.json",
+      "bytes": 469847,
+      "sha256": "b814c77250b0e51b5c8f1dac008e87107ab37469de0bda0227eed0ebb414948a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-candidate-r2-20261014.log",
+      "bytes": 4814,
+      "sha256": "fa46b4102065aee453d8ee8853c98b77559bcc302d90027e6f144d73fb7eebb0"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-candidate-stable-20261014.log",
+      "bytes": 409,
+      "sha256": "24458b47b93640818f8deab150ae5964279e4e1161e76563d69286588442c06f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-comparison-20261014.json",
+      "bytes": 6109,
+      "sha256": "065922155578eeb68c084410fdded17de9b2d903e9a5d4b2237e0325e4518630"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final-20261014.json",
+      "bytes": 469849,
+      "sha256": "fdf9c36ac38ec592323c208cadc916cfa416f8236b7d5f1037d224897c41855d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final-20261014.log",
+      "bytes": 4816,
+      "sha256": "e634e56c0a876793ba09c29a221c476c291dee6ff21600817e568b7e8a372e2a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final-comparison-20261014.json",
+      "bytes": 6232,
+      "sha256": "a4ef90efb7ff5a2d240f3e781956a2e494968d0e69b6cad860600856fd73cb5c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final-comparison-20261014.log",
+      "bytes": 1374,
+      "sha256": "7adf3c4ab4fac0f38afda322ced56e3dff93a0e3b159f417012164ae659d2f22"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final15-20261014.json",
+      "bytes": 471940,
+      "sha256": "a6524c39fe58f19f2b3ce45c0babc3e5c5b25de446aad92a13a6398e169a4691"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final15-20261014.log",
+      "bytes": 4812,
+      "sha256": "24f3d2cda8985eab78ac1c9d5fde37052a19d3d32bb782e984d01526f2de420f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final15-comparison-20261014.json",
+      "bytes": 7381,
+      "sha256": "dc6011a8367ed075e21e4b86617a530850091ec17be8af704998ea7e77534fca"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-final15-comparison-20261014.log",
+      "bytes": 2489,
+      "sha256": "9838a8f02b1555c2c829ad2f80c6736e81e6cf8058b63f9fe2678998df150070"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-frozen-20261014.json",
+      "bytes": 471205,
+      "sha256": "788b445db5f54f08b16e9cb28477aff4b253e7b2147ea484976013fe3d571da5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-frozen-20261014.log",
+      "bytes": 4807,
+      "sha256": "a81328492c33f830ed8fe138257d61739a7b630ab1751fb78a8bb0e463d191e0"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-frozen-comparison-20261014.json",
+      "bytes": 7015,
+      "sha256": "25260970a39359c416f192267c21af96c804175e30c079d860e6ae2aea972c7c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-frozen-comparison-20261014.log",
+      "bytes": 2129,
+      "sha256": "e17e43725e50a4189ce604b91e44310ff9da260919e3be0c2da8582930b657b5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-pre-hashes-20261014.json",
+      "bytes": 1359,
+      "sha256": "cd1b29ba27bb07e9992f1c96b7ef0710169d6528c106452866c4151eeb3b1f86"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-20261014.json",
+      "bytes": 3914,
+      "sha256": "bffbf7e159dffb0c860353cc7dc081076aa4dbd43581734188253779f9ddb6ac"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-20261014.log",
+      "bytes": 2834,
+      "sha256": "f19024d918f6633bb506d5ced9113765266f68423699c0c33b18b65111966e6a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-final15-20261014.json",
+      "bytes": 5326,
+      "sha256": "692d7e3b0c5a02a419a741e0d6c6bb72c5e1ad687fa99e5ebec366b121f3cbe6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-final15-20261014.log",
+      "bytes": 1343,
+      "sha256": "53cb8ca8a4f63eeec6a5fda93ce292d23695abb2653394692a75edc78fe20197"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-frozen-20261014.json",
+      "bytes": 4348,
+      "sha256": "25b7ef7e763110e2390ec86b54b0b1f2498391a341058090d113ce04fe5bca94"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-frozen-20261014.log",
+      "bytes": 1343,
+      "sha256": "d6d230a4f095d374dd5366bd1284de6237c23b2f04ef84247eb174750d6b77bd"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-r2-20261014.json",
+      "bytes": 3914,
+      "sha256": "0d9c03527369f06d8cb993e03934e991805efbe9d7b2633833ee02a310a5af16"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-nonauthor-tests-r2-20261014.log",
+      "bytes": 1343,
+      "sha256": "41d01fb6c3e60574d0fd6e748a1b32820ba4cb5bc70d08f2c118899f775913f8"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-zero-nonauthor-20261014.json",
+      "bytes": 41251,
+      "sha256": "5cb2ffaffa82e5d6b8aa26ea5698d08df3bb14a8aa20d976ace2fcbd6038a880"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-zero-nonauthor-20261014.log",
+      "bytes": 106,
+      "sha256": "b82ef6b6512e5eecbf4bf25b40e02198d1d911115784ad47b51d8ded62e7c3bb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-zero-nonauthor-final15-20261014.json",
+      "bytes": 42199,
+      "sha256": "ff42137cc97c6b1f597e7e3f097efefa2467d5c464373766cf4f601a7d766371"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-zero-nonauthor-final15-20261014.log",
+      "bytes": 106,
+      "sha256": "b82ef6b6512e5eecbf4bf25b40e02198d1d911115784ad47b51d8ded62e7c3bb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-zero-nonauthor-frozen-20261014.json",
+      "bytes": 41835,
+      "sha256": "8a75a122121506163578975dea24f7e23acb12553f389f8fca4f3d8dc3f0a956"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-gap-zero-nonauthor-frozen-20261014.log",
+      "bytes": 106,
+      "sha256": "b82ef6b6512e5eecbf4bf25b40e02198d1d911115784ad47b51d8ded62e7c3bb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-golden-authorized-update-20261014.log",
+      "bytes": 613,
+      "sha256": "4258d31a01f230077d5c54046e8a72546327077c544bc8d215ecc29e37898fc7"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-golden-normal-and-trace-green-20261014.log",
+      "bytes": 613,
+      "sha256": "c886b98521869b7f91c6a9f9c0e99f748bee899f657c3ab66de9897cebe4455c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-guard-nonauthor-final15-20261014.json",
+      "bytes": 12653,
+      "sha256": "b6255444a2ce3326024b41fec5a0dff53651d7ade7dd5d0d733fc1533499820d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-guard-nonauthor-final15-20261014.log",
+      "bytes": 922,
+      "sha256": "0d1822f95f9d757b2936064630baf759384cffb03ee120e935910360ffefb28f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-input-freeze-20261014.json",
+      "bytes": 5999,
+      "sha256": "d521c06d03ab81903319289920265b4b98306630e6d36fd026645d4ab17a1d51"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-natural-beat-20261014-independent.json",
+      "bytes": 1000249,
+      "sha256": "92df694d0cb76c9bfbc7e88a5b644ff3099e5a43b006610db2da58c32313c6de"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-natural-beat-20261014-independent.md",
+      "bytes": 11740,
+      "sha256": "7fa82f7c81bb600f72d81008d3689c055de5a77344a3e31be2664bc48c79088b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-normal-push-20261014.exit",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-normal-push-20261014.log",
+      "bytes": 100497,
+      "sha256": "61b761f08436512d31dd3a4d3c860900f3a500541df81ca4dbd0042f298f1a65"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-pytest-denominator-diff-20261014.json",
+      "bytes": 1427,
+      "sha256": "42fe5b7e6006a468fdca3406cf88ec71dcb920e129d74eae731b473adfc05bb6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-pytest-denominator-diff-20261014.log",
+      "bytes": 673636,
+      "sha256": "41723d01fee8f803ee167ee2d5b1a5f192eb50aa8b5f9a76936530c3d7609b82"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-source-focused-final-20261014.log",
+      "bytes": 775,
+      "sha256": "5e4a950ac849ddc92615ce052dc82e024a32727cdece5ce711913de3bf4c3b3c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-20261014.md",
+      "bytes": 10278,
+      "sha256": "fdb5add9b3e02c02b26778b058bbb86a98687f79319f3dc5d150ed46898401df"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-after-final-20261014.json",
+      "bytes": 1994,
+      "sha256": "0cf1ae87364ce178155b35c1cd99a43c8ff6dd87ea8aa83ffc5ff94f2be1f281"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-after-v2-20261014.json",
+      "bytes": 1600,
+      "sha256": "0758a12698c0f9fcfbb7f7a7b37747e2dc344227f33518c1ba20bfea7ec8bdf5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-before-20261014.json",
+      "bytes": 749,
+      "sha256": "4b9be2586384200aefcefdbf8f7fb6b38addadca5ab0c228020b9270b3135f4b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-before-final-20261014.json",
+      "bytes": 3734,
+      "sha256": "114df5f248c0eaa63c08c469f29aa7754409ef8fff50c709f00833212d78a3bb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-before-v2-20261014.json",
+      "bytes": 2918,
+      "sha256": "3acb5ec95a6b4136b1161422bc0526a4f7fd68c07949df2dca771e2dbd33bf93"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-collected-20261014.json",
+      "bytes": 17949,
+      "sha256": "276e887c134b5ac9bc7434e2cf4aa41a02c5c9fc2f9504bcd013fba26cd82564"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-events-20261014-red.log",
+      "bytes": 36886,
+      "sha256": "b05e3eb57c3c7454bc1d87cb43c18a416732ec018b5dd00e792857e14cac84ac"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-events-20261014.log",
+      "bytes": 45062,
+      "sha256": "10cf532b750bba766abf53a2196826266570afca7eb26a408af79e6d0de599fa"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-evidence-index-20261014.json",
+      "bytes": 1519,
+      "sha256": "e2fe60e728a49fdca2892d5ce74dc3437371fcfb13c60f6526e0e917d8bbc6db"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-final-events-20261014.log",
+      "bytes": 45062,
+      "sha256": "10cf532b750bba766abf53a2196826266570afca7eb26a408af79e6d0de599fa"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-final-network-20261014.json",
+      "bytes": 203,
+      "sha256": "51f9013ba672ed7e3355a64cd20d9d127bd1e90f1122e47fe721c679d7989e7a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-network-20261014-red.json",
+      "bytes": 203,
+      "sha256": "cffa0cd7f678b4f26c258b8174f66ab1b41fcef3329e588928e1aba320040bb3"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-network-20261014.json",
+      "bytes": 203,
+      "sha256": "51f9013ba672ed7e3355a64cd20d9d127bd1e90f1122e47fe721c679d7989e7a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-tests-20261014-red.log",
+      "bytes": 1650,
+      "sha256": "9983a72214fafbe5c752da29f0fcb7284215c824ab0c2b6f6a181b8fd1f5a9e5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-tests-20261014.log",
+      "bytes": 614,
+      "sha256": "c51abe7bc38a177b8e5dac41fe0de3ee484b8c455b3707dac48c2b107a20436d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-tests-20261014.py",
+      "bytes": 18964,
+      "sha256": "9f62a614be0bc767a1eb760e9944504473b48e289c263f3915895a4c00779f30"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-nonauthor-tests-final-20261014.log",
+      "bytes": 614,
+      "sha256": "6bce61f8a27d78ac13ddb688a2b340fe0447f5b27663121d7dc5769c65f9a6b3"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-trace-race-fix-green-20261014.log",
+      "bytes": 613,
+      "sha256": "3510a855de57721bc880b0a2866abeff9c1df25eaed9a4275279049db892be3a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5-zero-coverage-reverse-red-20261014.log",
+      "bytes": 2254,
+      "sha256": "bb96f5fb7b13886debbe60c5e47f8e13887c1a3611670aeced86b93fdf8d34a0"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_compare_pytest_denominators_20261014.py",
+      "bytes": 1673,
+      "sha256": "0bf0f764082e55d9082d90cbf4fab41f413c99aa3bfe86566e8754fd5b6e0d30"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_deploy_candidate_20261014.py",
+      "bytes": 8265,
+      "sha256": "8f91d18ea3c307b0b9f91c17680c62e30bef5a194d249b36e45bb7210ee3a5ca"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_full_offline_runner_20261014.py",
+      "bytes": 1135,
+      "sha256": "6f0de1983948fa5657f350d125932217319a21e39e23049b96d2d8286e13cbfd"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_builder_green_20261014.log",
+      "bytes": 665,
+      "sha256": "7ccec0fa0171594d02e3aa2cf0363ce966bcb89ed4f788de90a606492193a8f1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_builder_red_20261014.log",
+      "bytes": 3311,
+      "sha256": "08c923f124eca374f0fdf7cd05a201351828cca75cee7bd9362eb86fbe7e22af"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_compare_final_20261014.py",
+      "bytes": 3272,
+      "sha256": "ec993c3ae22b9da05ecfbf653d566d9037a5edce45cf89208e9a369aa02d63d4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_compare_frozen_20261014.py",
+      "bytes": 3361,
+      "sha256": "175663e83a2db98fb1eef6b5401c1fb96b698c045d4a54f3b1fa428b3f8ec942"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_contract_red_20261014.log",
+      "bytes": 2056,
+      "sha256": "572220881e29bace29f6c4dfb362ea3d834625665184c14cc5ce832c137cfd6b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_nonauthor_tests_20261014.py",
+      "bytes": 1706,
+      "sha256": "934a5ff4a88df1746c49310f71875ba80dd9be9920c693bb0ee05d0a494fb99a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_nonauthor_tests_final15_20261014.py",
+      "bytes": 2078,
+      "sha256": "23bda5c107371e5487521823b02b2516dbb5deeff1614750dc272e64202a6b37"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_nonauthor_tests_frozen_20261014.py",
+      "bytes": 1938,
+      "sha256": "75ddc700962011dc992ed8eccf1a83830d6c97d70c5eb0bf49f404fbebdadcbf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_nonauthor_tests_r2_20261014.py",
+      "bytes": 1900,
+      "sha256": "463db88c07d84b0ea74f7f047d2eff8687bf820b52d611d9fad2f19cd5b1fae0"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_pipeline_fixture_error_20261014.log",
+      "bytes": 8031,
+      "sha256": "369ad53edff88e60e87e8004fa6c2174f54a574c25259354433fb5497edea72b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_pipeline_green_20261014.log",
+      "bytes": 666,
+      "sha256": "89275d022426c81b771555c092145b6af2065a884847b28e782cfa4685f2ff95"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_pipeline_postfix_assertion_error_20261014.log",
+      "bytes": 6589,
+      "sha256": "84f1ffcff7adc0c0623558e493680d0b274d2a9a80076b7165a4891480579442"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_pipeline_red_20261014.log",
+      "bytes": 4173,
+      "sha256": "0ad16ec71c1968ece398fb08e486260ef1859570a4f5ddcba057cdb29238340a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_related_tests_20261014.log",
+      "bytes": 775,
+      "sha256": "3de0316598bc8a6b70f827dfcb8a44a64cefe94d45980a3677e25c3e9247c42c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_related_tests_path_error_20261014.log",
+      "bytes": 604,
+      "sha256": "d3faa37f32a7eb594c2a62af9f9d6ead1281f5fba0ff966ccc5b923f68a3cd09"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_semantics_20261014.patch",
+      "bytes": 22181,
+      "sha256": "c81c8eec8b08d3bf1696d4e3280bc02d22cc46d9b3002c2381a62a4d8337d84b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_semantics_frozen_20261014.json",
+      "bytes": 487,
+      "sha256": "58502f47f501dc22fc6fad1a9f7cb2ed53eda6d8eaf090c8ebea6b1c2e0360de"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_zero_nonauthor_20261014.py",
+      "bytes": 1999,
+      "sha256": "3964f165ee53cca64af32612f7db6db2f8a4f891923f3e1b657ec48552cb3a96"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_zero_nonauthor_final15_20261014.py",
+      "bytes": 2014,
+      "sha256": "1e8a2e39ee8cd879d73ebcda21015f2eb680d4b4600683f0cb9f40d1150eaa2e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_gap_zero_nonauthor_frozen_20261014.py",
+      "bytes": 2013,
+      "sha256": "4c8538fd18497fd17b03e66f98dab7393a66a88b31f6985ebf560c890286992c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_guard_nonauthor_final15_20261014.py",
+      "bytes": 3954,
+      "sha256": "811ef9e8f51070a90ae6860403f138a543ecad118f64e85b3c5c7504fb90fe92"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_manifest_counts_green_20261014.log",
+      "bytes": 747,
+      "sha256": "42c531ed711cb3f53e2bbd6fd82a01c711d7bfb2be2479a0b560454f15fd6410"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_manifest_counts_green_network_blocked_20261014.log",
+      "bytes": 775,
+      "sha256": "9c409111d2c27d07c330aa4b473e8953f82ca4e7184a8f2c646c20acb63979d5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_manifest_counts_red_20261014.log",
+      "bytes": 1734,
+      "sha256": "7dd509c7fcbd4a5ea6859d5ec5dddb8ed5ef1f97268389572ec8fbea08a94821"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_manifest_metadata_20261014.patch",
+      "bytes": 3373,
+      "sha256": "3746b8a42458775c550dfc7ebb128a81da9667b86a51b070ee170a793791b76e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_manifest_metadata_equivalence_20261014.json",
+      "bytes": 1329,
+      "sha256": "2e7cee3e664453f009ce5a013f0639fcb3c655022d837bb5673fb3466e5460d9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_manifest_series_before_20261014.json",
+      "bytes": 532,
+      "sha256": "0b386f39d624f34b3a845b621553a5f8d7a5d857698d4bde3c51f7ca658f20aa"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_nonauthor_socket_guard_20261014.py",
+      "bytes": 2075,
+      "sha256": "4039ad0f4d37b1305e3fcc619d6e14b42387d1f51e5a1a11c79ddbb78473d59e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_runtime_preflight_20261014.log",
+      "bytes": 1448,
+      "sha256": "f74e76b32c5e5b4a0067e642a6153dd23017e80d15a8760f61cd2d8354474712"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/g5_runtime_preflight_20261014.py",
+      "bytes": 5304,
+      "sha256": "344bb5c7f92f4816a08bf0c0967c3c14e18d2cc5dbf7f489a21806c68169a07b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/monitor-update-limitation-20261014.json",
+      "bytes": 446,
+      "sha256": "e305787439a9791ad30c28f1323d465c863679df9143c8018c8a4d6297f7b997"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/recovery-terminal-20261014.json",
+      "bytes": 1646,
+      "sha256": "afceff066648f9a320951195d8139005c2cd64aa0d0476211cb245c1edfb8ff9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/resource-d1c3809a-fae9-4ab4-a8cd-9b146bb22c1d.jsonl",
+      "bytes": 638962,
+      "sha256": "03c17b34747395869a405e8621cda13e1e05986a54368b8373de41c61a43d669"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/resource-e6b6a6a2-0117-49c5-86bb-d87063aae3a6.jsonl",
+      "bytes": 598672,
+      "sha256": "d0309e3c9a584cb19e23edc3bfc74f7dc3a4ffacd797d90ff839433f49261781"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/runtime-deployment-20261014.json",
+      "bytes": 33299,
+      "sha256": "584f66906beb3dc42911875e081144ecb2c4e51eb831ec995ba41abac2e8f241"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/runtime-deployment-preparation-failed-20261014.json",
+      "bytes": 493,
+      "sha256": "4062b25f5411b2d79bdc072802f7d32d94b0437841a31de174bcd51db5d44331"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/runtime-preflight-20261014.json",
+      "bytes": 165348,
+      "sha256": "463b6b7a3132f09f965d374f508d85ee6e00e93681bd8e4495aa2091a72378c5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/shutdown-race-terminal-20261014.json",
+      "bytes": 686,
+      "sha256": "af9b922b0b6b8e378e2eca70e2b968fda6890f83ed7b9cbf0dea3807cec3416b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/freeze.json",
+      "bytes": 128182,
+      "sha256": "6d63e79ffe94aebc104a7a7d4384e7b4ea35bb0c0ce8dfb546b202fa1cb37f55"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-independent-20261014.json",
+      "bytes": 158046,
+      "sha256": "cf2b82cdaa0bcf1171076c6fac9dd4eac89a14d2ca8a8072a0158f82b65cec72"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-independent-20261014.md",
+      "bytes": 7757,
+      "sha256": "26add639098966bd0da49ea8b5c47b76a0f76c90aabb5063d95f2d92e964ddd1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-independent-audit-20261014.py",
+      "bytes": 16344,
+      "sha256": "c6519178843ff870b2ecc331eace3ae220146360fd4a090d4130f2d190293850"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-independent-first-audit-20261014.json",
+      "bytes": 158082,
+      "sha256": "6f71ad0f7e6f76ec57acc29cd75dd0f712527b82f162b94aa142b82afbc11797"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-plan-20261014.md",
+      "bytes": 15457,
+      "sha256": "d50bc4f7b8471e578efd3c96b431e2cccc5f26752f92ac97f585f3ebcfb8c2a5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-plan-errata-20261014.md",
+      "bytes": 541,
+      "sha256": "60e1a39e45cb856933516464c8ea9580d70c5ddf9a11516d359e352e2409b451"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5-real-smoke-scripts-freeze-20261014.json",
+      "bytes": 958,
+      "sha256": "1e1dfe22e19a703a023eb7a23e5ad6c0f2b41e8f53c462f29be85417c1aac878"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5_real_smoke_20261014.py",
+      "bytes": 23099,
+      "sha256": "b3dcaf01751024c367ff045fd05d05f1c5e8bef21cc20b28afbb29b0bc05a185"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/g5_real_smoke_audit_20261014.py",
+      "bytes": 10997,
+      "sha256": "188e7ca26c60d150fbaac195fd25d61a7969c833e7b06ba388e5ff171607fec5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/observed.json",
+      "bytes": 673370,
+      "sha256": "04f0e95d65318557787f9774a0eca5a61ed2d7af5864a20433f4b3319c698b3d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/root-audit.json",
+      "bytes": 20422,
+      "sha256": "4cc2400f77d8323a7fa5b57a2a49678c894f2958cc41224b9d289455ac68588a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/submit-loops.json",
+      "bytes": 939,
+      "sha256": "d06d9eefdfc84235aabbcebdbb8e2792c3c3b0b115646c1b9c7a322d4faee605"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/submit-node.json",
+      "bytes": 298,
+      "sha256": "dffd3d803bb42dbbdadf1cc9c6c89da9a5f026c253a42d6cae27abc5ef6479ec"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/wait-loops.json",
+      "bytes": 495,
+      "sha256": "52338efdf850d01fd102939e57fa57a7bff3f482269ad0d140c50589e20f2f25"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/wait-node.json",
+      "bytes": 274,
+      "sha256": "ff2f97f5632446a1b88edd01f8e19c0dbe5b3bc05ac30c731ac9f3874a25b684"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/write.json",
+      "bytes": 471,
+      "sha256": "1ca8a5d4998bbb34c240dbef5488d360da290148a72c70b533a379fada4e4db3"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/unacked-predeployment-20261014.json",
+      "bytes": 2964,
+      "sha256": "e55b0aad5e4b26c2146f3e6de49504a45bfcfe40c0e76a35483155ea54c2fae6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/unacked-recovery-20261014.json",
+      "bytes": 639,
+      "sha256": "73b59534349103f30dc0170917b1291c15994fb0d437c29c717cedae4a4f4ce4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/v2旧候选四类小样.json",
+      "bytes": 89217,
+      "sha256": "5fd2bd47becc6a9e444d3395fde6f0d062013ef45584d706f5962c3574382e3d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/v2旧候选四类小样.py",
+      "bytes": 11467,
+      "sha256": "7d9373f7ff11398511b116edb1bbdd37760fee0e2baa644d07df522e61b0987f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/v2离线输入冻结.json",
+      "bytes": 5999,
+      "sha256": "d521c06d03ab81903319289920265b4b98306630e6d36fd026645d4ab17a1d51"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/v2输入独立核查.md",
+      "bytes": 12956,
+      "sha256": "68c0021a5da376ad66249d17c9d123ed60ca143cd27b82d7e28b3b46501a54b9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/worker-13366-native-sample.txt",
+      "bytes": 107188,
+      "sha256": "a694d8ec299d54a950dab293c21e025ab489a69d0a941b9689f9cf411e6d2bce"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/原进度-20261013-接管前.md",
+      "bytes": 25930,
+      "sha256": "b69dacc55be687480e77e116afeef6f56c9c60d995f3a93b51980e9b38b287e1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/四代执行者终态.json",
+      "bytes": 321,
+      "sha256": "932b92edf44646e325a269665a7acc86c7a38615c02d44338403c1cb5c3bb009"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/固定候选与门禁.json",
+      "bytes": 3599,
+      "sha256": "a65df794fc8339b0cdf56b985e537c66e7fc74e73324c316c853e4056c316057"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/批6性能独立核查.md",
+      "bytes": 18329,
+      "sha256": "2a7ccfa133c4fd33e5c98b629b35b92811ac66a02041a7251563762486d5efca"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/批6日志分段.json",
+      "bytes": 33451,
+      "sha256": "3c966e10757a11666dd68481d97906113eb4ee7c7c89637e9b0b1f295e1b146a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/批6日志分段.py",
+      "bytes": 7242,
+      "sha256": "82b5916b0275500f864e672aa95b695dafff1a2c61620911f461c766be7ce199"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/接管前-G5覆盖表.md",
+      "bytes": 4557,
+      "sha256": "32d2d2621490fd6b3f0f795f40b5e227c3e7fd1c68487a9b4486d55d11106958"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/接管前-R01-R07纠偏任务表-20261013.md",
+      "bytes": 3374,
+      "sha256": "83f57548708e77b9f590f55788ab7a78f902d2fd5e2ab126d53bd0f675693e9f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/接管前-任务看板.md",
+      "bytes": 3992,
+      "sha256": "d7260810e986edd25ef55e72ab2592290d7dbc66e7845b0550bd571462ee4238"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/既有Git授权核实.json",
+      "bytes": 971,
+      "sha256": "41c288ddc74d4b08db38f20142d5e903e89e01a992480c6c429fe4b8d5c7a843"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/既有全量pytest.log",
+      "bytes": 61593,
+      "sha256": "edc19967b991a9f342b5f43df627e2868ef55fc725bff946974551979a042d3b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/既有正常push.log",
+      "bytes": 100307,
+      "sha256": "6c8beeace8d64695209e4d2f8a26a9822d64cd70ab20bbc920897926b98f41bd"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/最后正式批后台终态.json",
+      "bytes": 1333,
+      "sha256": "696e2fee88a44b815a1f07986cdbcdc639e26965950aaf8ec6db701866325124"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/正常hook真库副作用只读核验.json",
+      "bytes": 627,
+      "sha256": "3706967202ba9ff365c1860dcb9998c88ca50735b24f77e27f068c674875c196"
+    }
+  ],
+  "candidateSHA": "6c92cf6944d40bc2c92c9296110711933be28ec7",
+  "G5": "CONDITIONAL_PASS",
+  "P6": "NOT_STARTED;handoff to kcode;user pastes file",
+  "P7": "NOT_STARTED",
+  "externalBlocker": null,
+  "caveat": "hook的两项旧fixture短暂写开发库后清理，已独立只读0残留；不冒称全程只读或容量通过。",
+  "currentDocuments": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5条件晋级-验收与移交-20261014.md",
+      "sha256": "83438e2e3d4984bdcfacc416285da47faf8ae2425d2687fcffcb8a173fc4128e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-kcode接续提示词-20261014.md",
+      "sha256": "079863972f24ff5b1542d4131bdb023374d657063c4b6fc7fe9d246980b629fa"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-01a-契约与文件Owner-20261014.md",
+      "sha256": "5bdee1311b492b4a36c3b980551eba65d02fa3aaf70f673d220b97f1987e76bb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/P6首批-任务书-20261014.md",
+      "sha256": "3e88006426246be052c8afb1eb8ca9c6135688b0aeebc05e59602cad91c83118"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-kcode提示词独立核对-20261014.md",
+      "sha256": "e439bd901477d99eb67221f7fbc6b967ac86866180b6a3674d2ab39f39ebdc4c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5晋级口径调整-20261014.md",
+      "sha256": "4558cf0074fa5c41432ae6d588c54467d370053a8b986bf8240373c0f7f8f805"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-Codex环境接管与运行记录-20261014.md",
+      "sha256": "e9b62770ec43e6b1414bafb86165782fde09ffee35efac03002120ca9a05220f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5额度检查-20261014.md",
+      "sha256": "4677ba66f45726ae8d8f669e452dc04008ff6750fecdb9a968677483eea92e6d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/任务看板.md",
+      "sha256": "356f00b8f7557a17d6b35bca0e20e31dbfaad2b573434f5ec32c3ff9009b8934"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/R01-R07纠偏任务表-20261013.md",
+      "sha256": "e758abfebef4587f365b758210a7699fc5b2a2684128aca2d464f9798cf89e79"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5覆盖表.md",
+      "sha256": "0b0f21a24f06825430a2fa5f59b1040bc687ceb55e221a016458a7f0af507d51"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管小结-20261014.md",
+      "sha256": "998714e956194cf7422d4d6ba2aabf0d9ca16cc76c3a9c3fc15cef3b69c3807f"
+    }
+  ],
+  "goalStatus": "complete",
+  "quotaMonitorStatus": "PAUSED",
+  "runtimeOwner": "Codex root",
+  "handoffRecipient": "kcode; user pastes local prompt",
+  "currentCriterion": "G5晋级口径调整-20261014.md; user-approved one batch nine conditions <=900s + real five-case smoke",
+  "historicalExternalBlocker": "Old missing Keeper resolved by user K00 receipt and full environment transfer; snapshot preserved",
+  "effectiveQuotaCheckMinutes": 15,
+  "savedHeartbeatMinutes": 20,
+  "quotaMonitorMutationBlocked": null,
+  "goalCompletionBasis": "user updated stage criterion and owner; documented G5晋级口径调整 plus final report",
+  "goalElapsedSeconds": 7686,
+  "quotaRemainingPercent": 11,
+  "quotaMonitorSavedRrule": "FREQ=MINUTELY;INTERVAL=20",
+  "quotaMonitorPauseAttempt": "successful on completed-task heartbeat; saved status read back PAUSED",
+  "originalFullAlphaPassed": false,
+  "indexGeneratedAt": "2026-10-14T06:55:45.638668+08:00",
+  "finalIndependentChecks": 24099,
+  "completeGateSeconds": 789.4421961660264,
+  "quotaMonitorPausedAt": "2026-10-14T06:57:25.461232+08:00"
+}

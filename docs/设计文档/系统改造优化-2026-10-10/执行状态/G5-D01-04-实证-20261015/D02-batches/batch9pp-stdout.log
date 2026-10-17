@@ -1,0 +1,27 @@
+[preflight] 三条件参评回路数检查（DB 权威口径）
+  window: 2026-10-16T10:00:00 ~ 2026-10-16T11:00:00 (naive UTC)
+  barrier_loop_prefix: PERF-T
+  manifest: capacity_dataset/manifest_a_2026101610.json (scenario=a, totalLoops=1000)
+  eligible(is_active+READY+include_in_evaluation): 1000
+  excluded(不可参评，单列不缩分母): 0
+  独立 loopId 断言: 1000 unique = expect ✓（与 manifest 身份一致 ✓）
+  R05 latest 冲突预检: 0 冲突 ✓（本窗非迟到窗，latest 屏障可达）
+  预定节点(结构推导，独立于运行结果): 20
+  冻结算法版本: KPI_CALC_v2.0
+  manifest expected 分布: {'EVALUATED': 1000}
+  投递前既有同窗行: ledger=0 latest=0 node=0 ✓
+[freeze] 冻结件已落盘（投递前）: capacity_dataset/run_freezes/freeze_a_2026101610.json
+[submit] calculate_hourly_kpi.delay(ts_start='2026-10-16T10:00:00') （经既有 Celery 入口，复用唯一 lifespan Worker，不新增开放触发 API）
+[submit] parent_task_id=3dd354e5-39c9-4135-a6d6-2fc1c2d65980
+[barrier] 完成屏障判定（冻结件 × DB 回查 × 任务终态；父任务终态不单独作为屏障）：
+  分母: 冻结 eligible=1000 excluded(跳过)=0
+  小时账本: 1000 行（SUCCESS=1000 INCONCLUSIVE=0 PARTIAL=0）
+  manifest 独立预期: {'EVALUATED': 1000}
+  各条件: {'ledger': True, 'source': True, 'run_binding': True, 'algorithm_version': True, 'expected_status': True, 'latest': True, 'nodes': True, 'task_terminal': True, 'parent_terminal': True}
+  parent_task_id(logicalRunId): 3dd354e5-39c9-4135-a6d6-2fc1c2d65980
+  TaskRecord 终态: SUCCESS
+  各条件首次满足时刻(s): {'algorithm_version': 1373.9, 'expected_status': 1373.9, 'latest': 1373.9, 'ledger': 1373.9, 'nodes': 1373.9, 'parent_terminal': 1373.9, 'run_binding': 1373.9, 'source': 1373.9, 'task_terminal': 1373.9}
+  节点子任务取证: not-observed（kpi_calc 级联节点任务不带父 run 标识，子任务完成以节点结果行核验为准）
+  total_seconds: 1373.898
+  SLO <= 600s: 失败（分母: 冻结 1000 / 成功 1000 / 违约 0 / 跳过(excluded) 0）
+[report] 报告已落盘: /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch9pp-report.json

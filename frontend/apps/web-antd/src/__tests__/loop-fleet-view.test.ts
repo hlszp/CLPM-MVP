@@ -87,6 +87,21 @@ vi.mock('#/api/loop', () => ({
   getLoopTypeStatsApi: vi.fn().mockResolvedValue({ LC: 1, FC: 1, TC: 1 }),
 }));
 
+// ===== Mock 关注共享集（P6-05 星标入口；可控 isFollowed/toggle）=====
+const followControl = vi.hoisted(() => ({
+  ensureLoaded: vi.fn(async () => true),
+  followLoadState: {
+    value: 'ready' as 'error' | 'idle' | 'loading' | 'ready',
+  },
+  isBusy: vi.fn(() => false),
+  isFollowed: vi.fn((_id: string) => false),
+  toggle: vi.fn(),
+}));
+
+vi.mock('#/composables/use-loop-follow', () => ({
+  useLoopFollow: () => followControl,
+}));
+
 vi.mock('#/api/diagnosis', () => ({
   getDiagnosisListApi: vi.fn().mockResolvedValue({ items: [] }),
 }));
@@ -180,6 +195,9 @@ const { TableStub } = vi.hoisted(() => ({
         <div v-for="record in dataSource" :key="record.loopId" :data-loop-id="record.loopId" class="table-row">
           <span data-field="tagName">{{ record.tagName }}</span>
           <span data-field="score">{{ record.score ?? '—' }}</span>
+          <span data-field="action">
+            <slot name="bodyCell" :column="{ key: 'action', title: '操作' }" :record="record" />
+          </span>
         </div>
       </div>
     `,
@@ -314,5 +332,58 @@ describe('LoopFleetView 表格列增强', () => {
     expect(headerTexts).toContain('模式');
     expect(headerTexts).toContain('量程');
     expect(headerTexts).not.toContain('可信度');
+  });
+});
+
+describe('LoopFleetView 关注星标（P6-05 关注入口）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getLoopMonitorListApiMock.mockResolvedValue({
+      items: [...mockMonitorItems],
+      total: mockMonitorItems.length,
+    });
+  });
+
+  it('操作列星标：共享集回显初始态（已关注实心金色/未关注空心），点击调共享 toggle', async () => {
+    followControl.isFollowed.mockImplementation(
+      (id: string) => id === 'loop-2',
+    );
+    const w = mountFleetView();
+    await vi.dynamicImportSettled();
+
+    const star1 = w.find('[data-testid="follow-star-loop-1"]');
+    const star2 = w.find('[data-testid="follow-star-loop-2"]');
+    expect(star1.exists()).toBe(true);
+    expect(star2.exists()).toBe(true);
+    // 初始态回显：loop-2 已关注（★ 实心金色），loop-1 未关注（☆）
+    expect(star1.text()).toBe('☆');
+    expect(star1.classes()).not.toContain('loop-fleet-view__star--on');
+    expect(star1.attributes('aria-pressed')).toBe('false');
+    expect(star2.text()).toBe('★');
+    expect(star2.classes()).toContain('loop-fleet-view__star--on');
+    expect(star2.attributes('aria-pressed')).toBe('true');
+
+    // 点击未关注星标 → 调共享 toggle（loopId + 位号）
+    await star1.trigger('click');
+    expect(followControl.toggle).toHaveBeenCalledWith('loop-1', 'LIC-101');
+    expect(followControl.toggle).toHaveBeenCalledTimes(1);
+
+    // 挂载时批量回显关注集（ensureLoaded）
+    expect(followControl.ensureLoaded).toHaveBeenCalled();
+  });
+
+  it('关注集加载失败：如实提示（星标初始态可能不准，不静默假空）', async () => {
+    followControl.ensureLoaded.mockResolvedValueOnce(false);
+    followControl.followLoadState.value = 'error';
+    const { message } = await import('ant-design-vue');
+    const w = mountFleetView();
+    await vi.dynamicImportSettled();
+    await vi.waitFor(() =>
+      expect(message.warning).toHaveBeenCalledWith(
+        expect.stringContaining('关注状态加载失败'),
+      ),
+    );
+    followControl.followLoadState.value = 'ready';
+    w.unmount();
   });
 });

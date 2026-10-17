@@ -2,8 +2,10 @@
   R1 回路头（workbench360 P1；P4-5 主题切换 / P4-6 关注铃铛接入）
   原型 #hdr 的生产映射（v3 §2）：位于 vben Layout 内容区顶部的页面级页头。
   展示：页面名 + 回路位号 + 控制模式 + 描述/装置路径 + 实时值（WS 联动）+ 数据新鲜度
-  + 适用性徽章（P2-5）+ 🔔 关注抽屉入口（P4-6，全局通知性质）+ ◐ 主题切换（P4-5，
-  切 vben 全局主题——原型 html[data-theme=dark] 令牌映射到 vben preferences.theme.mode）。
+  + 适用性徽章（P2-5）+ ★ 个人关注 toggle（P6-05 关注入口，状态与动作由父层
+  use-loop-follow 共享集提供，本组件只渲染）+ 🔔 关注抽屉入口（P4-6，全局通知性质）
+  + ◐ 主题切换（P4-5，切 vben 全局主题——原型 html[data-theme=dark] 令牌映射到
+  vben preferences.theme.mode）。
 -->
 <script setup lang="ts">
 import type { LoopApi } from '#/api/loop';
@@ -20,6 +22,10 @@ const props = defineProps<{
    * 后端 G1 落地前恒 null → 徽章显示显式"待接"提示（诚实化，禁编造等级）。
    */
   fitnessLevel: null | string;
+  /** 关注切换在途（P6-05；在途时星标禁点防重入） */
+  followBusy?: boolean;
+  /** 本人关注状态（P6-05；undefined=未提供不渲染星标） */
+  isFollowed?: boolean;
   /** 最近一条实时消息时间 */
   lastMessageAt: Date | null;
   /** 当前选中回路（含 WS 局部更新的实时值） */
@@ -33,6 +39,8 @@ const emit = defineEmits<{
   (e: 'openAttention'): void;
   /** ← 返回来源页（P1-2 精简模式，由页面处理 from query / router.back） */
   (e: 'back'): void;
+  /** ★ 关注状态切换请求（P6-05；由父层调 use-loop-follow.toggle） */
+  (e: 'toggleFollow'): void;
 }>();
 
 /* 主题切换（P4-5）：vben 全局主题深/浅往返（v3 §16.7 基线） */
@@ -157,6 +165,25 @@ const fitnessTag = computed(() => {
         <span class="dot"></span>{{ fitnessTag.label }}
       </span>
     </div>
+    <!-- ★ 个人关注 toggle（P6-05；isFollowed 未提供时不渲染） -->
+    <button
+      v-if="props.isFollowed !== undefined"
+      :aria-label="props.isFollowed ? '取消关注该回路' : '关注该回路'"
+      :aria-pressed="props.isFollowed"
+      :class="{ 'icon-btn--starred': props.isFollowed }"
+      :data-testid="`wb360-follow-star-${loop?.loopId ?? 'none'}`"
+      :disabled="props.followBusy"
+      :title="
+        props.isFollowed
+          ? '已关注（我的工作-我的关注跟踪）· 点击取消'
+          : '关注该回路（在「我的工作-我的关注」中跟踪）'
+      "
+      class="icon-btn star-btn"
+      type="button"
+      @click="emit('toggleFollow')"
+    >
+      {{ props.isFollowed ? '★' : '☆' }}
+    </button>
     <button
       aria-label="打开本回路关注抽屉"
       class="icon-btn"
@@ -317,7 +344,7 @@ const fitnessTag = computed(() => {
   color: hsl(var(--destructive));
 }
 
-/* 页头图标钮（原型 icon-btn：🔔 关注 / ◐ 主题） */
+/* 页头图标钮（原型 icon-btn：★ 个人关注 / 🔔 关注 / ◐ 主题） */
 .icon-btn {
   flex: none;
   padding: 4px 7px;
@@ -333,6 +360,25 @@ const fitnessTag = computed(() => {
 .icon-btn:hover {
   color: hsl(var(--primary));
   border-color: hsl(var(--border));
+}
+
+/* 个人关注星标（P6-05）：已关注=实心金色显眼区分；在途禁点防重入 */
+.icon-btn.star-btn {
+  font-size: 16px;
+}
+
+.icon-btn.star-btn:hover:not(:disabled) {
+  color: var(--ant-warning);
+  border-color: transparent;
+}
+
+.icon-btn--starred {
+  color: var(--ant-warning);
+}
+
+.icon-btn.star-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 /* 返回钮（P1-2 精简模式）：比图标钮稍宽，箭头加粗 */

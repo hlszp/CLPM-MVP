@@ -1,0 +1,50 @@
+...FF                                                                    [100%]
+=================================== FAILURES ===================================
+_______ test_builder_records_actual_period_and_complete_tail[5-11-3-15] ________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c0e0c20>
+period = 5, end = 11, points = 3, run_end = 15
+
+    @pytest.mark.parametrize(("period", "end", "points", "run_end"), [(5, 11, 3, 15), (5, 0, 1, 5)])
+    async def test_builder_records_actual_period_and_complete_tail(
+        monkeypatch, period, end, points, run_end
+    ):
+        """实际 5s 构建（含单点）明确携带周期，不从时间戳差猜测周期。"""
+        _stub_builder(monkeypatch, [0, 5, 10])
+        raw = await lwb.build_logical_wide(None, "L-G5", ["pv"], _at(0), _at(end), period)
+        ctx = raw.series_context
+    
+>       assert ctx.grid_period_s == period
+E       AssertionError: assert 1.0 == 5
+E        +  where 1.0 = SeriesContext(layout='point', grid_start=datetime.datetime(2026, 10, 14, 0, 0, tzinfo=datetime.timezone.utc), grid_end...one.utc), reason=None)])}, unknown_reasons={}, segment_boundaries=[], interpretation_consistent=True, schema_version=1).grid_period_s
+
+tests/test_g5_gap_coverage_regression.py:133: AssertionError
+________ test_builder_records_actual_period_and_complete_tail[5-0-1-5] _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10c148cb0>
+period = 5, end = 0, points = 1, run_end = 5
+
+    @pytest.mark.parametrize(("period", "end", "points", "run_end"), [(5, 11, 3, 15), (5, 0, 1, 5)])
+    async def test_builder_records_actual_period_and_complete_tail(
+        monkeypatch, period, end, points, run_end
+    ):
+        """实际 5s 构建（含单点）明确携带周期，不从时间戳差猜测周期。"""
+        _stub_builder(monkeypatch, [0, 5, 10])
+        raw = await lwb.build_logical_wide(None, "L-G5", ["pv"], _at(0), _at(end), period)
+        ctx = raw.series_context
+    
+>       assert ctx.grid_period_s == period
+E       AssertionError: assert 1.0 == 5
+E        +  where 1.0 = SeriesContext(layout='point', grid_start=datetime.datetime(2026, 10, 14, 0, 0, tzinfo=datetime.timezone.utc), grid_end...one.utc), reason=None)])}, unknown_reasons={}, segment_boundaries=[], interpretation_consistent=True, schema_version=1).grid_period_s
+
+tests/test_g5_gap_coverage_regression.py:133: AssertionError
+=============================== warnings summary ===============================
+../../../../Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_g5_gap_coverage_regression.py::test_builder_records_actual_period_and_complete_tail[5-11-3-15]
+FAILED tests/test_g5_gap_coverage_regression.py::test_builder_records_actual_period_and_complete_tail[5-0-1-5]
+2 failed, 3 passed, 1 warning in 0.31s

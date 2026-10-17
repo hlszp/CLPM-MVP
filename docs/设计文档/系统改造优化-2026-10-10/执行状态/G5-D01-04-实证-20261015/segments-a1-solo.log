@@ -1,0 +1,164 @@
+{
+  "scope": {
+    "path": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celery-worker.log",
+    "startLocal": "2026-10-15T11:57:00",
+    "endLocal": "2026-10-15T12:01:49",
+    "firstLine": 230,
+    "lastLine": 37000,
+    "timestampedLines": 36771,
+    "selectedTimestampedLinesSha256": "47e776d22c0758d2899f4a0a8a42aeaacf2736d49e839f2cffbebb775642d0f3",
+    "correlationLimit": "Existing phase logs omit taskId/window; correlation relies on unique request per loop and exactly one hourly-KPI window during this segment. Durations include overlap/wait. Never divide summed durations by concurrency to claim wall time."
+  },
+  "requestCount": 119,
+  "uniqueRequestLoops": 119,
+  "windows": [
+    [
+      "2026-10-14T05:00:00",
+      "2026-10-14T06:00:00"
+    ]
+  ],
+  "duplicateRequestLoops": {},
+  "completionCount": 108,
+  "requestToComplete": {
+    "count": 108,
+    "min": 8.321,
+    "p50": 22.503,
+    "p95": 26.925,
+    "max": 30.804,
+    "sum_work_seconds_not_wall": 2382.7640000000006
+  },
+  "queryAggregate": {
+    "count": 420,
+    "min": 5.004,
+    "p50": 16.3295,
+    "p95": 22.125,
+    "max": 27.32,
+    "sum_work_seconds_not_wall": 6747.066999999999
+  },
+  "preprocessAggregateIncludingThreadWait": {
+    "count": 420,
+    "min": 0.04,
+    "p50": 0.7204999999999999,
+    "p95": 1.739,
+    "max": 2.952,
+    "sum_work_seconds_not_wall": 336.80000000000007
+  },
+  "emptyQueryAggregate": {
+    "count": 0
+  },
+  "byTagGroup": {
+    "BASE": {
+      "pointsHistogram": {
+        "3601": 33,
+        "721": 52,
+        "1801": 25
+      },
+      "query": {
+        "count": 110,
+        "min": 5.004,
+        "p50": 15.942,
+        "p95": 21.157,
+        "max": 27.06,
+        "sum_work_seconds_not_wall": 1706.818
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 110,
+        "min": 0.086,
+        "p50": 0.7204999999999999,
+        "p95": 1.765,
+        "max": 2.119,
+        "sum_work_seconds_not_wall": 88.03900000000003
+      }
+    },
+    "MODE_HF": {
+      "pointsHistogram": {
+        "3601": 77
+      },
+      "query": {
+        "count": 77,
+        "min": 7.739,
+        "p50": 16.618,
+        "p95": 21.837,
+        "max": 27.32,
+        "sum_work_seconds_not_wall": 1257.952
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 77,
+        "min": 0.19,
+        "p50": 0.811,
+        "p95": 1.836,
+        "max": 2.952,
+        "sum_work_seconds_not_wall": 71.38799999999999
+      }
+    },
+    "OP_HF": {
+      "pointsHistogram": {
+        "3601": 77
+      },
+      "query": {
+        "count": 77,
+        "min": 8.868,
+        "p50": 16.336,
+        "p95": 22.125,
+        "max": 26.596,
+        "sum_work_seconds_not_wall": 1262.0240000000001
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 77,
+        "min": 0.042,
+        "p50": 0.625,
+        "p95": 1.662,
+        "max": 2.768,
+        "sum_work_seconds_not_wall": 58.570999999999984
+      }
+    },
+    "PVOP_HF": {
+      "pointsHistogram": {
+        "3601": 77
+      },
+      "query": {
+        "count": 77,
+        "min": 7.76,
+        "p50": 16.863,
+        "p95": 21.727,
+        "max": 26.435,
+        "sum_work_seconds_not_wall": 1273.2330000000004
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 77,
+        "min": 0.129,
+        "p50": 0.751,
+        "p95": 1.681,
+        "max": 2.292,
+        "sum_work_seconds_not_wall": 62.953
+      }
+    },
+    "QUALITY_HF": {
+      "pointsHistogram": {
+        "3601": 79
+      },
+      "query": {
+        "count": 79,
+        "min": 8.019,
+        "p50": 15.872,
+        "p95": 20.626,
+        "max": 25.438,
+        "sum_work_seconds_not_wall": 1247.0399999999997
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 79,
+        "min": 0.04,
+        "p50": 0.625,
+        "p95": 1.655,
+        "max": 2.0,
+        "sum_work_seconds_not_wall": 55.84899999999999
+      }
+    }
+  },
+  "emptyByTagGroup": {},
+  "cacheReadCounters": {
+    "L2_MISS": 119,
+    "L1_MISS": 455
+  }
+}
+taskReceived [{"at": "2026-10-15T11:57:00.005000", "name": "app.tasks.workbench.refresh_workbench_mv", "id": "831ee6a4-9359-4d98-8ece-e3b015453efd", "line": 230}, {"at": "2026-10-15T11:57:00.012000", "name": "app.tasks.alert_patrol.run_alert_patrol", "id": "0ae242a7-50e1-44d5-993c-73db6a69f320", "line": 232}, {"at": "2026-10-15T11:57:00.167000", "name": "app.tasks.workbench.wb_cache_cleanup", "id": "474fefc1-7883-46e5-a9ce-901bce91b0d5", "line": 238}, {"at": "2026-10-15T11:57:22.196000", "name": "app.tasks.kpi_calc.calculate_hourly_kpi", "id": "39ebe2b8-a3df-4757-b59f-5cf69623087b", "line": 243}, {"at": "2026-10-15T11:58:35.932000", "name": "app.tasks.workbench.wb_cache_cleanup", "id": "c6919a0f-a8f5-4a15-846d-e87b7343abde", "line": 10708}, {"at": "2026-10-15T11:58:35.988000", "name": "app.tasks.alert_patrol.run_alert_patrol", "id": "ccf844c3-2fff-4670-bd54-43dae0addbcf", "line": 10713}, {"at": "2026-10-15T12:00:20.080000", "name": "app.tasks.workbench.workbench_loop_latest_refresh", "id": "e87e3ac9-f934-47cc-9964-4fb1a235376e", "line": 24784}, {"at": "2026-10-15T12:00:24.327000", "name": "app.tasks.workbench.wb_cache_cleanup", "id": "314661b8-1dce-47a5-8252-70aba0da71ba", "line": 25332}, {"at": "2026-10-15T12:00:24.381000", "name": "app.tasks.alert_patrol.run_alert_patrol", "id": "91fc1ca9-10f3-486d-82e6-b55cdd172491", "line": 25351}]

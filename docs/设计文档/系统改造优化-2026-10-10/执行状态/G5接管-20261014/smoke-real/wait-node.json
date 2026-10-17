@@ -1,0 +1,10 @@
+{
+  "phase": "wait-node",
+  "states": {
+    "c2839785-badc-4aa4-b3bc-f2c4dc3cf10d": "SUCCESS"
+  },
+  "elapsedSeconds": 0.013171292026527226,
+  "complete": true,
+  "isCapacitySlo": false,
+  "freezeSha256": "6d63e79ffe94aebc104a7a7d4384e7b4ea35bb0c0ce8dfb546b202fa1cb37f55"
+}

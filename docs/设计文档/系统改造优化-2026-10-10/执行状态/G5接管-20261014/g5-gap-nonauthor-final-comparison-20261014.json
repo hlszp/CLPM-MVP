@@ -1,0 +1,250 @@
+{
+  "status": "PASS",
+  "main_samples": 17,
+  "counterfactuals": 5,
+  "same_input_hashes": 22,
+  "same_base_mask_hashes": 22,
+  "same_bundle_mask_hashes": 22,
+  "same_config_revision": 22,
+  "source_algorithm_identity_same": 22,
+  "normal_bad_manual_persist_and_metrics_equivalent": 13,
+  "source_stable_baseline": true,
+  "source_stable_final_candidate": true,
+  "tests_and_zero_oracle_use_same_source_hashes": true,
+  "source_head": "e07dcf8019ea0cb65cfbe1ea0f9c1e108bc6d252",
+  "candidate_hashes": {
+    "backend/app/contracts/series_context.py": "5854de663228bd652bcb3576977d5e21574cd88ad9a96c5e5efb780e5b962fab",
+    "backend/app/services/data_source/logical_wide_builder.py": "a52d86fc2722b4ff7a68837e8ec06fd51806fdc0021157d8672c02b0e3d32da8",
+    "backend/app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+    "backend/scripts/generate_capacity_dataset.py": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+    "backend/app/tasks/kpi_calc.py": "6b06db499b46bf7d8935d4758bf75b7c17a8a1519529bdf88ec31bdced7ee6eb",
+    "backend/app/services/data_planner.py": "f34187ca049a577d6bdf2b213f3f8cd2b6eefcad53a076e158d915de0136c84f",
+    "backend/app/core/g5_trace.py": "c7045ced8489a8a6f55a6767c263cf0c4469f00f276dd153190931d996ae818d"
+  },
+  "generator_versions": {
+    "baseline": "capacity_v2_bounded_normal_noise",
+    "candidate": "capacity_v2r1_bounded_normal_noise"
+  },
+  "checks": [
+    {
+      "i": 1,
+      "class": "normal",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 62.22,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 2,
+      "class": "normal",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 64.92,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 3,
+      "class": "normal",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 63.84,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 4,
+      "class": "normal",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 59.63,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 949,
+      "class": "normal",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 39.3,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 801,
+      "class": "insufficient",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.29403606102635227
+    },
+    {
+      "i": 802,
+      "class": "insufficient",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.29483620210993894
+    },
+    {
+      "i": 803,
+      "class": "insufficient",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.2871012482662968
+    },
+    {
+      "i": 804,
+      "class": "insufficient",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.300194390447098
+    },
+    {
+      "i": 901,
+      "class": "manual",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 0.0,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 902,
+      "class": "manual",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 0.0,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 903,
+      "class": "manual",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 0.0,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 904,
+      "class": "manual",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "SUCCESS",
+      "score": 0.0,
+      "valid_rate": 1.0
+    },
+    {
+      "i": 951,
+      "class": "gap",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.26629680998613037
+    },
+    {
+      "i": 952,
+      "class": "gap",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.26659261316301025
+    },
+    {
+      "i": 953,
+      "class": "gap",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.26629680998613037
+    },
+    {
+      "i": 954,
+      "class": "gap",
+      "min_ratio": null,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.2665186007773459
+    },
+    {
+      "i": 952,
+      "class": "gap",
+      "min_ratio": 0.7,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.26659261316301025
+    },
+    {
+      "i": 953,
+      "class": "gap",
+      "min_ratio": 0.7,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.26629680998613037
+    },
+    {
+      "i": 954,
+      "class": "gap",
+      "min_ratio": 0.7,
+      "registered_gap": false,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.2665186007773459
+    },
+    {
+      "i": 952,
+      "class": "gap",
+      "min_ratio": 0.7,
+      "registered_gap": true,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.24993057484032213
+    },
+    {
+      "i": 953,
+      "class": "gap",
+      "min_ratio": 0.7,
+      "registered_gap": true,
+      "matches": true,
+      "status": "INCONCLUSIVE",
+      "score": null,
+      "valid_rate": 0.24965325936199723
+    }
+  ]
+}

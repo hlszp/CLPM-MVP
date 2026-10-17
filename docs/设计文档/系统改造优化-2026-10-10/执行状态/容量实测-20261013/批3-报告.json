@@ -1,0 +1,133 @@
+{
+  "window": {
+    "tsStart": "2026-10-13T22:00:00",
+    "tsEnd": "2026-10-13T23:00:00"
+  },
+  "parentTaskId": "6c19d87f-5e8c-43f0-98af-92e5e9a9d32f",
+  "taskRecordStatus": "SUCCESS",
+  "freezePath": "capacity_dataset/run_freezes/freeze_a_2026101322.json",
+  "totalSeconds": 5401.957063416019,
+  "sloSeconds": 600.0,
+  "sloPassed": false,
+  "gate": {
+    "ok": false,
+    "conditions": {
+      "ledger": true,
+      "source": true,
+      "run_binding": true,
+      "algorithm_version": true,
+      "expected_status": false,
+      "latest": false,
+      "nodes": true,
+      "task_terminal": true,
+      "parent_terminal": true
+    },
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 999,
+        "INCONCLUSIVE": 1
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 999,
+      "inconclusive": 1,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": {
+        "count": 0,
+        "sample": []
+      },
+      "foreignSource": {
+        "count": 0,
+        "sample": []
+      },
+      "runBinding": {
+        "count": 0,
+        "sample": []
+      },
+      "algorithmVersion": {
+        "count": 0,
+        "sample": []
+      },
+      "expectedStatus": {
+        "count": 1,
+        "sample": [
+          {
+            "loopTag": "PERF-T0949",
+            "expected": "EVALUATED",
+            "actualStatus": "INCONCLUSIVE",
+            "actualScore": null,
+            "actualTags": [
+              "DATA_INSUFFICIENT"
+            ]
+          }
+        ]
+      },
+      "latestMissing": {
+        "count": 1000,
+        "sample": [
+          "PERF-T0001",
+          "PERF-T0002",
+          "PERF-T0003",
+          "PERF-T0004",
+          "PERF-T0005",
+          "PERF-T0006",
+          "PERF-T0007",
+          "PERF-T0008",
+          "PERF-T0009",
+          "PERF-T0010",
+          "PERF-T0011",
+          "PERF-T0012",
+          "PERF-T0013",
+          "PERF-T0014",
+          "PERF-T0015",
+          "PERF-T0016",
+          "PERF-T0017",
+          "PERF-T0018",
+          "PERF-T0019",
+          "PERF-T0020"
+        ]
+      },
+      "latestBad": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeBadVersion": {
+        "count": 0,
+        "sample": []
+      }
+    },
+    "window": "2026-10-13T22:00:00"
+  },
+  "firstMetSeconds": {
+    "ledger": 756.0351196660195,
+    "source": 756.0351243750192,
+    "run_binding": 756.035124875023,
+    "algorithm_version": 756.0351250830572,
+    "latest": 756.035125290975,
+    "nodes": 756.0351253750268,
+    "task_terminal": 756.0351255410351,
+    "parent_terminal": 756.0351256660651
+  },
+  "childTaskObservation": [
+    {
+      "id": "c9047e7d-01d4-4213-9390-3025d2911d8c",
+      "args": [],
+      "kwargs": {
+        "ts_start": "2026-10-13T11:00:00",
+        "ts_end": "2026-10-13T12:00:00"
+      },
+      "worker": "CLPM-MVP-p1int@zhangpingdeMacBook-Pro"
+    }
+  ]
+}

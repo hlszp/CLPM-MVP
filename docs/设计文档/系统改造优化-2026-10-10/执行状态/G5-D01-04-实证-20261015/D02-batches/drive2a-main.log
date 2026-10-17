@@ -1,0 +1,8 @@
+[07:35:54] pre-generate window=2026-10-16T04:00:00
+[07:37:49] pre-generate window=2026-10-16T05:00:00
+[07:39:44] settling 30min (input pages cooling)
+[08:09:44] batch 6 manifest=capacity_dataset/manifest_a_00.json submitting
+[08:09:44] batch 6 tool rc=0
+[08:09:44] batch 7 manifest=capacity_dataset/manifest_a_00.json submitting
+[08:09:44] batch 7 tool rc=0
+[08:09:44] SEGMENT-2A (batch6-7) DONE - waiting cold restart for batch8

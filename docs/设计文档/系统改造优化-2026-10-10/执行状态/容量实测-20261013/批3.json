@@ -1,0 +1,82 @@
+{
+ "batch": 3,
+ "window": {
+  "tsStart": "2026-10-13T22:00:00",
+  "tsEnd": "2026-10-13T23:00:00"
+ },
+ "scenario": "a",
+ "coldHot": "Redis 冷+进程冷（投前 DEL agg_cache:*（1 键→0）；worker 19:42 部署重启新进程；TD 页缓存跨批自然热——22:00 窗数据 19:42 刚生成，页缓存热是本批『冷』不冷的主因，剧本 §2.4 冷维度受限声明适用）",
+ "codeVersion": "bd223e39（G5-γ1 修复合入版；批 1/2 为 1b8c69a4，版本分列）",
+ "manifest": "capacity_dataset/manifest_a_2026101322.json（19:42~19:44 生成 93s，TD 实测 7,207,000 行=manifest 一致）",
+ "freeze": "capacity_dataset/run_freezes/freeze_a_2026101322.json（投递时落盘，eligible 1000 全 EVALUATED/SUCCESS，predictedNodes 20）",
+ "submitAt": "2026-10-13T20:11:03.895 (worker received；投前错峰检查：20:00 Beat 7c00201b 20:10:35 succeeded + 距 21:00 整点 49 分钟 ≥25 ✓)",
+ "parentCeleryTask": "6c19d87f-5e8c-43f0-98af-92e5e9a9d32f",
+ "taskRecord": "e945be02-b71e-410b-a087-da1545384cff",
+ "computeElapsedSeconds": 754.6,
+ "computeLogLine": "并发计算完成: loops=1030, concurrency=12, elapsed=754.255s, avg=0.732s/loop（20:23:38,467）",
+ "phaseTiming": {
+  "read": "p50=7.30s p95=8.46s max=9.21s sum=7253.6s",
+  "compute": "p50=0.09s p95=0.17s max=0.71s sum=105.3s",
+  "persist": "p50=1.17s p95=3.25s max=4.58s sum=1458.0s",
+  "note": "[批量计时] 窗口=10-13 22:00 回路=1030/1030 —— read(TD 历史读)仍为绝对瓶颈（≈604s wall/12 并发），persist ≈121s wall"
+ },
+ "barrierClosedAt": "2026-10-13T20:23:39.183（节点级联 37c131f4 succeeded 26/26；ledger/latest 随父任务 20:23:38.497 闭合）",
+ "totalSecondsApprox": 815.29,
+ "slo": {
+  "target": 600,
+  "verdict": "FAIL",
+  "note": "并发计算 754.6s 超限 1.26 倍；无 Beat 并发=干净样本；对照批 1 全冷 1302.4s——批 3『Redis+进程冷』754.6s 显著快于批 1 全冷（TD 页缓存热+代码版本差异），冷档两档分列不混"
+ },
+ "gate": {
+  "conditions": {
+   "ledger": true,
+   "source": true,
+   "run_binding": true,
+   "algorithm_version": true,
+   "expected_status": false,
+   "latest": true,
+   "nodes": true,
+   "task_terminal": true,
+   "parent_terminal": true
+  },
+  "verdict": "FAIL",
+  "violations": {
+   "expectedStatus": {
+    "count": 1,
+    "form": "PERF-T0949 期望 EVALUATED/SUCCESS，实际 INCONCLUSIVE（综合评分 None E 级，DATA_INSUFFICIENT）——判定逻辑正确，属数据形态与 manifest 期望的口径差非缺陷；06:00/21:00/22:00 三窗同型稳定"
+   }
+  },
+  "passing": {
+   "G5-gamma1 修复生效": "PERF-T0949 INCONCLUSIVE 快照行 source/algorithm_version 补齐、latest 版本补齐、run 绑定完好（批 2 同行四条件违约→本批收敛为 expected_status 单条件）",
+   "ledger": "1000/1000 行（missing=0）",
+   "source": "1000/1000 ∈ {SCHEDULED, MANUAL_STANDARD}",
+   "run_binding": "1000/1000 recordLogicalRunId==6c19d87f",
+   "algorithm_version": "1000/1000 = KPI_CALC_v2.0",
+   "latest": "1000/1000 行版本对+绑定对",
+   "nodes": "20/20 预定节点版本 KPI_CALC_v2.0（全节点 26 行）",
+   "task_terminal": "TaskRecord e945be02=SUCCESS",
+   "parent_terminal": "Celery succeeded 20:23:38.497"
+  }
+ },
+ "denominators": {
+  "frozenEligible": 1000,
+  "excluded": 0,
+  "snapshotStatusCounts": {"SUCCESS": 999, "INCONCLUSIVE": 1},
+  "expectedHistogram": {"EVALUATED": 1000},
+  "fullWindowLedger": "22:00 窗全账本 1030 行（success 1005/inconclusive 25=PERF-T0949+24 真实无数据回路）"
+ },
+ "environment": {
+  "sampling": "批3-环境采样.txt（30s×60 轮，20:11~20:41；采样期间值见文件）",
+  "redisCold": "DEL 前 agg_cache 1 键（workbench-roots）→0"
+ },
+ "beatObservation": {
+  "concurrentWithBeat": "无（干净样本；投递于 20:00 Beat 终结后 35s、21:00 Beat 前 49 分钟）",
+  "beat20": "635.217s（20:00:00.011 received→20:10:35.228 succeeded；UTC 11:00~12:00 无数据窗 261 SUCCESS+769 INCONCLUSIVE，新代码 bd223e39 首个 Beat 无数据窗）"
+ },
+ "toolNote": "工具进程（PID 62816）因 expected_status 永不满足跑至自然 timeout 5400s（21:41 退出落盘 批3-报告.json）——**该报告 latest=false/latestMissing=1000 为跨批覆盖假象，不是批 3 真实屏障状态**：工具 timeout 退出晚于批 4 完成（21:25），loop_confidence_latest 是 per-loop 单行投影，批 4（23:00 窗）已把 data_ts_start 从 22:00 推进到 23:00，故 21:41 查 22:00 窗 latest=0 行。批 3 真实 latest 屏障于 20:23:39 随父任务闭合，20:25 手工 gate 复刻核验 1000 行版本+绑定全对（本 JSON latest=true 以此为准）。八条件首达时刻以报告 firstMet 字段中除 latest 外为准。教训已吸收：批 4 工具提前终止+批 5~10 改用 --timeout 1800（<批间隔 60 分钟）避免同类假象",
+ "rawOutputNote": "批3-原始输出.txt 为空（python stdout 块缓冲，同批 1 形态）；执行事实以 worker 日志+DB+工具报告为准",
+ "firstMetSeconds": {
+  "value": {"ledger": 756.0, "source": 756.0, "run_binding": 756.0, "algorithm_version": 756.0, "latest": 756.0, "nodes": 756.0, "task_terminal": 756.0, "parent_terminal": 756.0},
+  "note": "工具报告 firstMetSeconds：八条件同轮 756.0s 首命中（2s 轮询粒度；20:11:03.9+756s≈20:23:40=节点级联 20:23:39.2 后首次轮询）——latest 的 756.0s 为轮询时刻真值（当时 1000 行在），报告 verdict 里的 latest=false 是 timeout 时刻（21:41）跨批覆盖后状态，两者时点不同不矛盾"
+ }
+}

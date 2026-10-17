@@ -1,0 +1,95 @@
+{
+  "window": {
+    "tsStart": "2026-10-16T00:00:00",
+    "tsEnd": "2026-10-16T01:00:00"
+  },
+  "parentTaskId": "501be977-aae5-4a10-9d8a-f61e22d2475d",
+  "parentState": "SUCCESS",
+  "taskRecordStatus": "SUCCESS",
+  "freezePath": "capacity_dataset/run_freezes/freeze_a_2026101600.json",
+  "observedAt": "2026-10-15T22:35:45.602221+00:00",
+  "completionReason": "BARRIER_PASSED",
+  "totalSeconds": 763.2854546660019,
+  "sloSeconds": 600.0,
+  "sloPassed": false,
+  "gate": {
+    "ok": true,
+    "conditions": {
+      "ledger": true,
+      "source": true,
+      "run_binding": true,
+      "algorithm_version": true,
+      "expected_status": true,
+      "latest": true,
+      "nodes": true,
+      "task_terminal": true,
+      "parent_terminal": true
+    },
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": {
+        "count": 0,
+        "sample": []
+      },
+      "foreignSource": {
+        "count": 0,
+        "sample": []
+      },
+      "runBinding": {
+        "count": 0,
+        "sample": []
+      },
+      "algorithmVersion": {
+        "count": 0,
+        "sample": []
+      },
+      "expectedStatus": {
+        "count": 0,
+        "sample": []
+      },
+      "latestMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "latestBad": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeBadVersion": {
+        "count": 0,
+        "sample": []
+      }
+    },
+    "window": "2026-10-16T00:00:00"
+  },
+  "firstMetSeconds": {
+    "ledger": 763.2847605410061,
+    "source": 763.2847612910045,
+    "run_binding": 763.2847616660001,
+    "algorithm_version": 763.2847617910011,
+    "expected_status": 763.284761916002,
+    "latest": 763.284762000003,
+    "nodes": 763.2847622080008,
+    "task_terminal": 763.2847622910049,
+    "parent_terminal": 763.2847624160058
+  },
+  "childTaskObservation": "not-observed"
+}

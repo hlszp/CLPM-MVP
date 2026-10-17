@@ -109,3 +109,7 @@ releases/frontend-dist-*/
 e2e/netprobe*.mjs
 !releases/deploy-pkg-0938.tar.gz
 !releases/deploy-pkg-1003.tar.gz
+# 超大证据文件留本地不入库（GitHub 100MB 单文件硬限；sha256 登记在对应报告内可校验）
+docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/log-audit-a1pp.json
+docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/trace-a1-raw.log
+docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/observed.json

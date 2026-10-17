@@ -1,0 +1,276 @@
+{
+  "status": "PASS",
+  "formal_freeze_sha256": "683090161f4e5a52626f539640dc0f470567120c766223b201d8cde8f99c66f0",
+  "formal_15_files_stable": true,
+  "protected_count": 41,
+  "protected_set_same_as_e07": true,
+  "only_change_from_base": [
+    "app/services/preprocessing/pipeline.py"
+  ],
+  "golden_only_file_hash_change": [
+    "app/services/preprocessing/pipeline.py"
+  ],
+  "golden_base_updated_to": "e07dcf8019ea0cb65cfbe1ea0f9c1e108bc6d252",
+  "registry_and_guard_unchanged_from_base": true,
+  "ordinary_guard_current_pass": true,
+  "ordinary_guard_old_manifest_fails": true,
+  "ordinary_guard_old_error": "受保护文件被修改（设计 §2.2 冻结）：\n  app/services/preprocessing/pipeline.py: 32d468da242f→233d293df09c\n如属用户/主审显式授权的算法变更，用 REFACTOR_UPDATE_GOLDEN=1 重新固化并在报告登记",
+  "update_mode": "UNSET during independent ordinary guard",
+  "bypass_env_snapshot": {
+    "REFACTOR_UPDATE_GOLDEN": null,
+    "LEFTHOOK": null,
+    "LEFTHOOK_EXCLUDE": null,
+    "HUSKY": null,
+    "SKIP": null,
+    "GIT_CONFIG_COUNT": null
+  },
+  "protected_rows": [
+    {
+      "path": "app/contracts/data_types.py",
+      "base_sha256": "6aeaeb1ab214accd94971ed44a524e1a267a922a0b64bbbfcaac4d7c5ad242ed",
+      "candidate_sha256": "6aeaeb1ab214accd94971ed44a524e1a267a922a0b64bbbfcaac4d7c5ad242ed",
+      "same": true
+    },
+    {
+      "path": "app/services/diagnosis_orchestrator.py",
+      "base_sha256": "d4a21786c67f8956076ff5810ce2f3c2e8e91a64d95fe7da159240c9de4607a9",
+      "candidate_sha256": "d4a21786c67f8956076ff5810ce2f3c2e8e91a64d95fe7da159240c9de4607a9",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/__init__.py",
+      "base_sha256": "ed13c463166f0213c62fb608e8ab2aba035102ecb311d70142682a5080810319",
+      "candidate_sha256": "ed13c463166f0213c62fb608e8ab2aba035102ecb311d70142682a5080810319",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/accuracy.py",
+      "base_sha256": "aad94a0f9278dbba5350ce9cb9ae3618cc6e7195ca82e9b374ccb595b8b97f5f",
+      "candidate_sha256": "aad94a0f9278dbba5350ce9cb9ae3618cc6e7195ca82e9b374ccb595b8b97f5f",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/auto_mode.py",
+      "base_sha256": "6708c421a7ea3b2185de2ff81a7e8488c44e208ee5291ce322638f0bca4d294b",
+      "candidate_sha256": "6708c421a7ea3b2185de2ff81a7e8488c44e208ee5291ce322638f0bca4d294b",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/base.py",
+      "base_sha256": "24e3c166e864a14c0abb0db9772c7c1691469c0a4ff2e0a570b7a1641947d903",
+      "candidate_sha256": "24e3c166e864a14c0abb0db9772c7c1691469c0a4ff2e0a570b7a1641947d903",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/disturbance.py",
+      "base_sha256": "84ef16d644ef189a9ab2f2e2e292a598aa16220059620813476ad2b3ce463c57",
+      "candidate_sha256": "84ef16d644ef189a9ab2f2e2e292a598aa16220059620813476ad2b3ce463c57",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/effective_auto.py",
+      "base_sha256": "e6abf800ec5992a69d125b6522019bd2549e98266700c2e34a606935648909e8",
+      "candidate_sha256": "e6abf800ec5992a69d125b6522019bd2549e98266700c2e34a606935648909e8",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/fast_rate.py",
+      "base_sha256": "bf8ef63bf4a0bcf0929f4a12e67d0b3b70364b0eaafc517042b68688d4c71ca6",
+      "candidate_sha256": "bf8ef63bf4a0bcf0929f4a12e67d0b3b70364b0eaafc517042b68688d4c71ca6",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/good_value.py",
+      "base_sha256": "8a946423d957fc679a23c7c8ab73b71489b05d587f4fe866338dda553545ef45",
+      "candidate_sha256": "8a946423d957fc679a23c7c8ab73b71489b05d587f4fe866338dda553545ef45",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/ideal_settling_time.py",
+      "base_sha256": "e48459c45802ac580168af0a2eaf0e5f2061ca7d96e9429fd0e2e00d7b046ea1",
+      "candidate_sha256": "e48459c45802ac580168af0a2eaf0e5f2061ca7d96e9429fd0e2e00d7b046ea1",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/instrument_fault.py",
+      "base_sha256": "9dbe3b366a8589156b4f0486b2fe2439203df09cc98b3abae6df2eb2db07d625",
+      "candidate_sha256": "9dbe3b366a8589156b4f0486b2fe2439203df09cc98b3abae6df2eb2db07d625",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/oscillation.py",
+      "base_sha256": "0a19080bd2f72f8c2fcb3317d93fd5eff569be4c92828600bd7a8cf3c99a741e",
+      "candidate_sha256": "0a19080bd2f72f8c2fcb3317d93fd5eff569be4c92828600bd7a8cf3c99a741e",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/output_trip.py",
+      "base_sha256": "bbe592fbe1ff061dd7cf4c0c5b3c1f2cdb98f83a78b2bf9297eeaa8148fd64f6",
+      "candidate_sha256": "bbe592fbe1ff061dd7cf4c0c5b3c1f2cdb98f83a78b2bf9297eeaa8148fd64f6",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/reference_stats.py",
+      "base_sha256": "db0255a9f92efaa33d181eca01b96fcd15c79b29ac268111e35701c24dc9f3c4",
+      "candidate_sha256": "db0255a9f92efaa33d181eca01b96fcd15c79b29ac268111e35701c24dc9f3c4",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/saturation.py",
+      "base_sha256": "a2f9dcc16488fa573856925efb953261bad2d42d9af4102d38ffaa40e34e74fd",
+      "candidate_sha256": "a2f9dcc16488fa573856925efb953261bad2d42d9af4102d38ffaa40e34e74fd",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/setpoint_crossing.py",
+      "base_sha256": "0d90aa66e70ab4b183a9ec01e071142c3787691c1c71d6cff3820ff4e136fc63",
+      "candidate_sha256": "0d90aa66e70ab4b183a9ec01e071142c3787691c1c71d6cff3820ff4e136fc63",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/settling_time.py",
+      "base_sha256": "fc2d2c0daef0508b322b44f265392bcf2753580d9ccc348ab065662078413d82",
+      "candidate_sha256": "fc2d2c0daef0508b322b44f265392bcf2753580d9ccc348ab065662078413d82",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/stability.py",
+      "base_sha256": "d62c0fc114abf14009c2866e924d89a40f79c6a1e695cb17bf50caccfff5fd4b",
+      "candidate_sha256": "d62c0fc114abf14009c2866e924d89a40f79c6a1e695cb17bf50caccfff5fd4b",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/statistics.py",
+      "base_sha256": "eb738cd1875f99cace21dd4d8194763fabf03dd0a2d567829d9b5e8f8664bd12",
+      "candidate_sha256": "eb738cd1875f99cace21dd4d8194763fabf03dd0a2d567829d9b5e8f8664bd12",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/stiction.py",
+      "base_sha256": "02b65bba841d8c575d6a307fb6d6a71325831836cf6dcbd81d765309afd45232",
+      "candidate_sha256": "02b65bba841d8c575d6a307fb6d6a71325831836cf6dcbd81d765309afd45232",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/time_axis.py",
+      "base_sha256": "51fa654b93f435bb8ea885c6941938a9218485820c0909ac20f0f6b45f24bc6f",
+      "candidate_sha256": "51fa654b93f435bb8ea885c6941938a9218485820c0909ac20f0f6b45f24bc6f",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/time_constant.py",
+      "base_sha256": "eaf95e66121725f120103aa1e38335d5edff399ded2e9f4346386731d1de7a91",
+      "candidate_sha256": "eaf95e66121725f120103aa1e38335d5edff399ded2e9f4346386731d1de7a91",
+      "same": true
+    },
+    {
+      "path": "app/services/metric_calculator/valve_diagnosis.py",
+      "base_sha256": "be3024fd66d0827616eef8f9621bc93353bb2df20992e1e8d6fa9303d06f7992",
+      "candidate_sha256": "be3024fd66d0827616eef8f9621bc93353bb2df20992e1e8d6fa9303d06f7992",
+      "same": true
+    },
+    {
+      "path": "app/services/preprocessing/pipeline.py",
+      "base_sha256": "32d468da242fb630375f355bbeb0719d1a33cbe17117dfaff55e698b28f2fadd",
+      "candidate_sha256": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+      "same": false
+    },
+    {
+      "path": "app/services/preprocessing/quality_code.py",
+      "base_sha256": "9f3c229dd4e2f8e811ddc9c2865cb42f59cb69504969435f8bf88ce7837f2b5c",
+      "candidate_sha256": "9f3c229dd4e2f8e811ddc9c2865cb42f59cb69504969435f8bf88ce7837f2b5c",
+      "same": true
+    },
+    {
+      "path": "app/services/preprocessing/thresholds.py",
+      "base_sha256": "850de07996decc97ea68a46386f8ef1e5f717b4cdd563115d7b7432e89a59524",
+      "candidate_sha256": "850de07996decc97ea68a46386f8ef1e5f717b4cdd563115d7b7432e89a59524",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_algorithms.py",
+      "base_sha256": "50b61b9e8b85ed3a9e07918a4c59734d0017157ceb1c3da5ce717ca0791c2131",
+      "candidate_sha256": "50b61b9e8b85ed3a9e07918a4c59734d0017157ceb1c3da5ce717ca0791c2131",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/__init__.py",
+      "base_sha256": "06f0a4fb11102f2cc8b99a3f178625e9387b255df473cf7e9f07b97dd46e532b",
+      "candidate_sha256": "06f0a4fb11102f2cc8b99a3f178625e9387b255df473cf7e9f07b97dd46e532b",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/armax.py",
+      "base_sha256": "22cc3ddf0aee6339a91b4e54c02b2a9d907273dc585bfa31debc6227224dc11b",
+      "candidate_sha256": "22cc3ddf0aee6339a91b4e54c02b2a9d907273dc585bfa31debc6227224dc11b",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/arx.py",
+      "base_sha256": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0",
+      "candidate_sha256": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/discrete_to_continuous.py",
+      "base_sha256": "1d099ad970d35eb70c75c5f266bdd0d082446c950f1e7aff8f59bd093b97aa2c",
+      "candidate_sha256": "1d099ad970d35eb70c75c5f266bdd0d082446c950f1e7aff8f59bd093b97aa2c",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/excitation.py",
+      "base_sha256": "f5ce1ca80ccfa87e93b348df4d4619ddb67fd5eda4203ca153cbe53738527372",
+      "candidate_sha256": "f5ce1ca80ccfa87e93b348df4d4619ddb67fd5eda4203ca153cbe53738527372",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/iv.py",
+      "base_sha256": "90f0a3321b173b84a9a0798846d4c3f539137329190c1d0c23c536fd2ef6f06d",
+      "candidate_sha256": "90f0a3321b173b84a9a0798846d4c3f539137329190c1d0c23c536fd2ef6f06d",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/nonparametric.py",
+      "base_sha256": "c10c063662b124bf56f87b5e0a828f6f6c78b1fbfc43f051fba32f22c23261e3",
+      "candidate_sha256": "c10c063662b124bf56f87b5e0a828f6f6c78b1fbfc43f051fba32f22c23261e3",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/order_selection.py",
+      "base_sha256": "a6cef6a02e5f477b044e2e7a9f8e6751f5bcfaf69713664845572350996d9614",
+      "candidate_sha256": "a6cef6a02e5f477b044e2e7a9f8e6751f5bcfaf69713664845572350996d9614",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/physical_feasibility.py",
+      "base_sha256": "ed29b4e64a5b3c2c6099e6a7b74fd935b2b5559ff2811aa89602f1b236d9c734",
+      "candidate_sha256": "ed29b4e64a5b3c2c6099e6a7b74fd935b2b5559ff2811aa89602f1b236d9c734",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/pipeline.py",
+      "base_sha256": "9c82b6966d6efab6808bb40e8d0d9b72a2410fa7b99e82dfaeda83ee71ab3e41",
+      "candidate_sha256": "9c82b6966d6efab6808bb40e8d0d9b72a2410fa7b99e82dfaeda83ee71ab3e41",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/segmentation.py",
+      "base_sha256": "5154b9e8d6ee7d174c00912fe0443ec622f5082876c7917b0232751eb2743303",
+      "candidate_sha256": "5154b9e8d6ee7d174c00912fe0443ec622f5082876c7917b0232751eb2743303",
+      "same": true
+    },
+    {
+      "path": "app/services/tuning_identification/types.py",
+      "base_sha256": "8d7a36e64a148686350f56531d2c38891b336cedc441f07d5ec8ffcd9fa771fa",
+      "candidate_sha256": "8d7a36e64a148686350f56531d2c38891b336cedc441f07d5ec8ffcd9fa771fa",
+      "same": true
+    },
+    {
+      "path": "app/tasks/arma.py",
+      "base_sha256": "9079c8e1f595fe9c6820465bd56899461a7f306267a61eda02d209bc8092ed15",
+      "candidate_sha256": "9079c8e1f595fe9c6820465bd56899461a7f306267a61eda02d209bc8092ed15",
+      "same": true
+    }
+  ],
+  "scope": "authorized UNKNOWN pipeline predicate/pre_v2 only; actual algorithm/threshold files byte-identical to e07; no commit/push/hooks invoked by this auditor"
+}

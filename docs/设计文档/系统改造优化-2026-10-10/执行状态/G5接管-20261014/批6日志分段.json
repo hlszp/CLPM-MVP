@@ -1,0 +1,860 @@
+{
+  "scope": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP-p1int/backend/logs/celery-worker.log",
+    "startLocal": "2026-10-13T23:17:26.900000",
+    "endLocal": "2026-10-13T23:29:55.259000",
+    "firstLine": 5261561,
+    "lastLine": 5456243,
+    "timestampedLines": 194683,
+    "selectedTimestampedLinesSha256": "846314b7bf6f44c5e48d3426d665758e856e765ee81c39ad8a272dde1e42bfcb",
+    "correlationLimit": "Existing phase logs omit taskId/window; correlation relies on unique request per loop and exactly one hourly-KPI window during this segment. Durations include overlap/wait. Never divide summed durations by concurrency to claim wall time."
+  },
+  "requestCount": 1030,
+  "uniqueRequestLoops": 1030,
+  "windows": [
+    [
+      "2026-10-14T01:00:00",
+      "2026-10-14T02:00:00"
+    ]
+  ],
+  "duplicateRequestLoops": {},
+  "completionCount": 1030,
+  "requestToComplete": {
+    "count": 1030,
+    "min": 2.216,
+    "p50": 7.0295000000000005,
+    "p95": 8.197,
+    "max": 8.551,
+    "sum_work_seconds_not_wall": 7083.973
+  },
+  "queryAggregate": {
+    "count": 4098,
+    "min": 1.085,
+    "p50": 4.905,
+    "p95": 6.504,
+    "max": 7.704,
+    "sum_work_seconds_not_wall": 20161.856
+  },
+  "preprocessAggregateIncludingThreadWait": {
+    "count": 4098,
+    "min": 0.007,
+    "p50": 0.28,
+    "p95": 0.791,
+    "max": 1.832,
+    "sum_work_seconds_not_wall": 1362.991
+  },
+  "emptyQueryAggregate": {
+    "count": 0
+  },
+  "byTagGroup": {
+    "BASE": {
+      "pointsHistogram": {
+        "3601": 263,
+        "721": 512,
+        "1801": 255
+      },
+      "query": {
+        "count": 1030,
+        "min": 1.09,
+        "p50": 4.896,
+        "p95": 6.433,
+        "max": 7.44,
+        "sum_work_seconds_not_wall": 5021.277
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 1030,
+        "min": 0.007,
+        "p50": 0.273,
+        "p95": 0.807,
+        "max": 1.832,
+        "sum_work_seconds_not_wall": 333.945
+      }
+    },
+    "MODE_HF": {
+      "pointsHistogram": {
+        "3601": 767
+      },
+      "query": {
+        "count": 767,
+        "min": 1.085,
+        "p50": 4.922,
+        "p95": 6.603,
+        "max": 7.664,
+        "sum_work_seconds_not_wall": 3814.368
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 767,
+        "min": 0.033,
+        "p50": 0.332,
+        "p95": 0.852,
+        "max": 1.754,
+        "sum_work_seconds_not_wall": 292.976
+      }
+    },
+    "OP_HF": {
+      "pointsHistogram": {
+        "3601": 767
+      },
+      "query": {
+        "count": 767,
+        "min": 1.153,
+        "p50": 4.947,
+        "p95": 6.563,
+        "max": 7.697,
+        "sum_work_seconds_not_wall": 3820.0
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 767,
+        "min": 0.012,
+        "p50": 0.26,
+        "p95": 0.733,
+        "max": 1.812,
+        "sum_work_seconds_not_wall": 232.053
+      }
+    },
+    "PVOP_HF": {
+      "pointsHistogram": {
+        "3601": 767
+      },
+      "query": {
+        "count": 767,
+        "min": 1.111,
+        "p50": 4.944,
+        "p95": 6.55,
+        "max": 7.704,
+        "sum_work_seconds_not_wall": 3812.82
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 767,
+        "min": 0.019,
+        "p50": 0.29,
+        "p95": 0.824,
+        "max": 1.742,
+        "sum_work_seconds_not_wall": 267.906
+      }
+    },
+    "QUALITY_HF": {
+      "pointsHistogram": {
+        "3601": 767
+      },
+      "query": {
+        "count": 767,
+        "min": 1.087,
+        "p50": 4.82,
+        "p95": 6.48,
+        "max": 7.442,
+        "sum_work_seconds_not_wall": 3693.391
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 767,
+        "min": 0.014,
+        "p50": 0.257,
+        "p95": 0.725,
+        "max": 1.785,
+        "sum_work_seconds_not_wall": 236.111
+      }
+    }
+  },
+  "emptyByTagGroup": {},
+  "cacheReadCounters": {
+    "L2_MISS": 1030,
+    "L1_MISS": 4098
+  },
+  "taskReceived": [
+    {
+      "at": "2026-10-13T23:17:26.900000",
+      "name": "app.tasks.kpi_calc.calculate_hourly_kpi",
+      "id": "31176d10-8b0f-443b-a67f-8538d49be6b3",
+      "line": 5261561
+    },
+    {
+      "at": "2026-10-13T23:18:00.002000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "5fd34111-0ec5-45d7-bc25-dc9745eddd5a",
+      "line": 5270370
+    },
+    {
+      "at": "2026-10-13T23:18:10.700000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "fd830a87-2901-4f4d-9861-9671c295ae5a",
+      "line": 5273020
+    },
+    {
+      "at": "2026-10-13T23:19:00.001000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "0cdbfc03-3d26-4e57-a69e-0a5c459ad9f2",
+      "line": 5286186
+    },
+    {
+      "at": "2026-10-13T23:19:00.023000",
+      "name": "app.tasks.workbench.workbench_loop_latest_refresh",
+      "id": "e7d97a91-5ed1-4ceb-848d-e4d203ac4eef",
+      "line": 5286193
+    },
+    {
+      "at": "2026-10-13T23:19:01.107000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "ae437bb7-5fe0-4f61-86a2-4d97ef18a6f6",
+      "line": 5286307
+    },
+    {
+      "at": "2026-10-13T23:20:00.001000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "36f91369-1c17-4540-94b7-778c4770817d",
+      "line": 5301701
+    },
+    {
+      "at": "2026-10-13T23:20:17.979000",
+      "name": "app.tasks.data_link_monitor.run_data_link_check",
+      "id": "ada03962-c056-41e2-9b1f-6bbe98658fe1",
+      "line": 5306592
+    },
+    {
+      "at": "2026-10-13T23:20:18.023000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "de73ddc2-9275-4eec-bea4-24d84296079d",
+      "line": 5306597
+    },
+    {
+      "at": "2026-10-13T23:20:18.043000",
+      "name": "app.tasks.workbench.workbench_precalc",
+      "id": "77f9fa24-d3d1-46a8-955d-be501d1f0a73",
+      "line": 5306602
+    },
+    {
+      "at": "2026-10-13T23:21:00.001000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "77f90856-8a6c-42a6-97e0-1637399d2410",
+      "line": 5317071
+    },
+    {
+      "at": "2026-10-13T23:21:00.021000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "5d56eaf2-dac1-46bb-bd79-4ec4ca2228c4",
+      "line": 5317076
+    },
+    {
+      "at": "2026-10-13T23:22:00.002000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "30de2e22-a352-44be-8357-3e6639d62b00",
+      "line": 5332639
+    },
+    {
+      "at": "2026-10-13T23:22:16.142000",
+      "name": "app.tasks.workbench.refresh_workbench_mv",
+      "id": "022aa112-0855-4cd8-814d-582db10a6420",
+      "line": 5337136
+    },
+    {
+      "at": "2026-10-13T23:22:16.182000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "56c31f9b-1901-4d07-b9a2-08526dc4ccdf",
+      "line": 5337141
+    },
+    {
+      "at": "2026-10-13T23:23:00.001000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "a5022080-848f-4369-b45a-0238a58fc232",
+      "line": 5348500
+    },
+    {
+      "at": "2026-10-13T23:23:00.021000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "429dab86-5f0c-4f7a-91b1-ec8b2537dde0",
+      "line": 5348509
+    },
+    {
+      "at": "2026-10-13T23:24:00.001000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "00cf1cc9-3a2a-46e6-b358-b9099163acc6",
+      "line": 5363710
+    },
+    {
+      "at": "2026-10-13T23:24:16.125000",
+      "name": "app.tasks.workbench.workbench_loop_latest_refresh",
+      "id": "6e4c7c13-e12a-4e81-ad7e-c0d478560719",
+      "line": 5367829
+    },
+    {
+      "at": "2026-10-13T23:24:17.203000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "0cf29040-e554-4dbe-a6d8-b24777c61dff",
+      "line": 5368120
+    },
+    {
+      "at": "2026-10-13T23:25:00.002000",
+      "name": "app.tasks.workbench.workbench_precalc",
+      "id": "934da8ea-4b67-43d9-bbeb-8afc99f75445",
+      "line": 5378978
+    },
+    {
+      "at": "2026-10-13T23:25:01.563000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "60cef77e-3d8d-43e2-8466-2f0494cb22f6",
+      "line": 5379797
+    },
+    {
+      "at": "2026-10-13T23:25:01.582000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "e266a004-0b91-4d4d-99e7-c80164a050f5",
+      "line": 5379802
+    },
+    {
+      "at": "2026-10-13T23:26:00.001000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "71dadf8d-9a9f-42be-b70e-873afd6bf627",
+      "line": 5394504
+    },
+    {
+      "at": "2026-10-13T23:26:16.219000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "0aee7948-ced4-41d4-a4b5-5aed829dad6c",
+      "line": 5398720
+    },
+    {
+      "at": "2026-10-13T23:27:00.001000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "6958002c-d3cb-49bf-a3d8-acd5c088a48b",
+      "line": 5410120
+    },
+    {
+      "at": "2026-10-13T23:27:00.023000",
+      "name": "app.tasks.workbench.refresh_workbench_mv",
+      "id": "c31be2fa-7f44-48a1-9903-f5fb9949efaa",
+      "line": 5410125
+    },
+    {
+      "at": "2026-10-13T23:27:00.069000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "07def66b-27f8-4396-934f-d7deba2fa50d",
+      "line": 5410130
+    },
+    {
+      "at": "2026-10-13T23:28:00.001000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "19362658-c36a-4cbc-9173-73806467710a",
+      "line": 5425952
+    },
+    {
+      "at": "2026-10-13T23:28:16.023000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "db7da782-c60b-4f1b-9bf8-d50f9671e6fa",
+      "line": 5430352
+    },
+    {
+      "at": "2026-10-13T23:29:00.002000",
+      "name": "app.tasks.workbench.workbench_loop_latest_refresh",
+      "id": "24f4888f-4a69-401f-8724-1abcffbb7ec9",
+      "line": 5441904
+    },
+    {
+      "at": "2026-10-13T23:29:01.127000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "e77f68d2-3f35-4bce-b6a9-67448e881f66",
+      "line": 5442049
+    },
+    {
+      "at": "2026-10-13T23:29:01.147000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "6e1037c0-5fe5-40a1-a8fb-97e58e50046f",
+      "line": 5442054
+    },
+    {
+      "at": "2026-10-13T23:29:54.558000",
+      "name": "app.tasks.kpi_calc.calculate_node_kpi_hourly",
+      "id": "59bdada8-3bfa-4997-a003-37f5b24402aa",
+      "line": 5456103
+    }
+  ],
+  "overlapExamples": [
+    {
+      "loopId": "4c2dab0d-15f5-4630-858b-28f7557dcfc0",
+      "seconds": 8.551,
+      "startLine": 5375659,
+      "endLine": 5377832,
+      "start": "2026-10-13T23:24:44.766000",
+      "end": "2026-10-13T23:24:53.317000",
+      "groupPhases": [
+        {
+          "loopId": "4c2dab0d-15f5-4630-858b-28f7557dcfc0",
+          "points": 3601,
+          "query": 5.757,
+          "preprocess": 1.026,
+          "at": "2026-10-13T23:24:51.903000",
+          "line": 5376953,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:24:45.120000",
+            "line": 5375794
+          }
+        },
+        {
+          "loopId": "4c2dab0d-15f5-4630-858b-28f7557dcfc0",
+          "points": 3601,
+          "query": 5.255,
+          "preprocess": 0.274,
+          "at": "2026-10-13T23:24:50.650000",
+          "line": 5376581,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:24:45.121000",
+            "line": 5375798
+          }
+        },
+        {
+          "loopId": "4c2dab0d-15f5-4630-858b-28f7557dcfc0",
+          "points": 721,
+          "query": 5.483,
+          "preprocess": 0.167,
+          "at": "2026-10-13T23:24:50.768000",
+          "line": 5376591,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-13T23:24:45.118000",
+            "line": 5375790
+          }
+        },
+        {
+          "loopId": "4c2dab0d-15f5-4630-858b-28f7557dcfc0",
+          "points": 3601,
+          "query": 5.475,
+          "preprocess": 0.176,
+          "at": "2026-10-13T23:24:50.770000",
+          "line": 5376600,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:24:45.118000",
+            "line": 5375792
+          }
+        },
+        {
+          "loopId": "4c2dab0d-15f5-4630-858b-28f7557dcfc0",
+          "points": 3601,
+          "query": 4.861,
+          "preprocess": 0.665,
+          "at": "2026-10-13T23:24:50.646000",
+          "line": 5376561,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:24:45.120000",
+            "line": 5375796
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "3683f3b7-bb56-4066-a033-003c2ad4fb10",
+      "seconds": 8.551,
+      "startLine": 5453058,
+      "endLine": 5455106,
+      "start": "2026-10-13T23:29:42.581000",
+      "end": "2026-10-13T23:29:51.132000",
+      "groupPhases": [
+        {
+          "loopId": "3683f3b7-bb56-4066-a033-003c2ad4fb10",
+          "points": 3601,
+          "query": 5.002,
+          "preprocess": 0.643,
+          "at": "2026-10-13T23:29:48.538000",
+          "line": 5453789,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:29:42.893000",
+            "line": 5453204
+          }
+        },
+        {
+          "loopId": "3683f3b7-bb56-4066-a033-003c2ad4fb10",
+          "points": 3601,
+          "query": 4.485,
+          "preprocess": 0.242,
+          "at": "2026-10-13T23:29:47.622000",
+          "line": 5453565,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:29:42.895000",
+            "line": 5453208
+          }
+        },
+        {
+          "loopId": "3683f3b7-bb56-4066-a033-003c2ad4fb10",
+          "points": 1801,
+          "query": 5.378,
+          "preprocess": 0.295,
+          "at": "2026-10-13T23:29:48.564000",
+          "line": 5453827,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-13T23:29:42.892000",
+            "line": 5453200
+          }
+        },
+        {
+          "loopId": "3683f3b7-bb56-4066-a033-003c2ad4fb10",
+          "points": 3601,
+          "query": 4.981,
+          "preprocess": 0.665,
+          "at": "2026-10-13T23:29:48.539000",
+          "line": 5453793,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:29:42.892000",
+            "line": 5453202
+          }
+        },
+        {
+          "loopId": "3683f3b7-bb56-4066-a033-003c2ad4fb10",
+          "points": 3601,
+          "query": 5.808,
+          "preprocess": 0.235,
+          "at": "2026-10-13T23:29:48.937000",
+          "line": 5453982,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:29:42.894000",
+            "line": 5453206
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "43f8e53d-cdf4-4ba1-ba5e-774de76cd38d",
+      "seconds": 8.519,
+      "startLine": 5423392,
+      "endLine": 5425578,
+      "start": "2026-10-13T23:27:48.175000",
+      "end": "2026-10-13T23:27:56.694000",
+      "groupPhases": [
+        {
+          "loopId": "43f8e53d-cdf4-4ba1-ba5e-774de76cd38d",
+          "points": 3601,
+          "query": 4.516,
+          "preprocess": 1.075,
+          "at": "2026-10-13T23:27:54.136000",
+          "line": 5424176,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:48.545000",
+            "line": 5423517
+          }
+        },
+        {
+          "loopId": "43f8e53d-cdf4-4ba1-ba5e-774de76cd38d",
+          "points": 3601,
+          "query": 4.539,
+          "preprocess": 1.053,
+          "at": "2026-10-13T23:27:54.138000",
+          "line": 5424186,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:48.546000",
+            "line": 5423521
+          }
+        },
+        {
+          "loopId": "43f8e53d-cdf4-4ba1-ba5e-774de76cd38d",
+          "points": 1801,
+          "query": 4.489,
+          "preprocess": 1.104,
+          "at": "2026-10-13T23:27:54.137000",
+          "line": 5424178,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-13T23:27:48.543000",
+            "line": 5423513
+          }
+        },
+        {
+          "loopId": "43f8e53d-cdf4-4ba1-ba5e-774de76cd38d",
+          "points": 3601,
+          "query": 4.536,
+          "preprocess": 1.061,
+          "at": "2026-10-13T23:27:54.141000",
+          "line": 5424202,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:48.544000",
+            "line": 5423515
+          }
+        },
+        {
+          "loopId": "43f8e53d-cdf4-4ba1-ba5e-774de76cd38d",
+          "points": 3601,
+          "query": 4.849,
+          "preprocess": 0.749,
+          "at": "2026-10-13T23:27:54.144000",
+          "line": 5424222,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:48.545000",
+            "line": 5423519
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "e189fffc-be68-4dd3-b71b-fddb3bacbac3",
+      "seconds": 8.488,
+      "startLine": 5407465,
+      "endLine": 5409640,
+      "start": "2026-10-13T23:26:47.189000",
+      "end": "2026-10-13T23:26:55.677000",
+      "groupPhases": [
+        {
+          "loopId": "e189fffc-be68-4dd3-b71b-fddb3bacbac3",
+          "points": 3601,
+          "query": 5.776,
+          "preprocess": 0.285,
+          "at": "2026-10-13T23:26:53.640000",
+          "line": 5408600,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-13T23:26:47.578000",
+            "line": 5407620
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "d994d27f-98c2-4c2a-a516-a5b9b64254ec",
+      "seconds": 8.473,
+      "startLine": 5421141,
+      "endLine": 5423197,
+      "start": "2026-10-13T23:27:39.406000",
+      "end": "2026-10-13T23:27:47.879000",
+      "groupPhases": [
+        {
+          "loopId": "d994d27f-98c2-4c2a-a516-a5b9b64254ec",
+          "points": 3601,
+          "query": 5.111,
+          "preprocess": 1.708,
+          "at": "2026-10-13T23:27:46.275000",
+          "line": 5422091,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:39.456000",
+            "line": 5421157
+          }
+        },
+        {
+          "loopId": "d994d27f-98c2-4c2a-a516-a5b9b64254ec",
+          "points": 3601,
+          "query": 5.143,
+          "preprocess": 1.675,
+          "at": "2026-10-13T23:27:46.276000",
+          "line": 5422093,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:39.458000",
+            "line": 5421161
+          }
+        },
+        {
+          "loopId": "d994d27f-98c2-4c2a-a516-a5b9b64254ec",
+          "points": 721,
+          "query": 3.564,
+          "preprocess": 0.067,
+          "at": "2026-10-13T23:27:43.086000",
+          "line": 5421279,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-13T23:27:39.455000",
+            "line": 5421153
+          }
+        },
+        {
+          "loopId": "d994d27f-98c2-4c2a-a516-a5b9b64254ec",
+          "points": 3601,
+          "query": 5.135,
+          "preprocess": 1.687,
+          "at": "2026-10-13T23:27:46.278000",
+          "line": 5422103,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:39.456000",
+            "line": 5421155
+          }
+        },
+        {
+          "loopId": "d994d27f-98c2-4c2a-a516-a5b9b64254ec",
+          "points": 3601,
+          "query": 5.118,
+          "preprocess": 1.701,
+          "at": "2026-10-13T23:27:46.276000",
+          "line": 5422095,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-13T23:27:39.457000",
+            "line": 5421159
+          }
+        }
+      ]
+    }
+  ],
+  "markerLines": [
+    {
+      "line": 5261562,
+      "text": "2026-10-13 23:17:26,900 | DEBUG    | celery.pool | TaskPool: Apply <function fast_trace_task at 0x10b63cb80> (args:('app.tasks.kpi_calc.calculate_hourly_kpi', '31176d10-8b0f-443b-a67f-8538d49be6b3', {'lang': 'py', 'task': 'app.tasks.kpi_calc.calculate_hourly_kpi', 'id': '31176d10-8b0f-443b-a67f-8538d49be6b3', 'shadow': None, 'eta': None, 'expires': None, 'group': None, 'group_index': None, 'retries': 0, 'timelimit': [14400, 13800], 'root_id': '31176d10-8b0f-443b-a67f-8538d49be6b3', 'parent_id': None, 'argsrepr': '()', 'kwargsrepr': \"{'ts_start': '2026-10-14T01:00:00'}\", 'origin': 'gen13586@zhangpingdeMacBook-Pro', 'ignore_result': False, 'replaced_task_nesting': 0, 'stamped_headers': None, 'stamps': {}, 'properties': {'correlation_id': '31176d10-8b0f-443b-a67f-8538d49be6b3', 'reply_to': '36f9426a-9998-3a88-9659-c7a61360dfa9', 'delivery_mode': 2, 'delivery_info': {'exchange': '', 'routing_key': 'default'}, 'priority': 0, 'body_encoding': 'base64', 'delivery_tag': 'c538e778-2801-4b1a-b2cf-f6a0f0f6bbb4'}, 'reply_to': '36f9426a-9998-3a88-9659-c7a61360dfa9', 'correlation_id': '31176d10-8b0f-443b-a67f-8538d49be6b3',... kwargs:{})"
+    },
+    {
+      "line": 5261563,
+      "text": "2026-10-13 23:17:26,901 | INFO     | app.tasks.kpi_calc | KPI 计算任务开始, celery_id=31176d10-8b0f-443b-a67f-8538d49be6b3, ts_start=2026-10-14T01:00:00, task_id=None"
+    },
+    {
+      "line": 5273019,
+      "text": "2026-10-13 23:18:10,698 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[36c3a5e2-17cc-458c-abdb-ff1d89c657ca] succeeded in 130.69639587495476s: {'total_loops': 1030, 'triggered': 27, 'dispatched': 1, 'recovered': 0}"
+    },
+    {
+      "line": 5273026,
+      "text": "2026-10-13 23:18:10,719 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[fd830a87-2901-4f4d-9861-9671c295ae5a] succeeded in 0.019046833040192723s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5286192,
+      "text": "2026-10-13 23:19:00,021 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[0cdbfc03-3d26-4e57-a69e-0a5c459ad9f2] succeeded in 0.019884125096723437s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5286306,
+      "text": "2026-10-13 23:19:01,106 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_loop_latest_refresh[e7d97a91-5ed1-4ceb-848d-e4d203ac4eef] succeeded in 1.0824054579716176s: {'loops': 1030, 'open': 12}"
+    },
+    {
+      "line": 5289731,
+      "text": "2026-10-13 23:19:14,182 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[59f3ac49-36e1-448d-b832-3f8ef6d6f532] succeeded in 134.17936458298936s: {'total_loops': 1030, 'triggered': 27, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 5306591,
+      "text": "2026-10-13 23:20:17,978 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[5fd34111-0ec5-45d7-bc25-dc9745eddd5a] succeeded in 137.9751503749285s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 2}"
+    },
+    {
+      "line": 5306596,
+      "text": "2026-10-13 23:20:18,021 | INFO     | celery.app.trace | Task app.tasks.data_link_monitor.run_data_link_check[ada03962-c056-41e2-9b1f-6bbe98658fe1] succeeded in 0.041369292070157826s: {'aas': {'status': 'ok', 'mode': 'mock'}, 'tdengine': {'status': 'ok', 'threshold_minutes': 30, 'count': 43046794}, 'overall': 'ok'}"
+    },
+    {
+      "line": 5306601,
+      "text": "2026-10-13 23:20:18,042 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[de73ddc2-9275-4eec-bea4-24d84296079d] succeeded in 0.019175291992723942s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5306701,
+      "text": "2026-10-13 23:20:19,631 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_precalc[77f9fa24-d3d1-46a8-955d-be501d1f0a73] succeeded in 1.5865926670376211s: {'status': 'ok', 'written': 102, 'errors': 0, 'pruned': 102}"
+    },
+    {
+      "line": 5317075,
+      "text": "2026-10-13 23:21:00,020 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[77f90856-8a6c-42a6-97e0-1637399d2410] succeeded in 0.018327958998270333s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5322122,
+      "text": "2026-10-13 23:21:18,773 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[ae437bb7-5fe0-4f61-86a2-4d97ef18a6f6] succeeded in 137.66421570908278s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 1}"
+    },
+    {
+      "line": 5337135,
+      "text": "2026-10-13 23:22:16,140 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[36f91369-1c17-4540-94b7-778c4770817d] succeeded in 136.13758883299306s: {'total_loops': 1030, 'triggered': 27, 'dispatched': 1, 'recovered': 2}"
+    },
+    {
+      "line": 5337140,
+      "text": "2026-10-13 23:22:16,181 | INFO     | celery.app.trace | Task app.tasks.workbench.refresh_workbench_mv[022aa112-0855-4cd8-814d-582db10a6420] succeeded in 0.03816683404147625s: {'status': 'ok', 'refreshed': ['mv_staff_workload', 'mv_diagnosis_pareto', 'mv_handling_funnel']}"
+    },
+    {
+      "line": 5337145,
+      "text": "2026-10-13 23:22:16,200 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[56c31f9b-1901-4d07-b9a2-08526dc4ccdf] succeeded in 0.017858500010333955s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5348508,
+      "text": "2026-10-13 23:23:00,020 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[a5022080-848f-4369-b45a-0238a58fc232] succeeded in 0.018430916941724718s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5352412,
+      "text": "2026-10-13 23:23:15,859 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[5d56eaf2-dac1-46bb-bd79-4ec4ca2228c4] succeeded in 135.8367073329864s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 5367828,
+      "text": "2026-10-13 23:24:16,123 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[30de2e22-a352-44be-8357-3e6639d62b00] succeeded in 136.1203834579792s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 5368119,
+      "text": "2026-10-13 23:24:17,202 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_loop_latest_refresh[6e4c7c13-e12a-4e81-ad7e-c0d478560719] succeeded in 1.0768277909373865s: {'loops': 1030, 'open': 12}"
+    },
+    {
+      "line": 5368124,
+      "text": "2026-10-13 23:24:17,223 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[0cf29040-e554-4dbe-a6d8-b24777c61dff] succeeded in 0.018931749975308776s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5379796,
+      "text": "2026-10-13 23:25:01,561 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_precalc[934da8ea-4b67-43d9-bbeb-8afc99f75445] succeeded in 1.5592398339649662s: {'status': 'ok', 'written': 102, 'errors': 0, 'pruned': 102}"
+    },
+    {
+      "line": 5379801,
+      "text": "2026-10-13 23:25:01,580 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[60cef77e-3d8d-43e2-8466-2f0494cb22f6] succeeded in 0.017289458075538278s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5383242,
+      "text": "2026-10-13 23:25:16,263 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[429dab86-5f0c-4f7a-91b1-ec8b2537dde0] succeeded in 136.24040912499186s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 1}"
+    },
+    {
+      "line": 5398719,
+      "text": "2026-10-13 23:26:16,217 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[00cf1cc9-3a2a-46e6-b358-b9099163acc6] succeeded in 136.21568833303172s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 5398725,
+      "text": "2026-10-13 23:26:16,239 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[0aee7948-ced4-41d4-a4b5-5aed829dad6c] succeeded in 0.01995704194996506s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5410124,
+      "text": "2026-10-13 23:27:00,021 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[6958002c-d3cb-49bf-a3d8-acd5c088a48b] succeeded in 0.01966791693121195s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5410129,
+      "text": "2026-10-13 23:27:00,068 | INFO     | celery.app.trace | Task app.tasks.workbench.refresh_workbench_mv[c31be2fa-7f44-48a1-9903-f5fb9949efaa] succeeded in 0.044784249970689416s: {'status': 'ok', 'refreshed': ['mv_staff_workload', 'mv_diagnosis_pareto', 'mv_handling_funnel']}"
+    },
+    {
+      "line": 5414622,
+      "text": "2026-10-13 23:27:17,636 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[e266a004-0b91-4d4d-99e7-c80164a050f5] succeeded in 136.0539902090095s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 1, 'recovered': 0}"
+    },
+    {
+      "line": 5430351,
+      "text": "2026-10-13 23:28:16,021 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[71dadf8d-9a9f-42be-b70e-873afd6bf627] succeeded in 136.01946691598278s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 5430356,
+      "text": "2026-10-13 23:28:16,042 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[db7da782-c60b-4f1b-9bf8-d50f9671e6fa] succeeded in 0.018901541945524514s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5442048,
+      "text": "2026-10-13 23:29:01,125 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_loop_latest_refresh[24f4888f-4a69-401f-8724-1abcffbb7ec9] succeeded in 1.1232863330515102s: {'loops': 1030, 'open': 12}"
+    },
+    {
+      "line": 5442053,
+      "text": "2026-10-13 23:29:01,146 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[e77f68d2-3f35-4bce-b6a9-67448e881f66] succeeded in 0.01864258397836238s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 5446217,
+      "text": "2026-10-13 23:29:16,174 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[07def66b-27f8-4396-934f-d7deba2fa50d] succeeded in 136.10420183290262s: {'total_loops': 1030, 'triggered': 26, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 5456100,
+      "text": "2026-10-13 23:29:54,556 | INFO     | app.tasks.kpi_calc | [批量计时] 窗口=10-14 01:00 回路=1030/1030 | read p50=7.03s p95=8.20s max=8.55s sum=7085.8s | compute p50=0.09s p95=0.17s max=0.39s sum=102.8s | persist p50=1.26s p95=2.96s max=4.15s sum=1461.5s"
+    },
+    {
+      "line": 5456101,
+      "text": "2026-10-13 23:29:54,556 | INFO     | app.tasks.kpi_calc | 并发计算完成: loops=1030, concurrency=12, elapsed=747.401s, avg=0.726s/loop"
+    },
+    {
+      "line": 5456104,
+      "text": "2026-10-13 23:29:54,558 | DEBUG    | celery.pool | TaskPool: Apply <function fast_trace_task at 0x10b63cb80> (args:('app.tasks.kpi_calc.calculate_node_kpi_hourly', '59bdada8-3bfa-4997-a003-37f5b24402aa', {'lang': 'py', 'task': 'app.tasks.kpi_calc.calculate_node_kpi_hourly', 'id': '59bdada8-3bfa-4997-a003-37f5b24402aa', 'shadow': None, 'eta': None, 'expires': None, 'group': None, 'group_index': None, 'retries': 0, 'timelimit': [None, None], 'root_id': '31176d10-8b0f-443b-a67f-8538d49be6b3', 'parent_id': '31176d10-8b0f-443b-a67f-8538d49be6b3', 'argsrepr': '()', 'kwargsrepr': \"{'ts_start': '2026-10-14T01:00:00', 'ts_end': '2026-10-14T02:00:00'}\", 'origin': 'gen91698@zhangpingdeMacBook-Pro', 'ignore_result': False, 'replaced_task_nesting': 0, 'stamped_headers': None, 'stamps': {}, 'properties': {'correlation_id': '59bdada8-3bfa-4997-a003-37f5b24402aa', 'reply_to': 'f09a7b86-6c29-33b2-bcbd-4af48c2cf241', 'delivery_mode': 2, 'delivery_info': {'exchange': '', 'routing_key': 'default'}, 'priority': 1, 'body_encoding': 'base64', 'delivery_tag': '3588ee60-8a61-4753-959d-98d82eee7e5d'}, 'reply_to':... kwargs:{})"
+    },
+    {
+      "line": 5456105,
+      "text": "2026-10-13 23:29:54,559 | INFO     | app.tasks.kpi_calc | 节点级 KPI 聚合任务开始, task_id=59bdada8-3bfa-4997-a003-37f5b24402aa, ts_start=2026-10-14T01:00:00, ts_end=2026-10-14T02:00:00"
+    },
+    {
+      "line": 5456110,
+      "text": "2026-10-13 23:29:54,580 | INFO     | celery.app.trace | Task app.tasks.kpi_calc.calculate_hourly_kpi[31176d10-8b0f-443b-a67f-8538d49be6b3] succeeded in 747.6772095829947s: {'total': 1030, 'success': 1004, 'inconclusive': 26, 'failed': 0, 'ts_start': '2026-10-14T01:00:00', 'ts_end': '2026-10-14T02:00:00'}"
+    },
+    {
+      "line": 5456242,
+      "text": "2026-10-13 23:29:55,258 | INFO     | app.tasks.kpi_calc | 节点级 KPI 聚合任务完成: {'total': 26, 'success': 26, 'skipped': 0, 'failed': 0, 'ts_start': '2026-10-14T01:00:00', 'ts_end': '2026-10-14T02:00:00'}"
+    },
+    {
+      "line": 5456243,
+      "text": "2026-10-13 23:29:55,259 | INFO     | celery.app.trace | Task app.tasks.kpi_calc.calculate_node_kpi_hourly[59bdada8-3bfa-4997-a003-37f5b24402aa] succeeded in 0.7008785419166088s: {'total': 26, 'success': 26, 'skipped': 0, 'failed': 0, 'ts_start': '2026-10-14T01:00:00', 'ts_end': '2026-10-14T02:00:00'}"
+    }
+  ]
+}

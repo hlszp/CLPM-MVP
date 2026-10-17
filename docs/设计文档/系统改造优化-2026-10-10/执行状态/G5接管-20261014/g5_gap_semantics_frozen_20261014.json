@@ -1,0 +1,6 @@
+{
+  "backend/app/contracts/series_context.py": "5854de663228bd652bcb3576977d5e21574cd88ad9a96c5e5efb780e5b962fab",
+  "backend/app/services/data_source/logical_wide_builder.py": "534e7dc43fbb9f5e5e01bb88295f1ba5982481bb115bf037e310c9b1af648bd2",
+  "backend/app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+  "backend/tests/test_g5_gap_coverage_regression.py": "8e5bcf670993254e99dde307458c3fe6e6d27386edea4c2ac0c5e8161faf9fda"
+}

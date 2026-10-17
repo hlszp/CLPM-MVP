@@ -1,0 +1,38 @@
+{
+ "_source": "工具终报抢救落盘（第四代）：工具 --report-out 用了相对路径 ../docs/...，p1int worktree 下无该目录 → write_text FileNotFoundError（exit 1），报告文件未落；屏障判定已在 stdout 完整打印，本 JSON 由 stdout 终报忠实转录。原始 stdout 全文=批6-原始输出.txt（同刻拷贝）。",
+ "preflight": {
+  "window": "2026-10-14T01:00:00 ~ 2026-10-14T02:00:00 (naive UTC)",
+  "manifest": "capacity_dataset/manifest_a_2026101401.json (scenario=a, totalLoops=1000)",
+  "eligible": 1000,
+  "excluded": 0,
+  "uniqueLoopIds": "1000 unique = expect ✓（与 manifest 身份一致 ✓）",
+  "r05LatestConflict": "0 冲突 ✓",
+  "predictedNodes": 20,
+  "frozenAlgorithmVersion": "KPI_CALC_v2.0",
+  "expectedHistogram": {"EVALUATED": 1000},
+  "preexisting": "ledger=0 latest=0 node=0 ✓"
+ },
+ "freeze": "capacity_dataset/run_freezes/freeze_a_2026101401.json",
+ "submit": {
+  "delay": "calculate_hourly_kpi.delay(ts_start='2026-10-14T01:00:00')",
+  "parentTaskId": "31176d10-8b0f-443b-a67f-8538d49be6b3",
+  "workerReceivedAt": "2026-10-13T23:17:26.900"
+ },
+ "barrier": {
+  "denominators": "冻结 eligible=1000 excluded(跳过)=0",
+  "hourLedger": "1000 行（SUCCESS=999 INCONCLUSIVE=1 PARTIAL=0）",
+  "manifestIndependentExpected": {"EVALUATED": 1000},
+  "conditions": {"ledger": true, "source": true, "run_binding": true, "algorithm_version": true, "expected_status": false, "latest": true, "nodes": true, "task_terminal": true, "parent_terminal": true},
+  "taskRecordTerminal": "SUCCESS",
+  "violations": {"expectedStatus": {"count": 1, "sample": [{"loopTag": "PERF-T0949", "expected": "EVALUATED", "actualStatus": "INCONCLUSIVE", "actualScore": null, "actualTags": ["DATA_INSUFFICIENT"]}]}},
+  "firstMetSeconds": {"algorithm_version": 751.0, "latest": 751.0, "ledger": 751.0, "nodes": 751.0, "parent_terminal": 751.0, "run_binding": 751.0, "source": 751.0, "task_terminal": 751.0},
+  "nodeSubtaskEvidence": "not-observed（kpi_calc 级联节点任务不带父 run 标识，子任务完成以节点结果行核验为准）"
+ },
+ "total_seconds": 1802.944,
+ "slo": {
+  "target": 600,
+  "verdict": "失败",
+  "denominators": "冻结 1000 / 成功 999 / 违约 1 / 跳过(excluded) 0"
+ },
+ "note": "total_seconds=1802.9 为工具 timeout 口径（expected_status 单行违约使屏障永不满足，工具跑满 --timeout 1800）；真实计算时长以 worker 日志 747.677s + 节点级联 23:29:55.259 为准（批6.json）。八条件 751.0s 首达与手工 gate 吻合（2s 轮询粒度）。"
+}

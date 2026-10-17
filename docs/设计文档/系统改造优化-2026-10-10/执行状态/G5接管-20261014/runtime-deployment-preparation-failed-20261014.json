@@ -1,0 +1,14 @@
+{
+  "startedAtUTC": "2026-10-13T21:53:48.344065+00:00",
+  "owner": "Codex root, user authorized Keeper transfer",
+  "candidateSHA": "6c92cf6944d40bc2c92c9296110711933be28ec7",
+  "traceEnabled": true,
+  "stages": [
+    {
+      "kind": "error",
+      "observedAtUTC": "2026-10-13T21:53:48.437068+00:00",
+      "errorType": "CalledProcessError",
+      "message": "Command '['git', 'archive', 'bd223e39f12cfc2d93ea691ea6b9c379b550aa95', 'backend']' returned non-zero exit status 128."
+    }
+  ]
+}

@@ -1,0 +1,156 @@
+.....FFFFFFF                                                             [100%]
+=================================== FAILURES ===================================
+______ test_pipeline_unknown_with_good_values_does_not_count_as_valid[pv] ______
+
+gap_role = 'pv'
+
+    @pytest.mark.parametrize("gap_role", ["pv", "sp", "op", "mode"])
+    def test_pipeline_unknown_with_good_values_does_not_count_as_valid(gap_role):
+        """20 槽均有 Good 原值，但核心角色仅 5 槽 known：有效率是 5/20。"""
+        raw = _raw_with_coverage(gap_role=gap_role)
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+______ test_pipeline_unknown_with_good_values_does_not_count_as_valid[sp] ______
+
+gap_role = 'sp'
+
+    @pytest.mark.parametrize("gap_role", ["pv", "sp", "op", "mode"])
+    def test_pipeline_unknown_with_good_values_does_not_count_as_valid(gap_role):
+        """20 槽均有 Good 原值，但核心角色仅 5 槽 known：有效率是 5/20。"""
+        raw = _raw_with_coverage(gap_role=gap_role)
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+______ test_pipeline_unknown_with_good_values_does_not_count_as_valid[op] ______
+
+gap_role = 'op'
+
+    @pytest.mark.parametrize("gap_role", ["pv", "sp", "op", "mode"])
+    def test_pipeline_unknown_with_good_values_does_not_count_as_valid(gap_role):
+        """20 槽均有 Good 原值，但核心角色仅 5 槽 known：有效率是 5/20。"""
+        raw = _raw_with_coverage(gap_role=gap_role)
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+_____ test_pipeline_unknown_with_good_values_does_not_count_as_valid[mode] _____
+
+gap_role = 'mode'
+
+    @pytest.mark.parametrize("gap_role", ["pv", "sp", "op", "mode"])
+    def test_pipeline_unknown_with_good_values_does_not_count_as_valid(gap_role):
+        """20 槽均有 Good 原值，但核心角色仅 5 槽 known：有效率是 5/20。"""
+        raw = _raw_with_coverage(gap_role=gap_role)
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:181: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+_____________ test_pipeline_known_short_held_segments_remain_valid _____________
+
+    def test_pipeline_known_short_held_segments_remain_valid():
+        """HELD 已知，无新观测；短于连续段门禁仍有 8/8 个有效点。"""
+        raw = _raw_with_coverage(n=8, gap_start=8, gap_end=8)
+        raw.series_context.role_coverage["pv"].unknown = []
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+_____________ test_pipeline_noncore_unknown_keeps_core_valid_rate ______________
+
+    def test_pipeline_noncore_unknown_keeps_core_valid_rate():
+        """PID 覆盖不进入 pv/sp/op/mode 核心有效率，维持既有共享内核语义。"""
+        raw = _raw_with_coverage(gap_role="pid_p")
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:206: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+___________ test_pipeline_legacy_keeps_existing_good_point_semantics ___________
+
+    def test_pipeline_legacy_keeps_existing_good_point_semantics():
+        raw = _raw_with_coverage()
+        raw.series_context = None
+>       block = _pipeline().process(raw, TagGroup.BASE)
+                ^^^^^^^^^^^
+
+tests/test_g5_gap_coverage_regression.py:213: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+    def _pipeline() -> PreprocessingPipeline:
+        return PreprocessingPipeline(
+>           LoopPreprocessConfig(loop_id="L-G5", control_type=ControlType.FLOW, range_max=100.0)
+        )
+E       TypeError: LoopPreprocessConfig.__init__() missing 1 required positional argument: 'range_min'
+
+tests/test_g5_gap_coverage_regression.py:144: TypeError
+=============================== warnings summary ===============================
+../../../../Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP-p1int/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_unknown_with_good_values_does_not_count_as_valid[pv]
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_unknown_with_good_values_does_not_count_as_valid[sp]
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_unknown_with_good_values_does_not_count_as_valid[op]
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_unknown_with_good_values_does_not_count_as_valid[mode]
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_known_short_held_segments_remain_valid
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_noncore_unknown_keeps_core_valid_rate
+FAILED tests/test_g5_gap_coverage_regression.py::test_pipeline_legacy_keeps_existing_good_point_semantics
+7 failed, 5 passed, 1 warning in 1.03s

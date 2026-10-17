@@ -1,0 +1,578 @@
+{
+  "scope": {
+    "path": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celery-worker.log",
+    "startLocal": "2026-10-15T11:57:00",
+    "endLocal": "2026-10-15T12:01:49",
+    "firstLine": 230,
+    "lastLine": 37000,
+    "timestampedLines": 36771,
+    "selectedTimestampedLinesSha256": "47e776d22c0758d2899f4a0a8a42aeaacf2736d49e839f2cffbebb775642d0f3",
+    "correlationLimit": "Existing phase logs omit taskId/window; correlation relies on unique request per loop and exactly one hourly-KPI window during this segment. Durations include overlap/wait. Never divide summed durations by concurrency to claim wall time."
+  },
+  "requestCount": 119,
+  "uniqueRequestLoops": 119,
+  "windows": [
+    [
+      "2026-10-14T05:00:00",
+      "2026-10-14T06:00:00"
+    ]
+  ],
+  "duplicateRequestLoops": {},
+  "completionCount": 108,
+  "requestToComplete": {
+    "count": 108,
+    "min": 8.321,
+    "p50": 22.503,
+    "p95": 26.925,
+    "max": 30.804,
+    "sum_work_seconds_not_wall": 2382.7640000000006
+  },
+  "queryAggregate": {
+    "count": 420,
+    "min": 5.004,
+    "p50": 16.3295,
+    "p95": 22.125,
+    "max": 27.32,
+    "sum_work_seconds_not_wall": 6747.066999999999
+  },
+  "preprocessAggregateIncludingThreadWait": {
+    "count": 420,
+    "min": 0.04,
+    "p50": 0.7204999999999999,
+    "p95": 1.739,
+    "max": 2.952,
+    "sum_work_seconds_not_wall": 336.80000000000007
+  },
+  "emptyQueryAggregate": {
+    "count": 0
+  },
+  "byTagGroup": {
+    "BASE": {
+      "pointsHistogram": {
+        "3601": 33,
+        "721": 52,
+        "1801": 25
+      },
+      "query": {
+        "count": 110,
+        "min": 5.004,
+        "p50": 15.942,
+        "p95": 21.157,
+        "max": 27.06,
+        "sum_work_seconds_not_wall": 1706.818
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 110,
+        "min": 0.086,
+        "p50": 0.7204999999999999,
+        "p95": 1.765,
+        "max": 2.119,
+        "sum_work_seconds_not_wall": 88.03900000000003
+      }
+    },
+    "MODE_HF": {
+      "pointsHistogram": {
+        "3601": 77
+      },
+      "query": {
+        "count": 77,
+        "min": 7.739,
+        "p50": 16.618,
+        "p95": 21.837,
+        "max": 27.32,
+        "sum_work_seconds_not_wall": 1257.952
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 77,
+        "min": 0.19,
+        "p50": 0.811,
+        "p95": 1.836,
+        "max": 2.952,
+        "sum_work_seconds_not_wall": 71.38799999999999
+      }
+    },
+    "OP_HF": {
+      "pointsHistogram": {
+        "3601": 77
+      },
+      "query": {
+        "count": 77,
+        "min": 8.868,
+        "p50": 16.336,
+        "p95": 22.125,
+        "max": 26.596,
+        "sum_work_seconds_not_wall": 1262.0240000000001
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 77,
+        "min": 0.042,
+        "p50": 0.625,
+        "p95": 1.662,
+        "max": 2.768,
+        "sum_work_seconds_not_wall": 58.570999999999984
+      }
+    },
+    "PVOP_HF": {
+      "pointsHistogram": {
+        "3601": 77
+      },
+      "query": {
+        "count": 77,
+        "min": 7.76,
+        "p50": 16.863,
+        "p95": 21.727,
+        "max": 26.435,
+        "sum_work_seconds_not_wall": 1273.2330000000004
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 77,
+        "min": 0.129,
+        "p50": 0.751,
+        "p95": 1.681,
+        "max": 2.292,
+        "sum_work_seconds_not_wall": 62.953
+      }
+    },
+    "QUALITY_HF": {
+      "pointsHistogram": {
+        "3601": 79
+      },
+      "query": {
+        "count": 79,
+        "min": 8.019,
+        "p50": 15.872,
+        "p95": 20.626,
+        "max": 25.438,
+        "sum_work_seconds_not_wall": 1247.0399999999997
+      },
+      "preprocessIncludingThreadWait": {
+        "count": 79,
+        "min": 0.04,
+        "p50": 0.625,
+        "p95": 1.655,
+        "max": 2.0,
+        "sum_work_seconds_not_wall": 55.84899999999999
+      }
+    }
+  },
+  "emptyByTagGroup": {},
+  "cacheReadCounters": {
+    "L2_MISS": 119,
+    "L1_MISS": 455
+  },
+  "taskReceived": [
+    {
+      "at": "2026-10-15T11:57:00.005000",
+      "name": "app.tasks.workbench.refresh_workbench_mv",
+      "id": "831ee6a4-9359-4d98-8ece-e3b015453efd",
+      "line": 230
+    },
+    {
+      "at": "2026-10-15T11:57:00.012000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "0ae242a7-50e1-44d5-993c-73db6a69f320",
+      "line": 232
+    },
+    {
+      "at": "2026-10-15T11:57:00.167000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "474fefc1-7883-46e5-a9ce-901bce91b0d5",
+      "line": 238
+    },
+    {
+      "at": "2026-10-15T11:57:22.196000",
+      "name": "app.tasks.kpi_calc.calculate_hourly_kpi",
+      "id": "39ebe2b8-a3df-4757-b59f-5cf69623087b",
+      "line": 243
+    },
+    {
+      "at": "2026-10-15T11:58:35.932000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "c6919a0f-a8f5-4a15-846d-e87b7343abde",
+      "line": 10708
+    },
+    {
+      "at": "2026-10-15T11:58:35.988000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "ccf844c3-2fff-4670-bd54-43dae0addbcf",
+      "line": 10713
+    },
+    {
+      "at": "2026-10-15T12:00:20.080000",
+      "name": "app.tasks.workbench.workbench_loop_latest_refresh",
+      "id": "e87e3ac9-f934-47cc-9964-4fb1a235376e",
+      "line": 24784
+    },
+    {
+      "at": "2026-10-15T12:00:24.327000",
+      "name": "app.tasks.workbench.wb_cache_cleanup",
+      "id": "314661b8-1dce-47a5-8252-70aba0da71ba",
+      "line": 25332
+    },
+    {
+      "at": "2026-10-15T12:00:24.381000",
+      "name": "app.tasks.alert_patrol.run_alert_patrol",
+      "id": "91fc1ca9-10f3-486d-82e6-b55cdd172491",
+      "line": 25351
+    }
+  ],
+  "overlapExamples": [
+    {
+      "loopId": "f8999691-ba7f-429e-9aa4-59e980358522",
+      "seconds": 30.804,
+      "startLine": 16160,
+      "endLine": 19673,
+      "start": "2026-10-15T11:59:12.333000",
+      "end": "2026-10-15T11:59:43.137000",
+      "groupPhases": [
+        {
+          "loopId": "f8999691-ba7f-429e-9aa4-59e980358522",
+          "points": 3601,
+          "query": 25.438,
+          "preprocess": 0.11,
+          "at": "2026-10-15T11:59:38.544000",
+          "line": 19136,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:12.997000",
+            "line": 16265
+          }
+        },
+        {
+          "loopId": "f8999691-ba7f-429e-9aa4-59e980358522",
+          "points": 3601,
+          "query": 27.32,
+          "preprocess": 0.705,
+          "at": "2026-10-15T11:59:41.014000",
+          "line": 19395,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:12.989000",
+            "line": 16259
+          }
+        },
+        {
+          "loopId": "f8999691-ba7f-429e-9aa4-59e980358522",
+          "points": 1801,
+          "query": 25.641,
+          "preprocess": 1.503,
+          "at": "2026-10-15T11:59:40.130000",
+          "line": 19283,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-15T11:59:12.986000",
+            "line": 16257
+          }
+        },
+        {
+          "loopId": "f8999691-ba7f-429e-9aa4-59e980358522",
+          "points": 3601,
+          "query": 26.435,
+          "preprocess": 0.827,
+          "at": "2026-10-15T11:59:40.256000",
+          "line": 19287,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:12.994000",
+            "line": 16263
+          }
+        },
+        {
+          "loopId": "f8999691-ba7f-429e-9aa4-59e980358522",
+          "points": 3601,
+          "query": 25.577,
+          "preprocess": 0.042,
+          "at": "2026-10-15T11:59:38.611000",
+          "line": 19151,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:12.992000",
+            "line": 16261
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "c41708ac-5fbc-4559-97b2-77db156a94bd",
+      "seconds": 30.671,
+      "startLine": 15899,
+      "endLine": 19400,
+      "start": "2026-10-15T11:59:10.349000",
+      "end": "2026-10-15T11:59:41.020000",
+      "groupPhases": [
+        {
+          "loopId": "c41708ac-5fbc-4559-97b2-77db156a94bd",
+          "points": 3601,
+          "query": 23.676,
+          "preprocess": 0.634,
+          "at": "2026-10-15T11:59:35.614000",
+          "line": 18734,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:11.303000",
+            "line": 16021
+          }
+        },
+        {
+          "loopId": "c41708ac-5fbc-4559-97b2-77db156a94bd",
+          "points": 3601,
+          "query": 25.846,
+          "preprocess": 0.225,
+          "at": "2026-10-15T11:59:37.368000",
+          "line": 19023,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:11.296000",
+            "line": 16015
+          }
+        },
+        {
+          "loopId": "c41708ac-5fbc-4559-97b2-77db156a94bd",
+          "points": 721,
+          "query": 26.148,
+          "preprocess": 0.619,
+          "at": "2026-10-15T11:59:38.059000",
+          "line": 19085,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-15T11:59:11.290000",
+            "line": 16010
+          }
+        },
+        {
+          "loopId": "c41708ac-5fbc-4559-97b2-77db156a94bd",
+          "points": 3601,
+          "query": 26.183,
+          "preprocess": 0.579,
+          "at": "2026-10-15T11:59:38.063000",
+          "line": 19093,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:11.301000",
+            "line": 16019
+          }
+        },
+        {
+          "loopId": "c41708ac-5fbc-4559-97b2-77db156a94bd",
+          "points": 3601,
+          "query": 26.596,
+          "preprocess": 0.171,
+          "at": "2026-10-15T11:59:38.066000",
+          "line": 19097,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-15T11:59:11.299000",
+            "line": 16017
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "06ef8fc9-fedd-41b1-87a9-7cae3c777d6c",
+      "seconds": 30.535,
+      "startLine": 15838,
+      "endLine": 19307,
+      "start": "2026-10-15T11:59:10.061000",
+      "end": "2026-10-15T11:59:40.596000",
+      "groupPhases": [
+        {
+          "loopId": "06ef8fc9-fedd-41b1-87a9-7cae3c777d6c",
+          "points": 3601,
+          "query": 27.06,
+          "preprocess": 0.649,
+          "at": "2026-10-15T11:59:38.061000",
+          "line": 19089,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-15T11:59:10.352000",
+            "line": 15901
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "4c8b1818-3f71-4ab0-bd9c-c1ca1f437ce0",
+      "seconds": 28.529,
+      "startLine": 30665,
+      "endLine": 34554,
+      "start": "2026-10-15T12:01:01.917000",
+      "end": "2026-10-15T12:01:30.446000",
+      "groupPhases": [
+        {
+          "loopId": "4c8b1818-3f71-4ab0-bd9c-c1ca1f437ce0",
+          "points": 3601,
+          "query": 19.28,
+          "preprocess": 0.115,
+          "at": "2026-10-15T12:01:27.647000",
+          "line": 34171,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:08.252000",
+            "line": 31514
+          }
+        },
+        {
+          "loopId": "4c8b1818-3f71-4ab0-bd9c-c1ca1f437ce0",
+          "points": 3601,
+          "query": 16.618,
+          "preprocess": 1.587,
+          "at": "2026-10-15T12:01:25.713000",
+          "line": 33766,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.507000",
+            "line": 31506
+          }
+        },
+        {
+          "loopId": "4c8b1818-3f71-4ab0-bd9c-c1ca1f437ce0",
+          "points": 721,
+          "query": 16.499,
+          "preprocess": 1.627,
+          "at": "2026-10-15T12:01:25.638000",
+          "line": 33750,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.511000",
+            "line": 31508
+          }
+        },
+        {
+          "loopId": "4c8b1818-3f71-4ab0-bd9c-c1ca1f437ce0",
+          "points": 3601,
+          "query": 19.441,
+          "preprocess": 1.238,
+          "at": "2026-10-15T12:01:28.920000",
+          "line": 34305,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:08.241000",
+            "line": 31512
+          }
+        },
+        {
+          "loopId": "4c8b1818-3f71-4ab0-bd9c-c1ca1f437ce0",
+          "points": 3601,
+          "query": 19.75,
+          "preprocess": 1.177,
+          "at": "2026-10-15T12:01:28.922000",
+          "line": 34309,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.995000",
+            "line": 31510
+          }
+        }
+      ]
+    },
+    {
+      "loopId": "ee4bce59-7494-4ac8-bb0f-c665488f16f3",
+      "seconds": 27.676,
+      "startLine": 30654,
+      "endLine": 34406,
+      "start": "2026-10-15T12:01:01.852000",
+      "end": "2026-10-15T12:01:29.528000",
+      "groupPhases": [
+        {
+          "loopId": "ee4bce59-7494-4ac8-bb0f-c665488f16f3",
+          "points": 3601,
+          "query": 14.063,
+          "preprocess": 0.978,
+          "at": "2026-10-15T12:01:22.293000",
+          "line": 33289,
+          "tagGroup": "QUALITY_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.251000",
+            "line": 31494
+          }
+        },
+        {
+          "loopId": "ee4bce59-7494-4ac8-bb0f-c665488f16f3",
+          "points": 3601,
+          "query": 15.107,
+          "preprocess": 0.679,
+          "at": "2026-10-15T12:01:23.031000",
+          "line": 33381,
+          "tagGroup": "MODE_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.244000",
+            "line": 31488
+          }
+        },
+        {
+          "loopId": "ee4bce59-7494-4ac8-bb0f-c665488f16f3",
+          "points": 1801,
+          "query": 16.018,
+          "preprocess": 1.211,
+          "at": "2026-10-15T12:01:24.469000",
+          "line": 33584,
+          "tagGroup": "BASE",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.240000",
+            "line": 31486
+          }
+        },
+        {
+          "loopId": "ee4bce59-7494-4ac8-bb0f-c665488f16f3",
+          "points": 3601,
+          "query": 17.173,
+          "preprocess": 1.294,
+          "at": "2026-10-15T12:01:25.717000",
+          "line": 33770,
+          "tagGroup": "PVOP_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.249000",
+            "line": 31492
+          }
+        },
+        {
+          "loopId": "ee4bce59-7494-4ac8-bb0f-c665488f16f3",
+          "points": 3601,
+          "query": 15.911,
+          "preprocess": 0.273,
+          "at": "2026-10-15T12:01:23.431000",
+          "line": 33422,
+          "tagGroup": "OP_HF",
+          "queryStart": {
+            "at": "2026-10-15T12:01:07.247000",
+            "line": 31490
+          }
+        }
+      ]
+    }
+  ],
+  "markerLines": [
+    {
+      "line": 237,
+      "text": "2026-10-15 11:57:00,145 | INFO     | celery.app.trace | Task app.tasks.workbench.refresh_workbench_mv[831ee6a4-9359-4d98-8ece-e3b015453efd] succeeded in 0.13957358300012856s: {'status': 'ok', 'refreshed': ['mv_staff_workload', 'mv_diagnosis_pareto', 'mv_handling_funnel']}"
+    },
+    {
+      "line": 242,
+      "text": "2026-10-15 11:57:00,280 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[474fefc1-7883-46e5-a9ce-901bce91b0d5] succeeded in 0.10948354199990717s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 245,
+      "text": "2026-10-15 11:57:22,202 | INFO     | app.tasks.kpi_calc | KPI 计算任务开始, celery_id=39ebe2b8-a3df-4757-b59f-5cf69623087b, ts_start=2026-10-14T05:00:00, task_id=None"
+    },
+    {
+      "line": 10707,
+      "text": "2026-10-15 11:58:35,928 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[d9b27e88-5452-4d0d-a76f-bf9984f4b0ac] succeeded in 215.92559445900042s: {'total_loops': 1030, 'triggered': 1030, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 10712,
+      "text": "2026-10-15 11:58:35,984 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[c6919a0f-a8f5-4a15-846d-e87b7343abde] succeeded in 0.051134708000063256s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    },
+    {
+      "line": 24783,
+      "text": "2026-10-15 12:00:20,069 | INFO     | celery.app.trace | Task app.tasks.alert_patrol.run_alert_patrol[b9034bbb-7a78-4f49-a2a4-bbc3e0fbaadb] succeeded in 260.065384042s: {'total_loops': 1030, 'triggered': 1030, 'dispatched': 0, 'recovered': 0}"
+    },
+    {
+      "line": 25329,
+      "text": "2026-10-15 12:00:24,322 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_loop_latest_refresh[e87e3ac9-f934-47cc-9964-4fb1a235376e] succeeded in 4.239845499999774s: {'loops': 1030, 'open': 13}"
+    },
+    {
+      "line": 25350,
+      "text": "2026-10-15 12:00:24,377 | INFO     | celery.app.trace | Task app.tasks.workbench.wb_cache_cleanup[314661b8-1dce-47a5-8252-70aba0da71ba] succeeded in 0.04986070799986919s: {'status': 'skeleton', 'stale_count': 0, 'todo': 'M2 填充 DELETE'}"
+    }
+  ]
+}

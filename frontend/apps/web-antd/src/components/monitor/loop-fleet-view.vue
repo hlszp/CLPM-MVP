@@ -36,6 +36,7 @@ import {
 } from '#/components/clpm';
 import DayDeltaBadge from '#/components/loop/day-delta-badge.vue';
 import { usePagePreference } from '#/composables/use-clpm-preferences';
+import { useLoopFollow } from '#/composables/use-loop-follow';
 import {
   LOOP_TYPE_LABEL_MAP,
   MODE_LABEL_MAP,
@@ -137,7 +138,7 @@ const columns: TableColumnsType = [
   },
   // P2 IA优化：适用性等级列
   { title: '适用性', key: 'fitnessLevel', width: 95, align: 'center' },
-  { title: '操作', key: 'action', width: 120, align: 'center', fixed: 'right' },
+  { title: '操作', key: 'action', width: 150, align: 'center', fixed: 'right' },
 ];
 
 function getColumnKey(col: any): string {
@@ -411,6 +412,21 @@ function handleTrendClick(record: LoopApi.MonitorListItem) {
   emit('trendClick', record);
 }
 
+// ===== 关注星标（P6-05 关注入口：回路监视列表为关注发起入口之一）=====
+// 共享关注集（与 wb360 页头/我的工作同一状态源）；加载失败如实提示，
+// 星标初始态可能不准但点击仍以服务端 CAS 结果为准（不编造成功）
+const {
+  ensureLoaded: ensureFollowsLoaded,
+  followLoadState,
+  isBusy: isFollowBusy,
+  isFollowed,
+  toggle: toggleFollow,
+} = useLoopFollow();
+
+function handleFollowToggle(record: LoopApi.MonitorListItem) {
+  void toggleFollow(record.loopId, record.tagName);
+}
+
 // ===== 工具函数 =====
 function modeColor(modeLabel: null | string | undefined): string {
   return modeLabelColor(modeLabel);
@@ -468,6 +484,12 @@ onMounted(() => {
   if (autoRefresh.value) {
     start();
   }
+  // 关注集批量回显初始态（失败不阻断列表；星标点击由服务端 CAS 兜底）
+  void ensureFollowsLoaded().then((ok) => {
+    if (!ok && followLoadState.value === 'error') {
+      message.warning('关注状态加载失败，星标初始态可能不准确（点击仍以服务端结果为准）');
+    }
+  });
 });
 
 onBeforeUnmount(() => {
@@ -569,6 +591,33 @@ defineExpose({
         </template>
         <template v-else-if="column.key === 'action'">
           <div class="flex items-center justify-center gap-3">
+            <button
+              :aria-label="
+                isFollowed((record as LoopApi.MonitorListItem).loopId)
+                  ? '取消关注'
+                  : '关注该回路'
+              "
+              :aria-pressed="isFollowed((record as LoopApi.MonitorListItem).loopId)"
+              :class="{
+                'loop-fleet-view__star--on': isFollowed(
+                  (record as LoopApi.MonitorListItem).loopId,
+                ),
+              }"
+              :data-testid="`follow-star-${(record as LoopApi.MonitorListItem).loopId}`"
+              :disabled="isFollowBusy((record as LoopApi.MonitorListItem).loopId)"
+              :title="
+                isFollowed((record as LoopApi.MonitorListItem).loopId)
+                  ? '已关注（我的工作-我的关注跟踪）· 点击取消'
+                  : '关注该回路（在「我的工作-我的关注」中跟踪）'
+              "
+              class="loop-fleet-view__star"
+              type="button"
+              @click="handleFollowToggle(record as LoopApi.MonitorListItem)"
+            >
+              {{
+                isFollowed((record as LoopApi.MonitorListItem).loopId) ? '★' : '☆'
+              }}
+            </button>
             <a
               class="cursor-pointer text-blue-600 hover:underline"
               role="button"
@@ -770,5 +819,29 @@ defineExpose({
   gap: 8px;
   align-items: center;
   padding: 4px 8px;
+}
+
+/* 关注星标（P6-05）：已关注=实心金色显眼区分；在途禁点防重入 */
+.loop-fleet-view__star {
+  padding: 0 2px;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ant-color-text-tertiary);
+  cursor: pointer;
+  background: none;
+  border: none;
+}
+
+.loop-fleet-view__star:hover:not(:disabled) {
+  color: var(--ant-warning);
+}
+
+.loop-fleet-view__star--on {
+  color: var(--ant-warning);
+}
+
+.loop-fleet-view__star:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 </style>

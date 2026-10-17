@@ -1,0 +1,23 @@
+{
+  "candidateFreeze": "/private/tmp/g5-final-candidate-freeze-v2-20261014.json",
+  "candidateFreezeSha256": "683090161f4e5a52626f539640dc0f470567120c766223b201d8cde8f99c66f0",
+  "testsPassed": 20,
+  "testExitCode": 0,
+  "networkAttempts": 0,
+  "sourceBeforeAfterMatch": true,
+  "traceAcceptance": "PASS_LIMITED",
+  "capacityGateEvaluated": false,
+  "sloEvaluated": false,
+  "files": {
+    "g5-trace-nonauthor-tests-final-20261014.log": "6bce61f8a27d78ac13ddb688a2b340fe0447f5b27663121d7dc5769c65f9a6b3",
+    "g5-trace-nonauthor-events-20261014.log": "10cf532b750bba766abf53a2196826266570afca7eb26a408af79e6d0de599fa",
+    "g5-trace-nonauthor-network-20261014.json": "51f9013ba672ed7e3355a64cd20d9d127bd1e90f1122e47fe721c679d7989e7a",
+    "g5-trace-nonauthor-before-final-20261014.json": "114df5f248c0eaa63c08c469f29aa7754409ef8fff50c709f00833212d78a3bb",
+    "g5-trace-nonauthor-after-final-20261014.json": "0cf1ae87364ce178155b35c1cd99a43c8ff6dd87ea8aa83ffc5ff94f2be1f281",
+    "g5-trace-nonauthor-tests-20261014.py": "9f62a614be0bc767a1eb760e9944504473b48e289c263f3915895a4c00779f30",
+    "g5_nonauthor_socket_guard_20261014.py": "4039ad0f4d37b1305e3fcc619d6e14b42387d1f51e5a1a11c79ddbb78473d59e",
+    "g5-trace-nonauthor-collected-20261014.json": "276e887c134b5ac9bc7434e2cf4aa41a02c5c9fc2f9504bcd013fba26cd82564",
+    "g5-trace-cancel-race-20261014.log": "d2e3cf82cc15afe94c76026375f0fbced4ac1af574a6a889f640022853797065"
+  },
+  "reportSha256": "fdb5add9b3e02c02b26778b058bbb86a98687f79319f3dc5d150ed46898401df"
+}

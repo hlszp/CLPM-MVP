@@ -1,0 +1,32 @@
+[preflight] 三条件参评回路数检查（DB 权威口径）
+  window: 2026-10-16T06:00:00 ~ 2026-10-16T07:00:00 (naive UTC)
+  barrier_loop_prefix: PERF-T
+  manifest: capacity_dataset/manifest_a_2026101606.json (scenario=a, totalLoops=1000)
+  eligible(is_active+READY+include_in_evaluation): 1000
+  excluded(不可参评，单列不缩分母): 0
+  独立 loopId 断言: 1000 unique = expect ✓（与 manifest 身份一致 ✓）
+  R05 latest 冲突预检: 0 冲突 ✓（本窗非迟到窗，latest 屏障可达）
+  预定节点(结构推导，独立于运行结果): 20
+  冻结算法版本: KPI_CALC_v2.0
+  manifest expected 分布: {'EVALUATED': 1000}
+  投递前既有同窗行: ledger=0 latest=0 node=0 ✓
+[freeze] 冻结件已落盘（投递前）: capacity_dataset/run_freezes/freeze_a_2026101606.json
+[submit] calculate_hourly_kpi.delay(ts_start='2026-10-16T06:00:00') （经既有 Celery 入口，复用唯一 lifespan Worker，不新增开放触发 API）
+[submit] parent_task_id=220180f0-a9e8-4157-8e34-9aecc5992278
+[barrier] 完成屏障判定（冻结件 × DB 回查 × 任务终态；父任务终态不单独作为屏障）：
+  分母: 冻结 eligible=1000 excluded(跳过)=0
+  小时账本: 1000 行（SUCCESS=999 INCONCLUSIVE=1 PARTIAL=0）
+  manifest 独立预期: {'EVALUATED': 1000}
+  各条件: {'ledger': True, 'source': True, 'run_binding': True, 'algorithm_version': False, 'expected_status': False, 'latest': False, 'nodes': False, 'task_terminal': True, 'parent_terminal': True}
+  parent_task_id(logicalRunId): 220180f0-a9e8-4157-8e34-9aecc5992278
+  TaskRecord 终态: SUCCESS
+  违约[algorithmVersion]: count=1 sample=[{'loopTag': 'PERF-T0009', 'algorithmVersion': None}]
+  违约[expectedStatus]: count=1 sample=[{'loopTag': 'PERF-T0009', 'expected': 'EVALUATED', 'actualStatus': 'INCONCLUSIVE', 'actualScore': None, 'actualTags': ['DATA_INSUFFICIENT']}]
+  违约[latestBad]: count=1 sample=[{'loopTag': 'PERF-T0009', 'algorithmVersion': None, 'recordLogicalRunId': '220180f0-a9e8-4157-8e34-9aecc5992278'}]
+  违约[nodeMissing]: count=20 sample=['0a9a64a6-00ff-4561-9386-5677d6fcd197', '0c8dab12-09fa-4d9c-99e2-0e33b3bcaf81', '18cc1c14-a83a-4adb-b76a-abdafdce913f', '1c6c1a74-15ff-4c35-b0df-8cfd8d5a5963', '33908868-1824-4f1b-bf11-8b6d2b9d1fd7', '5218fbc8-6d27-4b46-8ec2-e7fd9a622966', '8a179995-e1b1-4368-a512-4186e3a69515', '901a6e81-58b0-4e73-975f-39a1e783cdf6', '9c7008cc-9919-4865-ac03-a30a7931ead7', 'a089b60f-18f3-4a67-bdf0-add087d6b5c1', 'a341b5e0-9e7a-4a81-9ab6-809a2472fd68', 'ac08bd78-6bdd-4789-9b58-064f642d0fc2', 'ada95482-72fe-446d-8af8-5e50507c17d9', 'afc4e3a3-8fb2-4bda-a231-f2eb277ba173', 'afc7bf18-b610-4741-a29e-f1df5dadbd5e', 'b0914c41-3f74-470d-bcbe-3b79a6a77891', 'b55c303f-70c4-46ca-a9e5-549b63b2f138', 'c9e698f5-b598-40a8-ad8d-8d21b174fbcd', 'd547fd49-4481-4200-a9af-7264bc76faf8', 'f12df131-e45d-4a59-9c53-67b0c1771e64']
+  各条件首次满足时刻(s): {'ledger': 1415.6, 'parent_terminal': 1415.6, 'run_binding': 1415.6, 'source': 1415.6, 'task_terminal': 1415.6}
+  节点子任务取证: not-observed（kpi_calc 级联节点任务不带父 run 标识，子任务完成以节点结果行核验为准）
+  total_seconds: 1415.642
+  SLO <= 600s: 失败（分母: 冻结 1000 / 成功 999 / 违约 23 / 跳过(excluded) 0）
+[report] 报告已落盘: /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch8-report.json
+  [TERMINAL_MISMATCH] 屏障未通过（保留违约明细；不缩分母、不改判）

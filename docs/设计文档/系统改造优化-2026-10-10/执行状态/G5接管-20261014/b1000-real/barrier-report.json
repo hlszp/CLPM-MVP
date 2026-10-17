@@ -1,0 +1,99 @@
+{
+  "window": {
+    "tsStart": "2026-10-14T05:00:00",
+    "tsEnd": "2026-10-14T06:00:00"
+  },
+  "parentTaskId": "d1c3809a-fae9-4ab4-a8cd-9b146bb22c1d",
+  "parentState": "SUCCESS",
+  "taskRecordStatus": "SUCCESS",
+  "freezePath": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/freeze_b_2026101405.json",
+  "observedAt": "2026-10-13T22:46:17.252445+00:00",
+  "completionReason": "BARRIER_PASSED",
+  "totalSeconds": 789.4421961660264,
+  "sloSeconds": 900.0,
+  "sloPassed": true,
+  "gate": {
+    "ok": true,
+    "conditions": {
+      "ledger": true,
+      "source": true,
+      "run_binding": true,
+      "algorithm_version": true,
+      "expected_status": true,
+      "latest": true,
+      "nodes": true,
+      "task_terminal": true,
+      "parent_terminal": true
+    },
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 850,
+        "INCONCLUSIVE": 150
+      },
+      "expectedHistogram": {
+        "EVALUATED": 800,
+        "INCONCLUSIVE(DATA_INSUFFICIENT)": 100,
+        "EVALUATED(ELIGIBLE内终态; MODE=MANUAL, auto表现照常评估)": 50,
+        "INCONCLUSIVE(窗口覆盖不足——缺口段按 held/coverage 语义)": 50
+      },
+      "success": 850,
+      "inconclusive": 150,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": {
+        "count": 0,
+        "sample": []
+      },
+      "foreignSource": {
+        "count": 0,
+        "sample": []
+      },
+      "runBinding": {
+        "count": 0,
+        "sample": []
+      },
+      "algorithmVersion": {
+        "count": 0,
+        "sample": []
+      },
+      "expectedStatus": {
+        "count": 0,
+        "sample": []
+      },
+      "latestMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "latestBad": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeMissing": {
+        "count": 0,
+        "sample": []
+      },
+      "nodeBadVersion": {
+        "count": 0,
+        "sample": []
+      }
+    },
+    "window": "2026-10-14T05:00:00"
+  },
+  "firstMetSeconds": {
+    "ledger": 789.4415444160113,
+    "source": 789.4415450410452,
+    "run_binding": 789.4415453330148,
+    "algorithm_version": 789.4415454580449,
+    "expected_status": 789.4415455829585,
+    "latest": 789.4415457500145,
+    "nodes": 789.4415459580487,
+    "task_terminal": 789.4415461249882,
+    "parent_terminal": 789.4415462500183
+  },
+  "childTaskObservation": "not-observed"
+}

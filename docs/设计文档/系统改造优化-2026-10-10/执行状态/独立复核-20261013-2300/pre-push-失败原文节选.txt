@@ -1,0 +1,22 @@
+╭──────────────────────────────────────╮
+│ 🥊 lefthook  v2.1.8  hook:  pre-push │
+╰──────────────────────────────────────╯
+┃  backend ruff check + format ❯ 
+All checks passed!
+Would reformat: app/services/node_performance.py
+Would reformat: tests/test_g5_pre_card_fixes.py
+2 files would be reformatted, 882 files already formatted
+
+exit status 1
+┃  backend pytest ❯ 
+[中间 pytest/schema/typecheck 等输出略；完整源 /tmp/push_full.log]
+
+  ────────────────────────────────────
+summary: (done in 326.19 seconds)
+✔️ backend pytest (319.47 seconds)
+✔️ backend alembic schema drift (0.64 seconds)
+✔️ frontend type check (2.66 seconds)
+✔️ api contract check (3.16 seconds)
+✔️ frontend hex whitelist (0.11 seconds)
+🥊 backend ruff check + format (0.15 seconds)
+错误：无法推送一些引用到 'https://github.com/hlszp/CLPM-MVP.git'

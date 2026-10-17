@@ -1,0 +1,2172 @@
+diff --git a/backend/app/contracts/series_context.py b/backend/app/contracts/series_context.py
+index f9d237c1..d887a2e7 100644
+--- a/backend/app/contracts/series_context.py
++++ b/backend/app/contracts/series_context.py
+@@ -17,7 +17,7 @@
+ from __future__ import annotations
+ 
+ from dataclasses import dataclass, field
+-from datetime import UTC, datetime
++from datetime import UTC, datetime, timedelta
+ from typing import Any
+ 
+ #: 上下文 schema 版本（结构变化时递增；缓存键组成部分）
+@@ -90,12 +90,16 @@ class RoleCoverage:
+     unknown: list[IntervalRun] = field(default_factory=list)
+     observed: list[IntervalRun] = field(default_factory=list)
+ 
+-    def known_slots(self, grid_start: datetime, grid_end: datetime) -> int:
+-        """已知覆盖槽数（与 [grid_start, grid_end] 整秒网格交集）。"""
+-        return _count_grid_slots(self.known, grid_start, grid_end)
++    def known_slots(
++        self, grid_start: datetime, grid_end: datetime, grid_period_s: float = 1.0
++    ) -> int:
++        """已知覆盖槽数（与起点 + i×周期的离散网格交集）。"""
++        return _count_grid_slots(self.known, grid_start, grid_end, grid_period_s)
+ 
+-    def unknown_slots(self, grid_start: datetime, grid_end: datetime) -> int:
+-        return _count_grid_slots(self.unknown, grid_start, grid_end)
++    def unknown_slots(
++        self, grid_start: datetime, grid_end: datetime, grid_period_s: float = 1.0
++    ) -> int:
++        return _count_grid_slots(self.unknown, grid_start, grid_end, grid_period_s)
+ 
+     def to_dict(self) -> dict[str, list[dict[str, str]]]:
+         return {
+@@ -137,42 +141,31 @@ class SegmentBoundary:
+         )
+ 
+ 
+-def _count_grid_slots(runs: list[IntervalRun], grid_start: datetime, grid_end: datetime) -> int:
+-    """区间游程与 [grid_start, grid_end] 整秒网格的交集槽数（去重）。"""
++def _count_grid_slots(
++    runs: list[IntervalRun], grid_start: datetime, grid_end: datetime, grid_period_s: float = 1.0
++) -> int:
++    """半开游程所含的离散格点数（限于含两端网格，重叠槽去重）。
++
++    先映射为整数槽索引区间，再合并；不按游程秒数计数，也不逐槽展开。
++    timedelta 整除保留微秒边界精度，尾部游程不得计入 grid_end 之后的槽。
++    """
+     gs, ge = _utc(grid_start), _utc(grid_end)
+-    merged: list[tuple[datetime, datetime]] = []
++    period = timedelta(seconds=grid_period_s)
++    if ge < gs or period <= timedelta(0):
++        return 0
++    stop_index = (ge - gs) // period + 1
++    merged: list[tuple[int, int]] = []
+     for r in sorted(runs, key=lambda x: _utc(x.start)):
+-        s, e = _utc(r.start), _utc(r.end)
+-        s = max(s, gs)
+-        e = min(e, ge + _slot_unit())
+-        if e <= s:
++        # ceil((边界 - gs) / period)：起点含，终点不含。
++        first = max(0, -((gs - _utc(r.start)) // period))
++        stop = min(stop_index, -((gs - _utc(r.end)) // period))
++        if stop <= first:
+             continue
+-        if merged and s <= merged[-1][1]:
+-            merged[-1] = (merged[-1][0], max(merged[-1][1], e))
++        if merged and first <= merged[-1][1]:
++            merged[-1] = (merged[-1][0], max(merged[-1][1], stop))
+         else:
+-            merged.append((s, e))
+-    total = 0
+-    for s, e in merged:
+-        total += _slots_between(s, e)
+-    return total
+-
+-
+-def _slot_unit():
+-    from datetime import timedelta
+-
+-    return timedelta(seconds=1)
+-
+-
+-def _slots_between(s: datetime, e: datetime) -> int:
+-    """[s, e) 内整秒网格槽数（对齐到整秒边界；不足一槽按包含的整秒计）。"""
+-    from datetime import timedelta
+-
+-    s2 = s.replace(microsecond=0)
+-    if s.microsecond:
+-        s2 += timedelta(seconds=1)
+-    e2 = e.replace(microsecond=0)
+-    n = int((e2 - s2).total_seconds())
+-    return max(0, n)
++            merged.append((first, stop))
++    return sum(stop - first for first, stop in merged)
+ 
+ 
+ @dataclass
+@@ -212,13 +205,13 @@ class SeriesContext:
+         cov = self.role_coverage.get(role)
+         if cov is None:
+             return 0
+-        return cov.unknown_slots(self.grid_start, self.grid_end)
++        return cov.unknown_slots(self.grid_start, self.grid_end, self.grid_period_s)
+ 
+     def known_slots(self, role: str) -> int:
+         cov = self.role_coverage.get(role)
+         if cov is None:
+             return self.expected_slots
+-        return cov.known_slots(self.grid_start, self.grid_end)
++        return cov.known_slots(self.grid_start, self.grid_end, self.grid_period_s)
+ 
+     def source_coverage_ratio(self, role: str = "pv") -> float:
+         """来源覆盖 = 已知覆盖槽数 / N（正常 COV 保持计入；断线/无初值/冲突不计）."""
+diff --git a/backend/app/core/g5_trace.py b/backend/app/core/g5_trace.py
+new file mode 100644
+index 00000000..e402c056
+--- /dev/null
++++ b/backend/app/core/g5_trace.py
+@@ -0,0 +1,195 @@
++"""Optional G5 timings; no queries, payloads or changes to business errors."""
++
++from __future__ import annotations
++
++import asyncio
++import functools
++import inspect
++import json
++import logging
++import os
++import threading
++import time
++from contextlib import contextmanager
++from contextvars import ContextVar, copy_context
++from uuid import uuid4
++
++logger = logging.getLogger(__name__)
++_context: ContextVar[dict | None] = ContextVar("g5_trace_context", default=None)
++
++
++def enabled() -> bool:
++    return os.environ.get("CLPM_G5_TRACE", "0") == "1"
++
++
++def _emit(event: dict) -> None:
++    try:
++        logger.info("G5_TRACE %s", json.dumps(event, separators=(",", ":"), default=str))
++    except Exception:  # noqa: BLE001 — observability must not replace a business error
++        pass
++
++
++@contextmanager
++def span(name: str, **identity):
++    """Record a bounded interval, linking nested and concurrent spans by identity."""
++    if not enabled():
++        yield
++        return
++    previous = _context.get() or {}
++    current = {**previous, **{k: v for k, v in identity.items() if v is not None}}
++    parent_id = current.get("spanId")
++    current["spanId"] = uuid4().hex
++    token = _context.set(current)
++    start = time.perf_counter_ns()
++    start_epoch = time.time_ns()
++    outcome = "ok"
++    try:
++        yield
++    except BaseException as exc:
++        outcome = type(exc).__name__
++        raise
++    finally:
++        end = time.perf_counter_ns()
++        _context.reset(token)
++        _emit(
++            {
++                **current,
++                "stage": name,
++                "parentSpanId": parent_id,
++                "pid": os.getpid(),
++                "threadId": threading.get_ident(),
++                "startMonoNs": start,
++                "endMonoNs": end,
++                "startEpochNs": start_epoch,
++                "elapsedMs": (end - start) / 1e6,
++                "outcome": outcome,
++            }
++        )
++
++
++def traced(name: str):
++    """Trace an async function using only stable IDs/window, never arbitrary kwargs."""
++
++    def decorate(fn):
++        signature = inspect.signature(fn)
++
++        @functools.wraps(fn)
++        async def wrapped(*args, **kwargs):
++            if not enabled():
++                return await fn(*args, **kwargs)
++            values = signature.bind_partial(*args, **kwargs).arguments
++            loop = values.get("loop")
++            window = values.get("time_window")
++            task = values.get("task")
++            with span(
++                name,
++                taskId=values.get("logical_run_id"),
++                loopId=values.get("loop_id") or (str(loop.id) if loop is not None else None),
++                windowStart=values.get(
++                    "ts_start", values.get("start", getattr(window, "start", None))
++                ),
++                windowEnd=values.get("ts_end", values.get("end", getattr(window, "end", None))),
++                tagGroup=getattr(getattr(task, "tag_group", None), "value", None),
++            ):
++                return await fn(*args, **kwargs)
++
++        return wrapped
++
++    return decorate
++
++
++def traced_sync(name: str):
++    def decorate(fn):
++        @functools.wraps(fn)
++        def wrapped(*args, **kwargs):
++            if not enabled():
++                return fn(*args, **kwargs)
++            with span(name):
++                return fn(*args, **kwargs)
++
++        return wrapped
++
++    return decorate
++
++
++async def awaited(name: str, operation, **identity):
++    with span(name, **identity):
++        return await operation
++
++
++def completed_interval(name: str, start_ns: int | None, **identity) -> None:
++    if start_ns is not None and enabled():
++        end_ns = time.perf_counter_ns()
++        _emit(
++            {
++                **identity,
++                "spanId": uuid4().hex,
++                "parentSpanId": (_context.get() or {}).get("spanId"),
++                "stage": name,
++                "pid": os.getpid(),
++                "startMonoNs": start_ns,
++                "endMonoNs": end_ns,
++                "elapsedMs": (end_ns - start_ns) / 1e6,
++                "outcome": "ok",
++            }
++        )
++
++
++async def threaded(name: str, fn, *args, executor=None):
++    """Use the original executor; distinguish queue, execution and await resumption."""
++    if not enabled():
++        if executor is None:
++            return await asyncio.to_thread(fn, *args)
++        return await asyncio.get_running_loop().run_in_executor(executor, fn, *args)
++    previous = dict(_context.get() or {})
++    identity = {**previous, "parentSpanId": previous.get("spanId"), "spanId": uuid4().hex}
++    token = _context.set(identity)
++    try:
++        context = copy_context()
++    finally:
++        _context.reset(token)
++    submit = time.perf_counter_ns()
++    clocks: dict[str, int] = {}
++
++    def run():
++        clocks["threadStartMonoNs"] = time.perf_counter_ns()
++        cpu = time.thread_time_ns()
++        try:
++            with span(name + ".execute"):
++                return fn(*args)
++        finally:
++            clocks["threadEndMonoNs"] = time.perf_counter_ns()
++            clocks["threadCpuNs"] = time.thread_time_ns() - cpu
++
++    outcome = "ok"
++    try:
++        if executor is None:
++            return await asyncio.to_thread(context.run, run)
++        return await asyncio.get_running_loop().run_in_executor(executor, context.run, run)
++    except BaseException as exc:
++        outcome = type(exc).__name__
++        raise
++    finally:
++        returned = time.perf_counter_ns()
++        start, end = clocks.get("threadStartMonoNs"), clocks.get("threadEndMonoNs")
++        _emit(
++            {
++                **identity,
++                "stage": name,
++                "pid": os.getpid(),
++                "submitMonoNs": submit,
++                **clocks,
++                "awaitReturnMonoNs": returned,
++                "queueMs": (start - submit) / 1e6 if start is not None else None,
++                "executionMs": (end - start) / 1e6
++                if start is not None and end is not None
++                else None,
++                "resumeMs": (
++                    (returned - end) / 1e6
++                    if end is not None and end <= returned and outcome != "CancelledError"
++                    else None
++                ),
++                "threadFinishedAfterAwaitReturn": end > returned if end is not None else None,
++                "outcome": outcome,
++            }
++        )
+diff --git a/backend/app/core/tdengine_native.py b/backend/app/core/tdengine_native.py
+index 2379d12c..8861f96b 100644
+--- a/backend/app/core/tdengine_native.py
++++ b/backend/app/core/tdengine_native.py
+@@ -30,6 +30,7 @@ from contextlib import contextmanager
+ from datetime import UTC
+ from typing import TYPE_CHECKING, Any
+ 
++from app.core import g5_trace
+ from app.core.config import settings
+ 
+ if TYPE_CHECKING:
+@@ -155,16 +156,22 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
+     """
+ 
+     def _execute() -> list[dict[str, Any]]:
+-        with TDengineConnectionPool.get_connection() as conn:
++        with (
++            g5_trace.span("td.connection_lifecycle"),
++            TDengineConnectionPool.get_connection() as conn,
++        ):
+             cursor = conn.cursor()
+             try:
+-                cursor.execute(sql)
+-                rows = cursor.fetchall()
++                with g5_trace.span("td.execute"):
++                    cursor.execute(sql)
++                with g5_trace.span("td.fetch"):
++                    rows = cursor.fetchall()
+                 # description: [[name, type, bytes], ...]
+                 fields = [desc[0] for desc in cursor.description] if cursor.description else []
+                 if not rows or not fields:
+                     return []
+-                return [dict(zip(fields, row, strict=False)) for row in rows]
++                with g5_trace.span("td.rows_to_dict", rowCount=len(rows)):
++                    return [dict(zip(fields, row, strict=False)) for row in rows]
+             finally:
+                 cursor.close()
+ 
+@@ -172,8 +179,9 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
+     # 取消无法中断已阻塞线程；此处超时向上抛错，调用方（flush 循环）下一拍
+     # 重试，避免写入协程被单条慢查询无限期钉死。
+     # 专用线程池：与默认执行器隔离，实时写入不与趋势/分析长查询争抢
+-    loop = asyncio.get_running_loop()
+-    return await asyncio.wait_for(loop.run_in_executor(_TDNATIVE_EXECUTOR, _execute), timeout=90)
++    return await asyncio.wait_for(
++        g5_trace.threaded("td.executor", _execute, executor=_TDNATIVE_EXECUTOR), timeout=90
++    )
+ 
+ 
+ async def execute_native_effective(sql: str) -> int:
+diff --git a/backend/app/services/data_planner.py b/backend/app/services/data_planner.py
+index 5769ea84..5cba807b 100644
+--- a/backend/app/services/data_planner.py
++++ b/backend/app/services/data_planner.py
+@@ -58,6 +58,7 @@ from app.contracts.data_types import (
+     TagGroup,
+     TimeWindow,
+ )
++from app.core import g5_trace
+ from app.services.cache.l1_datablock import L1DataBlockCache
+ from app.services.cache.l2_bundle import L2BundleCache
+ from app.services.metric_data_bundle import MetricDataBundleAssembler
+@@ -231,6 +232,7 @@ class DataPlanner:
+     # 核心入口
+     # ------------------------------------------------------------------
+ 
++    @g5_trace.traced("data_planner.request")
+     async def request_bundles(
+         self,
+         loop_id: str,
+@@ -657,6 +659,7 @@ class DataPlanner:
+ 
+         return data_blocks
+ 
++    @g5_trace.traced("data_planner.query_group")
+     async def _query_and_preprocess(
+         self,
+         loop_id: str,
+@@ -704,8 +707,12 @@ class DataPlanner:
+         # R14：传入查询窗口（时间覆盖率计算用，可感知窗口头尾整段缺失）
+         t_pre_start = time.perf_counter()
+         pipeline = PreprocessingPipeline(preprocess_config)
+-        data_block = await asyncio.to_thread(
+-            pipeline.process, raw, task.tag_group, (time_window.start, time_window.end)
++        data_block = await g5_trace.threaded(
++            "preprocess.executor",
++            pipeline.process,
++            raw,
++            task.tag_group,
++            (time_window.start, time_window.end),
+         )
+         t_pre_elapsed = time.perf_counter() - t_pre_start
+ 
+diff --git a/backend/app/services/data_source/logical_wide_builder.py b/backend/app/services/data_source/logical_wide_builder.py
+index f5fe77ed..b15def70 100644
+--- a/backend/app/services/data_source/logical_wide_builder.py
++++ b/backend/app/services/data_source/logical_wide_builder.py
+@@ -1,4 +1,4 @@
+-"""LogicalWideBuilder（P3-1）：测点子表 → 1 秒逻辑宽表的唯一构建器.
++"""LogicalWideBuilder（P3-1）：测点子表 → 逻辑宽表的唯一构建器.
+ 
+ 设计依据：设计文档 §5（唯一实现）/§5.2 构建步骤/§5.3 时间边界/§5.4 质量兼容。
+ 
+@@ -20,7 +20,7 @@
+    （解码已在写入侧唯一入口完成，本层不猜原码）；
+ 5. 改绑窗口分段：新点状态只来自新点事件/锚点，禁止沿用旧点值（V09）；
+ 6. MODE 角色输出整数语义（点表 DOUBLE 存储还原 int，对齐宽表 TINYINT）；
+-7. interval_s 保留参数但 v1 恒 1s 网格（HF 组复用 BASE 不降分辨率，§5.2-5）。
++7. 默认 1s 网格；调用方指定 interval_s 时按该周期构建并携带真实周期。
+ """
+ 
+ from __future__ import annotations
+@@ -35,6 +35,7 @@ from sqlalchemy import select
+ 
+ from app.contracts import series_context as sc
+ from app.contracts.data_types import RawTimeSeries
++from app.core import g5_trace
+ from app.services.data_source import point_history_metadata as meta
+ from app.services.data_source import point_history_repository as repo
+ 
+@@ -79,6 +80,7 @@ _held_cfg_cache: dict[str, float] = {}
+ _held_cfg_read_at: float = 0.0  # time.monotonic()
+ 
+ 
++@g5_trace.traced("builder.held_config")
+ async def _held_limits_s(step_s: int) -> dict[str, float]:
+     """解析两档 held 容忍秒数（sys_config 覆盖 + 默认兜底；TTL 缓存）。
+ 
+@@ -183,6 +185,7 @@ class _PointStream:
+         return self._states[i - 1]
+ 
+ 
++@g5_trace.traced("builder.pg_metadata")
+ async def _metadata_execute(stmt: Any) -> Any:
+     """用独立短会话执行元数据查询（整改 G14）。
+ 
+@@ -209,6 +212,7 @@ async def _metadata_execute(stmt: Any) -> Any:
+         await close_session_guarded(session, label="logical-wide-metadata")
+ 
+ 
++@g5_trace.traced("builder.roles")
+ async def _resolve_role_segments(
+     db: Any,  # noqa: ARG001 - 保留签名兼容；元数据查询改走独立短会话（G14）
+     loop_id: str,
+@@ -265,15 +269,16 @@ async def _resolve_role_segments(
+     return out
+ 
+ 
++@g5_trace.traced("builder.total")
+ async def build_logical_wide(
+     db: Any,
+     loop_id: str,
+     tag_roles: list[str],
+     start: datetime,
+     end: datetime,
+-    interval_s: int = 1,  # noqa: ARG001 — 契约保留；v1 恒 1s（不降采样）
++    interval_s: int = 1,
+ ) -> RawTimeSeries:
+-    """构建窗口的 1 秒逻辑宽表（设计 §5.2 全步骤实现）。"""
++    """构建窗口的逻辑宽表（设计 §5.2；按调用方周期，默认 1s）。"""
+     grid_start = _ceil_second(start)
+     grid_end = _floor_second(end)
+     requested = [r.lower() for r in tag_roles]
+@@ -309,14 +314,19 @@ async def build_logical_wide(
+         if 1 < len(sorted_points) <= 16:
+             per_point = await asyncio.gather(
+                 *[
+-                    repo.read_events([pid], grid_start, grid_end, full_columns=False)
++                    g5_trace.awaited(
++                        "builder.events",
++                        repo.read_events([pid], grid_start, grid_end, full_columns=False),
++                        pointId=pid,
++                    )
+                     for pid in sorted_points
+                 ]
+             )
+             events_map = {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
+         else:
+-            events_map = await repo.read_events(
+-                sorted_points, grid_start, grid_end, full_columns=False
++            events_map = await g5_trace.awaited(
++                "builder.events",
++                repo.read_events(sorted_points, grid_start, grid_end, full_columns=False),
+             )
+         # 各探测时刻的窗口前最后状态（batch per 时刻）
+         by_before: dict[datetime, list[str]] = {}
+@@ -324,12 +334,17 @@ async def build_logical_wide(
+             by_before.setdefault(before, []).append(pid)
+         initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
+         for before, pids in by_before.items():
+-            states = await repo.read_last_states_before(pids, before)
++            states = await g5_trace.awaited(
++                "builder.initial_state", repo.read_last_states_before(pids, before)
++            )
+             for pid, st in states.items():
+                 initial_states[(pid, before)] = st
+         # 锚点（批量单查询；作为虚拟事件按其 sourceTime 生效）
+-        anchors = await meta.applicable_anchors_batch(
+-            db, point_ids=sorted(all_points), window_start=grid_start
++        anchors = await g5_trace.awaited(
++            "builder.anchors",
++            meta.applicable_anchors_batch(
++                db, point_ids=sorted(all_points), window_start=grid_start
++            ),
+         )
+         # 组装每点因果流
+         for pid in all_points:
+@@ -533,6 +548,7 @@ async def build_logical_wide(
+         rebind_boundaries=rebind_boundaries,
+         segments=segments,
+         gap_windows=[(gs, ge) for gs, ge in merged],
++        step_s=step_s,
+     )
+     return RawTimeSeries(
+         timestamps=timestamps_naive,
+@@ -542,6 +558,7 @@ async def build_logical_wide(
+     )
+ 
+ 
++@g5_trace.traced_sync("builder.context")
+ def _build_context(
+     *,
+     loop_id: str,
+@@ -551,6 +568,7 @@ def _build_context(
+     rebind_boundaries: list[datetime],
+     segments: dict[str, list[_BindingSegment]],
+     gap_windows: list[tuple[datetime, datetime]],
++    step_s: int = 1,
+ ) -> sc.SeriesContext:
+     """组装 SeriesContext（AD01：覆盖游程/未知归因/分段边界/数据身份）。
+ 
+@@ -561,7 +579,7 @@ def _build_context(
+     import hashlib
+ 
+     grid_start, grid_end = grid[0], grid[-1]
+-    grid_end_half_open = grid_end + timedelta(seconds=1)
++    grid_end_half_open = grid_end + timedelta(seconds=step_s)
+     role_coverage: dict[str, sc.RoleCoverage] = {}
+     unknown_reasons: dict[str, int] = {}
+     for role in roles:
+@@ -601,7 +619,7 @@ def _build_context(
+         layout=sc.LAYOUT_POINT,
+         grid_start=grid_start,
+         grid_end=grid_end,
+-        grid_period_s=1.0,
++        grid_period_s=float(step_s),
+         expected_slots=len(grid),
+         dataset_ref=dataset_ref,
+         binding_version=f"b{seg_count}",
+@@ -649,6 +667,7 @@ def _in_gap(ts: datetime, gap_windows: list[tuple[datetime, datetime]]) -> bool:
+     return any(gs <= ts < ge for gs, ge in gap_windows)
+ 
+ 
++@g5_trace.traced("builder.gaps")
+ async def _load_gap_windows(db: Any) -> list[tuple[datetime, datetime]]:
+     from app.models.point_history import HistoryCoverageSegment
+ 
+diff --git a/backend/app/services/preprocessing/pipeline.py b/backend/app/services/preprocessing/pipeline.py
+index 61bd7097..48b4c501 100644
+--- a/backend/app/services/preprocessing/pipeline.py
++++ b/backend/app/services/preprocessing/pipeline.py
+@@ -28,7 +28,7 @@ from app.contracts.data_types import (
+ )
+ from app.services.confidence_evaluator import ConfidenceEvaluator
+ from app.services.metric_calculator.time_axis import to_half_open, utc
+-from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
++from app.services.preprocessing.data_quality_assessor import CORE_TAGS, DataQualityAssessor
+ from app.services.preprocessing.outlier_detection import OutlierDetector
+ from app.services.preprocessing.quality_code import (
+     is_nan_or_inf,
+@@ -57,7 +57,8 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
+ #     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
+ _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
+ 
+-PREPROCESS_VERSION = "pre_v1"
++# G5：UNKNOWN 覆盖不计核心有效率、上下文使用真实网格周期；换键禁止复用旧块。
++PREPROCESS_VERSION = "pre_v2"
+ 
+ # R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
+ # 日志用于定位"数据窗口缺口"型低可信度的根因）
+@@ -202,7 +203,19 @@ class PreprocessingPipeline:
+         # 120 个 Good 点 / 30s 间隔 / 跨 1 小时（coverage≈3.3%）不再获得
+         # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
+         # （INCONCLUSIVE 兼容口径）处理。
+-        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
++        # point/mixed 的 UNKNOWN 槽可能保留 Good 原值，数值 validity 不能
++        # 代替覆盖依据。复用连续性逐槽 known 判定，但不以最短连续段门禁
++        # 过滤有效点；只扣核心角色，PID 等非评估信号不拉低回路有效率。
++        # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
++        confidence_validity = validity
++        if _ctx is not None and _ctx.role_coverage:
++            known_mask = self._stitchable_mask(raw, [True] * n, roles=CORE_TAGS)
++            confidence_validity = {
++                key: [valid and known_mask[i] for i, valid in enumerate(validity[key])]
++                for tag in CORE_TAGS
++                if (key := f"{tag}_valid") in validity
++            }
++        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(confidence_validity, n)
+         time_coverage = compute_time_coverage(
+             raw.timestamps,
+             expected_interval_s=float(self.threshold.base_sampling_freq),
+@@ -559,7 +572,9 @@ class PreprocessingPipeline:
+         unknown_seconds = min(window_seconds, union + uncovered)
+         return window_seconds, round(unknown_seconds, 3)
+ 
+-    def _stitchable_mask(self, raw: RawTimeSeries, all_valid: list[bool]) -> list[bool]:
++    def _stitchable_mask(
++        self, raw: RawTimeSeries, all_valid: list[bool], roles: tuple[str, ...] | None = None
++    ) -> list[bool]:
+         """可拼接掩码：all_valid 且（有覆盖上下文时）本块任一角色 UNKNOWN 的
+         槽不可拼接（gap 槽保留 COV 值但无依据——不删除也不能拼）。"""
+         ctx = getattr(raw, "series_context", None)
+@@ -570,7 +585,7 @@ class PreprocessingPipeline:
+         cov_roles = [
+             (role.lower(), cov)
+             for role, cov in ctx.role_coverage.items()
+-            if role.lower() in raw.signals
++            if role.lower() in raw.signals and (roles is None or role.lower() in roles)
+         ]
+         if not cov_roles:
+             return all_valid
+diff --git a/backend/app/tasks/kpi_calc.py b/backend/app/tasks/kpi_calc.py
+index 4a5ef9b4..33471c51 100644
+--- a/backend/app/tasks/kpi_calc.py
++++ b/backend/app/tasks/kpi_calc.py
+@@ -39,6 +39,7 @@ from app.contracts.data_types import (
+     TagGroup,
+     TimeWindow,
+ )
++from app.core import g5_trace
+ from app.core.timeparse import to_naive_utc
+ from app.models.loop import LoopLedger, LoopTagMapping
+ from app.models.metric import (
+@@ -1033,7 +1034,16 @@ async def _run_batch_loop_calculations(
+         # 原始异常），且被弃 session 的 asyncpg 连接永不归还（NullPool 泄漏，
+         # 现场挂满 100 连接）。显式 finally 走 ``close_session_guarded``
+         # （延迟重试 close → 耗尽则 terminate 底层连接，全程不抛出）。
++        _sem_requested_ns = time.perf_counter_ns() if g5_trace.enabled() else None
+         async with sem:
++            g5_trace.completed_interval(
++                "kpi.semaphore_wait",
++                _sem_requested_ns,
++                taskId=logical_run_id,
++                loopId=str(loop.id),
++                windowStart=ts_start,
++                windowEnd=ts_end,
++            )
+             worker_db = AsyncSessionLocal()
+             try:
+                 config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
+@@ -1063,7 +1073,14 @@ async def _run_batch_loop_calculations(
+                     template_keys=template_keys,
+                     failed_source_ids=failed_source_ids,
+                 )
+-                await worker_db.commit()
++                await g5_trace.awaited(
++                    "pg.commit",
++                    worker_db.commit(),
++                    taskId=logical_run_id,
++                    loopId=str(loop.id),
++                    windowStart=ts_start,
++                    windowEnd=ts_end,
++                )
+                 return result
+             except Exception as exc:
+                 try:
+@@ -1115,8 +1132,15 @@ async def _run_batch_loop_calculations(
+                         except Exception:  # noqa: BLE001
+                             logger.warning("批量 KPI 进度更新失败", exc_info=True)
+                 finally:
+-                    await close_session_guarded(
+-                        worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
++                    await g5_trace.awaited(
++                        "pg.close",
++                        close_session_guarded(
++                            worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
++                        ),
++                        taskId=logical_run_id,
++                        loopId=str(loop.id),
++                        windowStart=ts_start,
++                        windowEnd=ts_end,
+                     )
+ 
+     _batch_results = await asyncio.gather(
+@@ -2239,6 +2263,7 @@ async def _resolve_loop_pinned_params(
+     return resolved["params"], {**scope, "sources": resolved["sources"]}
+ 
+ 
++@g5_trace.traced("kpi.loop")
+ async def _calculate_loop_kpi(
+     db,
+     loop: LoopLedger,
+@@ -3326,10 +3351,13 @@ def _compute_loop_valid_rate_from_bundles(
+             # 的内部矛盾 —— 正是可信度统一方案 P1-5 声称已消除的 §2.2 字段错配，
+             # 也是该方案 Phase 1「统一 valid_rate 口径」在 R14-2 之后被重新劈开的点。
+             #
+-            # 0.0 是 DataBlock 的未设默认值（管线路径必设；手搓/legacy 块可能未设），
+-            # 故 0.0 时回退重算以保持 legacy 行为。残余风险见收口报告 §20：
+-            # 若某块"有效点比例 >0 但时间覆盖率恰为 0"，回退会重新引入上述矛盾。
+-            if block.loop_valid_rate > 0:
++            # 当前管道版本的0.0是已计算的真实零，必须保留（UNKNOWN可保留
++            # Good数值但不能充有效点）；只有未升级的手工/legacy默认块才回退。
++            from app.services.preprocessing.pipeline import PREPROCESS_VERSION
++
++            if block.loop_valid_rate > 0 or (
++                getattr(block, "preprocess_version", None) == PREPROCESS_VERSION
++            ):
+                 return float(block.loop_valid_rate)
+             return DataQualityAssessor.compute_loop_valid_rate(block.validity, block.point_count)
+     return None
+@@ -3751,6 +3779,7 @@ def _quantize(value: Decimal) -> Decimal:
+     return value.quantize(Decimal("0.01"))
+ 
+ 
++@g5_trace.traced("pg.hourly_snapshot")
+ async def _save_snapshot(
+     db,
+     loop_id: str,
+@@ -3908,6 +3937,7 @@ async def _save_snapshot(
+     }
+ 
+ 
++@g5_trace.traced("pg.latest_projection")
+ async def _save_confidence_latest(
+     db,
+     loop_id: str,
+@@ -4170,6 +4200,7 @@ async def _save_custom_snapshot(
+     }
+ 
+ 
++@g5_trace.traced("pg.persist_total")
+ async def _persist_snapshot(
+     db,
+     loop_id: str,
+@@ -4237,36 +4268,43 @@ async def _persist_snapshot(
+                 ts_start=ts_start,
+                 ts_end=ts_end,
+             )
+-        record = await result_ledger.append_result_record(
+-            db,
+-            logical_run_id=record_logical_run_id,
+-            object_kind=result_ledger.OBJECT_KIND_LOOP,
+-            object_id=loop_id,
+-            ts_start=ts_start,
+-            ts_end=ts_end,
+-            algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
+-            config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
+-            dataset_snapshot_id=dataset_snapshot_id,
+-            source_record_id=source_record_hint,
+-            payload={
+-                "snapshotStatus": status,
+-                "customTaskId": custom_task_id,
+-                "metricsDetail": metrics_detail,
+-                **({"metricsSemantic": metrics_semantic} if metrics_semantic is not None else {}),
+-                **(
+-                    {"composite": _composite_semantic_entry(metrics_semantic)}
+-                    if isinstance(metrics_semantic, dict)
+-                    and _composite_semantic_entry(metrics_semantic) is not None
+-                    else {}
+-                ),
+-                **(
+-                    {"assessmentContext": assessment_context}
+-                    if assessment_context is not None
+-                    else {}
+-                ),
+-                **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
+-                **kwargs,
+-            },
++        record = await g5_trace.awaited(
++            "pg.ledger",
++            result_ledger.append_result_record(
++                db,
++                logical_run_id=record_logical_run_id,
++                object_kind=result_ledger.OBJECT_KIND_LOOP,
++                object_id=loop_id,
++                ts_start=ts_start,
++                ts_end=ts_end,
++                algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
++                config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
++                dataset_snapshot_id=dataset_snapshot_id,
++                source_record_id=source_record_hint,
++                payload={
++                    "snapshotStatus": status,
++                    "customTaskId": custom_task_id,
++                    "metricsDetail": metrics_detail,
++                    **(
++                        {"metricsSemantic": metrics_semantic}
++                        if metrics_semantic is not None
++                        else {}
++                    ),
++                    **(
++                        {"composite": _composite_semantic_entry(metrics_semantic)}
++                        if isinstance(metrics_semantic, dict)
++                        and _composite_semantic_entry(metrics_semantic) is not None
++                        else {}
++                    ),
++                    **(
++                        {"assessmentContext": assessment_context}
++                        if assessment_context is not None
++                        else {}
++                    ),
++                    **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
++                    **kwargs,
++                },
++            ),
+         )
+     except Exception:  # noqa: BLE001
+         record = None
+diff --git a/backend/scripts/g5_capacity_log_audit.py b/backend/scripts/g5_capacity_log_audit.py
+new file mode 100644
+index 00000000..b4db5c2c
+--- /dev/null
++++ b/backend/scripts/g5_capacity_log_audit.py
+@@ -0,0 +1,439 @@
++"""Offline G5 log audit: no application imports, services, or database access.
++
++Example (log timestamps default to Asia/Shanghai; business windows are UTC)::
++
++    python scripts/g5_capacity_log_audit.py --log /absolute/celery-worker.log \
++      --start 2026-10-13T23:17:26.900 --end 2026-10-13T23:29:55.259 \
++      --task-id 31176d10-8b0f-443b-a67f-8538d49be6b3 --report /absolute/audit.json
++
++The report is diagnostic evidence, never a capacity gate or performance PASS.
++"""
++
++from __future__ import annotations
++
++import argparse
++import hashlib
++import json
++import math
++import os
++import re
++import statistics
++import tempfile
++from collections import Counter, defaultdict
++from datetime import UTC, datetime, timedelta
++from pathlib import Path
++from zoneinfo import ZoneInfo
++
++_STAMP = re.compile(r"^(?:\[[^]]+\]\s+)?(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d,\d{3})")
++_REQUEST = re.compile(r"DataPlanner.request_bundles: loop=([^,]+), .*window=([^~]+)~([^,]+),")
++_COMPLETE = re.compile(r"DataPlanner 完成: loop=([^,]+),")
++_L2_HIT = re.compile(r"DataPlanner L2 命中，跳过查询\+组装: loop=([^,]+),")
++_ORIGIN = re.compile(r"DataPlanner 回源查询: loop=([^,]+), tagGroup=([^,]+),")
++_PHASE = re.compile(
++    r"DataPlanner 取数\+预处理: loop=([^,]+), tagGroup=([^,]+), points=(\d+), "
++    r"query=([\d.]+)s, preprocess=([\d.]+)s"
++)
++_EMPTY = re.compile(r"TDengine 返回空数据: loop=([^,]+), tagGroup=([^,]+), query_time=([\d.]+)s")
++_CACHE = re.compile(r"L([12]) cache (HIT|MISS): key=(?:pdb_l2|pdb):([^:]+):")
++_TASK = re.compile(r"Task ([^\[]+)\[([^]]+)\] (received|succeeded in|raised unexpected)")
++_ENTRY = re.compile(r"KPI 计算任务开始, celery_id=([^,]+), ts_start=([^,]+),")
++_DURATION = re.compile(r"succeeded in ([\d.]+)s")
++_MISSING_PROBES = [
++    "broker_publish_to_worker_receive_and_prefork_reservation_wait",
++    "loop_semaphore_wait_and_configuration_preload",
++    "provider_layout_metadata_td_calls_reconstruction_merge",
++    "td_executor_queue_execute_fetch_decode_await_resume",
++    "preprocess_thread_queue_execution_await_resume",
++    "cache_serialization_thread_wait_and_redis_round_trips",
++    "ledger_snapshot_latest_commit_progress_session_close",
++    "node_preload_aggregation_projection_commit",
++    "per_pid_cpu_memory_io_pg_wait_and_actual_broker_priority_buckets",
++    "nine_condition_same_round_barrier_and_submit_clock",
++]
++
++
++def _utc(value: str, naive_zone=UTC) -> datetime:
++    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
++    return (parsed.replace(tzinfo=naive_zone) if parsed.tzinfo is None else parsed).astimezone(UTC)
++
++
++def _window(start: str, end: str | None = None) -> list[str]:
++    begin = _utc(start)
++    finish = _utc(end) if end else begin + timedelta(hours=1)
++    return [begin.isoformat(), finish.isoformat()]
++
++
++def _stats(values: list[float]) -> dict:
++    ordered = sorted(values)
++    if not ordered:
++        return {"count": 0, "isWallClock": False}
++    return {
++        "count": len(ordered),
++        "minSeconds": min(ordered),
++        "p50Seconds": statistics.median(ordered),
++        "p95Seconds": ordered[math.ceil(0.95 * len(ordered)) - 1],
++        "percentileMethod": "nearest-rank",
++        "maxSeconds": max(ordered),
++        "sumWorkSeconds": round(sum(ordered), 6),
++        "isWallClock": False,
++    }
++
++
++def _record(raw: bytes, zone: ZoneInfo, lower: str, upper: str):
++    text = raw.decode("utf-8", errors="replace").rstrip()
++    stamp = _STAMP.match(text)
++    if stamp:
++        if not lower <= stamp[1] <= upper:
++            return None
++        when = datetime.strptime(stamp[1], "%Y-%m-%d %H:%M:%S,%f").replace(tzinfo=zone)
++        return when.astimezone(UTC), text
++    if text.startswith("{"):
++        try:
++            row = json.loads(text)
++            return _utc(row["timestamp"], zone), str(row["message"])
++        except (KeyError, TypeError, ValueError):
++            return None
++    return None
++
++
++def _trace_summary(records: list[dict], task_id: str, parse_errors: list[dict]) -> dict:
++    """Preserve trace identity and incomplete clocks; never infer absent measurements."""
++    target, unbound = [], []
++    other_tasks = 0
++    for row in records:
++        identity = row.get("taskId")
++        if not identity:
++            unbound.append(row)
++            continue
++        if identity != task_id:
++            other_tasks += 1
++            continue
++        missing = [
++            key
++            for key in ("stage", "spanId", "pid", "outcome", "loopId", "windowStart", "windowEnd")
++            if row.get(key) is None
++        ]
++        thread_clock = "submitMonoNs" in row
++        keys = (
++            ("submitMonoNs", "threadStartMonoNs", "threadEndMonoNs", "awaitReturnMonoNs")
++            if thread_clock
++            else ("startMonoNs", "endMonoNs")
++        )
++        missing += [key for key in keys if row.get(key) is None]
++        clocks = [row.get(key) for key in keys]
++        numeric = all(
++            isinstance(value, int | float) and not isinstance(value, bool) for value in clocks
++        )
++        clock_order = "INCOMPLETE"
++        if numeric:
++            clock_order = "ORDERED" if clocks == sorted(clocks) else "INVALID_ORDER"
++            if thread_clock and row.get("outcome") == "CancelledError" and clocks[2] > clocks[3]:
++                clock_order = "CALLER_CANCELLED_THREAD_FINISHED_LATER"
++        target.append(
++            row
++            | {
++                "missingFields": missing,
++                "clockKind": "thread-four-points" if thread_clock else "interval",
++                "clockOrder": clock_order,
++            }
++        )
++    return {
++        "newProbeObservedForTargetTask": bool(target),
++        "status": "TARGET_TRACE_EXTRACTED" if target else "NO_TARGET_TRACE_RECORDS",
++        "allParsedTraceCount": len(records),
++        "targetTraceCount": len(target),
++        "otherTaskTraceCount": other_tasks,
++        "targetTraceIntervalsAndThreadClocks": target,
++        "unboundTraceRecords": unbound,
++        "parseErrors": parse_errors,
++        "missingFieldsTargetTask": [
++            {"line": row["line"], "stage": row.get("stage"), "fields": row["missingFields"]}
++            for row in target
++            if row["missingFields"]
++        ],
++        "stageCountsTargetTask": dict(Counter(row.get("stage") for row in target)),
++        "limitation": (
++            "Trace extraction alone proves neither query completeness nor capacity. "
++            "Legacy logs without G5_TRACE have no new-probe observations; "
++            "cancelled or missing clocks remain explicit."
++        ),
++    }
++
++
++def audit_log(log: Path, *, start: str, end: str, task_id: str, log_timezone: str) -> dict:
++    """Stream a local log; retain only relevant parsed events from the selected range."""
++    zone = ZoneInfo(log_timezone)
++    begin, finish = _utc(start, zone), _utc(end, zone)
++    if finish <= begin:
++        raise ValueError("end must be later than start")
++    if not task_id.strip():
++        raise ValueError("task-id must be nonempty")
++    lower, upper = (
++        t.astimezone(zone).strftime("%Y-%m-%d %H:%M:%S,%f")[:23] for t in (begin, finish)
++    )
++    requests, completes, origins, phases = (defaultdict(list) for _ in range(4))
++    tasks, parent_windows = {}, []
++    trace_records, trace_parse_errors = [], []
++    cache_counts = Counter()
++    digest = hashlib.sha256()
++    first_line, last_line, selected_lines = None, None, 0
++    with log.open("rb") as source:
++        for line_no, raw in enumerate(source, 1):
++            row = _record(raw, zone, lower, upper)
++            if row is None or not begin <= row[0] <= finish:
++                continue
++            when, text = row
++            stamp = when.isoformat()
++            digest.update(raw)
++            selected_lines += 1
++            first_line = line_no if first_line is None else first_line
++            last_line = line_no
++            event = {"atUtc": stamp, "line": line_no}
++            if "G5_TRACE " in text:
++                try:
++                    trace = json.loads(text.split("G5_TRACE ", 1)[1])
++                    if not isinstance(trace, dict):
++                        raise ValueError("trace must be an object")
++                    trace_records.append(trace | event)
++                except (ValueError, TypeError):
++                    trace_parse_errors.append(event | {"reason": "MALFORMED_TRACE_JSON"})
++            if match := _ENTRY.search(text):
++                parent_windows.append(
++                    {
++                        "taskId": match[1],
++                        "window": None if match[2] == "None" else _window(match[2]),
++                        **event,
++                    }
++                )
++            if match := _REQUEST.search(text):
++                requests[match[1]].append({"window": _window(match[2], match[3]), **event})
++            if match := _COMPLETE.search(text):
++                completes[match[1]].append(event)
++            if match := _L2_HIT.search(text):
++                completes[match[1]].append(event | {"cacheState": "L2_HIT"})
++            if match := _ORIGIN.search(text):
++                origins[(match[1], match[2])].append(event)
++            if match := _PHASE.search(text):
++                phases[match[1]].append(
++                    {
++                        "tagGroup": match[2],
++                        "points": int(match[3]),
++                        "querySeconds": float(match[4]),
++                        "preprocessTotalSeconds": float(match[5]),
++                        **event,
++                    }
++                )
++            if match := _EMPTY.search(text):
++                phases[match[1]].append(
++                    {
++                        "tagGroup": match[2],
++                        "points": 0,
++                        "querySeconds": float(match[3]),
++                        "preprocessTotalSeconds": None,
++                        "status": "EMPTY",
++                        **event,
++                    }
++                )
++            if match := _CACHE.search(text):
++                cache_counts[f"L{match[1]}_{match[2]}"] += 1
++            if match := _TASK.search(text):
++                task = tasks.setdefault(match[2], {"id": match[2], "name": match[1]})
++                state = match[3]
++                task["received" if state == "received" else "terminal"] = event
++                if state != "received":
++                    task["terminalState"] = "SUCCESS" if state == "succeeded in" else "FAILURE"
++                if duration := _DURATION.search(text):
++                    task["workerRunSeconds"] = float(duration[1])
++            if "TaskPool: Apply" in text:
++                fields = dict(re.findall(r"'(task|id|root_id|parent_id)': '([^']+)'", text))
++                if "id" in fields:
++                    task = tasks.setdefault(fields["id"], {"id": fields["id"]})
++                    task.update(
++                        name=fields.get("task"),
++                        rootId=fields.get("root_id"),
++                        parentId=fields.get("parent_id"),
++                        applyLine=line_no,
++                    )
++    selected = [p for p in parent_windows if p["taskId"] == task_id]
++    issues = []
++    target_window = selected[0]["window"] if len(selected) == 1 else None
++    if target_window is None:
++        issues.append("MISSING_OR_DUPLICATE_PARENT_WINDOW_ENTRY")
++    if not selected_lines:
++        issues.append("NO_TIMESTAMPED_LOG_ROWS_IN_RANGE")
++    if target_window and any(
++        p["taskId"] != task_id and p["window"] == target_window for p in parent_windows
++    ):
++        issues.append("CONCURRENT_HOURLY_TASK_SAME_WINDOW")
++    per_loop, ambiguous = [], []
++    for loop_id, starts in requests.items():
++        if not target_window or not any(s["window"] == target_window for s in starts):
++            continue
++        ends = completes[loop_id]
++        if len(starts) != 1 or len(ends) != 1:
++            ambiguous.append({"loopId": loop_id, "requests": len(starts), "completions": len(ends)})
++            continue
++        a, b = starts[0], ends[0]
++        seconds = (_utc(b["atUtc"]) - _utc(a["atUtc"])).total_seconds()
++        if seconds < 0:
++            ambiguous.append({"loopId": loop_id, "reason": "COMPLETE_BEFORE_REQUEST"})
++            continue
++        loop_phases = []
++        for phase in phases[loop_id]:
++            starts_group = origins[(loop_id, phase["tagGroup"])]
++            loop_phases.append(
++                phase | {"origin": starts_group[0] if len(starts_group) == 1 else None}
++            )
++        if b.get("cacheState") != "L2_HIT" and not loop_phases:
++            issues.append("MISSING_PHASE_EVIDENCE_FOR_UNCACHED_LOOP")
++        per_loop.append(
++            {
++                "loopId": loop_id,
++                "window": target_window,
++                "request": a,
++                "complete": b,
++                "plannerSeconds": seconds,
++                "groupPhases": loop_phases,
++                "skippedStages": ["query", "preprocess", "assemble"]
++                if b.get("cacheState") == "L2_HIT"
++                else [],
++            }
++        )
++    if ambiguous:
++        issues.append("AMBIGUOUS_OR_INCOMPLETE_LOOP_SPANS")
++    parent = tasks.get(task_id, {"id": task_id})
++    if "received" not in parent or "terminal" not in parent:
++        issues.append("MISSING_PARENT_RECEIVE_OR_TERMINAL")
++    if parent.get("terminalState") == "FAILURE":
++        issues.append("PARENT_FAILURE")
++    children = [
++        t
++        for t in tasks.values()
++        if t["id"] != task_id and (t.get("parentId") == task_id or t.get("rootId") == task_id)
++    ]
++    if not children:
++        issues.append("MISSING_BOUND_CHILD_TASK_EVIDENCE")
++    if any(
++        "terminal" not in child or child.get("terminalState") != "SUCCESS" for child in children
++    ):
++        issues.append("CHILD_NON_SUCCESS_OR_TERMINAL_MISSING")
++    background = [
++        t for t in tasks.values() if t["id"] != task_id and t not in children and "received" in t
++    ]
++    phase_rows = [p for loop in per_loop for p in loop["groupPhases"]]
++    return {
++        "schemaVersion": "g5-log-audit-v2",
++        "analysisStatus": "INCONCLUSIVE" if issues else "LOG_AUDIT_ONLY",
++        "capacityGateEvaluated": False,
++        "sloEvaluated": False,
++        "scope": {
++            "logPath": str(log.resolve()),
++            "startUtc": begin.isoformat(),
++            "endUtc": finish.isoformat(),
++            "logTimezone": log_timezone,
++            "taskId": task_id,
++            "businessWindowUtc": target_window,
++            "firstLine": first_line,
++            "lastLine": last_line,
++            "selectedTimestampedLines": selected_lines,
++            "selectedLinesSha256": digest.hexdigest(),
++        },
++        "correlationLimit": (
++            "Old group logs omit taskId/window; association needs one request per loop "
++            "and an unambiguous parent window. Nested/parallel work sums are never "
++            "wall time or SLO."
++        ),
++        "issues": sorted(set(issues)),
++        "missingProbes": _MISSING_PROBES.copy(),
++        "traceAudit": _trace_summary(trace_records, task_id, trace_parse_errors),
++        "parentTask": parent,
++        "boundChildTasks": children,
++        "backgroundTaskReceives": background,
++        "backgroundTaskNameCounts": dict(Counter(t.get("name") for t in background)),
++        "requestCountAllWindows": sum(len(rs) for rs in requests.values()),
++        "uniqueLoopCountAllWindows": len(requests),
++        "ambiguousOrIncompleteLoops": ambiguous,
++        "cacheReadCountersAllTasksInRange": dict(cache_counts),
++        "plannerRequestToComplete": _stats([loop["plannerSeconds"] for loop in per_loop]),
++        "queryTotalIncludingMetadataAndReconstruction": _stats(
++            [p["querySeconds"] for p in phase_rows]
++        ),
++        "preprocessTotalIncludingThreadWait": _stats(
++            [
++                p["preprocessTotalSeconds"]
++                for p in phase_rows
++                if p["preprocessTotalSeconds"] is not None
++            ]
++        ),
++        "perLoop": per_loop,
++        "queueAudit": {
++            "expectedDefaultQueue": "default",
++            "otherQueue": "dead_letter",
++            "warning": (
++                "LLEN celery cannot prove this broker is empty. Inspect actual "
++                "default/dead_letter priority buckets and reserved/active; "
++                "collector has not contacted Redis."
++            ),
++        },
++    }
++
++
++def validate_report_path(path: Path) -> None:
++    """Validate before scanning, and forbid silently creating a wrong output directory."""
++    if not path.is_absolute():
++        raise ValueError("report must be an absolute path")
++    if not path.parent.is_dir():
++        raise ValueError("report parent directory must already exist")
++    if path.is_dir():
++        raise ValueError("report must be a file path")
++
++
++def write_report(path: Path, report: dict) -> None:
++    validate_report_path(path)
++    temporary = None
++    try:
++        with tempfile.NamedTemporaryFile(
++            "w", dir=path.parent, encoding="utf-8", delete=False
++        ) as out:
++            temporary = Path(out.name)
++            json.dump(report, out, ensure_ascii=False, indent=2)
++            out.write("\n")
++            out.flush()
++            os.fsync(out.fileno())
++        os.replace(temporary, path)
++    finally:
++        if temporary is not None:
++            temporary.unlink(missing_ok=True)
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument("--log", type=Path, required=True)
++    parser.add_argument("--start", required=True)
++    parser.add_argument("--end", required=True)
++    parser.add_argument("--task-id", required=True)
++    parser.add_argument("--log-timezone", default="Asia/Shanghai")
++    parser.add_argument("--report", type=Path, required=True)
++    args = parser.parse_args(argv)
++    try:
++        validate_report_path(args.report)
++        if args.log.resolve() == args.report.resolve() or (
++            args.log.exists() and args.report.exists() and args.log.samefile(args.report)
++        ):
++            raise ValueError("report must not overwrite the input log")
++        report = audit_log(
++            args.log,
++            start=args.start,
++            end=args.end,
++            task_id=args.task_id,
++            log_timezone=args.log_timezone,
++        )
++        write_report(args.report, report)
++    except (OSError, ValueError, KeyError) as exc:
++        parser.error(str(exc))
++    print(f"{report['analysisStatus']}: {args.report}; capacity/SLO not evaluated")
++    return 2 if report["analysisStatus"] == "INCONCLUSIVE" else 0
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/backend/scripts/generate_capacity_dataset.py b/backend/scripts/generate_capacity_dataset.py
+index 334f446e..4d3eac0d 100644
+--- a/backend/scripts/generate_capacity_dataset.py
++++ b/backend/scripts/generate_capacity_dataset.py
+@@ -50,7 +50,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+ PREFIX = "PERF-T"
+ #: 台账规模（冻结：1000 独立回路，禁止少 ID 重放凑数）
+ TOTAL_LOOPS = 1000
+-DATASET_VERSION = "capacity_v2_bounded_normal_noise"
++# v2r1 仅更正 manifest 源点数；合成值、seed、质量与 expected 状态沿用 v2。
++DATASET_VERSION = "capacity_v2r1_bounded_normal_noise"
+ #: 装置树结构：1 工厂 × 5 装置(AREA) × 4 单元(UNIT) = 20 单元 × 50 回路
+ AREAS = 5
+ UNITS_PER_AREA = 4
+@@ -532,6 +533,7 @@ def build_manifest_rows(units: dict[str, str], scenario: str, ts_start: datetime
+         unit_name = _unit_name(area_idx, unit_idx)
+         lt = LOOP_TYPES[(i - 1) % len(LOOP_TYPES)]
+         composition = _loop_composition(scenario, i)
++        dense_points = 900 if composition == "gap" else POINTS
+         rows.append(
+             {
+                 "loopTag": tag,
+@@ -544,7 +546,12 @@ def build_manifest_rows(units: dict[str, str], scenario: str, ts_start: datetime
+                 "controlType": CONTROL_TYPES[(i - 1) % len(CONTROL_TYPES)],
+                 "windowStart": ts_start.isoformat(),
+                 "windowEnd": (ts_start + timedelta(hours=1)).isoformat(),
+-                "pointsPerTag": {"PV": POINTS, "OP": POINTS, "SP": "COV_sparse", "MODE": 1},
++                "pointsPerTag": {
++                    "PV": dense_points,
++                    "OP": dense_points,
++                    "SP": "COV_sparse",
++                    "MODE": 1,
++                },
+                 "scenario": scenario,
+                 "includeInEvaluation": True,
+                 "expectedStatus": expected_map[composition],
+diff --git a/backend/tests/golden/refactor_protected_manifest.json b/backend/tests/golden/refactor_protected_manifest.json
+index 9b2c23c7..591ede03 100644
+--- a/backend/tests/golden/refactor_protected_manifest.json
++++ b/backend/tests/golden/refactor_protected_manifest.json
+@@ -1,5 +1,5 @@
+ {
+- "baseline_head": "71554d2dd5ad11d2758097dc307517d74b025d72",
++ "baseline_head": "e07dcf8019ea0cb65cfbe1ea0f9c1e108bc6d252",
+  "files": {
+   "app/contracts/data_types.py": "6aeaeb1ab214accd94971ed44a524e1a267a922a0b64bbbfcaac4d7c5ad242ed",
+   "app/services/diagnosis_orchestrator.py": "d4a21786c67f8956076ff5810ce2f3c2e8e91a64d95fe7da159240c9de4607a9",
+@@ -25,7 +25,7 @@
+   "app/services/metric_calculator/time_axis.py": "51fa654b93f435bb8ea885c6941938a9218485820c0909ac20f0f6b45f24bc6f",
+   "app/services/metric_calculator/time_constant.py": "eaf95e66121725f120103aa1e38335d5edff399ded2e9f4346386731d1de7a91",
+   "app/services/metric_calculator/valve_diagnosis.py": "be3024fd66d0827616eef8f9621bc93353bb2df20992e1e8d6fa9303d06f7992",
+-  "app/services/preprocessing/pipeline.py": "32d468da242fb630375f355bbeb0719d1a33cbe17117dfaff55e698b28f2fadd",
++  "app/services/preprocessing/pipeline.py": "233d293df09c08fe55615f5fe461515a4777a7b484ac5ba14378013be21bd55f",
+   "app/services/preprocessing/quality_code.py": "9f3c229dd4e2f8e811ddc9c2865cb42f59cb69504969435f8bf88ce7837f2b5c",
+   "app/services/preprocessing/thresholds.py": "850de07996decc97ea68a46386f8ef1e5f717b4cdd563115d7b7432e89a59524",
+   "app/services/tuning_algorithms.py": "50b61b9e8b85ed3a9e07918a4c59734d0017157ceb1c3da5ce717ca0791c2131",
+diff --git a/backend/tests/test_g5_capacity_log_audit.py b/backend/tests/test_g5_capacity_log_audit.py
+new file mode 100644
+index 00000000..5a28f58b
+--- /dev/null
++++ b/backend/tests/test_g5_capacity_log_audit.py
+@@ -0,0 +1,347 @@
++"""Independent log vectors: ambiguity/failure must never become capacity PASS."""
++
++from __future__ import annotations
++
++import json
++from pathlib import Path
++
++import pytest
++
++from scripts.g5_capacity_log_audit import (
++    _stats,
++    audit_log,
++    main,
++    validate_report_path,
++    write_report,
++)
++
++PARENT = "parent-1"
++
++
++def _line(second: int, message: str) -> str:
++    return f"2026-10-13 23:17:{second:02d},000 | INFO | fixture | {message}\n"
++
++
++def _request(second=1, window="2026-10-14T01:00:00~2026-10-14T02:00:00"):
++    return _line(
++        second, f"DataPlanner.request_bundles: loop=L1, metrics=[], window={window}, control=T"
++    )
++
++
++def _phase(group: str, second: int, query=2, preprocess=1):
++    return _line(
++        second,
++        f"DataPlanner 取数+预处理: loop=L1, tagGroup={group}, points=721, "
++        f"query={query:.3f}s, preprocess={preprocess:.3f}s",
++    )
++
++
++def _fixture():
++    return "".join(
++        [
++            _line(0, f"Task app.tasks.kpi_calc.calculate_hourly_kpi[{PARENT}] received"),
++            _line(
++                0,
++                f"KPI 计算任务开始, celery_id={PARENT}, ts_start=2026-10-14T01:00:00, task_id=None",
++            ),
++            _request(),
++            _line(1, "DataPlanner 回源查询: loop=L1, tagGroup=BASE, tags=['pv'], interval=5s"),
++            _line(1, "DataPlanner 回源查询: loop=L1, tagGroup=OP_HF, tags=['op'], interval=1s"),
++            _phase("BASE", 4),
++            _phase("OP_HF", 4),
++            _line(5, "DataPlanner 完成: loop=L1, bundles=25, cached_blocks=2"),
++            _line(5, f"Task kpi[{PARENT}] succeeded in 5.0s: {{}}"),
++            _line(5, "Task node[child-1] received"),
++            _line(
++                5,
++                "TaskPool: Apply args ('id': 'child-1', 'task': 'node', "
++                f"'root_id': '{PARENT}', 'parent_id': '{PARENT}')",
++            ),
++            _line(6, "Task node[child-1] succeeded in 1.0s: {}"),
++            _line(6, "Task patrol[background-1] received"),
++        ]
++    )
++
++
++def _audit(tmp_path, content=None):
++    log = tmp_path / "worker.log"
++    log.write_text(_fixture() if content is None else content)
++    return audit_log(
++        log,
++        start="2026-10-13T23:17:00",
++        end="2026-10-13T23:17:10",
++        task_id=PARENT,
++        log_timezone="Asia/Shanghai",
++    )
++
++
++def test_parallel_group_work_is_not_summed_as_wall_clock(tmp_path):
++    report = _audit(tmp_path)
++    assert report["plannerRequestToComplete"]["maxSeconds"] == 4
++    assert report["queryTotalIncludingMetadataAndReconstruction"]["sumWorkSeconds"] == 4
++    assert report["preprocessTotalIncludingThreadWait"]["sumWorkSeconds"] == 2
++    assert report["queryTotalIncludingMetadataAndReconstruction"]["isWallClock"] is False
++    assert report["sloEvaluated"] is report["capacityGateEvaluated"] is False
++    assert report["boundChildTasks"][0]["parentId"] == PARENT
++    assert report["backgroundTaskNameCounts"] == {"patrol": 1}
++    assert report["scope"]["startUtc"] == "2026-10-13T15:17:00+00:00"
++    assert report["missingProbes"]
++    assert report["analysisStatus"] == "LOG_AUDIT_ONLY"
++
++
++@pytest.mark.parametrize(
++    "addition", [_request(2), _request(2, "2026-10-14T02:00:00~2026-10-14T03:00:00")]
++)
++def test_repeated_loop_is_explicitly_ambiguous(tmp_path, addition):
++    report = _audit(tmp_path, _fixture() + addition)
++    assert report["analysisStatus"] == "INCONCLUSIVE"
++    assert report["perLoop"] == []
++    assert report["ambiguousOrIncompleteLoops"][0]["requests"] == 2
++
++
++def test_concurrent_same_window_parent_is_not_trusted(tmp_path):
++    report = _audit(
++        tmp_path,
++        _fixture()
++        + _line(2, "KPI 计算任务开始, celery_id=other, ts_start=2026-10-14T01:00:00, task_id=None"),
++    )
++    assert "CONCURRENT_HOURLY_TASK_SAME_WINDOW" in report["issues"]
++    assert report["capacityGateEvaluated"] is False
++
++
++def test_missing_log_evidence_is_not_success(tmp_path):
++    report = _audit(tmp_path, "unparseable log line\n")
++    assert report["analysisStatus"] == "INCONCLUSIVE"
++    assert "NO_TIMESTAMPED_LOG_ROWS_IN_RANGE" in report["issues"]
++    assert report["plannerRequestToComplete"]["count"] == 0
++
++
++def test_failed_parent_and_incomplete_child_are_preserved(tmp_path):
++    content = _fixture().replace(
++        f"Task kpi[{PARENT}] succeeded in 5.0s: {{}}",
++        f"Task kpi[{PARENT}] raised unexpected: RuntimeError('failed')",
++    )
++    content = content.replace(_line(6, "Task node[child-1] succeeded in 1.0s: {}"), "")
++    report = _audit(tmp_path, content)
++    assert "PARENT_FAILURE" in report["issues"]
++    assert "CHILD_NON_SUCCESS_OR_TERMINAL_MISSING" in report["issues"]
++
++
++def test_json_timestamped_log_and_partial_preprocess(tmp_path):
++    text = _fixture().replace(
++        _phase("BASE", 4),
++        _line(4, "TDengine 返回空数据: loop=L1, tagGroup=BASE, query_time=2.000s"),
++    )
++    rows = []
++    for line in text.splitlines():
++        stamp, _, _, message = line.split(" | ")
++        rows.append(
++            json.dumps(
++                {
++                    "timestamp": stamp.replace(" ", "T").replace(",", ".") + "+08:00",
++                    "message": message,
++                }
++            )
++        )
++    report = _audit(tmp_path, "\n".join(rows))
++    assert report["queryTotalIncludingMetadataAndReconstruction"]["count"] == 2
++    assert report["preprocessTotalIncludingThreadWait"]["count"] == 1
++    assert report["perLoop"][0]["groupPhases"][0]["status"] == "EMPTY"
++
++
++def test_report_path_is_checked_before_missing_input(capsys, tmp_path):
++    with pytest.raises(SystemExit) as caught:
++        main(
++            [
++                "--log",
++                str(tmp_path / "absent.log"),
++                "--start",
++                "2026-10-13T23:17:00",
++                "--end",
++                "2026-10-13T23:17:10",
++                "--task-id",
++                PARENT,
++                "--report",
++                str(tmp_path / "absent" / "audit.json"),
++            ]
++        )
++    assert caught.value.code == 2
++    assert "report parent directory must already exist" in capsys.readouterr().err
++    with pytest.raises(ValueError, match="absolute"):
++        validate_report_path(Path("relative.json"))
++
++
++def test_streams_instead_of_reading_entire_log(monkeypatch, tmp_path):
++    def forbidden(*args, **kwargs):
++        raise AssertionError("whole-file read forbidden")
++
++    monkeypatch.setattr(Path, "read_text", forbidden)
++    monkeypatch.setattr(Path, "read_bytes", forbidden)
++    report = _audit(tmp_path)
++    output = tmp_path / "report.json"
++    write_report(output, report)
++    with output.open() as source:
++        assert json.load(source)["analysisStatus"] == "LOG_AUDIT_ONLY"
++    assert set(tmp_path.iterdir()) == {tmp_path / "worker.log", output}
++
++
++def test_missing_input_and_reversed_range_fail(tmp_path):
++    with pytest.raises(FileNotFoundError):
++        audit_log(
++            tmp_path / "absent.log",
++            start="2026-10-13T23:17:00",
++            end="2026-10-13T23:17:10",
++            task_id=PARENT,
++            log_timezone="Asia/Shanghai",
++        )
++    with pytest.raises(ValueError, match="end"):
++        audit_log(
++            tmp_path / "absent.log",
++            start="2026-10-13T23:17:10",
++            end="2026-10-13T23:17:00",
++            task_id=PARENT,
++            log_timezone="Asia/Shanghai",
++        )
++
++
++def test_cache_hit_has_explicit_skipped_stages(tmp_path):
++    content = _fixture().replace(
++        _line(5, "DataPlanner 完成: loop=L1, bundles=25, cached_blocks=2"),
++        _line(5, "DataPlanner L2 命中，跳过查询+组装: loop=L1, bundles=25"),
++    )
++    content = "\n".join(
++        line
++        for line in content.splitlines()
++        if "回源查询" not in line and "取数+预处理" not in line
++    )
++    report = _audit(tmp_path, content)
++    assert report["perLoop"][0]["skippedStages"] == ["query", "preprocess", "assemble"]
++    assert report["queryTotalIncludingMetadataAndReconstruction"]["count"] == 0
++
++
++def test_beat_none_window_is_unknown_not_invented(tmp_path):
++    report = _audit(
++        tmp_path,
++        _fixture().replace(
++            "ts_start=2026-10-14T01:00:00, task_id=None", "ts_start=None, task_id=None"
++        ),
++    )
++    assert report["scope"]["businessWindowUtc"] is None
++    assert report["analysisStatus"] == "INCONCLUSIVE"
++
++
++def test_uncached_complete_without_phases_is_incomplete(tmp_path):
++    content = "\n".join(line for line in _fixture().splitlines() if "取数+预处理" not in line)
++    report = _audit(tmp_path, content)
++    assert "MISSING_PHASE_EVIDENCE_FOR_UNCACHED_LOOP" in report["issues"]
++    assert report["analysisStatus"] == "INCONCLUSIVE"
++
++
++def test_output_cannot_overwrite_log(tmp_path):
++    log = tmp_path / "worker.log"
++    log.write_text(_fixture())
++    with pytest.raises(SystemExit) as caught:
++        main(
++            [
++                "--log",
++                str(log),
++                "--start",
++                "2026-10-13T23:17:00",
++                "--end",
++                "2026-10-13T23:17:10",
++                "--task-id",
++                PARENT,
++                "--report",
++                str(log),
++            ]
++        )
++    assert caught.value.code == 2
++    assert log.read_text() == _fixture()
++
++
++def test_nearest_rank_p95_31_sample_counterexample():
++    # 31 independently ordered samples: nearest rank 30 is value 29, not 28.
++    stats = _stats(list(range(31)))
++    assert stats["p95Seconds"] == 29
++    assert stats["percentileMethod"] == "nearest-rank"
++
++
++def _trace_line(second=7, **changes):
++    trace = {
++        "taskId": PARENT,
++        "loopId": "L1",
++        "windowStart": "2026-10-14T01:00:00",
++        "windowEnd": "2026-10-14T02:00:00",
++        "stage": "td.executor",
++        "spanId": "job-1",
++        "pid": 100,
++        "outcome": "ok",
++        "submitMonoNs": 10,
++        "threadStartMonoNs": 20,
++        "threadEndMonoNs": 30,
++        "awaitReturnMonoNs": 40,
++    }
++    trace.update(changes)
++    return _line(second, "G5_TRACE " + json.dumps(trace))
++
++
++def test_trace_target_filter_identity_and_interval_clocks(tmp_path):
++    log = _fixture() + _trace_line() + _trace_line(8, taskId="other") + _trace_line(9, taskId=None)
++    report = _audit(tmp_path, log)
++    trace = report["traceAudit"]
++    assert trace["targetTraceCount"] == 1 and trace["otherTaskTraceCount"] == 1
++    assert len(trace["unboundTraceRecords"]) == 1
++    row = trace["targetTraceIntervalsAndThreadClocks"][0]
++    assert row["clockOrder"] == "ORDERED" and row["clockKind"] == "thread-four-points"
++    assert row["missingFields"] == []
++    assert report["sloEvaluated"] is False
++
++
++def test_cancelled_trace_missing_end_remains_incomplete(tmp_path):
++    report = _audit(
++        tmp_path, _fixture() + _trace_line(outcome="CancelledError", threadEndMonoNs=None)
++    )
++    row = report["traceAudit"]["targetTraceIntervalsAndThreadClocks"][0]
++    assert row["outcome"] == "CancelledError" and row["clockOrder"] == "INCOMPLETE"
++    assert "threadEndMonoNs" in row["missingFields"]
++
++
++def test_cancelled_trace_can_finish_after_caller_return(tmp_path):
++    report = _audit(
++        tmp_path, _fixture() + _trace_line(outcome="CancelledError", threadEndMonoNs=50)
++    )
++    row = report["traceAudit"]["targetTraceIntervalsAndThreadClocks"][0]
++    assert row["clockOrder"] == "CALLER_CANCELLED_THREAD_FINISHED_LATER"
++
++
++def test_legacy_log_cannot_claim_new_probe_observation(tmp_path):
++    trace = _audit(tmp_path)["traceAudit"]
++    assert trace["newProbeObservedForTargetTask"] is False
++    assert trace["status"] == "NO_TARGET_TRACE_RECORDS" and trace["targetTraceCount"] == 0
++
++
++def test_trace_interval_and_malformed_json_are_explicit(tmp_path):
++    content = (
++        _fixture()
++        + _line(7, "G5_TRACE {broken-json}")
++        + _line(
++            8,
++            "G5_TRACE "
++            + json.dumps(
++                {
++                    "taskId": PARENT,
++                    "spanId": "interval-1",
++                    "stage": "builder.roles",
++                    "pid": 100,
++                    "outcome": "ValueError",
++                    "startMonoNs": 50,
++                    "endMonoNs": 60,
++                }
++            ),
++        )
++    )
++    trace = _audit(tmp_path, content)["traceAudit"]
++    assert len(trace["parseErrors"]) == 1
++    row = trace["targetTraceIntervalsAndThreadClocks"][0]
++    assert row["clockKind"] == "interval" and row["clockOrder"] == "ORDERED"
++    assert set(row["missingFields"]) == {"loopId", "windowStart", "windowEnd"}
+diff --git a/backend/tests/test_g5_gap_coverage_regression.py b/backend/tests/test_g5_gap_coverage_regression.py
+new file mode 100644
+index 00000000..264cfaaf
+--- /dev/null
++++ b/backend/tests/test_g5_gap_coverage_regression.py
+@@ -0,0 +1,259 @@
++"""G5 缺口回归：按真实网格计覆盖，UNKNOWN 不计回路有效率。
++
++预期由显式格点/窗口独立给出；仅运行内存接口，禁止对外网络。
++"""
++
++from __future__ import annotations
++
++import socket
++from datetime import UTC, datetime, timedelta
++from types import SimpleNamespace
++from unittest.mock import AsyncMock
++
++import pytest
++
++from app.contracts.data_types import ControlType, LoopPreprocessConfig, RawTimeSeries, TagGroup
++from app.contracts.series_context import IntervalRun, RoleCoverage, SeriesContext
++from app.services.data_source import logical_wide_builder as lwb
++from app.services.preprocessing.pipeline import PreprocessingPipeline
++
++T0 = datetime(2026, 10, 14, tzinfo=UTC)
++
++
++def _at(seconds: float) -> datetime:
++    return T0 + timedelta(seconds=seconds)
++
++
++@pytest.fixture(autouse=True)
++def _block_network(monkeypatch):
++    original_connect = socket.socket.connect
++
++    def blocked_connect(sock, address):
++        if sock.family in (socket.AF_INET, socket.AF_INET6):
++            pytest.fail(f"G5 regression attempted outbound network: {address}")
++        return original_connect(sock, address)
++
++    monkeypatch.setattr(socket.socket, "connect", blocked_connect)
++    monkeypatch.setattr(socket.socket, "connect_ex", blocked_connect)
++
++
++def test_five_second_coverage_counts_slots_not_seconds():
++    """格点 0,5,...,60：前 3 槽 known，后 10 槽 UNKNOWN；分母固定 13。"""
++    ctx = SeriesContext(
++        layout="point",
++        grid_start=_at(0),
++        grid_end=_at(60),
++        grid_period_s=5,
++        expected_slots=13,
++        role_coverage={
++            "pv": RoleCoverage(
++                known=[IntervalRun(_at(0), _at(15))],
++                unknown=[IntervalRun(_at(15), _at(65), reason="gap")],
++            )
++        },
++    )
++
++    assert ctx.known_slots("pv") == 3
++    assert ctx.unknown_slots("pv") == 10
++    assert ctx.source_coverage_ratio("pv") == pytest.approx(3 / 13)
++
++
++def test_fractional_grid_origin_and_runs_are_discrete_and_deduplicated():
++    """独立格点 .25,2.75,5.25,7.75,10.25；known 除 7.75，其余 4 槽。"""
++    ctx = SeriesContext(
++        layout="point",
++        grid_start=_at(0.25),
++        grid_end=_at(10.25),
++        grid_period_s=2.5,
++        expected_slots=5,
++        role_coverage={
++            "pv": RoleCoverage(
++                known=[
++                    IntervalRun(_at(10.25), _at(20)),
++                    IntervalRun(_at(2.9), _at(7.75)),
++                    IntervalRun(_at(-5), _at(0.26)),
++                    IntervalRun(_at(2.75), _at(5.25)),
++                    IntervalRun(_at(2.75), _at(5.25)),
++                ],
++                unknown=[IntervalRun(_at(7.75), _at(10.25))],
++            )
++        },
++    )
++
++    assert ctx.known_slots("pv") == 4
++    assert ctx.unknown_slots("pv") == 1
++    assert ctx.source_coverage_ratio("pv") == pytest.approx(0.8)
++
++
++def test_role_coverage_default_period_remains_one_second():
++    cov = RoleCoverage(known=[IntervalRun(_at(0), _at(10))])
++    assert cov.known_slots(_at(0), _at(9)) == 10
++    # 起点不是整秒时，格点仍锚定起点：.25,1.25,2.25。
++    cov = RoleCoverage(known=[IntervalRun(_at(0.25), _at(2.26))])
++    assert cov.known_slots(_at(0.25), _at(2.25)) == 3
++    # 尾格点之后的小数游程不增加覆盖，半开终点本身不计入。
++    cov = RoleCoverage(known=[IntervalRun(_at(9.1), _at(9.9))])
++    assert cov.known_slots(_at(0), _at(9)) == 0
++
++
++def _stub_builder(monkeypatch, event_seconds, *, gaps=()):
++    async def segments(_db, _loop, roles, start, end):
++        seg = SimpleNamespace(
++            point_id="p1", start=start, end=end + timedelta(seconds=1), initial_check=start
++        )
++        return {role.upper(): [seg] for role in roles}
++
++    async def events(point_ids, start, end, **_kwargs):
++        return {
++            pid: [
++                {"ts": _at(s), "value": 50.0 + s * 0.1, "quality_class": 1}
++                for s in event_seconds
++                if start <= _at(s) <= end
++            ]
++            for pid in point_ids
++        }
++
++    monkeypatch.setattr(lwb, "_resolve_role_segments", segments)
++    monkeypatch.setattr(lwb, "_load_gap_windows", AsyncMock(return_value=list(gaps)))
++    monkeypatch.setattr(
++        lwb, "_held_limits_s", AsyncMock(return_value={"fast": 60.0, "slow": 7200.0})
++    )
++    monkeypatch.setattr(lwb.repo, "read_events", events)
++    monkeypatch.setattr(lwb.repo, "read_last_states_before", AsyncMock(return_value={}))
++    monkeypatch.setattr(lwb.meta, "applicable_anchors_batch", AsyncMock(return_value={}))
++
++
++@pytest.mark.parametrize(("period", "end", "points", "run_end"), [(5, 11, 3, 15), (5, 0, 1, 5)])
++async def test_builder_records_actual_period_and_complete_tail(
++    monkeypatch, period, end, points, run_end
++):
++    """实际 5s 构建（含单点）明确携带周期，不从时间戳差猜测周期。"""
++    _stub_builder(monkeypatch, [0, 5, 10])
++    raw = await lwb.build_logical_wide(None, "L-G5", ["pv"], _at(0), _at(end), period)
++    ctx = raw.series_context
++
++    assert ctx.grid_period_s == period
++    assert ctx.expected_slots == points
++    assert ctx.known_slots("pv") == points
++    assert ctx.unknown_slots("pv") == 0
++    assert ctx.role_coverage["pv"].known[-1].end == _at(run_end)
++
++
++def _pipeline() -> PreprocessingPipeline:
++    return PreprocessingPipeline(
++        LoopPreprocessConfig(
++            loop_id="L-G5", control_type=ControlType.FLOW, range_min=0.0, range_max=100.0
++        )
++    )
++
++
++def _raw_with_coverage(n=20, *, gap_role="pv", gap_start=5, gap_end=20):
++    known = []
++    if gap_start > 0:
++        known.append(IntervalRun(_at(0), _at(gap_start)))
++    if gap_end < n:
++        known.append(IntervalRun(_at(gap_end), _at(n)))
++    cov = RoleCoverage(
++        known=known,
++        unknown=[IntervalRun(_at(gap_start), _at(gap_end), reason="gap")],
++    )
++    ctx = SeriesContext(
++        layout="point",
++        grid_start=_at(0),
++        grid_end=_at(n - 1),
++        expected_slots=n,
++        role_coverage={gap_role: cov},
++    )
++    signals = {tag: [50.0 + i * 0.1 for i in range(n)] for tag in ("pv", "sp", "op")}
++    signals["mode"] = [1] * n
++    if gap_role == "pid_p":
++        signals["pid_p"] = [1.0] * n
++    return RawTimeSeries(
++        timestamps=[_at(i).replace(tzinfo=None) for i in range(n)],
++        signals=signals,
++        quality_codes={"pv_quality": [1] * n},
++        series_context=ctx,
++    )
++
++
++@pytest.mark.parametrize("gap_role", ["pv", "sp", "op", "mode"])
++def test_pipeline_unknown_with_good_values_does_not_count_as_valid(gap_role):
++    """20 槽均有 Good 原值，但核心角色仅 5 槽 known：有效率是 5/20。"""
++    raw = _raw_with_coverage(gap_role=gap_role)
++    block = _pipeline().process(raw, TagGroup.BASE)
++
++    assert block.loop_valid_rate == pytest.approx(0.25)
++    assert block.point_count == 20
++    assert block.timestamps == raw.timestamps
++    assert block.signals["pv"] == pytest.approx(raw.signals["pv"], rel=1e-12, abs=1e-12)
++    assert all(block.validity["pv_valid"])
++    assert raw.quality_codes["pv_quality"] == [1] * 20
++    assert block.quality_summary.good_value_rate == 1.0
++
++
++def test_pipeline_known_short_held_segments_remain_valid():
++    """HELD 已知，无新观测；短于连续段门禁仍有 8/8 个有效点。"""
++    raw = _raw_with_coverage(n=8, gap_start=8, gap_end=8)
++    raw.series_context.role_coverage["pv"].unknown = []
++    block = _pipeline().process(raw, TagGroup.BASE)
++
++    assert block.loop_valid_rate == 1.0
++    assert block.consecutive_segments == []
++    assert raw.series_context.role_coverage["pv"].observed == []
++
++
++def test_pipeline_noncore_unknown_keeps_core_valid_rate():
++    """PID 覆盖不进入 pv/sp/op/mode 核心有效率，维持既有共享内核语义。"""
++    raw = _raw_with_coverage(gap_role="pid_p")
++    block = _pipeline().process(raw, TagGroup.BASE)
++    assert block.loop_valid_rate == 1.0
++
++
++def test_pipeline_legacy_keeps_existing_good_point_semantics():
++    raw = _raw_with_coverage()
++    raw.series_context = None
++    block = _pipeline().process(raw, TagGroup.BASE)
++    assert block.loop_valid_rate == 1.0
++
++
++def test_pipeline_core_unknown_union_uses_full_denominator():
++    """PV 5..9、OP 10..14 未知：有效为其余 10 槽，而不是逐角色率相乘。"""
++    raw = _raw_with_coverage(gap_start=5, gap_end=10)
++    raw.series_context.role_coverage["op"] = RoleCoverage(
++        known=[IntervalRun(_at(0), _at(10)), IntervalRun(_at(15), _at(20))],
++        unknown=[IntervalRun(_at(10), _at(15), reason="held_too_long")],
++    )
++    block = _pipeline().process(raw, TagGroup.BASE)
++    assert block.loop_valid_rate == pytest.approx(0.5)
++    assert block.point_count == 20
++
++
++def test_pipeline_all_unknown_with_good_values_has_zero_valid_rate():
++    raw = _raw_with_coverage(gap_start=0, gap_end=20)
++    block = _pipeline().process(raw, TagGroup.BASE)
++    assert block.loop_valid_rate == 0.0
++    assert block.loop_confidence_level == "E"
++    assert all(block.validity["pv_valid"])
++
++
++async def test_coarse_builder_gap_keeps_values_and_counts_coverage_consistently(monkeypatch):
++    """5s 网格 21 槽、gap 从 25s 开始：known=5，unknown=16，不抹 Good 值。"""
++    _stub_builder(monkeypatch, list(range(0, 101, 5)), gaps=[(_at(25), _at(101))])
++    raw = await lwb.build_logical_wide(None, "L-G5", ["pv"], _at(0), _at(100), 5)
++    pipeline = PreprocessingPipeline(
++        LoopPreprocessConfig(
++            loop_id="L-G5", control_type=ControlType.TEMPERATURE, range_min=0, range_max=100
++        )
++    )
++    block = pipeline.process(raw, TagGroup.BASE, (_at(0), _at(100)))
++
++    assert raw.signals["pv"] == [50.0 + i * 0.5 for i in range(21)]
++    assert raw.quality_codes["pv_quality"] == [1] * 21
++    assert raw.series_context.expected_slots == 21
++    assert raw.series_context.known_slots("pv") == 5
++    assert raw.series_context.unknown_slots("pv") == 16
++    assert raw.series_context.source_coverage_ratio("pv") == pytest.approx(5 / 21)
++    assert block.quality_summary.missing_count == 16
++    assert block.quality_summary.missing_rate == pytest.approx(0.7619)
++    assert block.loop_valid_rate == pytest.approx(5 / 21)
++    assert all(block.validity["pv_valid"])
+diff --git a/backend/tests/test_g5_kpi_zero_coverage.py b/backend/tests/test_g5_kpi_zero_coverage.py
+new file mode 100644
+index 00000000..3ab0a44a
+--- /dev/null
++++ b/backend/tests/test_g5_kpi_zero_coverage.py
+@@ -0,0 +1,21 @@
++"""A computed zero coverage must not fall back to the retained numeric values."""
++
++from types import SimpleNamespace
++
++from app.services.preprocessing.pipeline import PREPROCESS_VERSION
++from app.tasks.kpi_calc import _compute_loop_valid_rate_from_bundles
++
++
++def test_computed_zero_preserves_zero_but_legacy_default_still_falls_back():
++    def bundle(version):
++        block = SimpleNamespace(
++            tag_group="BASE",
++            loop_valid_rate=0.0,
++            preprocess_version=version,
++            validity={"pv_valid": [True] * 10},
++            point_count=10,
++        )
++        return SimpleNamespace(data_block=block)
++
++    assert _compute_loop_valid_rate_from_bundles([bundle(PREPROCESS_VERSION)]) == 0.0
++    assert _compute_loop_valid_rate_from_bundles([bundle("pre_v1")]) == 1.0
+diff --git a/backend/tests/test_g5_trace.py b/backend/tests/test_g5_trace.py
+new file mode 100644
+index 00000000..0fd23280
+--- /dev/null
++++ b/backend/tests/test_g5_trace.py
+@@ -0,0 +1,169 @@
++"""G5 observation must keep concurrency identity and original return/error semantics."""
++
++import asyncio
++import json
++import logging
++import threading
++from concurrent.futures import ThreadPoolExecutor
++
++import pytest
++
++from app.core import g5_trace
++
++
++def events(caplog):
++    return [
++        json.loads(r.message.removeprefix("G5_TRACE "))
++        for r in caplog.records
++        if r.message.startswith("G5_TRACE ")
++    ]
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("explicit_executor", [False, True])
++async def test_concurrent_identity_and_thread_clocks(monkeypatch, caplog, explicit_executor):
++    monkeypatch.setenv("CLPM_G5_TRACE", "1")
++    caplog.set_level(logging.INFO, logger="app.core.g5_trace")
++    with ThreadPoolExecutor(max_workers=1) as pool:
++
++        async def one(i):
++            with g5_trace.span("loop", taskId="parent", loopId=str(i), windowStart="t0"):
++                return await g5_trace.threaded(
++                    "preprocess", lambda: i, executor=pool if explicit_executor else None
++                )
++
++        assert await asyncio.gather(*(one(i) for i in range(3))) == [0, 1, 2]
++    records = events(caplog)
++    timings = [r for r in records if r["stage"] == "preprocess"]
++    assert len({r["spanId"] for r in timings}) == 3
++    assert {r["loopId"] for r in timings} == {"0", "1", "2"}
++    for row in timings:
++        assert row["taskId"] == "parent" and row["windowStart"] == "t0"
++        assert (
++            row["submitMonoNs"]
++            <= row["threadStartMonoNs"]
++            <= row["threadEndMonoNs"]
++            <= row["awaitReturnMonoNs"]
++        )
++        assert row["queueMs"] >= 0 and row["executionMs"] >= 0 and row["resumeMs"] >= 0
++        execution = next(
++            r
++            for r in records
++            if r["stage"] == "preprocess.execute" and r["loopId"] == row["loopId"]
++        )
++        assert execution["parentSpanId"] == row["spanId"]
++    assert g5_trace._context.get() is None
++
++
++@pytest.mark.asyncio
++async def test_cancelled_await_does_not_claim_thread_completion(monkeypatch, caplog):
++    monkeypatch.setenv("CLPM_G5_TRACE", "1")
++    caplog.set_level(logging.INFO, logger="app.core.g5_trace")
++    started, release = threading.Event(), threading.Event()
++
++    def work():
++        started.set()
++        release.wait(timeout=3)
++        return 7
++
++    with ThreadPoolExecutor(max_workers=1) as pool:
++        task = asyncio.create_task(g5_trace.threaded("cancel", work, executor=pool))
++        try:
++            while not started.is_set():
++                await asyncio.sleep(0)
++            task.cancel()
++            with pytest.raises(asyncio.CancelledError):
++                await task
++            row = next(r for r in events(caplog) if r["stage"] == "cancel")
++            assert row["outcome"] == "CancelledError"
++            assert row["executionMs"] is None and row["resumeMs"] is None
++            assert "threadEndMonoNs" not in row
++        finally:
++            release.set()
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("trace_on", [False, True])
++async def test_same_exception_and_off_no_logs(monkeypatch, caplog, trace_on):
++    monkeypatch.setenv("CLPM_G5_TRACE", "1" if trace_on else "0")
++    caplog.set_level(logging.INFO, logger="app.core.g5_trace")
++    error = ValueError("private input must not be logged")
++
++    def fail():
++        raise error
++
++    with pytest.raises(ValueError) as caught:
++        with g5_trace.span("loop", loopId="failed"):
++            await g5_trace.threaded("work", fail)
++    assert caught.value is error
++    assert g5_trace._context.get() is None
++    records = events(caplog)
++    assert bool(records) is trace_on
++    assert "private input" not in caplog.text
++    if trace_on:
++        assert all(r["outcome"] == "ValueError" for r in records)
++
++
++@pytest.mark.asyncio
++async def test_decorator_and_logging_failure_preserve_result(monkeypatch):
++    monkeypatch.setenv("CLPM_G5_TRACE", "1")
++
++    def broken_logger(*args, **kwargs):
++        raise RuntimeError("log unavailable")
++
++    monkeypatch.setattr(g5_trace.logger, "info", broken_logger)
++
++    @g5_trace.traced("calculate")
++    async def calculate(loop_id, logical_run_id, start, end, secret=None):
++        assert g5_trace._context.get()["loopId"] == loop_id
++        return 42
++
++    assert await calculate("loop", "parent", "t0", "t1", secret="hidden") == 42
++    assert g5_trace._context.get() is None
++
++
++@pytest.mark.asyncio
++async def test_cancel_end_race_cannot_report_negative_resume(monkeypatch, caplog):
++    """Thread finishes between caller-return timestamp and clocks read: valid interleaving."""
++    monkeypatch.setenv("CLPM_G5_TRACE", "1")
++    caplog.set_level(logging.INFO, logger="app.core.g5_trace")
++    entered, release, job_complete = threading.Event(), threading.Event(), threading.Event()
++    main_id = threading.get_ident()
++    actual_clock = g5_trace.time.perf_counter_ns
++    main_reads = 0
++    loop = asyncio.get_running_loop()
++    with ThreadPoolExecutor(max_workers=1) as executor:
++
++        def submit(pool, fn, *args):
++            future = pool.submit(fn, *args)
++            future.add_done_callback(lambda _future: job_complete.set())
++            return asyncio.wrap_future(future, loop=loop)
++
++        monkeypatch.setattr(loop, "run_in_executor", submit)
++
++        def measured_clock():
++            nonlocal main_reads
++            stamp = actual_clock()
++            if threading.get_ident() == main_id:
++                main_reads += 1
++                if main_reads == 2:
++                    release.set()
++                    assert job_complete.wait(timeout=1)
++            return stamp
++
++        monkeypatch.setattr(g5_trace.time, "perf_counter_ns", measured_clock)
++
++        def work():
++            entered.set()
++            assert release.wait(timeout=1)
++
++        pending = asyncio.create_task(g5_trace.threaded("cancel_race", work, executor=executor))
++        while not entered.is_set():
++            await asyncio.sleep(0)
++        pending.cancel()
++        with pytest.raises(asyncio.CancelledError):
++            await pending
++        row = next(r for r in events(caplog) if r["stage"] == "cancel_race")
++        assert row["outcome"] == "CancelledError"
++        assert row["threadEndMonoNs"] > row["awaitReturnMonoNs"]
++        assert row["resumeMs"] is None, row
+diff --git a/backend/tests/test_generate_capacity_dataset.py b/backend/tests/test_generate_capacity_dataset.py
+index 669d3907..d7daffd0 100644
+--- a/backend/tests/test_generate_capacity_dataset.py
++++ b/backend/tests/test_generate_capacity_dataset.py
+@@ -134,6 +134,21 @@ class TestRows:
+ 
+ 
+ class TestManifest:
++    @pytest.mark.parametrize(
++        ("loop_index", "dense_points"), [(1, 3600), (801, 3600), (901, 3600), (951, 900)]
++    )
++    def test_manifest_dense_role_counts_match_frozen_composition(self, loop_index, dense_points):
++        """正常/坏质量/手动是 3600 点；缺口仅 900 点，不能把源点数写成完整窗口。"""
++        row = build_manifest_rows({}, "b", datetime(2026, 10, 14))[loop_index - 1]
++        assert row["pointsPerTag"]["PV"] == dense_points
++        assert row["pointsPerTag"]["OP"] == dense_points
++        # 元数据对照实际公开生成接口，expected 状态仍按冻结场景，不能随实际改写。
++        series = synth_series(loop_index, row["composition"], row["responseCategory"], 400.0)
++        assert len(series["PV"]) == dense_points
++        assert len(series["OP"]) == dense_points
++        if row["composition"] == "gap":
++            assert row["expectedStatus"].startswith("INCONCLUSIVE")
++
+     def test_manifest行字段与expected终态(self):
+         units = {_unit_name(0, 0): "u-1"}
+         rows = build_manifest_rows(units, "b", datetime(2026, 10, 12, 8, 0, 0))

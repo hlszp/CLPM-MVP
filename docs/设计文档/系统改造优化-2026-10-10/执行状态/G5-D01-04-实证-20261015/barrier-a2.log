@@ -1,0 +1,111 @@
+[poll-error] DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.ConnectionDoesNotExistError'>: connection was closed in the middle of operation
+[SQL: show standard_conforming_strings]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.ConnectionDoesNotExistError'>: connection was closed in the middle of operation
+[SQL: SELECT calculation_result_record.id, calculation_result_record.logical_run_id, calculation_result_record.object_kind, calculation_result_record.object_id, calculation_result_record.ts_start, calculation_result_record.ts_end, calculation_result_record.source_record_id, calculation_result_record.algorithm_version, calculation_result_record.config_revision, calculation_result_record.dataset_snapshot_id, calculation_result_record.status, calculation_result_record.payload, calculation_result_record.created_at 
+FROM calculation_result_record 
+WHERE calculation_result_record.ts_start >= $1::TIMESTAMP WITHOUT TIME ZONE AND calculation_result_record.ts_start < $2::TIMESTAMP WITHOUT TIME ZONE AND calculation_result_record.object_kind = $3::VARCHAR]
+[parameters: (datetime.datetime(2026, 10, 14, 5, 0), datetime.datetime(2026, 10, 14, 6, 0), 'LOOP')]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.ConnectionDoesNotExistError'>: connection was closed in the middle of operation
+[SQL: SELECT calculation_result_record.id, calculation_result_record.logical_run_id, calculation_result_record.object_kind, calculation_result_record.object_id, calculation_result_record.ts_start, calculation_result_record.ts_end, calculation_result_record.source_record_id, calculation_result_record.algorithm_version, calculation_result_record.config_revision, calculation_result_record.dataset_snapshot_id, calculation_result_record.status, calculation_result_record.payload, calculation_result_record.created_at 
+FROM calculation_result_record 
+WHERE calculation_result_record.ts_start >= $1::TIMESTAMP WITHOUT TIME ZONE AND calculation_result_record.ts_start < $2::TIMESTAMP WITHOUT TIME ZONE AND calculation_result_record.object_kind = $3::VARCHAR]
+[parameters: (datetime.datetime(2026, 10, 14, 5, 0), datetime.datetime(2026, 10, 14, 6, 0), 'LOOP')]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] TimeoutError: 
+[poll-error] DBAPIError: (sqlalchemy.dialects.postgresql.asyncpg.Error) <class 'asyncpg.exceptions.ConnectionDoesNotExistError'>: connection was closed in the middle of operation
+[SQL: SELECT calculation_result_record.id, calculation_result_record.logical_run_id, calculation_result_record.object_kind, calculation_result_record.object_id, calculation_result_record.ts_start, calculation_result_record.ts_end, calculation_result_record.source_record_id, calculation_result_record.algorithm_version, calculation_result_record.config_revision, calculation_result_record.dataset_snapshot_id, calculation_result_record.status, calculation_result_record.payload, calculation_result_record.created_at 
+FROM calculation_result_record 
+WHERE calculation_result_record.ts_start >= $1::TIMESTAMP WITHOUT TIME ZONE AND calculation_result_record.ts_start < $2::TIMESTAMP WITHOUT TIME ZONE AND calculation_result_record.object_kind = $3::VARCHAR]
+[parameters: (datetime.datetime(2026, 10, 14, 5, 0), datetime.datetime(2026, 10, 14, 6, 0), 'LOOP')]
+(Background on this error at: https://sqlalche.me/e/20/dbapi)
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[ 3202.2s] met=6/9 counts={'records': 3638, 'snapshots': 1030, 'bound': 3638, 'versioned': 3638, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 3266.3s] met=6/9 counts={'records': 3648, 'snapshots': 1030, 'bound': 3648, 'versioned': 3648, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[poll-error] TimeoutError: 
+[ 3429.8s] met=6/9 counts={'records': 3655, 'snapshots': 1030, 'bound': 3655, 'versioned': 3655, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[poll-error] TimeoutError: 
+[ 3595.8s] met=6/9 counts={'records': 3673, 'snapshots': 1030, 'bound': 3673, 'versioned': 3673, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 3669.1s] met=6/9 counts={'records': 3681, 'snapshots': 1030, 'bound': 3681, 'versioned': 3681, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 3752.5s] met=6/9 counts={'records': 3684, 'snapshots': 1030, 'bound': 3684, 'versioned': 3684, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 3806.3s] met=6/9 counts={'records': 3696, 'snapshots': 1030, 'bound': 3696, 'versioned': 3696, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[ 4438.9s] met=6/9 counts={'records': 3725, 'snapshots': 1030, 'bound': 3725, 'versioned': 3725, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[poll-error] TimeoutError: 
+[poll-error] TimeoutError: 
+[poll-error] CannotConnectNowError: the database system is in recovery mode
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[poll-error] CannotConnectNowError: the database system is not yet accepting connections
+DETAIL:  Consistent recovery state has not been yet reached.
+[ 4746.1s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4798.1s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4835.2s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4868.1s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4899.3s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4930.4s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4961.7s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 4997.5s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5031.9s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5067.3s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5107.9s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5139.5s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5172.1s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5208.3s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5241.6s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5274.3s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5314.3s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5348.6s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5383.9s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+[ 5419.6s] met=7/9 counts={'records': 3737, 'snapshots': 1030, 'bound': 3737, 'versioned': 3737, 'ok_status': 0, 'latest': 1032, 'nodeSnaps': 26}
+INCOMPLETE 5419.6

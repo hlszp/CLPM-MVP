@@ -1,0 +1,23 @@
+{
+ "note": "浏览器三件+读 API p95 双样本并档（2026-10-13 主协调移交裁决：原任 .raw 为正本直接复用；续作 19:03~19:05 重跑为重算期 ambient 对照样本）",
+ "primary": {
+  "browserThree": "浏览器三件.json.raw（原任 18:57~18:58 跑，ambient=批 1 收尾后无重算）",
+  "apiP95": "读API-p95.json.raw（原任 18:54~18:54 跑，ambient=无重算，热态）",
+  "apiPaging": "API分页计时.json.raw（原任）",
+  "verdicts": {
+   "f5State": "PASS（URL 六键+筛选+页码+详情面板全恢复）",
+   "noPrefetch": "PASS（筛选 1 请求、首屏 2 请求含 withAggregate 第 1 页）",
+   "interactP95": "排序 927ms/筛选 924ms（含脚本固定 700ms 等待，净 ~120-220ms，方法学登记）",
+   "apiP95Hot": "/loops/monitor p95 479ms ≤500ms 热预算 ✓；/cockpit/overview 154ms；各 500 样本 0 错误",
+   "apiPaging": "p95 125ms（单发顺序 20 样本）"
+  }
+ },
+ "counterpartDuringRecalc": {
+  "browserThree": "脚本 e2e/gamma-browser-three.mjs 续作 19:03~19:04 重跑：F5 PASS、无预抓 PASS（同正本）、排序 P95 926ms/筛选 P95 921ms（含固定 700ms 稳定等待+100ms 轮询粒度；ambient=Beat-19:00 kpi 计算期）",
+  "apiP95": "续作 19:05~19:05 重跑（10 并发×50 样本/端点，ambient=Beat-19:00 计算期）：/loops/monitor median 467ms p95 507ms max 558ms、0 错误；/cockpit/overview median 138ms p95 157ms max 185ms、0 错误",
+  "apiPaging": "p95 114ms（同方法）",
+  "reading": "重算期间 /loops p95 507ms 边界超出热预算 500ms 达 7ms（04 §4.2 第 7 项\"重算期间读 API P95≤800ms\"口径下仍 PASS，5xx=0）——两态分列：热无重算 479ms ✓ / 重算期 507ms（第 7 项口径 ≤800ms ✓）"
+ },
+ "scopeNote": "默认 scope（node=35af8328 真实回路 2 个）；PERF-T 集取证见 PERF-T-零显示取证.md（方案 α 读侧代价登记）",
+ "uiFindings": ["回路墙树节点点击选中不稳定（点击 EO 工厂文本未切换 node）——已登记，γ 后处置不在本批范围"]
+}
