@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "project": "chromium",
+  "cases": [
+    { "id": "CRITICAL-AUTH-001", "file": "critical-business.spec.ts" },
+    { "id": "CRITICAL-PERM-001", "file": "critical-business.spec.ts" },
+    { "id": "CRITICAL-CALC-001", "file": "critical-business.spec.ts" },
+    { "id": "CRITICAL-EVIDENCE-001", "file": "critical-business.spec.ts" }
+  ]
+}
