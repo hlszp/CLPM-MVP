@@ -101,6 +101,8 @@ async def batch_update_loops(
     operator: str,
     *,
     dry_run: bool = False,
+    commit: bool = True,
+    allow_null_engineering: bool = False,
 ) -> dict:
     """批量更新回路配置（支持 dry-run 预览：差异/部分失败状态/受影响清单）.
 
@@ -266,12 +268,14 @@ async def batch_update_loops(
         # 回路级校验（生效值 = 更新值优先，否则保持原值）
         eff_lower = (
             updates["op_output_lower_limit"]
-            if updates.get("op_output_lower_limit") is not None
+            if "op_output_lower_limit" in updates
+            and (allow_null_engineering or updates["op_output_lower_limit"] is not None)
             else loop.op_output_lower_limit
         )
         eff_upper = (
             updates["op_output_upper_limit"]
-            if updates.get("op_output_upper_limit") is not None
+            if "op_output_upper_limit" in updates
+            and (allow_null_engineering or updates["op_output_upper_limit"] is not None)
             else loop.op_output_upper_limit
         )
         if "op_output_lower_limit" in updates or "op_output_upper_limit" in updates:
@@ -287,7 +291,17 @@ async def batch_update_loops(
         _field_before = _make_field_before_getter(loop)
 
         for field, value in updates.items():
-            if value is None:
+            if value is None and not (
+                allow_null_engineering
+                and field
+                in {
+                    "op_output_lower_limit",
+                    "op_output_upper_limit",
+                    "dcs_model_id",
+                    "engineering_template_id",
+                    "engineering_template_version",
+                }
+            ):
                 continue
             if field in ("is_monitored", "is_stat_enabled"):
                 # 二者均写 is_active（P1 #10 互斥由 Schema 层保证）
@@ -335,11 +349,17 @@ async def batch_update_loops(
         # P2-04 工程属性
         if updates.get("control_action_direction") is not None:
             loop.control_action_direction = updates["control_action_direction"]
-        if updates.get("op_output_lower_limit") is not None:
+        if "op_output_lower_limit" in updates and (
+            allow_null_engineering or updates["op_output_lower_limit"] is not None
+        ):
             loop.op_output_lower_limit = updates["op_output_lower_limit"]
-        if updates.get("op_output_upper_limit") is not None:
+        if "op_output_upper_limit" in updates and (
+            allow_null_engineering or updates["op_output_upper_limit"] is not None
+        ):
             loop.op_output_upper_limit = updates["op_output_upper_limit"]
-        if updates.get("dcs_model_id") is not None:
+        if "dcs_model_id" in updates and (
+            allow_null_engineering or updates["dcs_model_id"] is not None
+        ):
             loop.dcs_model_id = updates["dcs_model_id"]
         if "engineering_template_id" in updates:
             loop.engineering_template_id = updates["engineering_template_id"]
@@ -400,7 +420,9 @@ async def batch_update_loops(
                 len(disabled_loop_ids),
                 closed,
             )
-    await db.commit()
+    # 快照批次在调用方把操作前/后状态与业务变更放进同一事务后提交。
+    if commit:
+        await db.commit()
 
     # 2026-10-10 参评口径统一：批量停用/启用/参评切换改变聚合分母 → 即时
     # 失效驾驶舱总览/趋势缓存（进程 + Redis 双端）。

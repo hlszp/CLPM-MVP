@@ -53,7 +53,11 @@ from app.schemas.loop import (
     LoopUpdate,
     LoopUpdateResult,
 )
-from app.schemas.loop_batch import LoopBatchConfigRequest, LoopBatchConfigResult
+from app.schemas.loop_batch import (
+    LoopBatchConfigRequest,
+    LoopBatchConfigResult,
+    LoopBatchRestoreRequest,
+)
 from app.services.authz_scope import ScopeContext, ensure_loop_in_scope
 from app.services.loop import (
     batch_group_loops,
@@ -72,6 +76,12 @@ from app.services.loop import (
     update_loop,
 )
 from app.services.loop_batch import batch_delete_loops, batch_update_loops
+from app.services.loop_batch_restore import (
+    get_batch_snapshot,
+    list_batch_snapshots,
+    restore_batch_snapshot,
+    run_snapshot_batch,
+)
 from app.services.monitor import get_loop_monitor_detail, list_loop_monitor
 from app.services.tag_mapping import get_loop_tags, update_loop_tags
 
@@ -240,6 +250,7 @@ async def batch_config_loops_endpoint(
     body: LoopBatchConfigRequest,
     db: AsyncSession = Depends(get_db),
     user: SysUser = Depends(require_perms("loop:batch-config")),
+    scope: ScopeContext = Depends(get_scope_ctx),
 ) -> dict:
     """批量配置回路（仅 ADMIN）。
 
@@ -252,6 +263,27 @@ async def batch_config_loops_endpoint(
 
     所有写入操作均记录审计日志。
     """
+    if body.operation_id is not None:
+        batch_result = await run_snapshot_batch(
+            db,
+            body.loop_ids,
+            body.updates.model_dump(exclude_unset=True),
+            user.username,
+            operation_id=str(body.operation_id),
+            dry_run=body.dry_run,
+            expected_state_tokens=body.expected_state_tokens,
+            scope=scope,
+            operator_id=str(user.id),
+        )
+        result = LoopBatchConfigResult(
+            action="update",
+            loop_ids=body.loop_ids,
+            **batch_result,
+        )
+        return success(
+            data=result.model_dump(by_alias=True),
+            message="批量操作预览（零写入）" if body.dry_run else "工程快照批次已记录",
+        )
     if body.action == "delete":
         # P1 #9: batch_delete_loops 返回 {"deleted": int, "skipped": list}
         del_result = await batch_delete_loops(
@@ -307,6 +339,67 @@ async def batch_config_loops_endpoint(
     return success(
         data=result.model_dump(by_alias=True),
         message="批量操作预览（零写入）" if dry_run else "批量操作成功",
+    )
+
+
+@router.get("/batch-snapshots", response_model=ApiResponse[dict])
+async def list_batch_snapshots_endpoint(
+    offset: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("loop:batch-config")),
+) -> dict:
+    """当前操作者自己的工程批次历史（分页，不按模板当前关联关系查找）。"""
+    return success(
+        data=await list_batch_snapshots(
+            db, user.username, offset=offset, limit=limit, operator_id=str(user.id)
+        )
+    )
+
+
+@router.get("/batch-snapshots/{snapshot_id}", response_model=ApiResponse[dict])
+async def get_batch_snapshot_endpoint(
+    snapshot_id: UUID,
+    offset: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=200),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("loop:batch-config")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """读取本人操作前/后快照；审计日志缺失或主体/范围越权均拒绝。"""
+    return success(
+        data=await get_batch_snapshot(
+            db,
+            str(snapshot_id),
+            user.username,
+            offset=offset,
+            limit=limit,
+            scope=scope,
+            operator_id=str(user.id),
+        )
+    )
+
+
+@router.post("/batch-snapshots/{snapshot_id}/restore", response_model=ApiResponse[dict])
+async def restore_batch_snapshot_endpoint(
+    snapshot_id: UUID,
+    body: LoopBatchRestoreRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("loop:batch-config")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """恢复本人快照；逐回路冲突拒写，重复恢复幂等，原因与结果追加审计。"""
+    return success(
+        data=await restore_batch_snapshot(
+            db,
+            str(snapshot_id),
+            user.username,
+            reason=body.reason,
+            dry_run=body.dry_run,
+            loop_ids=body.loop_ids,
+            scope=scope,
+            operator_id=str(user.id),
+        )
     )
 
 
