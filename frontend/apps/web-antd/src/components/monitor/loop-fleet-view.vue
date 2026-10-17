@@ -826,18 +826,18 @@ defineExpose({
   padding: 0 2px;
   font-size: 15px;
   line-height: 1;
-  color: #9ca3af;
+  color: var(--ant-color-text-tertiary);
   cursor: pointer;
   background: none;
   border: none;
 }
 
 .loop-fleet-view__star:hover:not(:disabled) {
-  color: #f59e0b;
+  color: var(--ant-warning);
 }
 
 .loop-fleet-view__star--on {
-  color: #f59e0b;
+  color: var(--ant-warning);
 }
 
 .loop-fleet-view__star:disabled {

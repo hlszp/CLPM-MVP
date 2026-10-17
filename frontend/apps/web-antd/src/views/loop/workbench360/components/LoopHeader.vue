@@ -368,12 +368,12 @@ const fitnessTag = computed(() => {
 }
 
 .icon-btn.star-btn:hover:not(:disabled) {
-  color: #f59e0b;
+  color: var(--ant-warning);
   border-color: transparent;
 }
 
 .icon-btn--starred {
-  color: #f59e0b;
+  color: var(--ant-warning);
 }
 
 .icon-btn.star-btn:disabled {
