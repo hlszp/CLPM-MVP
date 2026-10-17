@@ -825,7 +825,16 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
         block = bundle.data_block
         prefix = f"blk{i}"
         arrays[f"{prefix}__ts"] = _ns_int(list(block.timestamps))
+        signal_metadata: dict[str, list[str | None]] = {}
         for name, values in block.signals.items():
+            if name in ("op_limits_source", "op_limits_provenance"):
+                # DataPlanner 的限位依据是标量元数据，不是 float 信号列。
+                # 保留原值参与 inputHash，并在重放时还原；数值列仍严格校验。
+                values = list(values)
+                if any(value is not None and not isinstance(value, str) for value in values):
+                    raise ValueError(f"信号元数据 {name} 必须为字符串或 None")
+                signal_metadata[name] = values
+                continue
             serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
         for name, flags in (block.validity or {}).items():
             if len(flags) == len(block.timestamps):
@@ -846,6 +855,8 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
             "consecutiveSegments": [[int(a), int(b)] for a, b in block.consecutive_segments],
             "outlierReasons": outlier,
         }
+        if signal_metadata:
+            meta["signalMetadata"] = signal_metadata
         if getattr(block, "series_context", None) is not None:
             sc = block.series_context
 
@@ -936,6 +947,15 @@ def deserialize_data_blocks(arrays: dict[str, np.ndarray], blocks_meta: list[dic
                     else:
                         vals.append(float(arr[j]))
                 signals[name] = vals
+        for name, values in (meta.get("signalMetadata") or {}).items():
+            if (
+                name not in ("op_limits_source", "op_limits_provenance")
+                or name in signals
+                or not isinstance(values, list)
+                or any(value is not None and not isinstance(value, str) for value in values)
+            ):
+                raise ValueError(f"无效信号元数据: {name}")
+            signals[name] = list(values)
         validity = {
             key.split("__valid_", 1)[1]: [bool(v) for v in arrays[key]]
             for key in arrays

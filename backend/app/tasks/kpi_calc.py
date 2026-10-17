@@ -1780,6 +1780,8 @@ async def _do_calculate_custom_batch(
     参数（logicalRunId=custom task id 推导，Celery 重试幂等）。
     """
     from app.core.db import AsyncSessionLocal
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
     from app.services.engine_rule_loader import get_engine_rule_loader
     from app.services.loop_config import get_loop_type_weights_map
 
@@ -1811,6 +1813,16 @@ async def _do_calculate_custom_batch(
 
         if not loops:
             return {"total": 0, "success": 0, "failed": 0}
+
+        if attempt_no is not None and attempt_no > 1:
+            await task_tracker.reset_task_progress(task_id)
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            loops_total=len(loops),
+            current_stage="取数",
+            started_at=datetime.now(UTC).isoformat(),
+        )
 
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
@@ -1844,6 +1856,14 @@ async def _do_calculate_custom_batch(
             t_prewarm_elapsed,
         )
 
+        completed = 0
+
+        async def _on_completed(_loop_id: str) -> None:
+            nonlocal completed
+            completed += 1
+            # 完成的是实际处理的回路；INCONCLUSIVE 不变成评估成功。
+            await _update_backfill_progress(task_id, 1, 1, completed, len(loops))
+
         async def _run_batch() -> list:
             t0 = time.perf_counter()
             r = await _run_batch_loop_calculations(
@@ -1855,6 +1875,7 @@ async def _do_calculate_custom_batch(
                 type_weights=type_weights,
                 custom_task_id=task_id,
                 logical_run_id=batch_logical_run_id,
+                on_completed=_on_completed,
                 save_input_snapshot=True,
                 pinned_config=pinned_config,
                 release_context=await _resolve_task_release_context(db),
@@ -1888,6 +1909,13 @@ async def _do_calculate_custom_batch(
         summary = _summarize_batch_results(results)
         # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
         _assert_batch_health(summary, len(results))
+
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            loops_done=completed,
+            current_stage="完成",
+        )
 
         return {
             "total": len(loops),
