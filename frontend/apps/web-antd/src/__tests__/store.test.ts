@@ -97,6 +97,10 @@ vi.mock('@vben/stores', async () => {
 const fetchDefaultHomePreferenceMock = vi.fn();
 const noteClpmAccountLoginMock = vi.fn();
 const handleClpmAccountLogoutMock = vi.fn();
+const resetLoopFollowStateMock = vi.fn();
+vi.mock('#/composables/use-loop-follow', () => ({
+  resetLoopFollowState: () => resetLoopFollowStateMock(),
+}));
 vi.mock('#/composables/use-clpm-preferences', async () => {
   const actual = await vi.importActual<any>(
     '#/composables/use-clpm-preferences',
@@ -197,6 +201,7 @@ describe('store 测试', () => {
     fetchDefaultHomePreferenceMock.mockReset().mockResolvedValue(null);
     noteClpmAccountLoginMock.mockReset();
     handleClpmAccountLogoutMock.mockReset();
+    resetLoopFollowStateMock.mockReset();
   });
 
   // ===== useAuthStore 测试 =====
@@ -231,6 +236,11 @@ describe('store 测试', () => {
     const authStore = useAuthStore();
     const accessStore = useAccessStore();
     const userStore = useUserStore();
+    accessStore.setAccessToken('previous-account-token');
+    resetLoopFollowStateMock.mockImplementation(() => {
+      // 先使旧关注请求失效，再把 HTTP client 切换到新账户 token。
+      expect(accessStore.accessToken).toBe('previous-account-token');
+    });
 
     await authStore.authLogin({
       username: 'admin',
@@ -240,6 +250,7 @@ describe('store 测试', () => {
 
     // 验证 token 已存储
     expect(accessStore.accessToken).toBe('new-access-token');
+    expect(resetLoopFollowStateMock).toHaveBeenCalledTimes(1);
     expect(accessStore.refreshToken).toBe('new-refresh-token');
     // 验证用户信息已存储
     expect(userStore.userInfo).not.toBeNull();
@@ -263,6 +274,11 @@ describe('store 测试', () => {
     accessStore.setAccessToken('some-token');
     accessStore.setRefreshToken('some-refresh');
     accessStore.setAccessCodes(['loop:create']);
+    logoutApiMock.mockImplementation(() => {
+      expect(resetLoopFollowStateMock).toHaveBeenCalledTimes(1);
+      expect(accessStore.isLoggingOut).toBe(true);
+      return Promise.resolve();
+    });
 
     await authStore.logout();
 
