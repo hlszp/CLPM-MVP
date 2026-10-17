@@ -164,6 +164,7 @@ async def declare_synthetic_bindings(
         "synthetic": True,
         "inputOnly": True,
         "committed": False,
+        "persistedReadbackVerified": False,
         "loopId": loop_id,
         "loopTagName": tag_name,
         "validFrom": start.replace(tzinfo=UTC).isoformat(),
@@ -264,6 +265,8 @@ async def declare_synthetic_bindings(
                 dict(r) for r in await connection.fetch(history_sql, loop_uuid)
             ]
             persist()
+        payload["committed"] = True
+        persist()
         async with connection.transaction(readonly=True):
             after = [dict(r) for r in await connection.fetch(history_sql, loop_uuid)]
             if (
@@ -278,10 +281,14 @@ async def declare_synthetic_bindings(
                 )
             ):
                 raise RuntimeError("persisted synthetic binding readback differs")
-            payload.update(
-                {"committed": True, "persistedReadback": after, "affectedRows": 7}
-            )
-            persist()
+        payload.update(
+            {
+                "persistedReadbackVerified": True,
+                "persistedReadback": after,
+                "affectedRows": 7,
+            }
+        )
+        persist()
     finally:
         await connection.close()
     return {
