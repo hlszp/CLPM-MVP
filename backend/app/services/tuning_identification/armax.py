@@ -30,6 +30,7 @@ class ARMAXResult:
     n_samples: int
     r_squared: float
     iterations: int
+    converged: bool = False
 
 
 def identify_armax(
@@ -67,6 +68,7 @@ def identify_armax(
         raise ValueError(f"ARMAX 数据不足：{rows} 行")
 
     iterations_done = 0
+    converged = False
     for _ in range(1, max_iter + 1):
         iterations_done += 1
         # 计算残差 e（按回归行序号 i 索引）
@@ -120,6 +122,7 @@ def identify_armax(
         )
         a_coeffs, b_coeffs = a_new, b_new
         if max_diff < tol:
+            converged = True
             break
 
     # 最终残差与 R²
@@ -145,4 +148,5 @@ def identify_armax(
         n_samples=rows,
         r_squared=r2,
         iterations=iterations_done,
+        converged=converged,
     )

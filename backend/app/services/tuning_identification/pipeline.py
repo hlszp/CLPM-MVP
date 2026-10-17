@@ -2482,6 +2482,12 @@ def identify_from_history(
             if sp_no_excitation_closed_loop:
                 confidence = _cap_confidence(confidence, AlgorithmConfidenceLevel.C)
                 physical_flag += ", SP_NO_EXCITATION_CLOSED_LOOP"
+            # G3 修复（2026-10-17）：ARMAX 迭代 PEM 未收敛（跑满 max_iter 仍
+            # max_diff ≥ tol）→ 参数未稳定。不封顶可用性（未收敛仍可作兜底），
+            # 但在排序键中降权（见 _candidate_sort_key），同级可信度时收敛
+            # 模型胜出。reason_code 显式标注供审计。
+            if _algo_key == "armax" and not getattr(res, "converged", True):
+                physical_flag += ", ARMAX_NOT_CONVERGED"
 
             # P2-006：AIC/BIC 信息准则（训练集残差方差，用于 Occam 削减与证据输出）
             # n_params = na + nb（+ nc for ARMAX），复杂模型须用更小残差补偿参数惩罚
@@ -2493,6 +2499,8 @@ def identify_from_history(
             reason_codes: list[str] = []
             if not feasibility.passed:
                 reason_codes.append(feasibility.reason_code)
+            if _algo_key == "armax" and not getattr(res, "converged", True):
+                reason_codes.append("ARMAX_NOT_CONVERGED")
             if not np_passed:
                 # P3-06a（R6）：降级模式下不输出封顶语义码（误判不再作为可信度
                 # 信号），改记录降级事实；原始 verdict 由 nonparamCheck 结构化承载
@@ -5152,7 +5160,13 @@ def _select_with_occam(results: list[CandidateModel]) -> CandidateModel:
 
 
 def _candidate_sort_key(c: CandidateModel) -> tuple:
-    """排序键：可信度等级 > 拟合度 > 残差检验."""
+    """排序键：可信度等级 > 收敛状态 > 拟合度 > 残差检验.
+
+    G3 修复（2026-10-17）：同级可信度下，收敛模型优先于未收敛模型——
+    未收敛 ARMAX（iters=200, max_diff≥tol）参数不稳定，不应以
+    fitting_score 虚高压过收敛 ARX。收敛标志来自 identify_armax 的
+    ARMAXResult.converged；ARX/CLIVC 无迭代收敛概念，默认视为收敛。
+    """
     level_order = {
         AlgorithmConfidenceLevel.A: 5,
         AlgorithmConfidenceLevel.B: 4,
@@ -5161,7 +5175,15 @@ def _candidate_sort_key(c: CandidateModel) -> tuple:
         AlgorithmConfidenceLevel.E: 1,
         AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
     }
-    return (level_order.get(c.confidence, 0), c.fitting_score, c.residual_test_passed)
+    converged = 1 if _is_model_converged(c) else 0
+    return (level_order.get(c.confidence, 0), converged, c.fitting_score, c.residual_test_passed)
+
+
+def _is_model_converged(c: CandidateModel) -> bool:
+    """候选收敛状态（ARMAX 未收敛标注 → False；其他算法默认 True）."""
+    if c.evidence and "ARMAX_NOT_CONVERGED" in (c.evidence.reason_codes or []):
+        return False
+    return True
 
 
 def _cap_confidence(
