@@ -25,7 +25,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import bisect
 import logging
 from datetime import UTC, datetime, timedelta
@@ -36,6 +35,7 @@ from sqlalchemy import select
 from app.contracts import series_context as sc
 from app.contracts.data_types import RawTimeSeries
 from app.core import g5_trace
+from app.core.async_tasks import gather_settled
 from app.services.data_source import point_history_metadata as meta
 from app.services.data_source import point_history_repository as repo
 
@@ -312,7 +312,8 @@ async def build_logical_wide(
         # 最小列集（ts/value/quality_class——减小 TD 响应体量）。
         sorted_points = sorted(all_points)
         if 1 < len(sorted_points) <= 16:
-            per_point = await asyncio.gather(
+            # F02：一条点查询失败也须等待兄弟查询收束，再交给外层重试。
+            per_point = await gather_settled(
                 *[
                     g5_trace.awaited(
                         "builder.events",

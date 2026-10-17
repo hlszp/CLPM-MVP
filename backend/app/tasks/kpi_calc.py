@@ -1050,26 +1050,36 @@ async def _run_batch_loop_calculations(
         runtime_overrides, type_weights, pinned_config
     )
 
-    def _is_conn_exhausted(exc: Exception) -> bool:
-        """PG 连接数耗尽（多窗口批并发峰值瞬时挤爆，与回路自身无关）。"""
-        return "too many clients" in str(exc).lower()
-
     async def _calculate_one(loop: LoopLedger) -> dict | None:
-        # 连接耗尽退避重试（2026-10-10 生产回填 11 次「sorry, too many clients
-        # already」失败的根因修复）：瞬时挤爆场景重试即可自愈；其余异常原样
-        # 抛出走既有失败链路。计算为纯读+UPSERT，重试幂等安全。
-        for attempt in range(3):
-            try:
-                return await _calculate_once(loop)
-            except Exception as exc:
-                if attempt < 2 and _is_conn_exhausted(exc):
-                    await asyncio.sleep(2 * (attempt + 1))
-                    continue
-                raise
+        # F02：PG 连接耗尽、TD 0x073a 查询内存耗尽均为基础设施失败。
+        # 有界退避期间释放回路 semaphore/session；未知异常和取消不重试。
+        try:
+            for attempt in range(3):
+                try:
+                    return await _calculate_once(loop, attempt)
+                except Exception as exc:
+                    if attempt < 2 and _is_resource_exhausted(exc):
+                        logger.warning(
+                            "回路 %s 资源暂时耗尽，%ss 后第 %s 次重试: %s",
+                            loop.tag_name,
+                            2 * (attempt + 1),
+                            attempt + 2,
+                            exc,
+                        )
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    raise
 
-        raise AssertionError("unreachable")
+            raise AssertionError("unreachable")
+        finally:
+            # 重试是同一回路的内部尝试，不可重复推进已完成回路分母。
+            if on_completed is not None:
+                try:
+                    await on_completed(str(loop.id))
+                except Exception:  # noqa: BLE001
+                    logger.warning("批量 KPI 进度更新失败", exc_info=True)
 
-    async def _calculate_once(loop: LoopLedger) -> dict | None:
+    async def _calculate_once(loop: LoopLedger, local_attempt: int) -> dict | None:
         # 止血①（2026-10-13 连接风暴）：不用 ``async with``——session 被并发
         # 毒化后其 ``__aexit__`` 的 close 会抛 InvalidRequestError（覆盖/掩盖
         # 原始异常），且被弃 session 的 asyncpg 连接永不归还（NullPool 泄漏，
@@ -1133,10 +1143,11 @@ async def _run_batch_loop_calculations(
                         loop.tag_name,
                         exc_info=True,
                     )
-                if final_attempt:
+                if final_attempt and not (local_attempt < 2 and _is_resource_exhausted(exc)):
                     # P5-02（G2 遗留③）终末尝试仍失败 → 追加 status=FAILED
                     # 不可变终态 record（payload 含最终错误摘要）。暂态尝试
-                    # （final_attempt=False）不落终态，等待 Celery 重试；
+                    # （final_attempt=False）或尚可局部重试时不落终态，防止
+                    # 后续恢复成功被同键不可变 FAILED record 遮蔽；
                     # 同键已有 record（此前尝试成功）时复用不重写（幂等）。
                     try:
                         await result_ledger.append_failed_result_record(
@@ -1167,28 +1178,23 @@ async def _run_batch_loop_calculations(
                         )
                 raise
             finally:
-                try:
-                    if on_completed is not None:
-                        try:
-                            await on_completed(str(loop.id))
-                        except Exception:  # noqa: BLE001
-                            logger.warning("批量 KPI 进度更新失败", exc_info=True)
-                finally:
-                    await g5_trace.awaited(
-                        "pg.close",
-                        close_session_guarded(
-                            worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
-                        ),
-                        taskId=logical_run_id,
-                        loopId=str(loop.id),
-                        windowStart=ts_start,
-                        windowEnd=ts_end,
-                    )
+                await g5_trace.awaited(
+                    "pg.close",
+                    close_session_guarded(worker_db, label=f"kpi-worker-session[{loop.tag_name}]"),
+                    taskId=logical_run_id,
+                    loopId=str(loop.id),
+                    windowStart=ts_start,
+                    windowEnd=ts_end,
+                )
 
     _batch_results = await asyncio.gather(
         *[_calculate_one(loop) for loop in loops], return_exceptions=True
     )
     _log_batch_phase_timings(_batch_results, ts_start)
+    # F02：一条未恢复的资源失败也不能让父任务 SUCCESS，否则低于 G29
+    # 50% 阈值时不触发 Celery 最终尝试，失败回路永远没有终态 record。
+    # 标准/custom 共用这一边界；G29 的一般业务错误阈值保持不变。
+    _assert_batch_resources(_batch_results)
     return _batch_results
 
 
@@ -1239,6 +1245,29 @@ class BatchSystemicFailure(RuntimeError):
     不回退直算。继承 RuntimeError：既有按 RuntimeError 捕获/断言的语义
     全部保持（G29 原始整改语义不变）。
     """
+
+
+class BatchResourceFailure(BatchSystemicFailure):
+    """未恢复的 PG/TD 资源错误；独立于 G29 失败率阈值触发任务重试。"""
+
+
+def _is_resource_exhausted(exc: Exception) -> bool:
+    """只重试已知 PG/TD 资源瞬态错误，不把取数失败判为数据不足。"""
+    message = str(exc).lower()
+    return "too many clients" in message or (
+        "0x073a" in message and "query memory exhausted" in message
+    )
+
+
+def _assert_batch_resources(results: list) -> None:
+    failures = [r for r in results if isinstance(r, Exception) and _is_resource_exhausted(r)]
+    if failures:
+        # 同 BatchSystemicFailure，壳层不得误作 tracker 故障立即回退重跑。
+        # final_attempt=True 时批内已写 FAILED；此前只留 attempt，等待重试。
+        raise BatchResourceFailure(
+            f"批量 KPI 资源失败尚未恢复（{len(failures)}/{len(results)}），"
+            f"本次任务不能标为成功: {failures[0]}"
+        ) from failures[0]
 
 
 def _assert_batch_health(summary: dict[str, int], total: int) -> None:
@@ -2505,25 +2534,10 @@ async def _calculate_loop_kpi(
         # ⑤（2026-10-13 连接风暴）：加 exc_info——首发现场只记 message 导致
         # 毒化首发行的精确位置无法钉死（诊断报告 §3.5 的直接原因）。
         logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc, exc_info=True)
-        # P2: DataPlanner 失败 → 数据严重不足 → L0
-        return _timing_into(
-            await _timed_persist(
-                db=db,
-                loop_id=str(loop.id),
-                ts_start=ts_start,
-                ts_end=ts_end,
-                status="INCONCLUSIVE",
-                custom_task_id=custom_task_id,
-                fitness_level="L0",
-                fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
-                fitness_detail={"reason": "DataPlanner取数失败", "error": str(exc)},
-                assess_level="L0",
-                diagnose_level="L0",
-                tune_level="L0",
-                source=source,
-                source_task_id=source_task_id,
-            )
-        )
+        # F02：查询资源/执行异常不证明原始数据不足。原样交给调用方的
+        # rollback、有限资源重试和最终 FAILED record 链，保留错误身份与版本。
+        # 只有查询成功后的空 Bundle/数据门禁才可给 DATA_INSUFFICIENT。
+        raise
 
     if not bundles:
         logger.info("回路 %s 无数据（空 Bundle），返回 INCONCLUSIVE", loop.tag_name)

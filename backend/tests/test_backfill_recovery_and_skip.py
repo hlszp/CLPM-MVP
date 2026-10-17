@@ -3,7 +3,7 @@
 生产背景：33 小时×432 回路回填任务 FAILED，11 次「sorry, too many clients
 already」——多窗口批并发峰值瞬时挤爆 PG 连接，正在拿连接的回路直接失败。
 三项修复：
-1. 单回路连接耗尽退避重试（_is_conn_exhausted + _calculate_one 重试包装）
+1. 单回路资源耗尽退避重试（_is_resource_exhausted + _calculate_one 重试包装）
 2. 失败明细（回路位号+原因）进任务 errorMessage（_summarize_batch_results
    loops 标识 + _do_finalize_backfill 拼接）
 3. 补差模式开关 skip_existing（默认 False 全量覆盖；True 时窗口内已有快照
@@ -20,28 +20,21 @@ import pytest
 
 from app.tasks.kpi_calc import (
     _do_finalize_backfill,
+    _is_resource_exhausted,
     _summarize_batch_results,
 )
 
 
 class TestConnExhaustedDetection:
     def test_too_many_clients_matched(self) -> None:
-        # _is_conn_exhausted 是 _run_batch_loop_calculations 的闭包内函数，
-        # 通过源码断言其存在与匹配逻辑（函数级单测见 TestCalculateOneRetry）
-        import inspect
-
-        from app.tasks.kpi_calc import _run_batch_loop_calculations  # noqa: F401
-
-        src = inspect.getsource(_run_batch_loop_calculations)
-        assert '"too many clients" in str(exc).lower()' in src
+        """PG 驱动原始/包裹错误及大小写变化仍被真实识别器命中。"""
+        assert _is_resource_exhausted(RuntimeError("sorry, too many clients already"))
+        assert _is_resource_exhausted(RuntimeError("asyncpg: TOO MANY CLIENTS already"))
 
     def test_other_errors_not_matched(self) -> None:
-        import inspect
-
-        from app.tasks.kpi_calc import _run_batch_loop_calculations
-
-        src = inspect.getsource(_run_batch_loop_calculations)
-        assert "attempt < 2" in src  # 仅重试 2 次（共 3 次尝试）
+        """一般业务或未知网络错误不能被误归类为已知资源瞬态错误。"""
+        assert not _is_resource_exhausted(ValueError("invalid calculation config"))
+        assert not _is_resource_exhausted(RuntimeError("connection timeout"))
 
 
 class TestSummarizeFailedDetail:
