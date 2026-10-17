@@ -1,0 +1,2 @@
+98073eb5 fix(kpi): G-c B1/B2/B3 cancellation honesty chain
+d54e052d perf(kpi): O2 batch-level data-version preload + O1 h2 stage probes

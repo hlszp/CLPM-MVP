@@ -1,0 +1,754 @@
+=== Critical E2E Gate ===
+base_url=http://localhost:15666
+api_url=http://localhost:17101
+specs=tests/login.spec.ts tests/roles-smoke.spec.ts tests/confidence.spec.ts tests/loop.spec.ts
+
+--- Environment check ---
+Environment OK
+
+--- Collecting critical tests ---
+Collected: 21 tests
+
+--- Running critical tests ---
+
+Running 21 tests using 1 worker
+
+  ✘   1 [chromium] › tests/confidence.spec.ts:58:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-001: 回路性能表格可信度列 (4.7s)
+  ✘   2 [chromium] › tests/confidence.spec.ts:91:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-002: 评估状态筛选含不确定选项 (4.6s)
+  ✘   3 [chromium] › tests/confidence.spec.ts:123:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-003: 评估历史可信度与状态筛选 (4.6s)
+  ✘   4 [chromium] › tests/confidence.spec.ts:197:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-004: 监控页性能 Modal KPI 状态 (4.6s)
+  ✘   5 [chromium] › tests/login.spec.ts:32:3 › 登录流程 E2E › E2E-LOGIN-001: ADMIN 登录成功 (10.7s)
+  ✓   6 [chromium] › tests/login.spec.ts:52:3 › 登录流程 E2E › E2E-LOGIN-002: 登录失败-错误密码 (3.1s)
+  ✘   7 [chromium] › tests/login.spec.ts:74:3 › 登录流程 E2E › E2E-LOGIN-003: 登出 (4.6s)
+  ✓   8 [chromium] › tests/login.spec.ts:107:3 › 登录流程 E2E › E2E-LOGIN-004: Token 过期自动跳转 (732ms)
+  ✘   9 [chromium] › tests/login.spec.ts:121:3 › Controlled failure verification › F03-CONTROLLED-FAIL: intentional failure for gate verification (441ms)
+  ✘  10 [chromium] › tests/loop.spec.ts:34:3 › 回路管理 E2E › E2E-LOOP-001: 创建回路 (4.6s)
+  ✘  11 [chromium] › tests/loop.spec.ts:66:3 › 回路管理 E2E › E2E-LOOP-002: 测点清单 (4.6s)
+  ✘  12 [chromium] › tests/loop.spec.ts:89:3 › 回路管理 E2E › E2E-LOOP-003: 回路监控 (4.6s)
+  ✘  13 [chromium] › tests/loop.spec.ts:103:3 › 回路管理 E2E › E2E-LOOP-004: 回路详情 (4.6s)
+  ✘  14 [chromium] › tests/loop.spec.ts:143:3 › 回路管理 E2E › E2E-LOOP-005: 回路台账三字段编辑 (4.6s)
+  ✘  15 [chromium] › tests/loop.spec.ts:223:3 › 回路管理 E2E › E2E-LOOP-006: 链路配置页 (4.6s)
+  ✘  16 [chromium] › tests/loop.spec.ts:266:3 › 回路管理 E2E › E2E-LOOP-007: /loop/monitor 重定向与行级下钻工作台 (4.6s)
+  ✘  17 [chromium] › tests/roles-smoke.spec.ts:68:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-ADMIN: 工作台 + 关注队列 + 配置 + 评估 (4.6s)
+  ✘  18 [chromium] › tests/roles-smoke.spec.ts:101:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-IC: 运维工作台 + 诊断记录 + 整定总览 (4.6s)
+  ✘  19 [chromium] › tests/roles-smoke.spec.ts:122:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-PE: 回路工作台 + 评估看板 + 整定总览只读 (4.6s)
+  ✘  20 [chromium] › tests/roles-smoke.spec.ts:143:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-EXPERT: 诊断 + 整定 + 回路工作台无阻断性 403 (4.6s)
+  ✘  21 [chromium] › tests/roles-smoke.spec.ts:191:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-SPONSOR: 关注队列只读 + 预警记录，无 403 toast (4.6s)
+
+
+  1) [chromium] › tests/confidence.spec.ts:58:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-001: 回路性能表格可信度列 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/confidence.spec.ts:54:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-79b9c-E2E-E2E-CONF-001-回路性能表格可信度列-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-79b9c-E2E-E2E-CONF-001-回路性能表格可信度列-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/confidence-可信度徽章与-INCONCLU-79b9c-E2E-E2E-CONF-001-回路性能表格可信度列-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-79b9c-E2E-E2E-CONF-001-回路性能表格可信度列-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/confidence-可信度徽章与-INCONCLU-79b9c-E2E-E2E-CONF-001-回路性能表格可信度列-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  2) [chromium] › tests/confidence.spec.ts:91:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-002: 评估状态筛选含不确定选项 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/confidence.spec.ts:54:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-32e3c-E-E2E-CONF-002-评估状态筛选含不确定选项-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-32e3c-E-E2E-CONF-002-评估状态筛选含不确定选项-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/confidence-可信度徽章与-INCONCLU-32e3c-E-E2E-CONF-002-评估状态筛选含不确定选项-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-32e3c-E-E2E-CONF-002-评估状态筛选含不确定选项-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/confidence-可信度徽章与-INCONCLU-32e3c-E-E2E-CONF-002-评估状态筛选含不确定选项-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  3) [chromium] › tests/confidence.spec.ts:123:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-003: 评估历史可信度与状态筛选 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/confidence.spec.ts:54:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-f0bf5-E-E2E-CONF-003-评估历史可信度与状态筛选-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-f0bf5-E-E2E-CONF-003-评估历史可信度与状态筛选-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/confidence-可信度徽章与-INCONCLU-f0bf5-E-E2E-CONF-003-评估历史可信度与状态筛选-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-f0bf5-E-E2E-CONF-003-评估历史可信度与状态筛选-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/confidence-可信度徽章与-INCONCLU-f0bf5-E-E2E-CONF-003-评估历史可信度与状态筛选-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  4) [chromium] › tests/confidence.spec.ts:197:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-004: 监控页性能 Modal KPI 状态 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/confidence.spec.ts:54:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-07728-CONF-004-监控页性能-Modal-KPI-状态-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-07728-CONF-004-监控页性能-Modal-KPI-状态-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/confidence-可信度徽章与-INCONCLU-07728-CONF-004-监控页性能-Modal-KPI-状态-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/confidence-可信度徽章与-INCONCLU-07728-CONF-004-监控页性能-Modal-KPI-状态-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/confidence-可信度徽章与-INCONCLU-07728-CONF-004-监控页性能-Modal-KPI-状态-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  5) [chromium] › tests/login.spec.ts:32:3 › 登录流程 E2E › E2E-LOGIN-001: ADMIN 登录成功 ──────────────────
+
+    Error: expect(locator).toBeVisible() failed
+
+    Locator: getByText('CLPM 登录')
+    Expected: visible
+    Timeout: 10000ms
+    Error: element(s) not found
+
+    Call log:
+      - Expect "toBeVisible" with timeout 10000ms
+      - waiting for getByText('CLPM 登录')
+
+
+      36 |
+      37 |     // 2. 确认登录页标题可见
+    > 38 |     await expect(page.getByText('CLPM 登录')).toBeVisible({ timeout: 10_000 });
+         |                                             ^
+      39 |
+      40 |     // 3. 填写用户名 / 密码
+      41 |     await page.getByPlaceholder('请输入用户名').fill('admin');
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/login.spec.ts:38:45
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/login-登录流程-E2E-E2E-LOGIN-001-ADMIN-登录成功-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/login-登录流程-E2E-E2E-LOGIN-001-ADMIN-登录成功-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/login-登录流程-E2E-E2E-LOGIN-001-ADMIN-登录成功-chromium/error-context.md
+
+    Error Context: test-results/login-登录流程-E2E-E2E-LOGIN-001-ADMIN-登录成功-chromium/error-context.md
+
+    attachment #5: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/login-登录流程-E2E-E2E-LOGIN-001-ADMIN-登录成功-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/login-登录流程-E2E-E2E-LOGIN-001-ADMIN-登录成功-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  6) [chromium] › tests/login.spec.ts:74:3 › 登录流程 E2E › E2E-LOGIN-003: 登出 ──────────────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/login.spec.ts:76:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/login-登录流程-E2E-E2E-LOGIN-003-登出-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/login-登录流程-E2E-E2E-LOGIN-003-登出-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/login-登录流程-E2E-E2E-LOGIN-003-登出-chromium/error-context.md
+
+    Error Context: test-results/login-登录流程-E2E-E2E-LOGIN-003-登出-chromium/error-context.md
+
+    attachment #5: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/login-登录流程-E2E-E2E-LOGIN-003-登出-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/login-登录流程-E2E-E2E-LOGIN-003-登出-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  7) [chromium] › tests/login.spec.ts:121:3 › Controlled failure verification › F03-CONTROLLED-FAIL: intentional failure for gate verification 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 1
+
+      120 | test.describe('Controlled failure verification', () => {
+      121 |   test('F03-CONTROLLED-FAIL: intentional failure for gate verification', async ({ page }) => {
+    > 122 |     expect(1).toBe(2); // intentional failure
+          |               ^
+      123 |   });
+      124 | });
+      125 |
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/login.spec.ts:122:15
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/login-Controlled-failure-v-ec72b-ilure-for-gate-verification-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/login-Controlled-failure-v-ec72b-ilure-for-gate-verification-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/login-Controlled-failure-v-ec72b-ilure-for-gate-verification-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/login-Controlled-failure-v-ec72b-ilure-for-gate-verification-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/login-Controlled-failure-v-ec72b-ilure-for-gate-verification-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  8) [chromium] › tests/loop.spec.ts:34:3 › 回路管理 E2E › E2E-LOOP-001: 创建回路 ──────────────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-001-创建回路-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-001-创建回路-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-001-创建回路-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-001-创建回路-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-001-创建回路-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  9) [chromium] › tests/loop.spec.ts:66:3 › 回路管理 E2E › E2E-LOOP-002: 测点清单 ──────────────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-002-测点清单-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-002-测点清单-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-002-测点清单-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-002-测点清单-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-002-测点清单-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  10) [chromium] › tests/loop.spec.ts:89:3 › 回路管理 E2E › E2E-LOOP-003: 回路监控 ─────────────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-003-回路监控-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-003-回路监控-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-003-回路监控-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-003-回路监控-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-003-回路监控-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  11) [chromium] › tests/loop.spec.ts:103:3 › 回路管理 E2E › E2E-LOOP-004: 回路详情 ────────────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-004-回路详情-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-004-回路详情-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-004-回路详情-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-004-回路详情-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-004-回路详情-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  12) [chromium] › tests/loop.spec.ts:143:3 › 回路管理 E2E › E2E-LOOP-005: 回路台账三字段编辑 ───────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-005-回路台账三字段编辑-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-005-回路台账三字段编辑-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-005-回路台账三字段编辑-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-005-回路台账三字段编辑-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-005-回路台账三字段编辑-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  13) [chromium] › tests/loop.spec.ts:223:3 › 回路管理 E2E › E2E-LOOP-006: 链路配置页 ───────────────────────
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-006-链路配置页-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-006-链路配置页-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-006-链路配置页-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-006-链路配置页-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-006-链路配置页-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  14) [chromium] › tests/loop.spec.ts:266:3 › 回路管理 E2E › E2E-LOOP-007: /loop/monitor 重定向与行级下钻工作台 ───
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/loop.spec.ts:31:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-007-loop-monitor-重定向与行级下钻工作台-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-007-loop-monitor-重定向与行级下钻工作台-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/loop-回路管理-E2E-E2E-LOOP-007-loop-monitor-重定向与行级下钻工作台-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/loop-回路管理-E2E-E2E-LOOP-007-loop-monitor-重定向与行级下钻工作台-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/loop-回路管理-E2E-E2E-LOOP-007-loop-monitor-重定向与行级下钻工作台-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  15) [chromium] › tests/roles-smoke.spec.ts:68:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-ADMIN: 工作台 + 关注队列 + 配置 + 评估 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/roles-smoke.spec.ts:69:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-61a2b--SMOKE-ADMIN-工作台-关注队列-配置-评估-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-61a2b--SMOKE-ADMIN-工作台-关注队列-配置-评估-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/roles-smoke-MW-P5-03-五角色核心-61a2b--SMOKE-ADMIN-工作台-关注队列-配置-评估-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-61a2b--SMOKE-ADMIN-工作台-关注队列-配置-评估-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/roles-smoke-MW-P5-03-五角色核心-61a2b--SMOKE-ADMIN-工作台-关注队列-配置-评估-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  16) [chromium] › tests/roles-smoke.spec.ts:101:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-IC: 运维工作台 + 诊断记录 + 整定总览 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/roles-smoke.spec.ts:102:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心流程冒烟-E2E-SMOKE-IC-运维工作台-诊断记录-整定总览-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心流程冒烟-E2E-SMOKE-IC-运维工作台-诊断记录-整定总览-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/roles-smoke-MW-P5-03-五角色核心流程冒烟-E2E-SMOKE-IC-运维工作台-诊断记录-整定总览-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心流程冒烟-E2E-SMOKE-IC-运维工作台-诊断记录-整定总览-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/roles-smoke-MW-P5-03-五角色核心流程冒烟-E2E-SMOKE-IC-运维工作台-诊断记录-整定总览-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  17) [chromium] › tests/roles-smoke.spec.ts:122:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-PE: 回路工作台 + 评估看板 + 整定总览只读 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/roles-smoke.spec.ts:123:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-1bc61--SMOKE-PE-回路工作台-评估看板-整定总览只读-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-1bc61--SMOKE-PE-回路工作台-评估看板-整定总览只读-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/roles-smoke-MW-P5-03-五角色核心-1bc61--SMOKE-PE-回路工作台-评估看板-整定总览只读-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-1bc61--SMOKE-PE-回路工作台-评估看板-整定总览只读-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/roles-smoke-MW-P5-03-五角色核心-1bc61--SMOKE-PE-回路工作台-评估看板-整定总览只读-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  18) [chromium] › tests/roles-smoke.spec.ts:143:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-EXPERT: 诊断 + 整定 + 回路工作台无阻断性 403 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/roles-smoke.spec.ts:147:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-88e23--EXPERT-诊断-整定-回路工作台无阻断性-403-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-88e23--EXPERT-诊断-整定-回路工作台无阻断性-403-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/roles-smoke-MW-P5-03-五角色核心-88e23--EXPERT-诊断-整定-回路工作台无阻断性-403-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-88e23--EXPERT-诊断-整定-回路工作台无阻断性-403-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/roles-smoke-MW-P5-03-五角色核心-88e23--EXPERT-诊断-整定-回路工作台无阻断性-403-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  19) [chromium] › tests/roles-smoke.spec.ts:191:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-SPONSOR: 关注队列只读 + 预警记录，无 403 toast 
+
+    Error: 登录接口请求失败: HTTP 404 Not Found
+
+       at ../fixtures/auth.ts:185
+
+      183 |       }
+      184 |       if (!resp.ok()) {
+    > 185 |         throw new Error(`登录接口请求失败: HTTP ${resp.status()} ${resp.statusText()}`);
+          |               ^
+      186 |       }
+      187 |
+      188 |       const body = await resp.json();
+        at loginViaApi (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:185:15)
+        at loginViaUIWithMock (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:119:23)
+        at loginAs (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/fixtures/auth.ts:244:7)
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/roles-smoke.spec.ts:195:5
+
+    attachment #1: screenshot (image/png) ──────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-7417b-SOR-关注队列只读-预警记录，无-403-toast-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #2: video (video/webm) ──────────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-7417b-SOR-关注队列只读-预警记录，无-403-toast-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: test-results/roles-smoke-MW-P5-03-五角色核心-7417b-SOR-关注队列只读-预警记录，无-403-toast-chromium/error-context.md
+
+    attachment #4: trace (application/zip) ─────────────────────────────────────────────────────────
+    test-results/roles-smoke-MW-P5-03-五角色核心-7417b-SOR-关注队列只读-预警记录，无-403-toast-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace test-results/roles-smoke-MW-P5-03-五角色核心-7417b-SOR-关注队列只读-预警记录，无-403-toast-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  19 failed
+    [chromium] › tests/confidence.spec.ts:58:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-001: 回路性能表格可信度列 
+    [chromium] › tests/confidence.spec.ts:91:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-002: 评估状态筛选含不确定选项 
+    [chromium] › tests/confidence.spec.ts:123:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-003: 评估历史可信度与状态筛选 
+    [chromium] › tests/confidence.spec.ts:197:3 › 可信度徽章与 INCONCLUSIVE 展示 E2E › E2E-CONF-004: 监控页性能 Modal KPI 状态 
+    [chromium] › tests/login.spec.ts:32:3 › 登录流程 E2E › E2E-LOGIN-001: ADMIN 登录成功 ───────────────────
+    [chromium] › tests/login.spec.ts:74:3 › 登录流程 E2E › E2E-LOGIN-003: 登出 ───────────────────────────
+    [chromium] › tests/login.spec.ts:121:3 › Controlled failure verification › F03-CONTROLLED-FAIL: intentional failure for gate verification 
+    [chromium] › tests/loop.spec.ts:34:3 › 回路管理 E2E › E2E-LOOP-001: 创建回路 ───────────────────────────
+    [chromium] › tests/loop.spec.ts:66:3 › 回路管理 E2E › E2E-LOOP-002: 测点清单 ───────────────────────────
+    [chromium] › tests/loop.spec.ts:89:3 › 回路管理 E2E › E2E-LOOP-003: 回路监控 ───────────────────────────
+    [chromium] › tests/loop.spec.ts:103:3 › 回路管理 E2E › E2E-LOOP-004: 回路详情 ──────────────────────────
+    [chromium] › tests/loop.spec.ts:143:3 › 回路管理 E2E › E2E-LOOP-005: 回路台账三字段编辑 ─────────────────────
+    [chromium] › tests/loop.spec.ts:223:3 › 回路管理 E2E › E2E-LOOP-006: 链路配置页 ─────────────────────────
+    [chromium] › tests/loop.spec.ts:266:3 › 回路管理 E2E › E2E-LOOP-007: /loop/monitor 重定向与行级下钻工作台 ─────
+    [chromium] › tests/roles-smoke.spec.ts:68:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-ADMIN: 工作台 + 关注队列 + 配置 + 评估 
+    [chromium] › tests/roles-smoke.spec.ts:101:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-IC: 运维工作台 + 诊断记录 + 整定总览 
+    [chromium] › tests/roles-smoke.spec.ts:122:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-PE: 回路工作台 + 评估看板 + 整定总览只读 
+    [chromium] › tests/roles-smoke.spec.ts:143:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-EXPERT: 诊断 + 整定 + 回路工作台无阻断性 403 
+    [chromium] › tests/roles-smoke.spec.ts:191:3 › MW-P5-03 五角色核心流程冒烟 › E2E-SMOKE-SPONSOR: 关注队列只读 + 预警记录，无 403 toast 
+  2 passed (1.7m)
+
+--- Result ---
+PYTEST_EXIT=1
+CRITICAL_E2E_GATE=FAIL

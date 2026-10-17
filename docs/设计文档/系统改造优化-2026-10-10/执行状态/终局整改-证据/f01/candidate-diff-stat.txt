@@ -1,0 +1,9 @@
+ backend/app/services/cache/l1_datablock.py         |  14 +-
+ backend/app/services/cache/l2_bundle.py            |   8 +-
+ backend/app/services/data_planner.py               | 137 +++++----
+ backend/app/services/node_performance.py           |  52 ++--
+ backend/app/tasks/kpi_calc.py                      |  62 ++++-
+ .../test_data_planner/test_data_version_preload.py | 242 ++++++++++++++++
+ backend/tests/test_g5_d01_opt_batch.py             | 307 +++++++++++++++++++++
+ backend/tests/test_kpi_calc.py                     |   2 +
+ 8 files changed, 748 insertions(+), 76 deletions(-)
