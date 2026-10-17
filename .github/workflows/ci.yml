@@ -239,6 +239,7 @@ jobs:
     env:
       ENV: development
       CLPM_TEST_MODE: "0"
+      E2E_EXECUTION_ENV: disposable-github-ci
       OPENBLAS_NUM_THREADS: "1"
       OMP_NUM_THREADS: "1"
       MKL_NUM_THREADS: "1"
@@ -251,6 +252,7 @@ jobs:
       POSTGRES_DB: clpm_critical_e2e
       REDIS_HOST: localhost
       REDIS_PORT: "6379"
+      REDIS_DB: "0"
       REDIS_PASSWORD: ""
       TDENGINE_HOST: localhost
       TDENGINE_PORT: "6030"
@@ -435,6 +437,26 @@ jobs:
           uv run python ../e2e/scripts/test_critical_fixture.py
           uv run python ../e2e/scripts/prepare-critical-fixture.py --execute --output "$E2E_CRITICAL_FIXTURE"
 
+      - name: Capture actual input policy before the critical gate
+        run: |
+          evidence_root="$RUNNER_TEMP/critical-e2e/input-evidence"
+          mkdir -p "$evidence_root"
+          unit_rc=0
+          "$GITHUB_WORKSPACE/backend/.venv/bin/python" e2e/scripts/test_critical_input_evidence.py \
+            > "$evidence_root/before-tests.stdout.log" 2> "$evidence_root/before-tests.stderr.log" || unit_rc=$?
+          printf '%s\n' "$unit_rc" > "$evidence_root/before-tests.exit-code.txt"
+          cat "$evidence_root/before-tests.stdout.log"
+          cat "$evidence_root/before-tests.stderr.log" >&2
+          if [ "$unit_rc" -ne 0 ]; then exit "$unit_rc"; fi
+          capture_rc=0
+          "$GITHUB_WORKSPACE/backend/.venv/bin/python" e2e/scripts/capture-critical-input-evidence.py \
+            --phase before --output "$evidence_root/before" \
+            > "$evidence_root/before-launch.stdout.log" 2> "$evidence_root/before-launch.stderr.log" || capture_rc=$?
+          printf '%s\n' "$capture_rc" > "$evidence_root/before-launch.exit-code.txt"
+          cat "$evidence_root/before-launch.stdout.log"
+          cat "$evidence_root/before-launch.stderr.log" >&2
+          exit "$capture_rc"
+
       # ---- Critical E2E gate ----
       - name: Install Playwright browsers
         run: npm exec playwright install --with-deps chromium
@@ -445,6 +467,20 @@ jobs:
         env:
           E2E_BASE_URL: http://localhost:15666
           E2E_API_BASE_URL: http://localhost:17101/api/v1
+
+      - name: Capture actual input policy and dataset row after the critical gate
+        if: always()
+        run: |
+          evidence_root="$RUNNER_TEMP/critical-e2e/input-evidence"
+          mkdir -p "$evidence_root"
+          capture_rc=0
+          "$GITHUB_WORKSPACE/backend/.venv/bin/python" e2e/scripts/capture-critical-input-evidence.py \
+            --phase after --output "$evidence_root/after" \
+            > "$evidence_root/after-launch.stdout.log" 2> "$evidence_root/after-launch.stderr.log" || capture_rc=$?
+          printf '%s\n' "$capture_rc" > "$evidence_root/after-launch.exit-code.txt"
+          cat "$evidence_root/after-launch.stdout.log"
+          cat "$evidence_root/after-launch.stderr.log" >&2
+          exit "$capture_rc"
 
       - name: Preserve reports, raw exits, task/result attachments and input manifest
         if: always()
