@@ -89,7 +89,15 @@ def main():
     rc = 2
 
     def no_network(event, args):
-        if event in ("socket.connect", "socket.getaddrinfo", "socket.gethostbyname"):
+        if event in (
+            "socket.connect",
+            "socket.getaddrinfo",
+            "socket.gethostbyname",
+            "socket.gethostbyaddr",
+            "socket.getnameinfo",
+            "socket.sendto",
+            "socket.sendmsg",
+        ):
             network_attempts.append(event)
             raise RuntimeError("Network forbidden in numerical diagnosis")
         if event == "import" and args[0] == "app.main":
