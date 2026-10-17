@@ -745,6 +745,45 @@ describe('我的工作（P6-06 O06-NAV）', () => {
     });
   });
 
+  describe('P6-05 关注入口引导（我的关注空态）', () => {
+    it('空态：说明关注入口位置 + 「去关注回路」按钮跳回路监视', async () => {
+      api.getMyWorkApi.mockImplementation((q: any) =>
+        q?.workKind === 'FOLLOW'
+          ? Promise.resolve(
+              workData({
+                items: [],
+                sourceStatuses: {
+                  follow: { inaccessibleCount: 0, status: 'OK', total: 0 },
+                },
+                total: 0,
+              }),
+            )
+          : Promise.resolve(defaultAssignedData()),
+      );
+      const w = mountPage();
+      await flushPromises();
+      await clickTab(w, 'FOLLOW');
+      const empty = w.find('[data-testid="work-empty"]');
+      expect(empty.exists()).toBe(true);
+      expect(empty.text()).toContain('还没有关注的回路');
+      // 入口位置说明（关注发起方式）
+      expect(empty.text()).toContain('回路监视');
+      expect(empty.text()).toContain('星标');
+      const goto = w.find('[data-testid="follow-goto-monitor"]');
+      expect(goto.exists()).toBe(true);
+      await goto.trigger('click');
+      expect(routerPush).toHaveBeenCalledWith('/monitor/loops');
+    });
+
+    it('其余视图空态：不出现关注引导按钮', async () => {
+      api.getMyWorkApi.mockResolvedValue(workData());
+      const w = mountPage();
+      await flushPromises();
+      expect(w.find('[data-testid="work-empty"]').exists()).toBe(true);
+      expect(w.find('[data-testid="follow-goto-monitor"]').exists()).toBe(false);
+    });
+  });
+
   describe('断网未保存态（页面徽标）', () => {
     it('设为默认首页保存失败 → 页面显示未保存徽标', async () => {
       api.putWorkspacePreferenceApi.mockRejectedValue(

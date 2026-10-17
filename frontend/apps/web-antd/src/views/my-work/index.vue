@@ -17,7 +17,7 @@
 import type { PersonalWorkApi } from '#/api/personal-work';
 
 import { computed, onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { Page } from '@vben/common-ui';
 import { useUserStore } from '@vben/stores';
@@ -64,6 +64,7 @@ type WorkItem = PersonalWorkApi.WorkItem;
 type WorkKind = PersonalWorkApi.WorkKind;
 
 const route = useRoute();
+const router = useRouter();
 const userStore = useUserStore();
 
 const {
@@ -445,8 +446,27 @@ onMounted(async () => {
               </div>
             </template>
 
-            <div v-else-if="!loading" class="my-work__empty" data-testid="work-empty">
+            <div
+              v-else-if="!loading"
+              class="my-work__empty"
+              data-testid="work-empty"
+            >
               {{ emptyText }}
+              <!-- P6-05 关注入口引导：我的关注空态说明入口位置并给出直达动作 -->
+              <template v-if="activeView === 'FOLLOW'">
+                <div class="my-work__empty-hint">
+                  在「回路监视」列表或回路工作台页头点击 ☆ 星标即可关注回路
+                </div>
+                <Button
+                  class="my-work__empty-action"
+                  data-testid="follow-goto-monitor"
+                  size="small"
+                  type="primary"
+                  @click="router.push('/monitor/loops')"
+                >
+                  去关注回路
+                </Button>
+              </template>
             </div>
           </div>
         </Spin>
@@ -588,9 +608,23 @@ onMounted(async () => {
 }
 
 .my-work__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
   padding: 40px 0;
   color: hsl(var(--muted-foreground));
   text-align: center;
+}
+
+/* 我的关注空态引导（P6-05）：说明入口位置 + 直达回路监视 */
+.my-work__empty-hint {
+  font-size: 12px;
+  color: hsl(var(--muted-foreground));
+}
+
+.my-work__empty-action {
+  margin-top: 2px;
 }
 
 .my-work__more {
