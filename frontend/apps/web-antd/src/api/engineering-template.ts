@@ -155,7 +155,13 @@ export namespace EngineeringTemplateApi {
   }
 
   /** 逐回路结果状态：OK=将更新/已更新；UNCHANGED=无差异；FAIL=回路级校验失败；NOT_FOUND=不存在 */
-  export type LoopBatchStatus = 'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED';
+  export type LoopBatchStatus =
+    | 'ALREADY_RESTORED'
+    | 'CONFLICT'
+    | 'FAIL'
+    | 'NOT_FOUND'
+    | 'OK'
+    | 'UNCHANGED';
 
   /** 逐回路结果条目（成功/失败项逐条呈现契约） */
   export interface LoopBatchResultItem {
@@ -164,15 +170,17 @@ export namespace EngineeringTemplateApi {
     status: LoopBatchStatus;
     changes: LoopBatchChangeItem[];
     error: null | string;
+    beforeState?: null | Record<string, unknown>;
+    stateToken?: null | string;
   }
 
   /** 批量工程属性更新字段（None=不更新该字段；模板版本 pin 须同时给模板 ID） */
   export interface LoopBatchEngineeringUpdates {
-    engineeringTemplateId?: string;
-    engineeringTemplateVersion?: number;
+    engineeringTemplateId?: null | string;
+    engineeringTemplateVersion?: null | number;
     controlActionDirection?: 'DIRECT' | 'REVERSE' | 'UNKNOWN';
-    opOutputLowerLimit?: number;
-    opOutputUpperLimit?: number;
+    opOutputLowerLimit?: null | number;
+    opOutputUpperLimit?: null | number;
   }
 
   /** 批量应用请求（dryRun=true 预览零写入；loopIds 单批上限 200） */
@@ -180,6 +188,8 @@ export namespace EngineeringTemplateApi {
     loopIds: string[];
     updates: LoopBatchEngineeringUpdates;
     dryRun?: boolean;
+    operationId?: string;
+    expectedStateTokens?: Record<string, string>;
   }
 
   /** 批量应用响应（dryRun/执行同形；results 为逐回路条目） */
@@ -189,6 +199,31 @@ export namespace EngineeringTemplateApi {
     loopIds: string[];
     dryRun: boolean;
     results: LoopBatchResultItem[] | null;
+    snapshotId?: null | string;
+    replayed?: boolean;
+  }
+
+  export interface BatchSnapshotSummary {
+    snapshotId: string;
+    operator: string;
+    createdAt: string;
+    affected: number;
+  }
+
+  export interface BatchSnapshotEntry {
+    loopId: string;
+    tagName: string;
+    before: Record<string, unknown>;
+    after: Record<string, unknown>;
+    afterToken: string;
+  }
+
+  export interface BatchSnapshotDetail {
+    snapshotId: string;
+    items: BatchSnapshotEntry[];
+    total: number;
+    offset: number;
+    limit: number;
   }
 }
 
@@ -262,7 +297,10 @@ export function rollbackEngineeringTemplateVersionApi(
 }
 
 /** 模板关联回路清单（limit 上限 200；total 为精确总数） */
-export function getEngineeringTemplateLoopsApi(templateId: string, limit = 200) {
+export function getEngineeringTemplateLoopsApi(
+  templateId: string,
+  limit = 200,
+) {
   return requestClient.get<{
     items: EngineeringTemplateApi.TemplateLoopItem[];
     total: number;
@@ -345,9 +383,45 @@ export function rollbackConfigPublicationApi(
  * 携带 P2-04 工程属性与 dryRun/results 契约（维护 UI 专用），旧绑定仅为
  * 监控/级别字段且未暴露逐回路结果，互不替代。
  */
-export function batchApplyLoopsApi(data: EngineeringTemplateApi.LoopBatchRunParams) {
+export function batchApplyLoopsApi(
+  data: EngineeringTemplateApi.LoopBatchRunParams,
+) {
   return requestClient.post<EngineeringTemplateApi.LoopBatchRunResult>(
     '/loops/batch-config',
+    data,
+  );
+}
+
+/** 本人工程批次历史；可在重开页面后继续恢复，total 为完整分母。 */
+export function getLoopBatchSnapshotsApi(offset = 0, limit = 20) {
+  return requestClient.get<{
+    items: EngineeringTemplateApi.BatchSnapshotSummary[];
+    total: number;
+  }>('/loops/batch-snapshots', { params: { offset, limit } });
+}
+
+export function getLoopBatchSnapshotApi(
+  snapshotId: string,
+  offset = 0,
+  limit = 200,
+) {
+  return requestClient.get<EngineeringTemplateApi.BatchSnapshotDetail>(
+    `/loops/batch-snapshots/${snapshotId}`,
+    { params: { offset, limit } },
+  );
+}
+
+/** 恢复服务端快照原值（含 NULL）；真实恢复前必须重新 dry-run。 */
+export function restoreLoopBatchSnapshotApi(
+  snapshotId: string,
+  data: {
+    dryRun: boolean;
+    loopIds?: string[];
+    reason: string;
+  },
+) {
+  return requestClient.post<EngineeringTemplateApi.LoopBatchRunResult>(
+    `/loops/batch-snapshots/${snapshotId}/restore`,
     data,
   );
 }
