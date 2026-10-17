@@ -15,6 +15,7 @@
   },
   "include": [
     "playwright.config.ts",
+    "playwright.critical.config.ts",
     "tests/**/*.ts",
     "fixtures/**/*.ts"
   ],

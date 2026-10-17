@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+from uuid import UUID
+
 from pydantic import Field, model_validator
 
 from app.schemas.base import CamelModel
@@ -81,11 +83,20 @@ class LoopBatchConfigRequest(CamelModel):
         False,
         description="P2-04 dry-run 预览：只返回逐回路差异/部分失败状态/受影响清单，零写入",
     )
+    operation_id: UUID | None = Field(
+        None,
+        description="工程属性快照批次幂等 ID；同 ID 只能重放同一请求。此模式显式 null=清空",
+    )
+    expected_state_tokens: dict[str, str] | None = Field(
+        None, description="工程属性快照模式执行时携带预览返回的逐回路状态令牌；失配逐条冲突"
+    )
 
     @model_validator(mode="after")
     def check_action_updates_exclusive(self) -> LoopBatchConfigRequest:
         """action 和 updates 互斥；非删除动作必须有 updates。"""
         if self.action == "delete":
+            if self.operation_id is not None:
+                raise ValueError("工程快照批次不支持删除")
             if self.updates is not None:
                 raise ValueError("action=delete 时不能同时提供 updates")
             if self.dry_run:
@@ -94,6 +105,26 @@ class LoopBatchConfigRequest(CamelModel):
         # 非删除模式必须有 updates
         if self.updates is None:
             raise ValueError("非删除模式必须提供 updates 字段")
+        if self.operation_id is not None:
+            allowed = {
+                "control_action_direction",
+                "op_output_lower_limit",
+                "op_output_upper_limit",
+                "dcs_model_id",
+                "engineering_template_id",
+                "engineering_template_version",
+            }
+            supplied = self.updates.model_fields_set
+            if not supplied or supplied - allowed:
+                raise ValueError("工程快照批次仅支持工程属性字段，至少显式指定一个字段")
+            if (
+                "control_action_direction" in supplied
+                and self.updates.control_action_direction is None
+            ):
+                raise ValueError("controlActionDirection 不可清空，请使用 UNKNOWN")
+            if not self.dry_run and self.expected_state_tokens is None:
+                raise ValueError("工程快照执行必须携带预览的 expectedStateTokens")
+            return self
         # updates 至少有一个非 None 字段
         if all(
             getattr(self.updates, f) is None
@@ -133,6 +164,10 @@ class LoopBatchResultItem(CamelModel):
     )
     changes: list[LoopBatchChangeItem] = Field(default_factory=list, description="字段级差异")
     error: str | None = Field(None, description="失败原因（status=FAIL/NOT_FOUND 时）")
+    before_state: dict | None = Field(
+        None, description="工程快照模式操作前完整工程属性，含显式 null"
+    )
+    state_token: str | None = Field(None, description="操作前状态令牌；执行时防止预览后并发修改")
 
 
 class LoopBatchConfigResult(CamelModel):
@@ -148,6 +183,22 @@ class LoopBatchConfigResult(CamelModel):
     results: list[LoopBatchResultItem] | None = Field(
         None, description="逐回路结果（update 动作；差异/失败状态可追溯）"
     )
+    snapshot_id: str | None = Field(None, description="工程批次恢复引用；仅真实执行持久化")
+    replayed: bool = Field(False, description="同 operationId、同请求的幂等重放")
+
+
+class LoopBatchRestoreRequest(CamelModel):
+    """恢复自己的工程属性批次；每批最多 200 条，不接受客户端指定原始值。"""
+
+    reason: str = Field(..., min_length=1, max_length=500)
+    dry_run: bool = False
+    loop_ids: list[str] | None = Field(None, min_length=1, max_length=200)
+
+    @model_validator(mode="after")
+    def non_blank_reason(self) -> LoopBatchRestoreRequest:
+        if not self.reason.strip():
+            raise ValueError("恢复原因不能为空白")
+        return self
 
 
 __all__ = [

@@ -48,8 +48,10 @@ export function diffProfileEntries(
   return keys.map((key) => {
     const inBefore = Object.prototype.hasOwnProperty.call(b, key);
     const inAfter = Object.prototype.hasOwnProperty.call(a, key);
-    if (!inBefore) return { key, kind: 'added', before: undefined, after: a[key] };
-    if (!inAfter) return { key, kind: 'removed', before: b[key], after: undefined };
+    if (!inBefore)
+      return { key, kind: 'added', before: undefined, after: a[key] };
+    if (!inAfter)
+      return { key, kind: 'removed', before: b[key], after: undefined };
     return profileValueEqual(b[key], a[key])
       ? { key, kind: 'unchanged', before: b[key], after: a[key] }
       : { key, kind: 'changed', before: b[key], after: a[key] };
@@ -175,7 +177,15 @@ export interface BatchSummary {
 
 /** 逐条结果汇总（成功/失败项计数；跨分批合并口径） */
 export function summarizeBatchResults(
-  items: { status: 'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED' }[],
+  items: {
+    status:
+      | 'ALREADY_RESTORED'
+      | 'CONFLICT'
+      | 'FAIL'
+      | 'NOT_FOUND'
+      | 'OK'
+      | 'UNCHANGED';
+  }[],
 ): BatchSummary {
   const summary: BatchSummary = {
     total: items.length,
@@ -187,41 +197,45 @@ export function summarizeBatchResults(
   };
   for (const item of items) {
     switch (item.status) {
-    case 'FAIL': {
-      summary.failed += 1;
-    
-    break;
-    }
-    case 'NOT_FOUND': {
-      summary.notFound += 1;
-    
-    break;
-    }
-    case 'OK': {
-      summary.ok += 1;
-      summary.affected += 1;
-    
-    break;
-    }
-    case 'UNCHANGED': {
-      summary.unchanged += 1;
-    
-    break;
-    }
-    // No default
+      case 'ALREADY_RESTORED':
+      case 'UNCHANGED': {
+        summary.unchanged += 1;
+
+        break;
+      }
+      case 'CONFLICT':
+      case 'FAIL': {
+        summary.failed += 1;
+
+        break;
+      }
+      case 'NOT_FOUND': {
+        summary.notFound += 1;
+
+        break;
+      }
+      case 'OK': {
+        summary.ok += 1;
+        summary.affected += 1;
+
+        break;
+      }
+      // No default
     }
   }
   return summary;
 }
 
 export const BATCH_STATUS_LABEL: Record<
-  'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED',
+  'ALREADY_RESTORED' | 'CONFLICT' | 'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED',
   string
 > = {
   OK: '成功',
   UNCHANGED: '无变化',
   FAIL: '失败',
   NOT_FOUND: '不存在',
+  CONFLICT: '并发冲突（未写入）',
+  ALREADY_RESTORED: '已恢复（幂等跳过）',
 };
 
 // ===========================================================================
@@ -257,7 +271,10 @@ export function parseProfileJson(text: string): {
   try {
     const value = JSON.parse(trimmed);
     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-      return { ok: false, error: 'profile 必须是 JSON 对象（键值对），不支持数组或标量' };
+      return {
+        ok: false,
+        error: 'profile 必须是 JSON 对象（键值对），不支持数组或标量',
+      };
     }
     return { ok: true, value: value as Record<string, any> };
   } catch (error) {

@@ -302,17 +302,18 @@ class TestFailureLogsCarryStack:
             patch.object(kpi_calc, "_persist_snapshot", new=AsyncMock(return_value={})),
             caplog.at_level(logging.WARNING, logger="app.tasks.kpi_calc"),
         ):
-            result = await kpi_calc._calculate_loop_kpi(
-                db=AsyncMock(),
-                loop=loop,
-                metric_configs={},
-                ts_start=datetime(2026, 10, 13, 0),
-                ts_end=datetime(2026, 10, 13, 1),
-                data_planner=planner,
-                type_weights=None,
-                runtime_overrides={"fitness": {}},
-            )
-        assert result is not None
+            # F02：日志仍带原始栈，异常继续传播而非伪装数据不足。
+            with pytest.raises(ValueError, match="provisioning poison"):
+                await kpi_calc._calculate_loop_kpi(
+                    db=AsyncMock(),
+                    loop=loop,
+                    metric_configs={},
+                    ts_start=datetime(2026, 10, 13, 0),
+                    ts_end=datetime(2026, 10, 13, 1),
+                    data_planner=planner,
+                    type_weights=None,
+                    runtime_overrides={"fitness": {}},
+                )
         records = [r for r in caplog.records if "DataPlanner 取数失败" in r.message]
         assert records, "必须记录取数失败日志"
         assert records[0].exc_info, "必须携带异常堆栈（exc_info）——首发点钉死依赖"

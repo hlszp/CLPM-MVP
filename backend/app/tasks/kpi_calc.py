@@ -248,6 +248,16 @@ async def _attempt_log_wrap(coro_fn, *, logical_run_id, attempt_no: int, worker_
         )
     try:
         result = await coro_fn()
+    except asyncio.CancelledError as exc:
+        # G-c B3（裁决书 §1.3，2026-10-16 修复）：CancelledError 不被
+        # except Exception 捕获 → attempt 行只落 start 不落 finish
+        # （calculation_result_attempt 悬挂 STARTED）。落 finish（错误
+        # 摘要=CancelledError）后原样 raise——不吞取消语义、不触发回退。
+        if logical_run_id:
+            await result_ledger.finish_calculation_attempt(
+                str(logical_run_id), attempt_no, error=exc
+            )
+        raise
     except Exception as exc:
         if logical_run_id:
             await result_ledger.finish_calculation_attempt(
@@ -450,6 +460,20 @@ async def _do_hourly_with_tracking(
                 finished_at=datetime.now(UTC).isoformat(),
             )
             return result
+        except asyncio.CancelledError:
+            # G-c B3（裁决书 §1.3，2026-10-16 修复）：外层取消不被
+            # except Exception 捕获 → TaskRecord 停在 RUNNING 永不终态
+            # （自动任务页"一直在跑"假相）。落 CANCELLED 终态后原样
+            # raise——壳层 217 的 except Exception 同样不捕 CancelledError，
+            # 不触发"回退直接计算"双跑（行为保持）；Celery
+            # autoretry_for=(Exception,) 亦不匹配，不自动重试。
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.CANCELLED,
+                error_message="任务被取消（CancelledError）",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            raise
         except Exception as exc:
             await task_tracker.update_status(
                 task_id,
@@ -907,6 +931,12 @@ async def _prewarm_cache_for_loops(
     op_limits_map = {
         str(lid): (cfg["op_lower"], cfg["op_upper"]) for lid, cfg in loop_configs.items()
     }
+    # O2（H2a，2026-10-16）：data_version 批级一次预载——预热阶段全部回路
+    # 共享同一版本（原每回路 request_bundles 内独立解析）；与计算阶段口径
+    # 同源（同一 resolve_data_version）。
+    from app.services.data_planner import resolve_data_version
+
+    batch_data_version = await resolve_data_version()
 
     async def _prewarm_one(loop: LoopLedger) -> str | None:
         async with sem:
@@ -920,6 +950,7 @@ async def _prewarm_cache_for_loops(
                     )
                     data_planner._config_loader = config_loader
                     data_planner._preloaded_op_limits = op_limits_map
+                    data_planner._preloaded_data_version = batch_data_version
                     control_type = _loop_type_to_control_type(loop.loop_type)
                     time_window = TimeWindow(start=ts_start, end=ts_end)
                     await data_planner.request_bundles(
@@ -1003,32 +1034,52 @@ async def _run_batch_loop_calculations(
     op_limits_map = {
         str(loop_id): (cfg["op_lower"], cfg["op_upper"]) for loop_id, cfg in loop_configs.items()
     }
+    # O2（H2a，2026-10-16）：data_version 批级一次预载——原每回路
+    # request_bundles 内独立解析（1030 回路=1030 次解析调用，manifest 60s
+    # TTL 进程缓存到期即触发独立短会话回源）；现批级 1 次，全批 DataPlanner
+    # 注入共享（同 _preloaded_op_limits 注入模式，参照 P5-02 批级预载纪律）。
+    # 批内固定消费与 G2-INC-a"任务边界固定快照"一致；语义差异（批中途
+    # manifest 变更不再于批中途换缓存键，原逐回路路径受 60s TTL 约束最多
+    # 每 60s 可感知变更）已登记 D01 优化批交接文档，待评审不擅自定。
+    from app.services.data_planner import resolve_data_version
+
+    batch_data_version = await resolve_data_version()
     # 终末失败回路的 FAILED record configRevision（与同批 COMPLETED record
     # 同输入同 digest：批级共享 runtime_overrides 后两分支值恒等）
     failed_record_revision = _batch_runtime_config_revision(
         runtime_overrides, type_weights, pinned_config
     )
 
-    def _is_conn_exhausted(exc: Exception) -> bool:
-        """PG 连接数耗尽（多窗口批并发峰值瞬时挤爆，与回路自身无关）。"""
-        return "too many clients" in str(exc).lower()
-
     async def _calculate_one(loop: LoopLedger) -> dict | None:
-        # 连接耗尽退避重试（2026-10-10 生产回填 11 次「sorry, too many clients
-        # already」失败的根因修复）：瞬时挤爆场景重试即可自愈；其余异常原样
-        # 抛出走既有失败链路。计算为纯读+UPSERT，重试幂等安全。
-        for attempt in range(3):
-            try:
-                return await _calculate_once(loop)
-            except Exception as exc:
-                if attempt < 2 and _is_conn_exhausted(exc):
-                    await asyncio.sleep(2 * (attempt + 1))
-                    continue
-                raise
+        # F02：PG 连接耗尽、TD 0x073a 查询内存耗尽均为基础设施失败。
+        # 有界退避期间释放回路 semaphore/session；未知异常和取消不重试。
+        try:
+            for attempt in range(3):
+                try:
+                    return await _calculate_once(loop, attempt)
+                except Exception as exc:
+                    if attempt < 2 and _is_resource_exhausted(exc):
+                        logger.warning(
+                            "回路 %s 资源暂时耗尽，%ss 后第 %s 次重试: %s",
+                            loop.tag_name,
+                            2 * (attempt + 1),
+                            attempt + 2,
+                            exc,
+                        )
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    raise
 
-        raise AssertionError("unreachable")
+            raise AssertionError("unreachable")
+        finally:
+            # 重试是同一回路的内部尝试，不可重复推进已完成回路分母。
+            if on_completed is not None:
+                try:
+                    await on_completed(str(loop.id))
+                except Exception:  # noqa: BLE001
+                    logger.warning("批量 KPI 进度更新失败", exc_info=True)
 
-    async def _calculate_once(loop: LoopLedger) -> dict | None:
+    async def _calculate_once(loop: LoopLedger, local_attempt: int) -> dict | None:
         # 止血①（2026-10-13 连接风暴）：不用 ``async with``——session 被并发
         # 毒化后其 ``__aexit__`` 的 close 会抛 InvalidRequestError（覆盖/掩盖
         # 原始异常），且被弃 session 的 asyncpg 连接永不归还（NullPool 泄漏，
@@ -1053,6 +1104,7 @@ async def _run_batch_loop_calculations(
                 )
                 data_planner._config_loader = config_loader
                 data_planner._preloaded_op_limits = op_limits_map
+                data_planner._preloaded_data_version = batch_data_version
                 result = await _calculate_loop_kpi(
                     db=worker_db,
                     loop=loop,
@@ -1091,10 +1143,11 @@ async def _run_batch_loop_calculations(
                         loop.tag_name,
                         exc_info=True,
                     )
-                if final_attempt:
+                if final_attempt and not (local_attempt < 2 and _is_resource_exhausted(exc)):
                     # P5-02（G2 遗留③）终末尝试仍失败 → 追加 status=FAILED
                     # 不可变终态 record（payload 含最终错误摘要）。暂态尝试
-                    # （final_attempt=False）不落终态，等待 Celery 重试；
+                    # （final_attempt=False）或尚可局部重试时不落终态，防止
+                    # 后续恢复成功被同键不可变 FAILED record 遮蔽；
                     # 同键已有 record（此前尝试成功）时复用不重写（幂等）。
                     try:
                         await result_ledger.append_failed_result_record(
@@ -1125,28 +1178,23 @@ async def _run_batch_loop_calculations(
                         )
                 raise
             finally:
-                try:
-                    if on_completed is not None:
-                        try:
-                            await on_completed(str(loop.id))
-                        except Exception:  # noqa: BLE001
-                            logger.warning("批量 KPI 进度更新失败", exc_info=True)
-                finally:
-                    await g5_trace.awaited(
-                        "pg.close",
-                        close_session_guarded(
-                            worker_db, label=f"kpi-worker-session[{loop.tag_name}]"
-                        ),
-                        taskId=logical_run_id,
-                        loopId=str(loop.id),
-                        windowStart=ts_start,
-                        windowEnd=ts_end,
-                    )
+                await g5_trace.awaited(
+                    "pg.close",
+                    close_session_guarded(worker_db, label=f"kpi-worker-session[{loop.tag_name}]"),
+                    taskId=logical_run_id,
+                    loopId=str(loop.id),
+                    windowStart=ts_start,
+                    windowEnd=ts_end,
+                )
 
     _batch_results = await asyncio.gather(
         *[_calculate_one(loop) for loop in loops], return_exceptions=True
     )
     _log_batch_phase_timings(_batch_results, ts_start)
+    # F02：一条未恢复的资源失败也不能让父任务 SUCCESS，否则低于 G29
+    # 50% 阈值时不触发 Celery 最终尝试，失败回路永远没有终态 record。
+    # 标准/custom 共用这一边界；G29 的一般业务错误阈值保持不变。
+    _assert_batch_resources(_batch_results)
     return _batch_results
 
 
@@ -1199,6 +1247,29 @@ class BatchSystemicFailure(RuntimeError):
     """
 
 
+class BatchResourceFailure(BatchSystemicFailure):
+    """未恢复的 PG/TD 资源错误；独立于 G29 失败率阈值触发任务重试。"""
+
+
+def _is_resource_exhausted(exc: Exception) -> bool:
+    """只重试已知 PG/TD 资源瞬态错误，不把取数失败判为数据不足。"""
+    message = str(exc).lower()
+    return "too many clients" in message or (
+        "0x073a" in message and "query memory exhausted" in message
+    )
+
+
+def _assert_batch_resources(results: list) -> None:
+    failures = [r for r in results if isinstance(r, Exception) and _is_resource_exhausted(r)]
+    if failures:
+        # 同 BatchSystemicFailure，壳层不得误作 tracker 故障立即回退重跑。
+        # final_attempt=True 时批内已写 FAILED；此前只留 attempt，等待重试。
+        raise BatchResourceFailure(
+            f"批量 KPI 资源失败尚未恢复（{len(failures)}/{len(results)}），"
+            f"本次任务不能标为成功: {failures[0]}"
+        ) from failures[0]
+
+
 def _assert_batch_health(summary: dict[str, int], total: int) -> None:
     """批量失败熔断（整改 G29）。
 
@@ -1236,6 +1307,8 @@ def _summarize_batch_results(
         "success": 0,
         "inconclusive": 0,
         "failed": 0,
+        # G-c B2（2026-10-14 裁决 / 2026-10-16 修复）：取消单列（诚实计数）
+        "cancelled": 0,
         "failed_detail": [],
     }
     for index, result in enumerate(results):
@@ -1244,7 +1317,19 @@ def _summarize_batch_results(
             if loops is not None and index < len(loops)
             else f"#{index}"
         )
-        if isinstance(result, Exception):
+        if isinstance(result, asyncio.CancelledError):
+            # G-c B2（裁决书 §1.1）：CancelledError 继承 BaseException（非
+            # Exception），原分类链不命中 1247 的 Exception 分支、在
+            # result.get 处撞 AttributeError 崩溃——hourly 链 TaskRecord=
+            # FAILED 与 Celery=SUCCESS 双终态矛盾 + 壳层 217 回退整批双跑；
+            # backfill 链整窗（含已 commit 成功回路）误计 failed。现单列
+            # cancelled 并计入 failed（熔断器口径覆盖取消：批量级取消=
+            # 系统性事件应可观测可重试，不静默不崩溃），留 failed_detail。
+            summary["cancelled"] += 1
+            summary["failed"] += 1
+            summary["failed_detail"].append(f"{tag}: (CancelledError 任务取消)")  # type: ignore[union-attr]
+            logger.warning("回路计算被取消 [%s]: %r", tag, result)
+        elif isinstance(result, Exception):
             summary["failed"] += 1
             detail_line = f"{tag}: {str(result)[:80]}"
             summary["failed_detail"].append(detail_line)  # type: ignore[union-attr]
@@ -1695,6 +1780,8 @@ async def _do_calculate_custom_batch(
     参数（logicalRunId=custom task id 推导，Celery 重试幂等）。
     """
     from app.core.db import AsyncSessionLocal
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
     from app.services.engine_rule_loader import get_engine_rule_loader
     from app.services.loop_config import get_loop_type_weights_map
 
@@ -1726,6 +1813,16 @@ async def _do_calculate_custom_batch(
 
         if not loops:
             return {"total": 0, "success": 0, "failed": 0}
+
+        if attempt_no is not None and attempt_no > 1:
+            await task_tracker.reset_task_progress(task_id)
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            loops_total=len(loops),
+            current_stage="取数",
+            started_at=datetime.now(UTC).isoformat(),
+        )
 
         metric_result = await db.execute(select(MetricConfig))
         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
@@ -1759,6 +1856,14 @@ async def _do_calculate_custom_batch(
             t_prewarm_elapsed,
         )
 
+        completed = 0
+
+        async def _on_completed(_loop_id: str) -> None:
+            nonlocal completed
+            completed += 1
+            # 完成的是实际处理的回路；INCONCLUSIVE 不变成评估成功。
+            await _update_backfill_progress(task_id, 1, 1, completed, len(loops))
+
         async def _run_batch() -> list:
             t0 = time.perf_counter()
             r = await _run_batch_loop_calculations(
@@ -1770,6 +1875,7 @@ async def _do_calculate_custom_batch(
                 type_weights=type_weights,
                 custom_task_id=task_id,
                 logical_run_id=batch_logical_run_id,
+                on_completed=_on_completed,
                 save_input_snapshot=True,
                 pinned_config=pinned_config,
                 release_context=await _resolve_task_release_context(db),
@@ -1803,6 +1909,13 @@ async def _do_calculate_custom_batch(
         summary = _summarize_batch_results(results)
         # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
         _assert_batch_health(summary, len(results))
+
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            loops_done=completed,
+            current_stage="完成",
+        )
 
         return {
             "total": len(loops),
@@ -2449,25 +2562,10 @@ async def _calculate_loop_kpi(
         # ⑤（2026-10-13 连接风暴）：加 exc_info——首发现场只记 message 导致
         # 毒化首发行的精确位置无法钉死（诊断报告 §3.5 的直接原因）。
         logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc, exc_info=True)
-        # P2: DataPlanner 失败 → 数据严重不足 → L0
-        return _timing_into(
-            await _timed_persist(
-                db=db,
-                loop_id=str(loop.id),
-                ts_start=ts_start,
-                ts_end=ts_end,
-                status="INCONCLUSIVE",
-                custom_task_id=custom_task_id,
-                fitness_level="L0",
-                fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
-                fitness_detail={"reason": "DataPlanner取数失败", "error": str(exc)},
-                assess_level="L0",
-                diagnose_level="L0",
-                tune_level="L0",
-                source=source,
-                source_task_id=source_task_id,
-            )
-        )
+        # F02：查询资源/执行异常不证明原始数据不足。原样交给调用方的
+        # rollback、有限资源重试和最终 FAILED record 链，保留错误身份与版本。
+        # 只有查询成功后的空 Bundle/数据门禁才可给 DATA_INSUFFICIENT。
+        raise
 
     if not bundles:
         logger.info("回路 %s 无数据（空 Bundle），返回 INCONCLUSIVE", loop.tag_name)
@@ -4499,11 +4597,13 @@ async def _do_calculate_node_kpi(ts_start: str | None = None, ts_end: str | None
     )
 
     logger.info(
-        "节点级聚合完成: total=%d, success=%d, skipped=%d, failed=%d",
+        "节点级聚合完成: total=%d, success=%d, skipped=%d, failed=%d, cancelled=%d",
         result["total"],
         result["success"],
         result["skipped"],
         result["failed"],
+        # G-c B1：取消节点单列消费（.get 兜底旧形状/无节点早退路径）
+        result.get("cancelled", 0),
     )
     return result
 

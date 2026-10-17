@@ -405,7 +405,10 @@ def _record_stub(record_id: str, snapshot_id: str, metrics_detail: dict) -> Simp
 
 
 class TestKpiReplayC12b:
-    async def test_v1_replay_identical_reads_original_package(self, snap_dir, fixed_build):
+    @pytest.mark.parametrize("limit_source", [None, "LOOP_FIELD", "TAG_RANGE", "DEFAULT_0_100"])
+    async def test_v1_replay_identical_reads_original_package(
+        self, snap_dir, fixed_build, limit_source
+    ):
         """C12b：v1 record 重放=读原包重算，与 v1 全等；不重查当前源."""
         from app.contracts.data_types import ControlType
         from app.tasks.kpi_calc import (
@@ -415,6 +418,12 @@ class TestKpiReplayC12b:
         )
 
         bundles = _make_kpi_bundles()
+        if limit_source is not None:
+            for bundle in bundles:
+                bundle.data_block.signals["op_limits_source"] = [limit_source]
+                bundle.data_block.signals["op_limits_provenance"] = [
+                    "DEFAULT" if limit_source == "DEFAULT_0_100" else "ACTUAL"
+                ]
         config_bundle = _build_config_bundle("loop-1", ControlType.TEMPERATURE, None)
         v1_detail = _extract_metrics_detail(
             _compute_kpis_three_layer(bundles, config_bundle, None)[0]
