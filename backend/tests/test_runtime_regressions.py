@@ -61,17 +61,50 @@ def test_hourly_kpi_task_overrides_global_hard_timeout() -> None:
 
 
 def test_stop_beat_keeps_pid_file_owned_by_existing_process(tmp_path, monkeypatch) -> None:
-    """reload 实例未创建 Beat 时不得删除现有 Beat 的 PID 文件。"""
+    """未创建 Beat 的实例保留现有 PID 文件，所有进程边界均隔离。"""
+    from pathlib import Path
+
     from app import main
 
-    monkeypatch.chdir(tmp_path)
-    pid_file = tmp_path / "celerybeat.pid"
-    pid_file.write_text(str(os.getpid()))
-    monkeypatch.setattr(main, "_celery_beat_process", None)
+    protected = (
+        "_celery_beat_process",
+        "_celery_beat_log_handle",
+        "_celery_ever_touched",
+        "_pgrep_pids",
+        "_terminate_pids_fallback",
+        "_kill_process_group",
+    )
+    original_state = {name: getattr(main, name) for name in protected}
+    original_cwd = os.getcwd()
+    fake_pid = 271828182
+    discover = MagicMock(return_value=[fake_pid])
+    terminate = MagicMock(return_value=1)
+    kill_owned = MagicMock()
+    with monkeypatch.context() as guard:
+        guard.chdir(tmp_path)
+        for name, value in {
+            "_celery_beat_process": None,
+            "_celery_beat_log_handle": None,
+            "_celery_ever_touched": False,
+            "_pgrep_pids": discover,
+            "_terminate_pids_fallback": terminate,
+            "_kill_process_group": kill_owned,
+        }.items():
+            guard.setattr(main, name, value)
+        pid_file = Path(main._beat_pidfile_path())
+        assert pid_file.resolve().is_relative_to(tmp_path.resolve())
+        pid_file.parent.mkdir(parents=True)
+        pid_file.write_text(str(fake_pid))
 
-    main._stop_celery_beat()
+        main._stop_celery_beat()
 
-    assert pid_file.exists()
+        discover.assert_called_once_with(main._BEAT_PGREP_PATTERN)
+        terminate.assert_called_once_with([fake_pid], "Celery Beat（遗留）")
+        kill_owned.assert_not_called()
+        assert pid_file.read_text() == str(fake_pid)
+    assert os.getcwd() == original_cwd
+    for name, value in original_state.items():
+        assert getattr(main, name) is value
 
 
 @pytest.mark.asyncio
