@@ -1,5 +1,7 @@
 # P6 任务状态看板（kcode 主协调）
 
+> **当前入口（2026-10-17直接整改）**：下列旧基线、阶段表、CP1–79为历史进程快照，当前整改与六态以《终局整改台账.md》《终局整改-整改后复验报告.md》为准。用户四项豁免与G6/G7=CONDITIONAL_PASS保留；本轮代码尚未提交/合入/部署。
+
 基线：`6c92cf6944d40bc2c92c9296110711933be28ec7` ｜ 隔离树：`/Users/zhangping/DEV/clpm-p6-kcode-20261014`（分支 `codex/p6-kcode-20261014`）｜ Keeper/整合/验收组织：kcode 本会话（单 Owner）｜ 更新：2026-10-14
 
 ## 阶段看板
@@ -154,3 +156,7 @@
 77. CP-20261017-1620: F02 matrix rebuilt 6 PASS + 3 TERMINAL_MISMATCH (batch4/5/7 failures confirmed).
 78. CP-20261017-1630: F03 candidate complete; CI blocking E2E gate + 20 critical cases; controlled-fail rc=2/1 verified.
 79. CP-20261017-1640: F05 docs sync; four-waiver table + version fix + P7-02 status fix + CP pointers.
+
+80. CP-20261017-直接整改：用户授权根据非作者回执整改并复验；候选dbb1de31+未提交补丁，F02资源异常/父子屏障纠偏、F03拒绝skip误绿、F04工程快照恢复、F07真实换号缓存泄漏修复；F05/F06事实分层、F08持久归档3/3恢复。当前各项在实施/非作者复验中，未执行共享部署/Worker/Beat启停，最终结果见整改后复验报告。
+
+81. CP-20261017-1820（直接整改复验接续）：候选dbb1de31+36文件未提交补丁；后端7431收集/6909 passed、0 failed，前端1021 passed；F01反向及F02/F03/F04交叉非作者、F04/F07真实隔离UI、F05/F06/F08独立核验通过各自范围。F02真实容量、F03真实业务/远端CI与代码合入部署仍BLOCKED/未执行；四用户豁免、G6/G7=CONDITIONAL_PASS保留，不能宣称八项全量关闭。最终身份与证据见《终局整改-整改后复验报告.md》。
