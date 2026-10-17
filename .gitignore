@@ -113,3 +113,9 @@ e2e/netprobe*.mjs
 docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/log-audit-a1pp.json
 docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/trace-a1-raw.log
 docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/observed.json
+
+# Local tool state (F01-F08 remediation session 2026-10-17)
+.codegraph/
+.zcode/
+e2e/dbg*.mjs
+e2e/gamma-*.mjs

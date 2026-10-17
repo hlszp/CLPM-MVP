@@ -1,0 +1,7 @@
+=== Critical E2E Gate ===
+base_url=http://localhost:99999
+api_url=http://localhost:17101
+specs=tests/login.spec.ts tests/roles-smoke.spec.ts tests/confidence.spec.ts tests/loop.spec.ts
+
+--- Environment check ---
+ERROR: Frontend not reachable at http://localhost:99999

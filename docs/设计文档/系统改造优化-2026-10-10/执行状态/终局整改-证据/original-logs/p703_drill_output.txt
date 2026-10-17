@@ -1,0 +1,46 @@
+[drill] scratch: probeA=clpm_p703_probeA_6eb499 drill=clpm_p703_drill_1ab2c8（finally 全 DROP）
+[drill] === 步骤 A：空库直接 upgrade head（链完整性探测）===
+[drill] $ alembic upgrade head  (db=clpm_p703_probeA_6eb499) -> rc=1
+[drill]   stderr/stdout tail:
+gresql/asyncpg.py", line 513, in _handle_exception
+    self._adapt_connection._handle_exception(error)
+  File "/Users/zhangping/DEV/clpm-p703/backend/.venv/lib/python3.12/site-packages/sqlalchemy/dialects/postgresql/asyncpg.py", line 797, in _handle_exception
+    raise translated_error from error
+sqlalchemy.exc.ProgrammingError: (sqlalchemy.dialects.postgresql.asyncpg.ProgrammingError) <class 'asyncpg.exceptions.UndefinedTableError'>: relation "loop_ledger" does not exist
+[SQL: ALTER TABLE loop_ledger ADD COLUMN score_weights JSONB]
+(Background on this error at: https://sqlalche.me/e/20/f405)
+
+[drill] A 结论：rc=1（空库不可全链 upgrade——生产口径仍需 bootstrap 起步）
+[drill] === 步骤 B0：空库 → 引导 SQL(01+02) → stamp head ===
+[drill] bootstrap 01+02 执行 rc=0（asyncpg execute 无异常）
+[drill] $ alembic stamp head  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] S0(stamp head): version=p702perm01 tables=83 perm=127 ledger=4
+[drill] === 步骤 B1：downgrade -3（p702perm01 -> p504srvflt01）===
+[drill] $ alembic downgrade -3  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] S1(downgrade -3): version=p504srvflt01 tables=79 perm=124 ledger=3
+[drill]   diff S0 -> S1: 表 -['loop_investigation', 'user_loop_follow', 'user_work_resume', 'user_workspace_preference'] +[]
+[drill]     alembic_version: p702perm01 -> p504srvflt01
+[drill]     sys_permission: 127 -> 124
+[drill]     sys_authz_policy: 4 -> 3
+[drill]     sys_role_permission: 358 -> 350
+[drill]     loop_investigation: 0 -> -1
+[drill]     user_loop_follow: 0 -> -1
+[drill] === 步骤 B2：upgrade head（回退后重升级）===
+[drill] $ alembic upgrade head  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] S2(upgrade head): version=p702perm01 tables=83 perm=127 ledger=4
+[drill]   diff S1 -> S2: 表 -[] +['loop_investigation', 'user_loop_follow', 'user_work_resume', 'user_workspace_preference']
+[drill]     alembic_version: p504srvflt01 -> p702perm01
+[drill]     sys_permission: 124 -> 127
+[drill]     sys_authz_policy: 3 -> 4
+[drill]     sys_role_permission: 350 -> 358
+[drill]     loop_investigation: -1 -> 0
+[drill]     user_loop_follow: -1 -> 0
+[drill] $ alembic check  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] === 步骤 B3：二轮 downgrade -3 → upgrade head（幂等）===
+[drill] $ alembic downgrade -3  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] $ alembic upgrade head  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] S3(二轮回): version=p702perm01 tables=83 perm=127 ledger=4
+[drill] 幂等结论：二轮 S3 与 S2 表集合与授权数据完全一致 PASS
+[drill] $ alembic check  (db=clpm_p703_drill_1ab2c8) -> rc=0
+[drill] === 演练全周期 PASS ===
+[drill] finally：DROP clpm_p703_probeA_6eb499, clpm_p703_drill_1ab2c8 完成（scratch 自清）
