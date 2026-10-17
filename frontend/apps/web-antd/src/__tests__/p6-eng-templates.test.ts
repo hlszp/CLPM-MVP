@@ -39,6 +39,9 @@ const api = vi.hoisted(() => ({
   getEngineeringTemplateLoopsApi: vi.fn(),
   getEngineeringTemplateVersionsApi: vi.fn(),
   getEngineeringTemplatesApi: vi.fn(),
+  getLoopBatchSnapshotsApi: vi.fn(),
+  getLoopBatchSnapshotApi: vi.fn(),
+  restoreLoopBatchSnapshotApi: vi.fn(),
   previewConfigOverrideApi: vi.fn(),
   publishConfigOverrideApi: vi.fn(),
   publishEngineeringTemplateVersionApi: vi.fn(),
@@ -84,7 +87,8 @@ vi.mock('#/api/plant-node', async () => {
   const actual = await vi.importActual<any>('#/api/plant-node');
   return {
     ...actual,
-    getPlantNodeTreeApi: (...a: any[]) => plantNodeApi.getPlantNodeTreeApi(...a),
+    getPlantNodeTreeApi: (...a: any[]) =>
+      plantNodeApi.getPlantNodeTreeApi(...a),
   };
 });
 
@@ -94,8 +98,7 @@ vi.mock('@vben/common-ui', () => ({
 
 vi.mock('#/components/clpm', () => ({
   ClpmPageToolbar: {
-    template:
-      '<div class="toolbar-stub"><slot /><slot name="actions" /></div>',
+    template: '<div class="toolbar-stub"><slot /><slot name="actions" /></div>',
   },
   ClpmStandardActions: { template: '<div class="actions-stub" />' },
 }));
@@ -163,7 +166,14 @@ vi.mock('ant-design-vue', async () => {
       template: '<span class="switch-stub" />',
     },
     Table: {
-      props: ['columns', 'dataSource', 'loading', 'rowSelection', 'rowKey', 'pagination'],
+      props: [
+        'columns',
+        'dataSource',
+        'loading',
+        'rowSelection',
+        'rowKey',
+        'pagination',
+      ],
       methods: {
         selectAllRows(this: any) {
           const key = typeof this.rowKey === 'string' ? this.rowKey : 'loopId';
@@ -215,8 +225,13 @@ vi.mock('ant-design-vue', async () => {
   };
 });
 
+// oxlint-disable-next-line import/first
+import { Table } from 'ant-design-vue';
+
 // oxlint-disable-next-line import/first -- Vitest mocks must be registered before these imports
 import BatchApplyModal from '#/views/config/engineering-templates/batch-apply-modal.vue';
+// oxlint-disable-next-line import/first
+import BatchRestoreModal from '#/views/config/engineering-templates/batch-restore-modal.vue';
 // oxlint-disable-next-line import/first
 import IndexPage from '#/views/config/engineering-templates/index.vue';
 // oxlint-disable-next-line import/first
@@ -337,7 +352,12 @@ const DETAIL: EngineeringTemplateApi.TemplateDetail = {
 function setAccount(roles: string[], codes: string[]) {
   const userStore = useUserStore();
   const accessStore = useAccessStore();
-  userStore.setUserInfo({ realName: 'T', roles, userId: 'u-1', username: 't' } as any);
+  userStore.setUserInfo({
+    realName: 'T',
+    roles,
+    userId: 'u-1',
+    username: 't',
+  } as any);
   accessStore.setAccessCodes(codes);
 }
 
@@ -666,6 +686,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
         { field: 'engineering_template_id', before: null, after: 'tpl-1' },
       ],
       error: null,
+      beforeState: {
+        engineering_template_id: null,
+        engineering_template_version: null,
+      },
+      stateToken: 'token-1',
     },
     {
       loopId: 'loop-2',
@@ -673,6 +698,7 @@ describe('批量应用向导（batch-apply-modal）', () => {
       status: 'FAIL',
       changes: [],
       error: 'OP 输出下限 90 与该回路既有上限 80 颠倒',
+      stateToken: 'token-2',
     },
   ];
 
@@ -695,7 +721,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
 
     expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
       loopIds: ['loop-1', 'loop-2'],
-      updates: { engineeringTemplateId: 'tpl-1' },
+      updates: {
+        engineeringTemplateId: 'tpl-1',
+        engineeringTemplateVersion: null,
+      },
+      operationId: expect.any(String),
       dryRun: true,
     });
     // 失败项呈现：FAIL 徽标 + error 文本；汇总计数对得上
@@ -704,7 +734,7 @@ describe('批量应用向导（batch-apply-modal）', () => {
     expect(wrapper.find('[data-testid="batch-summary"]').text()).toContain(
       '失败 1',
     );
-    expect(wrapper.text()).toContain('dry-run 预览（零写入）');
+    expect(wrapper.text()).toContain('操作前快照预览（零写入）');
   });
 
   it('确认执行：dryRun:false 调用 → done 汇总渲染 + applied 事件', async () => {
@@ -721,10 +751,8 @@ describe('批量应用向导（batch-apply-modal）', () => {
         action: 'update',
         loopIds: ['loop-1'],
         dryRun: false,
-        results: [
-          { ...DRY_RUN_RESULTS[0]! },
-          { ...DRY_RUN_RESULTS[1]! },
-        ],
+        snapshotId: 'snapshot-1',
+        results: [{ ...DRY_RUN_RESULTS[0]! }, { ...DRY_RUN_RESULTS[1]! }],
       });
     const wrapper = mountModal();
     await flushPromises();
@@ -737,7 +765,12 @@ describe('批量应用向导（batch-apply-modal）', () => {
 
     expect(api.batchApplyLoopsApi).toHaveBeenLastCalledWith({
       loopIds: ['loop-1', 'loop-2'],
-      updates: { engineeringTemplateId: 'tpl-1' },
+      updates: {
+        engineeringTemplateId: 'tpl-1',
+        engineeringTemplateVersion: null,
+      },
+      operationId: expect.any(String),
+      expectedStateTokens: { 'loop-1': 'token-1', 'loop-2': 'token-2' },
       dryRun: false,
     });
     expect(wrapper.find('[data-testid="batch-summary"]').text()).toContain(
@@ -795,7 +828,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
 
     expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
       loopIds: ['loop-1', 'loop-2'],
-      updates: { engineeringTemplateId: 'tpl-1' },
+      updates: {
+        engineeringTemplateId: 'tpl-1',
+        engineeringTemplateVersion: null,
+      },
+      operationId: expect.any(String),
       dryRun: true,
     });
   });
@@ -869,7 +906,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
 
     expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
       loopIds: ['loop-1', 'loop-2', 'loop-3'],
-      updates: { engineeringTemplateId: 'tpl-1' },
+      updates: {
+        engineeringTemplateId: 'tpl-1',
+        engineeringTemplateVersion: null,
+      },
+      operationId: expect.any(String),
       dryRun: true,
     });
   });
@@ -884,6 +925,342 @@ describe('批量应用向导（batch-apply-modal）', () => {
     // 旧断头指引（回路配置页批量表单不支持模板字段）不得再出现
     expect(note.text()).not.toContain('回路配置页');
   });
+
+  it('1000 条跨页选择的预览和执行均分 5 批，丢响应后沿原 operationId 幂等重试', async () => {
+    loopApi.getLoopListApi.mockImplementation(async ({ page }: any) => ({
+      items: Array.from({ length: 50 }, (_, i) =>
+        makeLoopListItem(
+          `loop-${(page - 1) * 50 + i}`,
+          `FIC-${(page - 1) * 50 + i}`,
+        ),
+      ),
+      total: 1000,
+      page,
+      pageSize: 50,
+    }));
+    const written = new Map<string, any>();
+    let lostResponse = false;
+    api.batchApplyLoopsApi.mockImplementation(
+      async (request: EngineeringTemplateApi.LoopBatchRunParams) => {
+        const result = {
+          affected: request.loopIds.length,
+          action: 'update',
+          dryRun: request.dryRun,
+          snapshotId: request.dryRun ? null : request.operationId,
+          results: request.loopIds.map((loopId) => ({
+            loopId,
+            tagName: loopId,
+            status: 'OK',
+            changes: [],
+            error: null,
+            stateToken: `token-${loopId}`,
+            beforeState: {
+              engineering_template_id: null,
+              engineering_template_version: null,
+            },
+          })),
+        };
+        if (!request.dryRun) {
+          if (written.has(request.operationId!))
+            return written.get(request.operationId!);
+          written.set(request.operationId!, result);
+          if (written.size === 2 && !lostResponse) {
+            lostResponse = true;
+            throw new Error('transport response lost');
+          }
+        }
+        return result;
+      },
+    );
+    const wrapper = mountModal();
+    await flushPromises();
+    for (let page = 1; page <= 20; page++) {
+      if (page > 1) {
+        const pagination = wrapper.findComponent(Table).props('pagination');
+        if (pagination && pagination.onChange) pagination.onChange(page, 50);
+        await flushPromises();
+      }
+      await wrapper.find('.select-all-stub').trigger('click');
+    }
+    await wrapper.find('[data-testid="btn-dry-run"]').trigger('click');
+    await flushPromises();
+    const previews = api.batchApplyLoopsApi.mock.calls.map(
+      ([request]) => request,
+    );
+    expect(previews).toHaveLength(5);
+    expect(previews.map((request) => request.loopIds.length)).toEqual([
+      200, 200, 200, 200, 200,
+    ]);
+    expect(wrapper.find('[data-testid="batch-summary"]').text()).toContain(
+      '共 1000 条',
+    );
+    expect(wrapper.text()).toContain('操作前完整工程属性');
+    await wrapper.find('[data-testid="btn-confirm-execute"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('transport response lost');
+    await wrapper.find('[data-testid="btn-retry-execute"]').trigger('click');
+    await flushPromises();
+    expect(written.size).toBe(5);
+    expect(new Set(written.keys())).toEqual(
+      new Set(previews.map((request) => request.operationId)),
+    );
+    expect(wrapper.find('[data-testid="btn-review-restore"]').text()).toContain(
+      '5 批',
+    );
+    expect(wrapper.emitted('applied')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('缺少逐回路结果时拒绝进入确认，避免静默截断', async () => {
+    api.batchApplyLoopsApi.mockResolvedValue({
+      results: [],
+      affected: 0,
+      dryRun: true,
+    });
+    const wrapper = mountModal();
+    await flushPromises();
+    await wrapper.find('.select-all-stub').trigger('click');
+    await wrapper.find('[data-testid="btn-dry-run"]').trigger('click');
+    await flushPromises();
+    expect(wrapper.text()).toContain('批次结果不完整');
+    expect(wrapper.find('[data-testid="btn-confirm-execute"]').exists()).toBe(
+      false,
+    );
+  });
+});
+
+describe('批量维护快照恢复（F04）', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia());
+    for (const fn of Object.values(api)) fn.mockReset();
+    api.getLoopBatchSnapshotsApi.mockResolvedValue({ items: [], total: 0 });
+  });
+
+  it('5 批共1000条原始NULL/pin可审查，零写入预检后确认分批恢复并呈现冲突/幂等状态', async () => {
+    const snapshotIds = Array.from({ length: 5 }, (_, i) => `snapshot-${i}`);
+    api.getLoopBatchSnapshotApi.mockImplementation(
+      async (snapshotId: string, offset: number, limit: number) => ({
+        snapshotId,
+        offset,
+        limit,
+        total: 200,
+        items: Array.from(
+          { length: Math.min(limit, 200 - offset) },
+          (_, i) => ({
+            loopId: `${snapshotId}-loop-${offset + i}`,
+            tagName: `FIC-${offset + i}`,
+            before: {
+              engineering_template_id: i % 2 ? 'old-template' : null,
+              engineering_template_version: i % 2 ? 2 : null,
+            },
+            after: {
+              engineering_template_id: 'new-template',
+              engineering_template_version: null,
+            },
+            afterToken: `token-${i}`,
+          }),
+        ),
+      }),
+    );
+    api.restoreLoopBatchSnapshotApi.mockImplementation(
+      async (snapshotId: string, request: any) => ({
+        snapshotId,
+        affected: 198,
+        dryRun: request.dryRun,
+        results: request.loopIds.map((loopId: string, index: number) => ({
+          loopId,
+          tagName: loopId,
+          status: ['CONFLICT', 'ALREADY_RESTORED'][index] ?? 'OK',
+          changes: [],
+          error: index === 0 ? '原动作后已被编辑，保留当前值' : null,
+        })),
+      }),
+    );
+    const wrapper = mount(BatchRestoreModal, {
+      props: { open: true, snapshotIds },
+    });
+    await flushPromises();
+    expect(api.getLoopBatchSnapshotApi).toHaveBeenCalledTimes(5);
+    expect(
+      wrapper.find('[data-testid="restore-denominator"]').text(),
+    ).toContain('完整快照 1000 条 / 5 个恢复批次');
+    expect(wrapper.text()).toContain('"engineering_template_version": 2');
+    expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalled();
+    expect(
+      wrapper
+        .find('[data-testid="btn-confirm-restore"]')
+        .attributes('disabled'),
+    ).toBeDefined();
+    await wrapper
+      .find('[data-testid="restore-reason"]')
+      .setValue('回到维护前状态');
+    await wrapper.find('[data-testid="btn-preview-restore"]').trigger('click');
+    await flushPromises();
+    expect(
+      api.restoreLoopBatchSnapshotApi.mock.calls.every(
+        ([, request]) => request.dryRun,
+      ),
+    ).toBe(true);
+    await wrapper.find('[data-testid="btn-confirm-restore"]').trigger('click');
+    await flushPromises();
+    expect(
+      api.restoreLoopBatchSnapshotApi.mock.calls.filter(
+        ([, request]) => !request.dryRun,
+      ),
+    ).toHaveLength(5);
+    expect(wrapper.find('[data-testid="restore-summary"]').text()).toContain(
+      '结果 1000 条',
+    );
+    expect(wrapper.text()).toContain('并发冲突（未写入）');
+    expect(wrapper.text()).toContain('已恢复（幂等跳过）');
+    expect(wrapper.emitted('restored')).toHaveLength(1);
+    wrapper.unmount();
+  });
+
+  it('快照分页若提前为空，阻止恢复而不把局部数据冒充完整快照', async () => {
+    api.getLoopBatchSnapshotApi.mockResolvedValue({
+      items: [],
+      total: 1000,
+      offset: 0,
+      limit: 200,
+    });
+    const wrapper = mount(BatchRestoreModal, {
+      props: { open: true, snapshotIds: ['snapshot-1'] },
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain('快照分页提前为空');
+    expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalled();
+    expect(
+      wrapper
+        .find('[data-testid="btn-preview-restore"]')
+        .attributes('disabled'),
+    ).toBeDefined();
+  });
+
+  it('同一回路出现在多个快照时结果键按快照稳定区分，重排不依赖行下标', async () => {
+    api.getLoopBatchSnapshotApi.mockImplementation(
+      async (snapshotId: string) => ({
+        snapshotId,
+        total: 1,
+        items: [
+          {
+            loopId: 'shared-loop',
+            tagName: 'shared-loop',
+            before: {},
+            after: {},
+          },
+        ],
+      }),
+    );
+    api.restoreLoopBatchSnapshotApi.mockImplementation(
+      async (snapshotId: string, request: any) => ({
+        snapshotId,
+        affected: 1,
+        dryRun: request.dryRun,
+        results: [
+          {
+            loopId: 'shared-loop',
+            tagName: 'shared-loop',
+            status: 'OK',
+            changes: [],
+            error: null,
+          },
+        ],
+      }),
+    );
+    const wrapper = mount(BatchRestoreModal, {
+      props: { open: true, snapshotIds: ['snapshot-A', 'snapshot-B'] },
+    });
+    await flushPromises();
+    await wrapper
+      .find('[data-testid="restore-reason"]')
+      .setValue('核对跨批次键');
+    await wrapper.find('[data-testid="btn-preview-restore"]').trigger('click');
+    await flushPromises();
+    const table = wrapper.findAllComponents(Table).at(-1)!;
+    const rows = table.props('dataSource')!;
+    const key = table.props('rowKey') as (row: {
+      loopId: string;
+      snapshotId: string;
+    }) => string;
+    expect(key).toHaveLength(1);
+    expect(rows.map((row) => key(row))).toEqual([
+      'snapshot-A:shared-loop',
+      'snapshot-B:shared-loop',
+    ]);
+    expect(rows.toReversed().map((row) => key(row))).toEqual([
+      'snapshot-B:shared-loop',
+      'snapshot-A:shared-loop',
+    ]);
+    wrapper.unmount();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// F04：历史选择不得沿用另一批已读取快照
+// ---------------------------------------------------------------------------
+
+it('读取A后改选B会清空原快照并禁止预检，重读后只预检B', async () => {
+  setActivePinia(createPinia());
+  for (const fn of Object.values(api)) fn.mockReset();
+  api.getLoopBatchSnapshotsApi.mockResolvedValue({ items: [], total: 0 });
+  api.getLoopBatchSnapshotApi.mockImplementation(
+    async (snapshotId: string) => ({
+      snapshotId,
+      total: 1,
+      items: [
+        {
+          loopId: `${snapshotId}-loop`,
+          tagName: snapshotId,
+          before: {},
+          after: {},
+        },
+      ],
+    }),
+  );
+  api.restoreLoopBatchSnapshotApi.mockImplementation(
+    async (snapshotId: string, request: any) => ({
+      snapshotId,
+      affected: 1,
+      dryRun: true,
+      results: request.loopIds.map((loopId: string) => ({
+        loopId,
+        status: 'OK',
+        changes: [],
+        error: null,
+      })),
+    }),
+  );
+  const wrapper = mount(BatchRestoreModal, {
+    props: { open: true, snapshotIds: ['snapshot-A'] },
+  });
+  await flushPromises();
+  wrapper.findComponent(Table).props('rowSelection')!.onChange!(
+    ['snapshot-B'],
+    [],
+  );
+  await flushPromises();
+  expect(wrapper.find('[data-testid="restore-denominator"]').text()).toContain(
+    '完整快照 0 条 / 0 个恢复批次',
+  );
+  await wrapper.find('[data-testid="restore-reason"]').setValue('核对改选');
+  expect(
+    wrapper.find('[data-testid="btn-preview-restore"]').attributes('disabled'),
+  ).toBeDefined();
+  expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalled();
+  await wrapper.find('[data-testid="btn-load-snapshots"]').trigger('click');
+  await flushPromises();
+  await wrapper.find('[data-testid="btn-preview-restore"]').trigger('click');
+  await flushPromises();
+  expect(api.restoreLoopBatchSnapshotApi).toHaveBeenCalledExactlyOnceWith(
+    'snapshot-B',
+    {
+      reason: '核对改选',
+      dryRun: true,
+      loopIds: ['snapshot-B-loop'],
+    },
+  );
+  wrapper.unmount();
 });
 
 // ---------------------------------------------------------------------------
