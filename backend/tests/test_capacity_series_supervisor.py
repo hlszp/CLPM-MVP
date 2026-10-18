@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import os
 import signal
@@ -365,3 +366,54 @@ def test_actual_invocation_cannot_add_unapproved_interpreter_flags(case):
     result = subprocess.run([argv[0], "-u", *argv[1:]], capture_output=True, text=True, timeout=5)
     assert result.returncode == 2 and "actual argv differs" in result.stderr
     assert not output.exists()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        None,
+        "foreign_launcher",
+        "wrong_venv",
+        "wrong_base",
+        "foreign_framework",
+        "flags",
+        "script",
+        "protocol",
+    ],
+)
+def test_framework_argv_alias_requires_the_bound_interpreter_chain(tmp_path, monkeypatch, mutation):
+    spec = importlib.util.spec_from_file_location("supervisor_argv_test", SUPERVISOR)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    framework = tmp_path / "Python.framework/Versions/3.12"
+    native = framework / "Resources/Python.app/Contents/MacOS/Python"
+    base = framework / "bin/python3.12"
+    venv = tmp_path / ".venv/bin/python"
+    for path in (native, base):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("OFFLINE identity fixture")
+    venv.parent.mkdir(parents=True)
+    venv.symlink_to(base)
+    monkeypatch.setattr(mod.sys, "platform", "darwin")
+    monkeypatch.setattr(mod.sys, "base_prefix", str(framework))
+    monkeypatch.setattr(mod.sys, "_base_executable", str(base))
+    monkeypatch.setattr(mod.sys, "executable", str(venv))
+    expected = [str(venv), "-B", str(SUPERVISOR), "--protocol", "/bound/protocol.json"]
+    actual = [str(native), *expected[1:]]
+    if mutation == "foreign_launcher":
+        actual[0] = str(tmp_path / "unapproved/Python")
+    elif mutation == "wrong_venv":
+        monkeypatch.setattr(mod.sys, "executable", str(tmp_path / "other-venv/bin/python"))
+    elif mutation == "wrong_base":
+        monkeypatch.setattr(mod.sys, "_base_executable", str(native))
+    elif mutation == "foreign_framework":
+        monkeypatch.setattr(mod.sys, "base_prefix", str(tmp_path / "unapproved-framework"))
+    elif mutation == "flags":
+        actual.insert(1, "-u")
+    elif mutation == "script":
+        actual[2] = "/unapproved/capacity_series_supervisor.py"
+    elif mutation == "protocol":
+        actual[-1] = "/unapproved/protocol.json"
+    assert mod.matches_invocation(actual, expected) is (mutation is None)
+    if mutation is None:
+        assert mod.matches_invocation([*actual, "--check-only"], expected)

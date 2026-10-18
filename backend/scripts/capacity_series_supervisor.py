@@ -54,6 +54,25 @@ def utc(value):
     return result.astimezone(UTC)
 
 
+def matches_invocation(argv, expected):
+    """Bind argv exactly, accounting only for CPython's Darwin framework launcher."""
+    actual = list(argv)
+    if actual and actual[0] != expected[0] and sys.platform == "darwin":
+        framework = Path(sys.base_prefix).resolve()
+        native = framework / "Resources/Python.app/Contents/MacOS/Python"
+        base = Path(sys._base_executable).resolve()
+        if (
+            Path(actual[0]).is_absolute()
+            and native.is_file()
+            and Path(actual[0]).resolve() == native.resolve()
+            and Path(sys.executable).absolute() == Path(expected[0]).absolute()
+            and base == Path(expected[0]).resolve()
+            and base.parent == framework / "bin"
+        ):
+            actual[0] = expected[0]
+    return actual == expected or actual == [*expected, "--check-only"]
+
+
 def load(protocol_path, output, argv):
     protocol_path, output = Path(protocol_path).resolve(), Path(output).resolve()
     protocol = read(protocol_path)
@@ -86,7 +105,7 @@ def load(protocol_path, output, argv):
         str(output),
     ]
     require(config["approvedInvocation"] == expected, "unapproved supervisor invocation")
-    require(argv == expected or argv == [*expected, "--check-only"], "actual argv differs")
+    require(matches_invocation(argv, expected), "actual argv differs")
     require(
         execution["invocation"]
         == [
