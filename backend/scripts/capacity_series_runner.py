@@ -9,15 +9,20 @@ or resumed. All operational helpers remain separately hash-bound.
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import math
+import os
 import re
 import subprocess
 import sys
+import threading
+import time
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 from uuid import UUID
 
 CONDITIONS = (
@@ -514,3 +519,397 @@ def run_command(argv, label, *, cwd, env, timeout=600):
         raise ContractError(f"{label.name}: {type(error).__name__}") from error
     require(record["rc"] == 0, f"{label.name}: rc={record['rc']}")
     return record
+
+
+class LiveRuntime:
+    """Only the isolated test runtime; lifecycle helpers own API/Worker/Beat."""
+
+    fixture_only = False
+
+    def __init__(self, ctx):
+        require(ctx.protocol["execution"]["evidenceLevel"] == "REAL_TEST", "offline protocol")
+        from celery import Celery
+        from dotenv import dotenv_values
+
+        self.ctx = ctx
+        self.cfg = dotenv_values(ctx.runtime / "backend/.env")
+        cfg = self.cfg
+        require(
+            cfg["POSTGRES_DB"] == cfg["TDENGINE_DB"] == "clpm_capacity_20261017_s01",
+            "database is outside isolated test scope",
+        )
+        for kind, port in (("POSTGRES", "17102"), ("TDENGINE", "17104"), ("REDIS", "17123")):
+            require(
+                cfg[kind + "_HOST"] in ("127.0.0.1", "localhost") and cfg[kind + "_PORT"] == port,
+                f"{kind}: not the private test endpoint",
+            )
+        require(
+            digest(ctx.runtime / "backend/.env") == ctx.protocol["configFreeze"]["envSha256"],
+            "runtime environment differs from fresh freeze",
+        )
+        self.env = os.environ.copy()
+        self.env.update({k: v for k, v in cfg.items() if v is not None})
+        self.env.update(
+            CLPM_TEST_MODE="0",
+            CLPM_SKIP_EXIT_HOOKS="1",
+            CLPM_BUILD_CODE_SHA=ctx.protocol["candidateSha"],
+            CLPM_G5_TRACE="0",
+            NO_PROXY="127.0.0.1,localhost,::1",
+            PYTHONUNBUFFERED="1",
+        )
+        self.env.update({k: str(v) for k, v in ctx.profile["numericThreads"].items()})
+        auth = (
+            ":" + quote(cfg["REDIS_PASSWORD"], safe="") + "@" if cfg.get("REDIS_PASSWORD") else ""
+        )
+        self.app = Celery(
+            "capacity_series_v4",
+            broker=f"redis://{auth}127.0.0.1:17123/1",
+            backend=f"redis://{auth}127.0.0.1:17123/2",
+        )
+        spec = importlib.util.spec_from_file_location(
+            "bound_capacity_guard", ctx.tools["brokerGuard"]["path"]
+        )
+        guard = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(guard)
+        self.broker_snapshot = guard.private_broker_snapshot
+
+    def command(self, key, args, label, *, timeout=600):
+        ctx = self.ctx
+        verify_bindings(ctx)
+        return run_command(
+            [ctx.python, ctx.tools[key]["path"], *args],
+            label,
+            cwd=ctx.cwd,
+            env=self.env,
+            timeout=timeout,
+        )
+
+    def quiet(self, path):
+        snapshot = self.broker_snapshot()
+        write(path, snapshot)
+        require(snapshot["quiescent"] is True, "private broker is not quiescent")
+
+    def clear_input_caches(self, path):
+        import redis
+
+        client = redis.Redis(
+            host="127.0.0.1",
+            port=17123,
+            db=0,
+            decode_responses=True,
+            password=self.cfg.get("REDIS_PASSWORD") or None,
+            socket_timeout=5,
+        )
+        removed, leftovers = [], []
+        try:
+            for prefix in ("pdb", "pdb_l2", "pdb_l3"):
+                for key in client.scan_iter(match=prefix + ":*", count=200):
+                    if len(key.split(":")) >= 3 and key.split(":")[1] in self.ctx.eligible:
+                        value = client.get(key)
+                        removed.append(
+                            {
+                                "key": key,
+                                "ttlMs": client.pttl(key),
+                                "valueSha256": hashlib.sha256(value.encode()).hexdigest()
+                                if value is not None
+                                else None,
+                            }
+                        )
+                        client.unlink(key)
+            leftovers = [
+                k
+                for k in client.scan_iter(match="pdb*:*", count=200)
+                if len(k.split(":")) > 1 and k.split(":")[1] in self.ctx.eligible
+            ]
+        finally:
+            client.close()
+        write(
+            path,
+            {
+                "at": now(),
+                "privatePort": 17123,
+                "db": 0,
+                "scope": "frozen input cache only; task/result history preserved",
+                "removed": removed,
+                "leftovers": leftovers,
+            },
+        )
+        require(not leftovers, "cold input caches remain")
+
+    def collector_command(self, item, batch, out, post_seconds):
+        ctx = self.ctx
+        return [
+            str(ctx.python),
+            ctx.tools["collector"]["path"],
+            "--env-file",
+            str(ctx.runtime / "backend/.env"),
+            "--ts-start",
+            item["ts_start"],
+            "--report",
+            str(batch / "product-report.json"),
+            "--out",
+            str(out),
+            "--worker-log",
+            str(ctx.runtime / "backend/logs/celery-worker.log"),
+            "--interval",
+            "2",
+            "--post-seconds",
+            str(post_seconds),
+            "--max-seconds",
+            "3100" if post_seconds == 30 else "400",
+            "--containers",
+            *ctx.profile["containers"],
+            "--td-container",
+            "clpm-mvp-tdengine",
+        ]
+
+    def collect_batch(self, item, batch, remaining):
+        ctx = self.ctx
+        prefix = batch.parent.name + "-" + batch.name
+        self.quiet(batch / "broker-before-preparation.json")
+        if item["cache"] == "cold":
+            self.command("lifecycle", ["stop", prefix + "-stop"], batch / "stop")
+            self.clear_input_caches(batch / "cache-clear.json")
+            self.command("lifecycle", ["restart-td", prefix + "-td"], batch / "restart-td")
+            self.command("wrapper", [prefix + "-start"], batch / "start")
+        state = read(ctx.evidence / "runtime/current-capacity-api.json")
+        require(state["sha"] == ctx.protocol["candidateSha"], "API state SHA mismatch")
+        write(
+            batch / "runtime-start-ref.json",
+            {"state": state, "recordSha256": digest(state["start_record"])},
+        )
+        ping = self.app.control.inspect(timeout=3).ping()
+        require(bool(ping) and len(ping) == 1, "expected one Worker registration")
+        write(
+            batch / "enable-events.json",
+            {
+                "at": now(),
+                "destination": list(ping),
+                "response": self.app.control.enable_events(
+                    destination=list(ping), reply=True, timeout=3
+                ),
+            },
+        )
+        stop = batch / "observer-stop"
+        receiver_argv = [
+            str(ctx.python),
+            ctx.tools["receiver"]["path"],
+            "--env-file",
+            str(ctx.runtime / "backend/.env"),
+            "--out",
+            str(batch / "events"),
+            "--stop-file",
+            str(stop),
+            "--max-seconds",
+            "3300",
+        ]
+        children, handles = {}, []
+        try:
+            for name, argv in (
+                ("receiver", receiver_argv),
+                ("collector", self.collector_command(item, batch, batch / "raw", 30)),
+            ):
+                handle = (batch / (name + ".log")).open("xb")
+                handles.append(handle)
+                child = subprocess.Popen(
+                    argv,
+                    cwd=ctx.evidence / "f02",
+                    env=self.env,
+                    stdout=handle,
+                    stderr=subprocess.STDOUT,
+                )
+                children[name] = child
+                write(
+                    batch / (name + "-command.json"),
+                    {"argv": argv, "pid": child.pid, "startedAt": now()},
+                )
+            start = time.monotonic()
+            while time.monotonic() - start < 65:
+                require(all(c.poll() is None for c in children.values()), "observer exited early")
+                time.sleep(1)
+            require((batch / "raw/bootstrap.json").is_file(), "resource bootstrap missing")
+            if item["cache"] == "hot":
+                submitted = now()
+                warm = self.app.send_task(
+                    "app.tasks.kpi_calc.prewarm_cache",
+                    kwargs={"ts_start": item["ts_start"]},
+                    queue="default",
+                    routing_key="default",
+                )
+                result = warm.get(timeout=1200, propagate=False)
+                write(
+                    batch / "prewarm-task.json",
+                    {
+                        "submittedAt": submitted,
+                        "finishedAt": now(),
+                        "taskId": warm.id,
+                        "state": warm.state,
+                        "result": result,
+                    },
+                )
+                require(
+                    warm.state == "SUCCESS"
+                    and result["total"] == result["succeeded"] == 1000
+                    and result["failed"] == 0,
+                    "prewarm denominator failed",
+                )
+            self.command(
+                "cacheCapture",
+                [
+                    "--env-file",
+                    ctx.runtime / "backend/.env",
+                    "--ts-start",
+                    item["ts_start"],
+                    "--out",
+                    batch / "cache-before",
+                ],
+                batch / "cache-before-capture",
+            )
+            self.command(
+                "runtimeProfile",
+                [batch / "runtime-profile", item["ts_start"]],
+                batch / "runtime-profile-capture",
+            )
+            self.quiet(batch / "broker-before-formal.json")
+            verify_bindings(ctx)
+            argv = [
+                str(ctx.python),
+                "-u",
+                ctx.tools["benchmark"]["path"],
+                "--mode",
+                "standard-hourly",
+                "--ts-start",
+                item["ts_start"],
+                "--manifest",
+                ctx.inputs[f"manifest_{item['batch']:02d}"]["path"],
+                "--expect-eligible",
+                "1000",
+                "--barrier-loop-prefix",
+                "PERF-T",
+                "--slo-seconds",
+                "600",
+                "--timeout",
+                "2400",
+                "--poll-interval",
+                "2",
+                "--freeze-dir",
+                str(batch / "freeze"),
+                "--report-out",
+                str(batch / "product-report.json"),
+                "--plan-windows",
+                ",".join(x["ts_start"] for x in remaining),
+            ]
+            rc = self.benchmark(argv, batch)
+            validate_product(ctx, item, batch, rc)
+            collector_rc = children["collector"].wait(timeout=720)
+            stop.write_text(now() + "\n")
+            receiver_rc = children["receiver"].wait(timeout=15)
+            write(
+                batch / "observer-exits.json",
+                {"collectorRc": collector_rc, "receiverRc": receiver_rc},
+            )
+            require(collector_rc == receiver_rc == 0, "observer nonzero exit")
+            return {"benchmarkRc": rc, "collectorRc": collector_rc, "receiverRc": receiver_rc}
+        finally:
+            cleanup = []
+            cleanup_errors = []
+            for name, child in children.items():
+                try:
+                    if child.poll() is None:
+                        child.terminate()  # Observer only; never Worker/Beat/business task.
+                        try:
+                            child.wait(timeout=20)
+                        except subprocess.TimeoutExpired:
+                            child.kill()
+                            child.wait(timeout=10)
+                        cleanup.append({"role": name, "pid": child.pid, "terminated": True})
+                except Exception as exc:
+                    cleanup_errors.append({"role": name, "message": str(exc)})
+            for handle in handles:
+                handle.close()
+            write(
+                batch / "observer-cleanup.json",
+                {"at": now(), "actions": cleanup, "errors": cleanup_errors},
+            )
+            require(not cleanup_errors, "owned observer cleanup failed")
+
+    def benchmark(self, argv, batch):
+        """Bound the client even if it stops producing output."""
+        record = {"argv": argv, "cwd": str(self.ctx.cwd), "startedAt": now(), "rc": None}
+        with (
+            (batch / "benchmark.stdout.log").open("xb") as stdout,
+            (batch / "benchmark.stderr.log").open("xb") as stderr,
+            (batch / "benchmark-timestamped.jsonl").open("x") as timed,
+        ):
+            child = subprocess.Popen(
+                argv, cwd=self.ctx.cwd, env=self.env, stdout=subprocess.PIPE, stderr=stderr
+            )
+            pump_errors = []
+
+            def pump():
+                try:
+                    for line in iter(child.stdout.readline, b""):
+                        stdout.write(line)
+                        stdout.flush()
+                        timed.write(
+                            json.dumps(
+                                {"observedAt": now(), "line": line.decode("utf-8", "replace")}
+                            )
+                            + "\n"
+                        )
+                        timed.flush()
+                except Exception as exc:
+                    pump_errors.append(str(exc))
+
+            thread = threading.Thread(target=pump, daemon=True)
+            thread.start()
+            try:
+                record["rc"] = child.wait(timeout=2600)
+            except subprocess.TimeoutExpired as exc:
+                record["exception"] = type(exc).__name__
+                child.terminate()  # Benchmark client only; actual Celery task remains preserved.
+                try:
+                    child.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    child.kill()
+                    child.wait(timeout=10)
+            finally:
+                thread.join(timeout=5)
+                if not thread.is_alive():
+                    child.stdout.close()
+                record.update(
+                    finishedAt=now(),
+                    stdoutSha256=digest(batch / "benchmark.stdout.log"),
+                    stderrSha256=digest(batch / "benchmark.stderr.log"),
+                )
+                write(batch / "benchmark-command.json", record)
+            require(not thread.is_alive() and not pump_errors, "benchmark output capture failed")
+        require("exception" not in record, "benchmark client timed out")
+        return record["rc"]
+
+    def validate_batch(self, batch):
+        self.command(
+            "validator",
+            ["--batch", batch, "--profile", self.ctx.inputs["profile"]["path"]],
+            batch / "local-evidence-validation",
+        )
+
+    def recover(self, item, batch, out):
+        verify_bindings(self.ctx)
+        root = out / "final-300s-recovery"
+        run_command(
+            self.collector_command(item, batch, root, 300),
+            out / "final-recovery",
+            cwd=self.ctx.cwd,
+            env=self.env,
+            timeout=450,
+        )
+        self.command(
+            "validator",
+            ["--batch", batch, "--profile", self.ctx.inputs["profile"]["path"], "--recovery", root],
+            out / "local-recovery-validation",
+        )
+        return root
+
+    def close(self):
+        self.app.close()
