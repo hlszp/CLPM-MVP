@@ -8,6 +8,7 @@ or resumed. All operational helpers remain separately hash-bound.
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import importlib.util
 import json
@@ -18,12 +19,13 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 from collections import Counter
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
-from uuid import UUID
+from uuid import UUID, uuid4
 
 CONDITIONS = (
     "ledger",
@@ -913,3 +915,174 @@ class LiveRuntime:
 
     def close(self):
         self.app.close()
+
+
+def run_series(ctx, runtime, output):
+    require(
+        bool(runtime.fixture_only)
+        == (ctx.protocol["execution"]["evidenceLevel"] == "OFFLINE_FIXTURE"),
+        "fixture/real evidence level mismatch",
+    )
+    require(output.parent.resolve() == ctx.output_parent, "series output outside bound parent")
+    output.mkdir(parents=True, exist_ok=False)
+    outcomes, attempted, active = [], [], None
+    write(
+        output / "series-start.json",
+        {
+            "startedAt": now(),
+            "candidateSha": ctx.protocol["candidateSha"],
+            "protocolSha256": digest(ctx.protocol_path),
+            "requiredBatches": 20,
+            "evidenceLevel": ctx.protocol["execution"]["evidenceLevel"],
+            "noReuse": True,
+            "independentAcceptance": "PENDING",
+        },
+    )
+    try:
+        for index, item in enumerate(ctx.plan):
+            verify_bindings(ctx)
+            runtime_identity(ctx)
+            active = output / f"{item['batch']:02d}-{item['scenario']}-{item['cache']}"
+            active.mkdir()
+            write(active / "batch-start.json", {"startedAt": now(), "batch": item["batch"]})
+            attempted.append(item["batch"])
+            append(
+                output / "journal.jsonl", {"at": now(), "batch": item["batch"], "state": "STARTED"}
+            )
+            exits = runtime.collect_batch(item, active, ctx.plan[index:])
+            require(exits["collectorRc"] == exits["receiverRc"] == 0, "observer nonzero exit")
+            result = validate_product(ctx, item, active, exits["benchmarkRc"])
+            require(
+                result["parentTaskId"] not in {o["parentTaskId"] for o in outcomes},
+                "parent task reused across batches",
+            )
+            runtime.validate_batch(active)  # Any failure propagates to the outer series boundary.
+            result["resourceEvidence"] = validate_resources(ctx, active)
+            result["collectorRc"], result["receiverRc"] = exits["collectorRc"], exits["receiverRc"]
+            outcomes.append(result)
+            append(
+                output / "journal.jsonl", {"at": now(), "batch": item["batch"], "state": "VERIFIED"}
+            )
+            write(output / "outcomes.json", outcomes, replace=True)
+        require(
+            len(outcomes) == len({o["batch"]["batch"] for o in outcomes}) == 20,
+            "series lacks 20 unique verified batches",
+        )
+        recovery = runtime.recover(ctx.plan[-1], active, output)
+        recovery_evidence = validate_resources(ctx, active, recovery)
+        verify_bindings(ctx)
+        runtime.close()
+        summary = {
+            "finishedAt": now(),
+            "required": 20,
+            "executed": len(attempted),
+            "businessReportsPassed": len(outcomes),
+            "gateOk": sum(o["gateOk"] is True for o in outcomes),
+            "sloPassed": sum(o["sloPassed"] is True for o in outcomes),
+            "localResourceChecks": "VALIDATION_PASSED",
+            "resourceReportsVerified": len(outcomes),
+            "recoveryEvidence": recovery_evidence,
+            "status": "COMPLETE_AWAITING_INDEPENDENT_ACCEPTANCE",
+            "evidenceLevel": ctx.protocol["execution"]["evidenceLevel"],
+            "independentAcceptance": "PENDING",
+        }
+        write(output / "complete.json", summary)
+        return summary
+    except BaseException as exc:
+        failure = {
+            "at": now(),
+            "status": "SERIES_FAILED_NOT_REUSED",
+            "type": type(exc).__name__,
+            "message": str(exc),
+            "traceback": traceback.format_exc(),
+            "attemptedBatchIds": attempted,
+            "verifiedBatchIds": [o["batch"]["batch"] for o in outcomes],
+            "businessReportsPassed": len(outcomes),
+            "independentAcceptance": "PENDING",
+        }
+        write(output / "series-failure.json", failure)
+        if active:
+            write(active / "orchestration-failure.json", failure)
+        try:
+            runtime.close()
+        except Exception as cleanup:
+            write(
+                output / "runtime-cleanup-failure.json",
+                {"type": type(cleanup).__name__, "message": str(cleanup)},
+            )
+        raise
+
+
+def main(argv=None, *, runtime_factory=LiveRuntime):
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--protocol", required=True)
+    parser.add_argument("--evidence-root")
+    parser.add_argument("--output-dir")
+    parser.add_argument("--check-only", action="store_true")
+    args = parser.parse_args(argv)
+    try:
+        ctx = load_contract(args.protocol, args.evidence_root)
+        if args.check_only:
+            print(
+                json.dumps(
+                    {
+                        "status": "INPUT_BINDINGS_VALIDATED",
+                        "formalReady": ctx.protocol["formalReady"],
+                        "readinessPending": ctx.protocol["readinessPending"],
+                        "tools": len(ctx.tools),
+                        "batches": len(ctx.plan),
+                        "capacityAcceptance": "NOT_EVALUATED",
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        require_ready(ctx)
+        output = (
+            Path(args.output_dir).resolve()
+            if args.output_dir
+            else ctx.output_parent
+            / ("formal-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid4().hex[:8])
+        )
+        require(
+            output.parent == ctx.output_parent and not output.exists(),
+            "output exists or is unbound",
+        )
+        runtime = runtime_factory(ctx)
+    except (
+        ContractError,
+        KeyError,
+        ValueError,
+        TypeError,
+        AttributeError,
+        OSError,
+        subprocess.SubprocessError,
+    ) as exc:
+        print(
+            json.dumps(
+                {"status": "PREFLIGHT_REJECTED", "type": type(exc).__name__, "message": str(exc)},
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        print(json.dumps(run_series(ctx, runtime, output), ensure_ascii=False))
+        return 0
+    except BaseException as exc:
+        print(
+            json.dumps(
+                {
+                    "status": "SERIES_FAILED_NOT_REUSED",
+                    "type": type(exc).__name__,
+                    "message": str(exc),
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
