@@ -417,3 +417,382 @@ def test_twenty_distinct_verified_batches_have_truthful_counts(mod, contract):
     assert result["evidenceLevel"] == "OFFLINE_FIXTURE"
     assert result["status"] == "COMPLETE_AWAITING_INDEPENDENT_ACCEPTANCE"
     assert runtime.closed == 1
+
+
+@pytest.mark.parametrize("fault", ["validator_15", "missing_report_15"])
+def test_fourteen_passes_cannot_be_reported_as_twenty(mod, contract, fault):
+    rc, runtime = execute(mod, contract, fault)
+    assert rc == 1 and runtime.calls == list(range(1, 16))
+    assert len(json.loads((contract.output / "outcomes.json").read_text())) == 14
+    assert (
+        json.loads((contract.output / "series-failure.json").read_text())["businessReportsPassed"]
+        == 14
+    )
+    assert not (contract.output / "complete.json").exists()
+
+
+@pytest.mark.parametrize("fault", ["recovery_failure", "short_recovery", "close_failure"])
+def test_series_needs_final_recovery_and_cleanup(mod, contract, fault):
+    rc, runtime = execute(mod, contract, fault)
+    assert rc == 1 and len(runtime.calls) == 20
+    assert not (contract.output / "complete.json").exists()
+    assert (contract.output / "series-failure.json").exists()
+
+
+def test_parent_identity_cannot_be_reused(mod, contract):
+    rc, runtime = execute(mod, contract, "reused_parent")
+    assert rc == 1 and runtime.calls == [1, 2]
+    assert (
+        json.loads((contract.output / "series-failure.json").read_text())["businessReportsPassed"]
+        == 1
+    )
+
+
+@pytest.mark.parametrize("existing", ["six-outcomes", "empty", "failed"])
+def test_existing_series_rejected_before_factory(mod, contract, existing):
+    contract.output.mkdir(parents=True)
+    dump(contract.output / "old.json", {"history": existing, "outcomes": list(range(6))})
+    before = (contract.output / "old.json").read_bytes()
+
+    def forbidden(unused):
+        raise AssertionError("factory called before output rejection")
+
+    assert (
+        mod.main(
+            ["--protocol", str(contract.path), "--output-dir", str(contract.output)],
+            runtime_factory=forbidden,
+        )
+        == 2
+    )
+    assert (contract.output / "old.json").read_bytes() == before
+
+
+def test_old_six_are_neither_loaded_nor_modified(mod, contract):
+    old = contract.root / "f02/series-s01/formal/outcomes.json"
+    dump(old, [{"batch": i} for i in range(1, 7)])
+    before = old.read_bytes()
+    rc, runtime = execute(mod, contract)
+    assert rc == 0 and runtime.calls == list(range(1, 21))
+    assert old.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "runner_hash",
+        "helper_hash",
+        "method_hash",
+        "missing_helper",
+        "entrypoint",
+        "root",
+        "cwd",
+        "python",
+        "duplicate_ids",
+        "duplicate_batches",
+        "duplicate_windows",
+        "denominator",
+        "histogram",
+        "resource_budget",
+        "sampling",
+        "trimmed_steps",
+    ],
+)
+def test_bad_binding_or_plan_rejected_before_side_effects(mod, contract, mutation):
+    p = contract.protocol
+    if mutation in ("runner_hash", "helper_hash"):
+        p["tools"]["runner" if mutation == "runner_hash" else "validator"]["sha256"] = "0" * 64
+    elif mutation == "method_hash":
+        p["methodBindings"]["fourOracles"]["sha256"] = "0" * 64
+    elif mutation == "missing_helper":
+        Path(p["tools"]["inputAudit"]["path"]).unlink()
+    elif mutation == "entrypoint":
+        p["tools"]["runner"]["path"] = str(contract.root / "WRONG.py")
+    elif mutation in ("root", "cwd", "python"):
+        key = {"root": "evidenceRoot", "cwd": "cwd", "python": "python"}[mutation]
+        p["execution"][key] = str(contract.root / "WRONG")
+    elif mutation == "duplicate_ids":
+        p["eligibleIds"] = [p["eligibleIds"][0]] * 1000
+    elif mutation in ("duplicate_batches", "duplicate_windows", "denominator"):
+        plan = contract.plan
+        if mutation == "duplicate_batches":
+            plan[1]["batch"] = plan[0]["batch"]
+        elif mutation == "duplicate_windows":
+            plan[1].update(ts_start=plan[0]["ts_start"], ts_end=plan[0]["ts_end"])
+        else:
+            plan[0]["expected_loops"] = 999
+        dump(Path(contract.inputs["plan"]["path"]), {"batches": plan})
+        contract.seal()
+    elif mutation == "histogram":
+        path = Path(contract.inputs["manifest_01"]["path"])
+        rows = json.loads(path.read_text())
+        rows["rows"][0]["expectedStatus"] = "INCONCLUSIVE"
+        dump(path, rows)
+        contract.seal()
+    elif mutation in ("resource_budget", "sampling"):
+        path = Path(contract.inputs["profile"]["path"])
+        profile = json.loads(path.read_text())
+        if mutation == "resource_budget":
+            profile["maximumAccountingBytes"] = 100 * 1024**3
+        else:
+            profile["sampling"]["finalSeriesRecoveryMinimumSeconds"] = 0
+        dump(path, profile)
+        contract.seal()
+    elif mutation == "trimmed_steps":
+        p["scopeLimits"]["trimmedSteps"] = {"recovery": "optional"}
+    dump(contract.path, p)
+
+    def forbidden(unused):
+        raise AssertionError("factory reached for invalid contract")
+
+    assert mod.main(["--protocol", str(contract.path)], runtime_factory=forbidden) == 2
+    assert not contract.output.parent.exists()
+
+
+@pytest.mark.parametrize("mutation", ["not_ready", "pending", "freeze", "review", "ci", "ci_sha"])
+def test_admission_cannot_be_faked_by_formal_ready_alone(mod, contract, mutation):
+    p = contract.protocol
+    if mutation == "not_ready":
+        p["formalReady"] = False
+    elif mutation == "pending":
+        p["readinessPending"] = ["fresh freeze"]
+    elif mutation == "freeze":
+        p["configFreeze"]["status"] = "PENDING"
+    elif mutation in ("review", "ci"):
+        p["protocolReview" if mutation == "review" else "applicableCi"]["status"] = "PENDING"
+    else:
+        p["applicableCi"]["headSha"] = "b" * 40
+    dump(contract.path, p)
+    rc, runtime = execute(mod, contract)
+    assert rc == 2 and runtime.calls == []
+    assert not contract.output.parent.exists()
+
+
+def test_bound_input_drift_stops_before_next_batch(mod, contract):
+    runtime = OfflineRuntime(mod)
+    original = runtime.validate_batch
+
+    def mutate(batch):
+        original(batch)
+        Path(contract.tools["validator"]["path"]).write_text("# changed after first batch")
+
+    runtime.validate_batch = mutate
+
+    def factory(ctx):
+        runtime.ctx = ctx
+        return runtime
+
+    assert (
+        mod.main(
+            ["--protocol", str(contract.path), "--output-dir", str(contract.output)],
+            runtime_factory=factory,
+        )
+        == 1
+    )
+    assert runtime.calls == [1]
+    assert not (contract.output / "complete.json").exists()
+
+
+@pytest.mark.parametrize("rc", [1, 7])
+def test_command_records_real_returncode(mod, tmp_path, rc):
+    label = tmp_path / "command"
+    with pytest.raises(mod.ContractError):
+        mod.run_command(
+            [sys.executable, "-c", f"raise SystemExit({rc})"],
+            label,
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            timeout=5,
+        )
+    assert json.loads(label.with_suffix(".command.json").read_text())["rc"] == rc
+
+
+def test_command_timeout_has_raw_evidence(mod, tmp_path):
+    label = tmp_path / "timeout"
+    with pytest.raises(mod.ContractError):
+        mod.run_command(
+            [sys.executable, "-c", "import time; time.sleep(5)"],
+            label,
+            cwd=tmp_path,
+            env=os.environ.copy(),
+            timeout=0.05,
+        )
+    assert (
+        json.loads(label.with_suffix(".command.json").read_text())["exception"] == "TimeoutExpired"
+    )
+    assert label.with_suffix(".stdout.log").exists()
+
+
+@pytest.mark.parametrize("other_cwd", [False, True])
+def test_real_cli_check_and_admission_are_read_only(contract, tmp_path, other_cwd):
+    # A read-only git shim avoids any dependency on a local/CI runtime checkout.
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    git = bin_dir / "git"
+    git.write_text(
+        '#!/bin/sh\nif [ "$1" = rev-parse ]; then\n'
+        f"  echo {'a' * 40}\n"
+        'elif [ "$1" = diff ] || [ "$1" = ls-files ]; then\n  exit 0\n'
+        "else\n  exit 9\nfi\n"
+    )
+    git.chmod(0o755)
+    contract.protocol.update(formalReady=False, readinessPending=["fresh freeze"])
+    dump(contract.path, contract.protocol)
+    env = {
+        **os.environ,
+        "PATH": str(bin_dir) + os.pathsep + os.environ["PATH"],
+        "PYTHONDONTWRITEBYTECODE": "1",
+    }
+    cwd = tmp_path if other_cwd else contract.runtime / "backend"
+    argv = [sys.executable, "-B", str(SCRIPT), "--protocol", str(contract.path)]
+    checked = subprocess.run(
+        [*argv, "--check-only"], cwd=cwd, env=env, capture_output=True, text=True, timeout=20
+    )
+    assert checked.returncode == 0, checked.stderr
+    assert json.loads(checked.stdout)["capacityAcceptance"] == "NOT_EVALUATED"
+    rejected = subprocess.run(argv, cwd=cwd, env=env, capture_output=True, text=True, timeout=20)
+    assert rejected.returncode == 2
+    assert not contract.output.parent.exists()
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "ci_raw_head",
+        "review_runner",
+        "review_bindings",
+        "input_audit_status",
+        "missing_step",
+    ],
+)
+def test_receipt_content_and_required_steps_are_enforced(mod, contract, kind):
+    p = contract.protocol
+    if kind == "ci_raw_head":
+        record = p["applicableCi"]
+        raw = json.loads(Path(record["path"]).read_text())
+        raw["head_sha"] = "b" * 40
+        dump(Path(record["path"]), raw)
+        record["sha256"] = mod.digest(record["path"])
+    elif kind.startswith("review"):
+        record = p["protocolReview"]
+        raw = json.loads(Path(record["path"]).read_text())
+        raw["runnerSha256" if kind == "review_runner" else "bindingsSha256"] = "0" * 64
+        dump(Path(record["path"]), raw)
+        record["sha256"] = mod.digest(record["path"])
+    elif kind == "input_audit_status":
+        path = Path(contract.inputs["audit_01"]["path"])
+        raw = json.loads(path.read_text())
+        raw["status"] = "REWORK"
+        dump(path, raw)
+        contract.seal()
+    else:
+        p["execution"]["requiredEvidenceSteps"].remove("FINAL_300S_RECOVERY")
+    dump(contract.path, p)
+    rc, runtime = execute(mod, contract)
+    assert rc == 2 and runtime.calls == []
+    assert not contract.output.parent.exists()
+
+
+def test_protocol_byte_drift_is_rejected_even_when_json_is_equal(mod, contract):
+    runtime = OfflineRuntime(mod)
+    original = runtime.validate_batch
+
+    def mutate(batch):
+        original(batch)
+        contract.path.write_text(contract.path.read_text() + " ")
+
+    runtime.validate_batch = mutate
+
+    def factory(ctx):
+        runtime.ctx = ctx
+        return runtime
+
+    assert (
+        mod.main(
+            ["--protocol", str(contract.path), "--output-dir", str(contract.output)],
+            runtime_factory=factory,
+        )
+        == 1
+    )
+    assert runtime.calls == [1]
+    assert not (contract.output / "complete.json").exists()
+
+
+def test_live_observer_failure_cleans_owned_observers_only(mod, contract, monkeypatch):
+    ctx = mod.load_contract(contract.path)
+    batch = contract.root / "observer-test"
+    batch.mkdir()
+    start = contract.root / "start.json"
+    dump(start, {"fixtureOnly": True})
+    dump(
+        contract.root / "runtime/current-capacity-api.json",
+        {"sha": contract.protocol["candidateSha"], "start_record": str(start)},
+    )
+    live = object.__new__(mod.LiveRuntime)
+    live.ctx, live.env = ctx, {}
+    inspector = SimpleNamespace(ping=lambda: {"offline-worker": {}})
+    live.app = SimpleNamespace(
+        control=SimpleNamespace(
+            inspect=lambda **kwargs: inspector, enable_events=lambda **kwargs: []
+        )
+    )
+    live.quiet = lambda path: None
+    live.command = lambda *args, **kwargs: None
+    live.clear_input_caches = lambda path: None
+    children = []
+
+    class Child:
+        def __init__(self, receiver):
+            self.receiver, self.terminated = receiver, False
+            self.pid = 990000 + len(children)
+
+        def poll(self):
+            return 1 if self.receiver else 0 if self.terminated else None
+
+        def terminate(self):
+            self.terminated = True
+
+        def wait(self, **kwargs):
+            return 0
+
+    def popen(argv, **kwargs):
+        child = Child("receive_capacity_events.py" in str(argv))
+        children.append(child)
+        return child
+
+    monkeypatch.setattr(mod.subprocess, "Popen", popen)
+    with pytest.raises(mod.ContractError, match="observer exited early"):
+        live.collect_batch(ctx.plan[0], batch, ctx.plan)
+    assert len(children) == 2 and children[1].terminated
+    record = json.loads((batch / "observer-cleanup.json").read_text())
+    assert record["errors"] == []
+    assert {x["role"] for x in record["actions"]} == {"collector"}
+
+
+def test_live_benchmark_timeout_is_bounded_and_preserved(mod, contract, monkeypatch):
+    import io
+
+    batch = contract.root / "benchmark-timeout"
+    batch.mkdir()
+    live = object.__new__(mod.LiveRuntime)
+    live.ctx = mod.load_contract(contract.path)
+    live.env = {}
+
+    class Client:
+        stdout = io.BytesIO(b"OFFLINE fixture line\n")
+        terminated = False
+
+        def wait(self, timeout):
+            if not self.terminated:
+                raise subprocess.TimeoutExpired(["offline-client"], timeout)
+            return -15
+
+        def terminate(self):
+            self.terminated = True
+
+    client = Client()
+    monkeypatch.setattr(mod.subprocess, "Popen", lambda *args, **kwargs: client)
+    with pytest.raises(mod.ContractError, match="timed out"):
+        live.benchmark(["offline-client"], batch)
+    record = json.loads((batch / "benchmark-command.json").read_text())
+    assert record["exception"] == "TimeoutExpired" and record["rc"] is None
+    assert client.terminated and client.stdout.closed
