@@ -207,6 +207,7 @@ jobs:
           CLPM_SKIP_EXIT_HOOKS: "1"
           PYTHONDONTWRITEBYTECODE: "1"
           G3_PYTEST_OUTCOME: ${{ steps.backend_pytest.outcome }}
+          CLPM_BUILD_CODE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           g3_out="$RUNNER_TEMP/g3-numerical-originals"
           mkdir "$g3_out"

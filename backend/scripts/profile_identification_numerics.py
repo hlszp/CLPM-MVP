@@ -154,6 +154,7 @@ def main():
         environment = {
             "evidenceRole": ROLE,
             "githubSha": os.environ.get("GITHUB_SHA"),
+            "buildCodeSha": os.environ.get("CLPM_BUILD_CODE_SHA"),
             "pytestStepOutcome": os.environ.get("G3_PYTEST_OUTCOME"),
             "git": git_commands,
             "platform": platform.platform(),
@@ -174,8 +175,17 @@ def main():
             "niceIncrement": 10,
         }
         write_json(out / "environment.json", environment)
-        if environment["githubSha"] and environment["githubSha"] != git_commands["head"]["stdout"]:
-            raise ValueError("GITHUB_SHA differs from the actual checked-out HEAD")
+        if environment["githubSha"]:
+            for key in ("githubSha", "buildCodeSha"):
+                value = environment[key]
+                if (
+                    not isinstance(value, str)
+                    or len(value) != 40
+                    or any(char not in "0123456789abcdef" for char in value)
+                ):
+                    raise ValueError("Required CI source identity is missing or malformed")
+            if environment["buildCodeSha"] != git_commands["head"]["stdout"]:
+                raise ValueError("Build candidate differs from the actual checked-out HEAD")
         if any(value != "1" for value in environment["threads"].values()):
             raise ValueError("The existing frozen CI thread profile is not present")
         source = package / "pipeline.py"
