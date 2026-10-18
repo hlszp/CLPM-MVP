@@ -1,0 +1,41 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.1.1, pluggy-1.6.0 -- /Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/zhangping/DEV/CLPM-MVP/backend
+configfile: pyproject.toml
+plugins: anyio-4.14.0, cov-7.1.0, timeout-2.4.0, asyncio-1.4.0
+timeout: 30.0s
+timeout method: thread
+timeout func_only: False
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 61 items / 40 deselected / 21 selected
+
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_dual_user_isolation PASSED [  4%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_follow_cas_replay_tombstone PASSED [  9%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_follow_loop_not_found_and_scope_forbidden PASSED [ 14%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_concurrent_first_create_unique_constraint PASSED [ 19%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_unique_constraint_db_level PASSED [ 23%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_preference_independent_keys_and_cas PASSED [ 28%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_resume_generation_fence PASSED [ 33%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_resume_clear_isolated_per_user PASSED [ 38%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_revocation_no_leak PASSED [ 42%]
+tests/test_p6_05_personal_workspace.py::TestRealPG::test_resume_write_needs_existing_object PASSED [ 47%]
+tests/test_p6_05_personal_workspace.py::test_http_end_to_end_me_endpoints PASSED [ 52%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_four_work_kinds_aggregate PASSED [ 57%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_work_kind_filter_single_view PASSED [ 61%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_partition_mutual_exclusive_and_filters PASSED [ 66%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_source_failure_partial_total_not_faked_zero PASSED [ 71%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_all_sources_failure_read_status_error PASSED [ 76%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_revocation_no_leak PASSED [ 80%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_cursor_stable_pagination PASSED [ 85%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_cursor_across_rank_boundary PASSED [ 90%]
+tests/test_p6_05_personal_work.py::TestRealPG::test_same_name_legacy_not_assigned PASSED [ 95%]
+tests/test_p6_05_personal_work.py::test_http_end_to_end_me_work PASSED   [100%]
+
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================ 21 passed, 40 deselected, 1 warning in 12.67s =================

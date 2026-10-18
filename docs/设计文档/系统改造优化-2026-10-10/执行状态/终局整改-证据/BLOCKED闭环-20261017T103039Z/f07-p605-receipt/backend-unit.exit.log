@@ -1,0 +1,13 @@
+........................................                                 [100%]
+=============================== warnings summary ===============================
+.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_p6_05_personal_workspace.py::TestEndpointAuthAndValidation::test_put_follow_body_missing_fields_422
+tests/test_p6_05_personal_work.py::TestEndpointAuthAndValidation::test_page_size_out_of_range_422
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py:59: StarletteDeprecationWarning: 'HTTP_422_UNPROCESSABLE_ENTITY' is deprecated. Use 'HTTP_422_UNPROCESSABLE_CONTENT' instead.
+    response = await handler(conn, exc)  # type: ignore[arg-type]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+40 passed, 21 deselected, 3 warnings in 2.62s
