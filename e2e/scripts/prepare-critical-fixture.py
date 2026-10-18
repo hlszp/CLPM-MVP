@@ -580,7 +580,7 @@ async def prepare(api_url: str, output: Path) -> None:
         start_ms = int(start.replace(tzinfo=UTC).timestamp() * 1000)
         end_ms = start_ms + 3601 * 1000
         read_sql = (
-            f"SELECT ts,value,quality_class,quality_raw,point_id FROM {settings.TDENGINE_DB}.{point_subtable(point_id)} "
+            f"SELECT ts,`value`,quality_class,quality_raw,point_id FROM {settings.TDENGINE_DB}.{point_subtable(point_id)} "
             f"WHERE ts>={start_ms} AND ts<{end_ms} ORDER BY ts"
         )
         persisted = await execute_native(read_sql)
