@@ -796,3 +796,77 @@ def test_live_benchmark_timeout_is_bounded_and_preserved(mod, contract, monkeypa
     record = json.loads((batch / "benchmark-command.json").read_text())
     assert record["exception"] == "TimeoutExpired" and record["rc"] is None
     assert client.terminated and client.stdout.closed
+
+
+@pytest.mark.parametrize(
+    "execution,database",
+    [
+        ({}, "clpm_capacity_20261017_s01"),
+        ({"privateDatabase": "clpm_capacity_20261017_s01"}, "clpm_capacity_20261017_s01"),
+        ({"privateDatabase": "clpm_capacity_20261018_s02"}, "clpm_capacity_20261018_s02"),
+        ({"privateDatabase": "clpm_capacity_20260228_s10"}, "clpm_capacity_20260228_s10"),
+    ],
+)
+def test_private_database_accepts_only_explicit_matching_test_names(mod, execution, database):
+    assert (
+        mod.validate_private_database(execution, {"POSTGRES_DB": database, "TDENGINE_DB": database})
+        == database
+    )
+
+
+@pytest.mark.parametrize(
+    "database",
+    [
+        "",
+        None,
+        "clpm",
+        "postgres",
+        "other_project",
+        "clpm_capacity_20261018_s02;DROP DATABASE clpm",
+        "/tmp/clpm_capacity_20261018_s02",
+        "clpm_capacity_20261301_s02",
+        "clpm_capacity_20260230_s02",
+        "clpm_capacity_20261018_s0",
+        "clpm_capacity_20261018_s02\n",
+        "clpm_capacity_20261018_s02_other",
+        "clpm_capacity_20261018_s-1",
+        "clpm_capacity_２０２６１０１８_s02",
+    ],
+)
+def test_private_database_rejects_production_foreign_or_invalid_names(mod, database):
+    with pytest.raises(mod.ContractError):
+        mod.validate_private_database(
+            {"privateDatabase": database}, {"POSTGRES_DB": database, "TDENGINE_DB": database}
+        )
+
+
+@pytest.mark.parametrize(
+    "postgres,tdengine",
+    [
+        ("clpm_capacity_20261018_s02", "clpm_capacity_20261017_s01"),
+        ("clpm_capacity_20261017_s01", "clpm_capacity_20261018_s02"),
+        (None, "clpm_capacity_20261018_s02"),
+        ("clpm_capacity_20261018_s02", None),
+        ("clpm", "clpm_capacity_20261018_s02"),
+        ("clpm_capacity_20261018_s02", "clpm"),
+    ],
+)
+def test_private_database_requires_both_environment_values_to_match_protocol(
+    mod, postgres, tdengine
+):
+    with pytest.raises(mod.ContractError, match="differs from the protocol"):
+        mod.validate_private_database(
+            {"privateDatabase": "clpm_capacity_20261018_s02"},
+            {"POSTGRES_DB": postgres, "TDENGINE_DB": tdengine},
+        )
+
+
+def test_private_database_does_not_infer_new_scope_from_environment(mod):
+    with pytest.raises(mod.ContractError, match="differs from the protocol"):
+        mod.validate_private_database(
+            {},
+            {
+                "POSTGRES_DB": "clpm_capacity_20261018_s02",
+                "TDENGINE_DB": "clpm_capacity_20261018_s02",
+            },
+        )

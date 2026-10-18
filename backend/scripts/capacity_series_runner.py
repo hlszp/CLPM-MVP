@@ -523,6 +523,26 @@ def run_command(argv, label, *, cwd, env, timeout=600):
     return record
 
 
+def validate_private_database(execution, config):
+    """Allow only the protocol's dedicated test database, identically for PG/TD."""
+    database = execution.get("privateDatabase", "clpm_capacity_20261017_s01")
+    match = (
+        re.fullmatch(r"clpm_capacity_([0-9]{8})_s([0-9]+)", database)
+        if isinstance(database, str) and len(database) <= 63
+        else None
+    )
+    require(match is not None and bool(match.group(2).strip("0")), "invalid private test database")
+    try:
+        datetime.strptime(match.group(1), "%Y%m%d")
+    except ValueError as exc:
+        raise ContractError("invalid private test database date") from exc
+    require(
+        config.get("POSTGRES_DB") == config.get("TDENGINE_DB") == database,
+        "database differs from the protocol's isolated test scope",
+    )
+    return database
+
+
 class LiveRuntime:
     """Only the isolated test runtime; lifecycle helpers own API/Worker/Beat."""
 
@@ -536,10 +556,7 @@ class LiveRuntime:
         self.ctx = ctx
         self.cfg = dotenv_values(ctx.runtime / "backend/.env")
         cfg = self.cfg
-        require(
-            cfg["POSTGRES_DB"] == cfg["TDENGINE_DB"] == "clpm_capacity_20261017_s01",
-            "database is outside isolated test scope",
-        )
+        validate_private_database(ctx.protocol["execution"], cfg)
         for kind, port in (("POSTGRES", "17102"), ("TDENGINE", "17104"), ("REDIS", "17123")):
             require(
                 cfg[kind + "_HOST"] in ("127.0.0.1", "localhost") and cfg[kind + "_PORT"] == port,
