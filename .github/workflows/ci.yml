@@ -207,6 +207,8 @@ jobs:
       JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
       E2E_CRITICAL_FIXTURE: ${{ runner.temp }}/critical-e2e/fixture.json
       E2E_ARTIFACT_DIR: ${{ runner.temp }}/critical-e2e/gate
+      CLPM_CALC_SNAPSHOT_DIR: ${{ runner.temp }}/critical-e2e/calc-snapshots
+      CLPM_BUILD_CODE_SHA: ${{ github.sha }}
     services:
       redis:
         image: redis:7-alpine
