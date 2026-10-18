@@ -392,3 +392,120 @@ def test_one_resource_failure_in_thousand_cannot_be_success(message):
 def test_genuine_inconclusive_and_unknown_business_error_keep_existing_policy():
     kpi_calc._assert_batch_resources([{"status": "SUCCESS"}] * 999 + [{"status": "INCONCLUSIVE"}])
     kpi_calc._assert_batch_resources([{"status": "SUCCESS"}] * 999 + [ValueError("bad rule")])
+
+
+@pytest.mark.parametrize("path", ["standard", "custom"])
+@pytest.mark.parametrize("final_attempt", [False, True])
+async def test_minority_resource_failure_propagates_to_parent_and_terminal_record(
+    monkeypatch, path, final_attempt
+):
+    """A 1/4 failure exercises real standard/custom parents below G29's 50%."""
+    from app.schemas.task import TaskStatus
+
+    failed_loop = _loop()
+    other_loops = []
+    for index in range(3):
+        loop = _loop()
+        loop.id = f"healthy-{index}"
+        other_loops.append(loop)
+    loops = [failed_loop, *other_loops]
+    db = AsyncMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=None)
+    loop_rows = MagicMock()
+    loop_rows.scalars.return_value.all.return_value = loops
+    metric_rows = MagicMock()
+    metric_rows.scalars.return_value.all.return_value = []
+    db.execute = AsyncMock(side_effect=[loop_rows, metric_rows])
+    monkeypatch.setattr("app.core.db.AsyncSessionLocal", lambda: db)
+    monkeypatch.setattr("app.core.db.close_session_guarded", AsyncMock())
+    monkeypatch.setattr(
+        "app.services.data_planner.resolve_data_version", AsyncMock(return_value="f02")
+    )
+    monkeypatch.setattr(
+        "app.services.loop_config.get_loop_type_weights_map", AsyncMock(return_value={})
+    )
+    for name, value in [
+        ("_batch_load_loop_configs", {}),
+        ("_pin_task_config", None),
+        ("_resolve_task_release_context", None),
+        ("_load_batch_runtime_overrides", {}),
+        ("_batch_load_template_keys", {}),
+        ("_prewarm_cache_for_loops", {"total": 4, "succeeded": 4, "failed": 0}),
+    ]:
+        monkeypatch.setattr(kpi_calc, name, AsyncMock(return_value=value))
+    monkeypatch.setattr(kpi_calc, "_build_data_planner", MagicMock())
+    monkeypatch.setattr(kpi_calc, "_update_backfill_progress", AsyncMock())
+    monkeypatch.setattr(kpi_calc.asyncio, "sleep", AsyncMock())
+    monkeypatch.setattr(
+        kpi_calc.result_ledger, "loop_ids_with_failed_records", AsyncMock(return_value=set())
+    )
+    start_attempt = AsyncMock()
+    finish_attempt = AsyncMock()
+    monkeypatch.setattr(kpi_calc.result_ledger, "start_calculation_attempt", start_attempt)
+    monkeypatch.setattr(kpi_calc.result_ledger, "finish_calculation_attempt", finish_attempt)
+    append_failed = AsyncMock()
+    monkeypatch.setattr(kpi_calc.result_ledger, "append_failed_result_record", append_failed)
+    node_dispatch = MagicMock()
+    monkeypatch.setattr(kpi_calc.calculate_node_kpi_hourly, "apply_async", node_dispatch)
+    resource_error = RuntimeError("[0x073a]: Query memory exhausted")
+
+    async def calculate(**kwargs):
+        if kwargs["loop"] is failed_loop:
+            raise resource_error
+        return {"status": "SUCCESS"}
+
+    monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
+    tracker = AsyncMock()
+    monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
+    redis = MagicMock()
+    redis.set = AsyncMock(return_value=True)
+    redis.get = AsyncMock(return_value="f02-test-task")
+    redis.delete = AsyncMock()
+    monkeypatch.setattr("app.core.redis.redis_client", redis)
+
+    with pytest.raises(kpi_calc.BatchResourceFailure, match="1/4") as caught:
+        if path == "standard":
+            await kpi_calc._do_hourly_with_tracking(
+                ts_start="2026-10-16T02:00:00",
+                task_id="f02-test-task",
+                logical_run_id="4886b5f5-d41f-4269-bb2c-9e1ab0ccc62a",
+                final_attempt=final_attempt,
+            )
+        else:
+            await kpi_calc._do_calculate_custom_batch(
+                "f02-test-task",
+                [str(loop.id) for loop in loops],
+                "2026-10-16T02:00:00",
+                "2026-10-16T03:00:00",
+                attempt_no=3 if final_attempt else 1,
+                final_attempt=final_attempt,
+            )
+    assert caught.value.__cause__ is resource_error
+    node_dispatch.assert_not_called()
+    if final_attempt:
+        append_failed.assert_awaited_once()
+        assert append_failed.await_args.kwargs["error"] is resource_error
+    else:
+        append_failed.assert_not_awaited()
+    if path == "standard":
+        assert [call.args[1] for call in tracker.await_args_list] == [
+            TaskStatus.RUNNING,
+            TaskStatus.FAILED,
+        ]
+    else:
+        finish_attempt.assert_awaited_once()
+        assert isinstance(finish_attempt.await_args.kwargs["error"], kpi_calc.BatchResourceFailure)
+
+
+def test_resource_failure_celery_shell_does_not_fallback_and_double_run(monkeypatch):
+    error = kpi_calc.BatchResourceFailure("1/1000 unrecovered resource failures")
+    monkeypatch.setattr(kpi_calc, "_do_hourly_with_tracking", AsyncMock(side_effect=error))
+    fallback = AsyncMock()
+    monkeypatch.setattr(kpi_calc, "_do_calculate", fallback)
+    monkeypatch.setattr(kpi_calc.result_ledger, "start_calculation_attempt", AsyncMock())
+    monkeypatch.setattr(kpi_calc.result_ledger, "finish_calculation_attempt", AsyncMock())
+
+    with pytest.raises(kpi_calc.BatchResourceFailure):
+        kpi_calc.calculate_hourly_kpi.run(ts_start="2026-10-16T02:00:00", task_id="f02-test-task")
+    fallback.assert_not_awaited()
