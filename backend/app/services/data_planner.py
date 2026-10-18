@@ -41,7 +41,6 @@ DataPlanner 负责指标驱动的数据获取与编排：
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -59,6 +58,7 @@ from app.contracts.data_types import (
     TimeWindow,
 )
 from app.core import g5_trace
+from app.core.async_tasks import gather_settled
 from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.cache.l2_bundle import L2BundleCache
 from app.services.metric_data_bundle import MetricDataBundleAssembler
@@ -656,7 +656,8 @@ class DataPlanner:
 
         # Phase 4-6: 并行执行所有非复用 task（asyncio.gather 释放事件循环）
         if non_reuse_tasks:
-            results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+            # F02：取数失败后先收束兄弟组，避免外层资源重试与旧查询叠加。
+            results = await gather_settled(*[_process_non_reuse(t) for t in non_reuse_tasks])
             for tag_group, block, write_pair in results:
                 data_blocks[tag_group] = block
                 if write_pair is not None:
