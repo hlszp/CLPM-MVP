@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import re
 import subprocess
 import sys
@@ -392,3 +393,124 @@ def require_ready(ctx):
         and review.get("bindingsSha256") == bindings_digest(p),
         "independent review does not bind this execution contract",
     )
+
+
+def validate_product(ctx, item, batch, rc):
+    report_path = batch / "product-report.json"
+    report = read(report_path)
+    started = instant(read(batch / "batch-start.json")["startedAt"])
+    require(
+        started <= instant(report["observedAt"]) <= datetime.now(UTC) + timedelta(seconds=60),
+        "stale/future product report",
+    )
+    require(str(UUID(report["parentTaskId"])) == report["parentTaskId"], "invalid parent identity")
+    require(report["completionReason"] == "BARRIER_PASSED", "business barrier failed")
+    gate = report["gate"]
+    require(
+        gate["ok"] is True
+        and set(gate["conditions"]) == set(CONDITIONS)
+        and all(gate["conditions"][k] is True for k in CONDITIONS),
+        "nine-condition gate failed",
+    )
+    require(
+        report["parentState"] == report["taskRecordStatus"] == "SUCCESS", "parent not successful"
+    )
+    require(
+        instant(report["window"]["tsStart"]) == instant(item["ts_start"])
+        and instant(report["window"]["tsEnd"]) == instant(item["ts_end"]),
+        "report window mismatch",
+    )
+    seconds = report["totalSeconds"]
+    require(
+        type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0,
+        "invalid elapsed time",
+    )
+    slo = report["sloPassed"]
+    require(type(slo) is bool and slo == (seconds <= 600), "invalid SLO evidence")
+    require(rc == 0 or (rc == 1 and slo is False), "benchmark exit is not an approved SLO gap")
+    denominator = gate["denominators"]
+    require(
+        denominator["frozenEligible"] == denominator["ledgerRows"] == 1000
+        and denominator["excluded"] == 0,
+        "business denominator changed",
+    )
+    manifest = read(ctx.inputs[f"manifest_{item['batch']:02d}"]["path"])
+    expected = dict(Counter(row["expectedStatus"] for row in manifest["rows"]))
+    require(denominator["expectedHistogram"] == expected, "expected histogram changed")
+    require(all(v["count"] == 0 for v in gate["violations"].values()), "gate violations present")
+    freeze = Path(report["freezePath"]).resolve()
+    require(freeze.is_relative_to((batch / "freeze").resolve()), "old/foreign freeze reused")
+    eligible = read(freeze)["eligible"]
+    require(
+        len(eligible) == len({r["loopId"] for r in eligible}) == 1000
+        and {r["loopId"] for r in eligible} == ctx.eligible,
+        "freeze eligible IDs differ",
+    )
+    return {
+        "batch": item,
+        "finishedAt": now(),
+        "benchmarkRc": rc,
+        "completionReason": report["completionReason"],
+        "seconds": seconds,
+        "sloPassed": slo,
+        "gateOk": True,
+        "parentTaskId": report["parentTaskId"],
+        "reportSha256": digest(report_path),
+        "freezeSha256": digest(freeze),
+    }
+
+
+def validate_resources(ctx, batch, recovery=None):
+    root = recovery or batch
+    path = root / "local-resource-check.json"
+    record = read(path)
+    require(
+        record["status"] == "LOCAL_CHECKS_PASS"
+        and record["errors"] == []
+        and not record["resourceFailureLines"],
+        "local resource validation failed",
+    )
+    require(Path(record["batch"]).resolve() == batch.resolve(), "resource batch identity mismatch")
+    require(
+        record["recovery"] == (str(recovery) if recovery else None), "recovery identity mismatch"
+    )
+    require(len(record["samples"]) >= 2, "resource samples missing")
+    peak = record["peakMemoryUpperBoundBytes"]
+    require(
+        type(peak) is int and 0 <= peak <= ctx.profile["maximumAccountingBytes"],
+        "resource peak missing/out of budget",
+    )
+    if recovery:
+        require(
+            instant(record["samples"][-1]["at"]) - instant(record["samples"][0]["at"])
+            >= timedelta(seconds=300),
+            "final recovery below 300s",
+        )
+    return {"path": str(path), "sha256": digest(path), "status": record["status"]}
+
+
+def run_command(argv, label, *, cwd, env, timeout=600):
+    """Preserve raw rc/output even for timeout/exec failure, then propagate."""
+    record = {"argv": list(map(str, argv)), "cwd": str(cwd), "startedAt": now(), "rc": None}
+    error = None
+    with (
+        label.with_suffix(".stdout.log").open("xb") as stdout,
+        label.with_suffix(".stderr.log").open("xb") as stderr,
+    ):
+        try:
+            process = subprocess.run(
+                record["argv"], cwd=cwd, env=env, stdout=stdout, stderr=stderr, timeout=timeout
+            )
+            record["rc"] = process.returncode
+        except Exception as exc:
+            error = exc
+            record.update(exception=type(exc).__name__, message=str(exc))
+    record["finishedAt"] = now()
+    for stream in ("stdout", "stderr"):
+        path = label.with_suffix(f".{stream}.log")
+        record[stream] = {"path": str(path), "bytes": path.stat().st_size, "sha256": digest(path)}
+    write(label.with_suffix(".command.json"), record)
+    if error:
+        raise ContractError(f"{label.name}: {type(error).__name__}") from error
+    require(record["rc"] == 0, f"{label.name}: rc={record['rc']}")
+    return record
