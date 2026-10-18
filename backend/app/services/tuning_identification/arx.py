@@ -89,13 +89,28 @@ def identify_arx(
     n_params = na + nb
     Phi = np.zeros((rows, n_params))
     y_reg = np.zeros(rows)
-    for i in range(rows):
-        idx = max_lag + i
+    # 常规一维 ndarray 按列填同一矩阵；其它输入保留原标量读取/负号语义。
+    if (
+        type(u) is np.ndarray
+        and type(y) is np.ndarray
+        and u.ndim == y.ndim == 1
+        and na >= 0
+        and nb >= 0
+        and (nb == 0 or len(u) >= n - d)
+    ):
         for j in range(na):
-            Phi[i, j] = -y[idx - 1 - j]
+            Phi[:, j] = -y[max_lag - 1 - j : n - 1 - j]
         for j in range(nb):
-            Phi[i, na + j] = u[idx - d - j]
-        y_reg[i] = y[idx]
+            Phi[:, na + j] = u[max_lag - d - j : n - d - j]
+        y_reg[:] = y[max_lag:]
+    else:
+        for i in range(rows):
+            idx = max_lag + i
+            for j in range(na):
+                Phi[i, j] = -y[idx - 1 - j]
+            for j in range(nb):
+                Phi[i, na + j] = u[idx - d - j]
+            y_reg[i] = y[idx]
 
     # 最小二乘
     theta, _, _, _ = np.linalg.lstsq(Phi, y_reg, rcond=None)
