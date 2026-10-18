@@ -1,0 +1,104 @@
+{
+  "source": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037226096/job-logs/117409399162.log",
+    "bytes": 616884,
+    "sha256": "924a09b561078adedc814f2eb2ec18174315e4991983d0b8e0b4a785d0723e8e"
+  },
+  "profile": {
+    "line": 514,
+    "raw": "2026-10-17T13:36:40.1550430Z {\"platform\": \"Linux-6.17.0-1022-azure-x86_64-with-glibc2.39\", \"numpy\": \"2.5.0\", \"cpuCount\": 4, \"affinity\": [0, 1, 2, 3], \"threads\": {\"OPENBLAS_NUM_THREADS\": \"1\", \"OMP_NUM_THREADS\": \"1\", \"MKL_NUM_THREADS\": \"1\", \"NUMEXPR_NUM_THREADS\": \"1\", \"VECLIB_MAXIMUM_THREADS\": \"1\"}, \"numpyConfig\": {\"Compilers\": {\"c\": {\"name\": \"gcc\", \"linker\": \"ld.bfd\", \"version\": \"14.2.1\", \"commands\": \"cc\"}, \"cython\": {\"name\": \"cython\", \"linker\": \"cython\", \"version\": \"3.2.5\", \"commands\": \"cython\"}, \"c++\": {\"name\": \"gcc\", \"linker\": \"ld.bfd\", \"version\": \"14.2.1\", \"commands\": \"c++\"}}, \"Machine Information\": {\"host\": {\"cpu\": \"x86_64\", \"family\": \"x86_64\", \"endian\": \"little\", \"system\": \"linux\"}, \"build\": {\"cpu\": \"x86_64\", \"family\": \"x86_64\", \"endian\": \"little\", \"system\": \"linux\"}}, \"Build Dependencies\": {\"blas\": {\"name\": \"scipy-openblas\", \"found\": true, \"version\": \"0.3.33.112.0\", \"detection method\": \"pkgconfig\", \"include directory\": \"/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include\", \"lib directory\": \"/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib\", \"openblas configuration\": \"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\", \"pc file directory\": \"/project/.openblas\"}, \"lapack\": {\"name\": \"scipy-openblas\", \"found\": true, \"version\": \"0.3.33.112.0\", \"detection method\": \"pkgconfig\", \"include directory\": \"/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include\", \"lib directory\": \"/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib\", \"openblas configuration\": \"OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64\", \"pc file directory\": \"/project/.openblas\"}}, \"Python Information\": {\"path\": \"/tmp/build-env-uvemcwed/bin/python\", \"version\": \"3.12\"}, \"SIMD Extensions\": {\"baseline\": [\"X86_V2\"], \"found\": [\"X86_V3\", \"X86_V4\", \"AVX512_ICL\"], \"not found\": [\"AVX512_SPR\"]}}}",
+    "body": {
+      "platform": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "numpy": "2.5.0",
+      "cpuCount": 4,
+      "affinity": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "threads": {
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1"
+      },
+      "numpyConfig": {
+        "Compilers": {
+          "c": {
+            "name": "gcc",
+            "linker": "ld.bfd",
+            "version": "14.2.1",
+            "commands": "cc"
+          },
+          "cython": {
+            "name": "cython",
+            "linker": "cython",
+            "version": "3.2.5",
+            "commands": "cython"
+          },
+          "c++": {
+            "name": "gcc",
+            "linker": "ld.bfd",
+            "version": "14.2.1",
+            "commands": "c++"
+          }
+        },
+        "Machine Information": {
+          "host": {
+            "cpu": "x86_64",
+            "family": "x86_64",
+            "endian": "little",
+            "system": "linux"
+          },
+          "build": {
+            "cpu": "x86_64",
+            "family": "x86_64",
+            "endian": "little",
+            "system": "linux"
+          }
+        },
+        "Build Dependencies": {
+          "blas": {
+            "name": "scipy-openblas",
+            "found": true,
+            "version": "0.3.33.112.0",
+            "detection method": "pkgconfig",
+            "include directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include",
+            "lib directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib",
+            "openblas configuration": "OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64",
+            "pc file directory": "/project/.openblas"
+          },
+          "lapack": {
+            "name": "scipy-openblas",
+            "found": true,
+            "version": "0.3.33.112.0",
+            "detection method": "pkgconfig",
+            "include directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include",
+            "lib directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib",
+            "openblas configuration": "OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64",
+            "pc file directory": "/project/.openblas"
+          }
+        },
+        "Python Information": {
+          "path": "/tmp/build-env-uvemcwed/bin/python",
+          "version": "3.12"
+        },
+        "SIMD Extensions": {
+          "baseline": [
+            "X86_V2"
+          ],
+          "found": [
+            "X86_V3",
+            "X86_V4",
+            "AVX512_ICL"
+          ],
+          "not found": [
+            "AVX512_SPR"
+          ]
+        }
+      }
+    }
+  }
+}

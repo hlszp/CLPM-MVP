@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-actionlint-39026319367-m5we4byx/actionlint",
+    "-shellcheck=",
+    "-pyflakes=",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/workflow-diagnosis-39026319367/before-ci.yml"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:57:08.961333+00:00",
+  "endedAt": "2026-10-17T10:57:08.968296+00:00",
+  "rc": 1,
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/workflow-diagnosis-39026319367/before-ci.yml",
+  "sourceSha256": "c8b8158d7124fe8d1b2b89fa3eb86bb21264a3396db2df2f361920af0948c109"
+}

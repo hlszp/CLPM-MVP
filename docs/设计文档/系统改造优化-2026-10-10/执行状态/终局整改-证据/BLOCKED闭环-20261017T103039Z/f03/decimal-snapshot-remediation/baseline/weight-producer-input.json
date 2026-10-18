@@ -1,0 +1,49 @@
+{
+  "rows": [
+    {
+      "id": "2cd1e218-18be-466e-9ae8-2adaf47b7f97",
+      "weight_a": "0.20",
+      "weight_f": "0.30",
+      "weight_s": "0.50",
+      "loop_type": "STABLE",
+      "type_name": "稳定型",
+      "updated_at": "2026-10-17T21:56:09.543834",
+      "updated_by": null,
+      "description": "温度/压力控制，a/f/s 相似"
+    },
+    {
+      "id": "46868cf0-155a-4a3f-a2be-ef3d241b1d9a",
+      "weight_a": "0.30",
+      "weight_f": "0.10",
+      "weight_s": "0.60",
+      "loop_type": "SLOW",
+      "type_name": "慢速型",
+      "updated_at": "2026-10-17T21:56:09.543834",
+      "updated_by": null,
+      "description": "缓慢调节，f 偏小"
+    },
+    {
+      "id": "a7c18ca4-0c7c-43d6-b934-350be5d5d3c9",
+      "weight_a": "0.20",
+      "weight_f": "0.50",
+      "weight_s": "0.30",
+      "loop_type": "FAST",
+      "type_name": "快速型",
+      "updated_at": "2026-10-17T21:56:09.543834",
+      "updated_by": null,
+      "description": "副回路/速度控制，f 偏大"
+    },
+    {
+      "id": "d3a9150f-4a27-4ade-a7a6-6453b5e82277",
+      "weight_a": "0.00",
+      "weight_f": "0.50",
+      "weight_s": "0.60",
+      "loop_type": "LOGIC",
+      "type_name": "逻辑型",
+      "updated_at": "2026-10-17T21:56:09.543834",
+      "updated_by": null,
+      "description": "逻辑规则控制，a 偏小"
+    }
+  ],
+  "section": "loop-type-weights-input"
+}

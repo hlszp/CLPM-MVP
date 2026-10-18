@@ -1,0 +1,53 @@
+diff --git a/e2e/tests/critical-business.spec.ts b/e2e/tests/critical-business.spec.ts
+index 92dd20ac..bdd2a5a7 100644
+--- a/e2e/tests/critical-business.spec.ts
++++ b/e2e/tests/critical-business.spec.ts
+@@ -24,21 +24,43 @@ let snapshot: Record<string, any>;
+ const tokens = new Map<string, string>();
+ 
+ function applicationRoute(url: URL): URL {
+-  return url.hash.startsWith('#/') ? new URL(url.hash.slice(1), url.origin) : url;
++  if (!url.hash) return url;
++  const path = url.hash.slice(1).split(/[?#]/, 1)[0];
++  if (!url.hash.startsWith('#/') || path.startsWith('//') || url.hash.includes('\\')) {
++    throw new Error('Invalid application hash route');
++  }
++  const route = new URL(url.hash.slice(1), url.origin);
++  if (route.origin !== url.origin || route.pathname !== path) {
++    throw new Error('Application hash route must preserve its local path');
++  }
++  return route;
+ }
+ 
+ function applicationRouteUrl(current: URL, path: string): string {
++  if (!path.startsWith('/') || path.startsWith('//') || path.includes('\\')) {
++    throw new Error('Application target must be a local absolute path');
++  }
+   const route = new URL(path, current.origin);
+-  if (!current.hash.startsWith('#/')) return route.toString();
++  if (route.origin !== current.origin || route.hash ||
++    route.pathname !== path.split(/[?#]/, 1)[0] ||
++    !['/config/loop', '/loop/workbench360', '/metric/loop-evaluation'].includes(route.pathname)) {
++    throw new Error('Unexpected critical E2E target');
++  }
++  if (!current.hash) return route.toString();
++  applicationRoute(current);
+   const target = new URL(current);
+   target.hash = `${route.pathname}${route.search}${route.hash}`;
+   return target.toString();
+ }
+ 
+ function isAuthenticatedLanding(url: URL, origin: string): boolean {
+-  const route = applicationRoute(url);
+-  return url.origin === origin &&
+-    (route.pathname === '/cockpit' || route.pathname.startsWith('/cockpit/'));
++  try {
++    const route = applicationRoute(url);
++    return url.origin === origin && route.origin === origin &&
++      (route.pathname === '/cockpit' || route.pathname.startsWith('/cockpit/'));
++  } catch {
++    return false;
++  }
+ }
+ 
+ async function gotoApplicationRoute(page: Page, path: string) {

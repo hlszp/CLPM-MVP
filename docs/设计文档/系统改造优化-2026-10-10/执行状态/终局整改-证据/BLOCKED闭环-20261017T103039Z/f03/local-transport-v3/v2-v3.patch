@@ -1,0 +1,401 @@
+--- /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-four-case-plan/keeper-local-f03-v2.py
++++ /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-transport-v3/keeper-local-f03-v3.py
+@@ -467,6 +467,8 @@
+     allowed = set(catalog(site))
+ 
+     class Handler(http.server.BaseHTTPRequestHandler):
++        protocol_version = "HTTP/1.1"
++
+         def do_GET(self):
+             route = unquote(urlsplit(self.path).path)
+             relative = route.lstrip("/")
+@@ -508,7 +510,11 @@
+             self.end_headers()
+             self.wfile.write(data)
+ 
+-    http.server.ThreadingHTTPServer(("127.0.0.1", 17266), Handler).serve_forever()
++    class StaticServer(http.server.ThreadingHTTPServer):
++        request_queue_size = 256
++        daemon_threads = True
++
++    StaticServer(("127.0.0.1", 17266), Handler).serve_forever()
+ 
+ 
+ def process_details(pid):
+@@ -556,6 +562,9 @@
+             "127.0.0.1",
+             "--port",
+             "17261",
++            "--timeout-graceful-shutdown",
++            "15",
++            "--no-access-log",
+         ]
+         process = subprocess.Popen(
+             argv, cwd=cwd, env=ENV, stdout=log, stderr=subprocess.STDOUT
+@@ -778,109 +787,269 @@
+ 
+ 
+ def stop():
++    import psutil
++
+     state = get_state()
+-    root = owned_api(state)
+-    data = snapshot_status("before-stop")
+-    original_processes = process_details(root.pid)
+-    for kind in ("active", "reserved", "scheduled"):
+-        if not data.get(kind) or len(data[kind]) != 1 or any(data[kind].values()):
+-            raise RuntimeError("not drained: " + kind)
+-    if (
+-        data["redis"]["role"] != "master"
+-        or any(data["redis"]["brokerLists"].values())
+-        or data["redis"]["unacked"]
+-        or data["redis"]["unackedIndex"]
+-    ):
+-        raise RuntimeError("private broker is not empty")
+-    cwd = Path(state["apiCwd"])
+-    for path in cwd.rglob("*"):
+-        if path.is_file() and ("celerybeat" in path.name):
+-            dest = OUT / "beat-state-before-stop" / path.relative_to(cwd)
+-            dest.parent.mkdir(parents=True, exist_ok=True)
+-            shutil.copy2(path, dest)
+-    import psutil
+-
+-    beat = psutil.Process(state["beatPausedPid"])
+-    if (
+-        abs(beat.create_time() - state["beatPausedCreated"]) > 0.01
+-        or beat.ppid() != root.pid
+-        or "beat" not in beat.cmdline()
+-    ):
+-        raise RuntimeError("Beat PID/parent/create-time identity changed")
+-    write(
+-        OUT / "beat-stop-signals.json",
+-        {
+-            "pid": beat.pid,
+-            "parent": beat.ppid(),
+-            "createTime": beat.create_time(),
+-            "signalsInOrder": ["SIGTERM", "SIGCONT"],
+-            "at": now(),
+-        },
+-    )
+-    beat.send_signal(signal.SIGTERM)
+-    beat.send_signal(signal.SIGCONT)
+-    root.send_signal(signal.SIGTERM)
++    errors = []
++    observed = {}
++    history = OUT / "process-tree-stop-history.ndjson"
++    root = None
++    barrier = None
++    beat_released = False
++
++    def observe_tree():
++        rows, vanished = [], []
++        try:
++            processes = [root, *root.children(recursive=True)]
++        except psutil.NoSuchProcess:
++            processes = []
++        for process in processes:
++            try:
++                item = {
++                    "pid": process.pid,
++                    "ppid": process.ppid(),
++                    "created": process.create_time(),
++                    "status": process.status(),
++                    "argv": process.cmdline(),
++                }
++                rows.append(item)
++                observed[(item["pid"], item["created"])] = item
++            except psutil.NoSuchProcess:
++                vanished.append(process.pid)
++        with history.open("a") as stream:
++            stream.write(
++                json.dumps({"at": now(), "rows": rows, "vanishedDuringRead": vanished})
++                + "\n"
++            )
++        return rows
++
++    def read_barrier(offset, signal_at):
++        with (OUT / "backend-api.stdout.log").open("rb") as log:
++            log.seek(offset)
++            while True:
++                begin = log.tell()
++                raw = log.readline()
++                if not raw.endswith(b"\n"):
++                    return begin, None
++                try:
++                    record = json.loads(raw)
++                    timestamp = datetime.datetime.fromisoformat(record["timestamp"])
++                except (ValueError, KeyError, TypeError):
++                    continue
++                if (
++                    record.get("logger") == "app.main"
++                    and record.get("message")
++                    in {"停止 Celery Worker 进程...", "停止 Celery Beat 调度进程..."}
++                    and timestamp.tzinfo is not None
++                    and timestamp >= signal_at
++                ):
++                    (OUT / "watchdog-stop-barrier.raw.log").write_bytes(raw)
++                    item = {
++                        "offsetStart": begin,
++                        "offsetEnd": log.tell(),
++                        "rawSha256": sha(raw),
++                        "record": record,
++                        "observedAt": now(),
++                    }
++                    write(OUT / "watchdog-stop-barrier.json", item)
++                    return log.tell(), item
++
+     try:
+-        root.wait(timeout=45)
+-    except Exception:
+-        root.send_signal(signal.SIGINT)
+-        root.wait(timeout=30)
+-    import psutil
+-
+-    front = psutil.Process(state["frontendPid"])
+-    if (
+-        abs(front.create_time() - state["frontendCreated"]) > 0.01
+-        or os.getpgid(front.pid) != state["frontendPgid"]
+-    ):
+-        raise RuntimeError("frontend PID identity changed")
+-    os.killpg(state["frontendPgid"], signal.SIGTERM)
+-    try:
+-        front.wait(timeout=15)
+-    except psutil.TimeoutExpired:
+-        raise RuntimeError("frontend did not stop; no force kill attempted")
+-    for _ in range(20):
+-        if (OUT / "api-exit.json").exists():
+-            break
+-        time.sleep(0.25)
+-    else:
+-        raise RuntimeError("API supervisor did not record its true exit code")
+-    actual_exit = json.loads((OUT / "api-exit.json").read_text())
+-    if actual_exit["rc"] != 0:
+-        raise RuntimeError(f"API real exit rc={actual_exit['rc']}")
+-    if sha((ARGS.native_env_file).read_bytes()) != state["nativeDotenvSha256"]:
+-        raise RuntimeError("native dotenv changed")
+-    remaining = []
+-    for _ in range(40):
++        root = owned_api(state)
++        data = snapshot_status("before-stop")
++        for item in process_details(root.pid):
++            observed[(item["pid"], item["created"])] = item
++        for kind in ("active", "reserved", "scheduled"):
++            if not data.get(kind) or len(data[kind]) != 1 or any(data[kind].values()):
++                raise RuntimeError("not drained: " + kind)
++        if (
++            data["redis"]["role"] != "master"
++            or any(data["redis"]["brokerLists"].values())
++            or data["redis"]["unacked"]
++            or data["redis"]["unackedIndex"]
++        ):
++            raise RuntimeError("private broker is not empty")
++        cwd = Path(state["apiCwd"])
++        for path in cwd.rglob("*"):
++            if path.is_file() and "celerybeat" in path.name:
++                dest = OUT / "beat-state-before-stop" / path.relative_to(cwd)
++                dest.parent.mkdir(parents=True, exist_ok=True)
++                shutil.copy2(path, dest)
++        beat = psutil.Process(state["beatPausedPid"])
++
++        def owned_paused_beat():
++            if (
++                abs(beat.create_time() - state["beatPausedCreated"]) > 0.01
++                or beat.ppid() != root.pid
++                or "beat" not in beat.cmdline()
++                or beat.status() != psutil.STATUS_STOPPED
++            ):
++                raise RuntimeError("paused Beat PID/parent/create-time/status changed")
++            return beat
++
++        owned_paused_beat()
++        offset = (OUT / "backend-api.stdout.log").stat().st_size
++        signal_at = datetime.datetime.now(datetime.timezone.utc)
++        write(
++            OUT / "api-stop-signal.json",
++            {
++                "pid": root.pid,
++                "signal": "SIGTERM",
++                "at": signal_at.isoformat(),
++                "logOffsetBeforeSignal": offset,
++                "beatRemainsPaused": True,
++            },
++        )
++        root.send_signal(signal.SIGTERM)
++        fallback = False
++        deadline = time.monotonic() + 75
++        while True:
++            rows = observe_tree()
++            if not barrier:
++                offset, barrier = read_barrier(offset, signal_at)
++                if barrier:
++                    owned_paused_beat()
++                    write(
++                        OUT / "beat-stop-signals.json",
++                        {
++                            "pid": beat.pid,
++                            "parent": beat.ppid(),
++                            "createTime": beat.create_time(),
++                            "signalsInOrder": ["SIGTERM", "SIGCONT"],
++                            "at": now(),
++                            "watchdogBarrier": barrier,
++                        },
++                    )
++                    beat.send_signal(signal.SIGTERM)
++                    beat.send_signal(signal.SIGCONT)
++                    beat_released = True
++            if not any(
++                row["pid"] == root.pid and row["status"] != psutil.STATUS_ZOMBIE
++                for row in rows
++            ):
++                break
++            if time.monotonic() >= deadline:
++                if fallback:
++                    raise RuntimeError(
++                        "API still alive after 75s TERM and 30s SIGINT; no force kill"
++                    )
++                owned_api(state).send_signal(signal.SIGINT)
++                write(
++                    OUT / "api-shutdown-fallback.json",
++                    {"signal": "SIGINT", "afterSeconds": 75, "at": now()},
++                )
++                fallback = True
++                deadline = time.monotonic() + 30
++            time.sleep(0.1)
++        if not barrier or not beat_released:
++            raise RuntimeError(
++                "missing post-signal watchdog stop barrier; Beat was not resumed"
++            )
++        for _ in range(20):
++            if (OUT / "api-exit.json").exists():
++                break
++            time.sleep(0.25)
++        else:
++            raise RuntimeError("API supervisor did not record its true exit code")
++        actual_exit = json.loads((OUT / "api-exit.json").read_text())
++        if actual_exit["pid"] != state["apiPid"] or actual_exit["rc"] != 0:
++            raise RuntimeError(f"API real exit identity/rc={actual_exit}")
++    except Exception as error:
++        errors.append({"phase": "api-stop", "error": repr(error)})
++    finally:
++        # A failed API wait must never bypass cleanup of this run's static process.
++        try:
++            front = psutil.Process(state["frontendPid"])
++            if (
++                abs(front.create_time() - state["frontendCreated"]) > 0.01
++                or os.getpgid(front.pid) != state["frontendPgid"]
++            ):
++                raise RuntimeError("frontend PID/create-time/pgid identity changed")
++            os.killpg(state["frontendPgid"], signal.SIGTERM)
++            actual_front_rc = front.wait(timeout=15)
++            write(
++                OUT / "frontend-stop.json",
++                {
++                    "pid": front.pid,
++                    "pgid": state["frontendPgid"],
++                    "waitReturnCode": actual_front_rc,
++                    "at": now(),
++                },
++            )
++        except psutil.NoSuchProcess:
++            write(
++                OUT / "frontend-stop.json",
++                {
++                    "pid": state.get("frontendPid"),
++                    "observedAbsent": True,
++                    "waitReturnCode": None,
++                    "at": now(),
++                },
++            )
++        except Exception as error:
++            errors.append({"phase": "frontend-stop", "error": repr(error)})
++        if root is not None:
++            try:
++                observe_tree()
++            except Exception as error:
++                errors.append({"phase": "final-tree-observation", "error": repr(error)})
+         remaining = []
+-        for item in original_processes:
+-            try:
+-                process = psutil.Process(item["pid"])
+-                if abs(process.create_time() - item["created"]) < 0.01:
+-                    remaining.append({**item, "currentStatus": process.status()})
+-            except psutil.NoSuchProcess:
+-                pass
+-        if not remaining:
+-            break
+-        time.sleep(0.25)
+-    write(
+-        OUT / "stopped-process-check.json",
+-        {"original": original_processes, "remaining": remaining, "at": now()},
+-    )
+-    if remaining:
+-        raise RuntimeError(
+-            "owned API/Worker/pool/Beat process remains; no force kill attempted"
+-        )
+-    after_broker = queue_observation("after-stop", require_worker=False)
+-    if (
+-        any(after_broker["redis"]["brokerLists"].values())
+-        or after_broker["redis"]["unacked"]
+-        or after_broker["redis"]["unackedIndex"]
+-    ):
+-        raise RuntimeError("private broker is not quiescent after stop")
++        for _ in range(40):
++            remaining = []
++            for item in observed.values():
++                try:
++                    process = psutil.Process(item["pid"])
++                    if abs(process.create_time() - item["created"]) < 0.01:
++                        remaining.append({**item, "currentStatus": process.status()})
++                except psutil.NoSuchProcess:
++                    pass
++            if not remaining:
++                break
++            time.sleep(0.25)
++        write(
++            OUT / "stopped-process-check.json",
++            {"observed": list(observed.values()), "remaining": remaining, "at": now()},
++        )
++        if remaining:
++            errors.append(
++                {
++                    "phase": "process-check",
++                    "error": "owned process remains; no force kill",
++                }
++            )
++        try:
++            after = queue_observation("after-stop", require_worker=False)
++            if (
++                any(after["redis"]["brokerLists"].values())
++                or after["redis"]["unacked"]
++                or after["redis"]["unackedIndex"]
++            ):
++                raise RuntimeError("private broker is not quiescent after stop")
++        except Exception as error:
++            errors.append({"phase": "broker-after-stop", "error": repr(error)})
++        try:
++            if sha(ARGS.native_env_file.read_bytes()) != state["nativeDotenvSha256"]:
++                raise RuntimeError("native dotenv changed")
++            asyncio.run(capacity_observation("after-stop"))
++        except Exception as error:
++            errors.append({"phase": "isolation-after-stop", "error": repr(error)})
++        write(
++            OUT / "stop-outcome.json",
++            {
++                "errors": errors,
++                "watchdogBarrierObserved": barrier is not None,
++                "beatReleasedAfterBarrier": beat_released,
++                "actualApiExit": json.loads((OUT / "api-exit.json").read_text())
++                if (OUT / "api-exit.json").exists()
++                else None,
++                "at": now(),
++            },
++        )
++    if errors:
++        raise RuntimeError("stop failed: " + json.dumps(errors, ensure_ascii=False))
+     state["stopped"] = True
+     state["apiExitObservedAt"] = now()
+     save_state(state)
+-    asyncio.run(capacity_observation("after-stop"))
+ 
+ 
+ def main():

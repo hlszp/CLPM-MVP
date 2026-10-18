@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "uv",
+    "pip",
+    "install",
+    "--offline",
+    "--python",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "psutil==7.2.2"
+  ],
+  "startedAt": "2026-10-17T12:42:42.102899+00:00",
+  "finishedAt": "2026-10-17T12:42:42.206279+00:00",
+  "rc": 0,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "0b6f83a7f9eebb0dc61464b1d3a6be65b56eb4c9070fb9b739d59af184396932",
+  "scope": "temporary test-runtime observer dependency; not a product lock dependency",
+  "restore": "after F03 actual stop, uv sync --frozen before final source identity/capacity"
+}

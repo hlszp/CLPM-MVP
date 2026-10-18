@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:03:46.688044+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "run-code",
+    "async (page) => { await page.getByTestId('btn-create-template').click(); await page.getByTestId('create-key').fill('AUDIT-F04-UI-1017'); await page.getByTestId('create-name').fill('独立浏览器复验零关联模板'); const r=page.waitForResponse(r=>r.url().includes('/engineering-templates') && r.request().method()==='POST'); await page.getByRole('button',{name:'创 建',exact:true}).click(); const response=await r; return {status:response.status(),body:await response.json()}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 2.1662922090035863,
+  "stdout": "### Result\n{\"status\":201,\"body\":{\"code\":\"0\",\"message\":\"模板已创建\",\"data\":{\"id\":\"295fea85-2f64-4048-a644-95e1c90e58d1\",\"templateKey\":\"AUDIT-F04-UI-1017\",\"name\":\"独立浏览器复验零关联模板\",\"category\":\"RESPONSE\",\"currentVersion\":null,\"description\":null,\"createdBy\":\"admin\",\"createdAt\":\"2026-10-17T10:03:45.606201\",\"updatedAt\":\"2026-10-17T10:03:45.606201\",\"versionCount\":0}}}\n### Ran Playwright code\n```js\nawait (async (page) => { await page.getByTestId('btn-create-template').click(); await page.getByTestId('create-key').fill('AUDIT-F04-UI-1017'); await page.getByTestId('create-name').fill('独立浏览器复验零关联模板'); const r=page.waitForResponse(r=>r.url().includes('/engineering-templates') && r.request().method()==='POST'); await page.getByRole('button',{name:'创 建',exact:true}).click(); const response=await r; return {status:response.status(),body:await response.json()}; })(page);\n```\n",
+  "stderr": ""
+}

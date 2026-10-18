@@ -1,0 +1,7 @@
+
+> @vben/web-antd@5.7.0 preview /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd
+> vite preview --port 15666
+
+  [32m➜[39m  [1mLocal[22m:   [36mhttp://localhost:[1m15666[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://10.1.0.16:[1m15666[22m/[39m
+  [32m➜[39m  [1mNetwork[22m: [36mhttp://172.18.0.1:[1m15666[22m/[39m

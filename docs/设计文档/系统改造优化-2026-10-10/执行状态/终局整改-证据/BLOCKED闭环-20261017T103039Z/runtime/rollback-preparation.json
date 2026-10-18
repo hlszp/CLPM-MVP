@@ -1,0 +1,15 @@
+{
+  "observed_at": 1792233844.580719,
+  "runtime": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+  "environment_backup": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/runtime-env-backups/BLOCKED-20261017T103039Z/runtime.backend.env",
+  "environment_sha256": "fea4f8ff99d9c8242ccb763dac7302a35e91a1ebc295f7346c2ca451958ceca4",
+  "environment_mode": "0o600",
+  "head": "c9e01f5d85294f5ad403fac7ae2e571ee472e9ad",
+  "status": "?? backend/capacity_dataset/manifest_a_2026101600.json\n?? backend/capacity_dataset/manifest_a_2026101601.json\n?? backend/capacity_dataset/manifest_a_2026101602.json\n?? backend/capacity_dataset/manifest_a_2026101603.json\n?? backend/capacity_dataset/manifest_a_2026101604.json\n?? backend/capacity_dataset/manifest_a_2026101605.json\n?? backend/capacity_dataset/manifest_a_2026101606.json\n?? backend/capacity_dataset/manifest_a_2026101607.json\n?? backend/capacity_dataset/manifest_a_2026101608.json\n?? backend/capacity_dataset/manifest_a_2026101609.json\n?? backend/capacity_dataset/manifest_a_2026101610.json\n?? backend/capacity_dataset/manifest_a_2026101611.json\n?? backend/capacity_dataset/manifest_b_2026101405.json\n?? backend/capacity_dataset/manifest_b_2026101514.json\n?? backend/capacity_dataset/manifest_b_2026101515.json\n?? backend/capacity_dataset/manifest_b_2026101516.json\n?? backend/capacity_dataset/manifest_b_2026101522.json\n?? backend/capacity_dataset/manifest_b_2026101523.json\n?? backend/capacity_dataset/run_freezes/\n?? backend/resource-a2p.jsonl\n",
+  "postgres_original": "clpm",
+  "tdengine_original": "clpm_ts",
+  "original_broker": "clpm-mvp-redis:17103/db1+db2",
+  "original_td_min_reserved_memory_MB": 0,
+  "production_touched": false,
+  "changes_applied": false
+}

@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-o",
+    "addopts=",
+    "--no-cov",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_refactor_protected_manifest.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "REFACTOR_UPDATE_GOLDEN": "explicitly unset, no golden update",
+  "startedAt": "2026-10-17T12:06:15.133617+00:00",
+  "endedAt": "2026-10-17T12:06:16.068391+00:00",
+  "rc": 0,
+  "sourceGoldenUnchanged": true
+}

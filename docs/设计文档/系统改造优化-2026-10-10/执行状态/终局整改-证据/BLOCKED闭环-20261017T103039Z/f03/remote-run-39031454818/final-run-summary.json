@@ -1,0 +1,49 @@
+{
+  "runId": 39031454818,
+  "event": "pull_request",
+  "headSha": "8a00175339228a7dd710751d59d626ee97fe2233",
+  "actualCheckoutShaAllThreeJobs": "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+  "workflow": "failure",
+  "jobs": {
+    "backend": {
+      "id": 117392568939,
+      "conclusion": "success",
+      "collected": 7448,
+      "selected": 7282,
+      "deselected": 166,
+      "passed": 6930,
+      "skipped": 336,
+      "xfailed": 12,
+      "xpassed": 4,
+      "failed": 0,
+      "coveragePercent": 75.61,
+      "durationSeconds": 491.63,
+      "originalAnnotatedFileTests": 7,
+      "originalTimeoutSeconds": 30
+    },
+    "frontend": {
+      "id": 117392568848,
+      "conclusion": "success",
+      "unitFiles": 106,
+      "unitPassed": 1021,
+      "unitFailed": 0,
+      "originalSmokePassed": 2
+    },
+    "critical": {
+      "id": 117392568955,
+      "conclusion": "failure",
+      "required": 4,
+      "collected": 4,
+      "passed": 1,
+      "failed": 1,
+      "skipped": 2,
+      "retry": 0,
+      "flaky": 0,
+      "npzCount": 0,
+      "rawSummary": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39031454818/critical-failure-summary.json"
+    }
+  },
+  "artifactId": 12100418238,
+  "artifactFiles": 91,
+  "scope": "backend performance and frontend gates passed; critical business/independent numeric still not passed"
+}

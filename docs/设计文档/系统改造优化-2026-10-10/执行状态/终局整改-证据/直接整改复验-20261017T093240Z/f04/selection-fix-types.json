@@ -1,0 +1,10 @@
+{
+  "name": "selection-fix-types",
+  "command": [
+    "pnpm",
+    "run",
+    "check:type"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 20.121235459
+}

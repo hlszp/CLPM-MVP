@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--dom",
+    "--no-cache",
+    "apps/web-antd/src/__tests__/loop-follow.test.ts",
+    "apps/web-antd/src/__tests__/store.test.ts",
+    "apps/web-antd/src/__tests__/my-work.test.ts",
+    "apps/web-antd/src/__tests__/loop-fleet-view.test.ts",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u76f4\u63a5\u6574\u6539\u590d\u9a8c-20261017T093240Z/f07/implementation/related-forward-tests-final.results.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "rc": 0,
+  "seconds": 2.3949917910000003
+}

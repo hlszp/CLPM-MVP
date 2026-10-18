@@ -1,0 +1,211 @@
+diff --git a/backend/app/api/v1/endpoints/tasks.py b/backend/app/api/v1/endpoints/tasks.py
+index 9d6e33b6..095b6594 100644
+--- a/backend/app/api/v1/endpoints/tasks.py
++++ b/backend/app/api/v1/endpoints/tasks.py
+@@ -870,19 +870,9 @@ async def trigger_custom_evaluation(
+     from app.tasks.kpi_calc import calculate_custom_batch_kpi
+ 
+     task_id = str(uuid4())
++    celery_task_id = str(uuid4())
+     now = _now_iso()
+ 
+-    try:
+-        # P5-02：人工自定义批量走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+-        celery_result = calculate_custom_batch_kpi.apply_async(
+-            args=[task_id, body.loopIds, body.tsStart, body.tsEnd], priority=PRIORITY_MANUAL
+-        )
+-    except Exception:
+-        # 投递失败：回滚已占用的槽位（任务记录尚未创建）
+-        await _release_slot_counters(str(user.id))
+-        raise
+-    celery_task_id = celery_result.id
+-
+     task_data: dict[str, str] = {
+         "task_id": task_id,
+         "task_type": TaskType.CUSTOM.value,
+@@ -904,7 +894,30 @@ async def trigger_custom_evaluation(
+         "ts_end": body.tsEnd,
+         "slot_acquired": "1",
+     }
+-    await _save_task(task_data)
++    try:
++        # 先落记录再投递：快 consumer 的进度不能被 API 初始 0 覆盖。
++        await _save_task(task_data)
++        calculate_custom_batch_kpi.apply_async(
++            args=[task_id, body.loopIds, body.tsStart, body.tsEnd],
++            task_id=celery_task_id,
++            priority=PRIORITY_MANUAL,
++        )
++    except Exception as exc:
++        from app.services import task_tracker
++
++        try:
++            await task_tracker.update_status(
++                task_id,
++                TaskStatus.FAILED,
++                error_message=f"任务投递失败: {exc}",
++                current_stage="投递失败",
++                finished_at=_now_iso(),
++            )
++        except Exception:  # noqa: BLE001 — 状态记录失败不覆盖原始投递异常
++            logger.warning("记录自定义任务投递失败状态失败: %s", task_id, exc_info=True)
++        finally:
++            await _release_concurrency_slot(task_id, task_data)
++        raise
+ 
+     logger.info(
+         "自定义评估任务已触发: task_id=%s, loops=%d, celery_id=%s, user=%s",
+diff --git a/backend/app/services/calc_snapshot.py b/backend/app/services/calc_snapshot.py
+index e9793eb3..4a2f7578 100644
+--- a/backend/app/services/calc_snapshot.py
++++ b/backend/app/services/calc_snapshot.py
+@@ -825,7 +825,16 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
+         block = bundle.data_block
+         prefix = f"blk{i}"
+         arrays[f"{prefix}__ts"] = _ns_int(list(block.timestamps))
++        signal_metadata: dict[str, list[str | None]] = {}
+         for name, values in block.signals.items():
++            if name in ("op_limits_source", "op_limits_provenance"):
++                # DataPlanner 的限位依据是标量元数据，不是 float 信号列。
++                # 保留原值参与 inputHash，并在重放时还原；数值列仍严格校验。
++                values = list(values)
++                if any(value is not None and not isinstance(value, str) for value in values):
++                    raise ValueError(f"信号元数据 {name} 必须为字符串或 None")
++                signal_metadata[name] = values
++                continue
+             serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
+         for name, flags in (block.validity or {}).items():
+             if len(flags) == len(block.timestamps):
+@@ -846,6 +855,8 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
+             "consecutiveSegments": [[int(a), int(b)] for a, b in block.consecutive_segments],
+             "outlierReasons": outlier,
+         }
++        if signal_metadata:
++            meta["signalMetadata"] = signal_metadata
+         if getattr(block, "series_context", None) is not None:
+             sc = block.series_context
+ 
+@@ -936,6 +947,15 @@ def deserialize_data_blocks(arrays: dict[str, np.ndarray], blocks_meta: list[dic
+                     else:
+                         vals.append(float(arr[j]))
+                 signals[name] = vals
++        for name, values in (meta.get("signalMetadata") or {}).items():
++            if (
++                name not in ("op_limits_source", "op_limits_provenance")
++                or name in signals
++                or not isinstance(values, list)
++                or any(value is not None and not isinstance(value, str) for value in values)
++            ):
++                raise ValueError(f"无效信号元数据: {name}")
++            signals[name] = list(values)
+         validity = {
+             key.split("__valid_", 1)[1]: [bool(v) for v in arrays[key]]
+             for key in arrays
+diff --git a/backend/app/tasks/kpi_calc.py b/backend/app/tasks/kpi_calc.py
+index e7ed0489..de0e87a7 100644
+--- a/backend/app/tasks/kpi_calc.py
++++ b/backend/app/tasks/kpi_calc.py
+@@ -1780,6 +1780,8 @@ async def _do_calculate_custom_batch(
+     参数（logicalRunId=custom task id 推导，Celery 重试幂等）。
+     """
+     from app.core.db import AsyncSessionLocal
++    from app.schemas.task import TaskStatus
++    from app.services import task_tracker
+     from app.services.engine_rule_loader import get_engine_rule_loader
+     from app.services.loop_config import get_loop_type_weights_map
+ 
+@@ -1812,6 +1814,16 @@ async def _do_calculate_custom_batch(
+         if not loops:
+             return {"total": 0, "success": 0, "failed": 0}
+ 
++        if attempt_no is not None and attempt_no > 1:
++            await task_tracker.reset_task_progress(task_id)
++        await task_tracker.update_status(
++            task_id,
++            TaskStatus.RUNNING,
++            loops_total=len(loops),
++            current_stage="取数",
++            started_at=datetime.now(UTC).isoformat(),
++        )
++
+         metric_result = await db.execute(select(MetricConfig))
+         metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+ 
+@@ -1844,6 +1856,14 @@ async def _do_calculate_custom_batch(
+             t_prewarm_elapsed,
+         )
+ 
++        completed = 0
++
++        async def _on_completed(_loop_id: str) -> None:
++            nonlocal completed
++            completed += 1
++            # 完成的是实际处理的回路；INCONCLUSIVE 不变成评估成功。
++            await _update_backfill_progress(task_id, 1, 1, completed, len(loops))
++
+         async def _run_batch() -> list:
+             t0 = time.perf_counter()
+             r = await _run_batch_loop_calculations(
+@@ -1855,6 +1875,7 @@ async def _do_calculate_custom_batch(
+                 type_weights=type_weights,
+                 custom_task_id=task_id,
+                 logical_run_id=batch_logical_run_id,
++                on_completed=_on_completed,
+                 save_input_snapshot=True,
+                 pinned_config=pinned_config,
+                 release_context=await _resolve_task_release_context(db),
+@@ -1889,6 +1910,13 @@ async def _do_calculate_custom_batch(
+         # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+         _assert_batch_health(summary, len(results))
+ 
++        await task_tracker.update_status(
++            task_id,
++            TaskStatus.RUNNING,
++            loops_done=completed,
++            current_stage="完成",
++        )
++
+         return {
+             "total": len(loops),
+             "success": summary["success"],
+diff --git a/backend/tests/test_calc_snapshot.py b/backend/tests/test_calc_snapshot.py
+index bb630f71..237c67c8 100644
+--- a/backend/tests/test_calc_snapshot.py
++++ b/backend/tests/test_calc_snapshot.py
+@@ -405,7 +405,10 @@ def _record_stub(record_id: str, snapshot_id: str, metrics_detail: dict) -> Simp
+ 
+ 
+ class TestKpiReplayC12b:
+-    async def test_v1_replay_identical_reads_original_package(self, snap_dir, fixed_build):
++    @pytest.mark.parametrize("limit_source", [None, "LOOP_FIELD", "TAG_RANGE", "DEFAULT_0_100"])
++    async def test_v1_replay_identical_reads_original_package(
++        self, snap_dir, fixed_build, limit_source
++    ):
+         """C12b：v1 record 重放=读原包重算，与 v1 全等；不重查当前源."""
+         from app.contracts.data_types import ControlType
+         from app.tasks.kpi_calc import (
+@@ -415,6 +418,12 @@ class TestKpiReplayC12b:
+         )
+ 
+         bundles = _make_kpi_bundles()
++        if limit_source is not None:
++            for bundle in bundles:
++                bundle.data_block.signals["op_limits_source"] = [limit_source]
++                bundle.data_block.signals["op_limits_provenance"] = [
++                    "DEFAULT" if limit_source == "DEFAULT_0_100" else "ACTUAL"
++                ]
+         config_bundle = _build_config_bundle("loop-1", ControlType.TEMPERATURE, None)
+         v1_detail = _extract_metrics_detail(
+             _compute_kpis_three_layer(bundles, config_bundle, None)[0]
+diff --git a/backend/tests/test_g5_data_acquisition_failure.py b/backend/tests/test_g5_data_acquisition_failure.py
+index d075da6f..4c95e878 100644
+--- a/backend/tests/test_g5_data_acquisition_failure.py
++++ b/backend/tests/test_g5_data_acquisition_failure.py
+@@ -458,6 +458,7 @@ async def test_minority_resource_failure_propagates_to_parent_and_terminal_recor
+     monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
+     tracker = AsyncMock()
+     monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
++    monkeypatch.setattr("app.services.task_tracker.reset_task_progress", AsyncMock())
+     redis = MagicMock()
+     redis.set = AsyncMock(return_value=True)
+     redis.get = AsyncMock(return_value="f02-test-task")

@@ -1,0 +1,30 @@
+{
+  "created_at": "2026-10-17T09:35:10.244078+00:00",
+  "archive": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/large-original-evidence.tar.gz",
+  "archive_bytes": 27474475,
+  "archive_sha256": "241e671130b9aad1d3f0b1bb3b19befcac185411620f4c711ecf8e315fe2bbf1",
+  "owner_role": "CLPM 项目证据保管负责人",
+  "filesystem_owner": "zhangping",
+  "retention": "无自动过期或清理任务；后续按项目负责人指定规则维护",
+  "storage_scope": "本机持久目录；未配置异机或云副本",
+  "entries": [
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/log-audit-a1pp.json",
+      "member": "G5-D01-04-实证-20261015/log-audit-a1pp.json",
+      "bytes": 130871639,
+      "sha256": "57ca05fb88a40a951136405c5616d1f200731d7b3d18d621a65768fa76c5a8e3"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/trace-a1-raw.log",
+      "member": "G5-D01-04-实证-20261015/trace-a1-raw.log",
+      "bytes": 87273096,
+      "sha256": "4eb2d0e4f02303d756a69131cc501ff3f364fd040e313665ce0b45d02d776c88"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/observed.json",
+      "member": "G5接管-20261014/b1000-real/observed.json",
+      "bytes": 44268996,
+      "sha256": "ba97ba29da5c97b7fcfb8df93d68b980ed6835280724816e59f060f9244b23e5"
+    }
+  ]
+}

@@ -1,0 +1,106 @@
+{
+  "at": 1792235857.171463,
+  "scope": "isolated Redis only; auth/config/bindings exist but no input cache, task, result or capacity submission",
+  "before": {
+    "id": "9c82f41259bdfd4a5709f0a1a9366fecbed4f738261eeae7929d005e78f95726",
+    "image": "sha256:3e0669e42d4fe421c9dea0ba5fbc04d336b80b4f32a6c7d25bee3a1d089288a1",
+    "command": [
+      "redis-server",
+      "--save",
+      "",
+      "--appendonly",
+      "no"
+    ],
+    "memoryBytes": 134217728,
+    "nanoCpus": 500000000,
+    "ports": {
+      "6379/tcp": [
+        {
+          "HostIp": "127.0.0.1",
+          "HostPort": "17123"
+        }
+      ]
+    },
+    "dbKeys": {
+      "0": [
+        "token_pair:b2a96a58-7085-4acd-a47a-722ccae28a23",
+        "datasource:rt:gap_backfill_enabled",
+        "datasource:rt:signalr_enabled",
+        "token_pair:27028dee-4afc-45e1-baa7-1534de7f2db6",
+        "token_pair:30126d0e-6438-43c0-990a-08c060fb8e4c",
+        "datasource:rt:realtime_writeback_enabled",
+        "token_pair:fce1035a-c950-4055-a022-93f20f17198c",
+        "token_pair:2289b309-ab7b-41e2-99ea-a24917e4132f",
+        "user_tokens:00000000-0000-0000-0000-000000000001",
+        "token_pair:c16a23da-bce3-4b8c-a829-f0cab3880963",
+        "token_pair:139867f4-789a-4ac4-b891-542c368749f8",
+        "token_pair:521e4e55-cff1-404a-ad3f-16f4d1ce82e2"
+      ],
+      "1": [
+        "_kombu.binding.default",
+        "_kombu.binding.celery.pidbox",
+        "_kombu.binding.celeryev"
+      ],
+      "2": []
+    }
+  },
+  "commands": [
+    {
+      "argv": [
+        "docker",
+        "update",
+        "--memory",
+        "512m",
+        "--memory-swap",
+        "512m",
+        "9c82f41259bdfd4a5709f0a1a9366fecbed4f738261eeae7929d005e78f95726"
+      ],
+      "rc": 0,
+      "stdout": "9c82f41259bdfd4a5709f0a1a9366fecbed4f738261eeae7929d005e78f95726\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "9c82f41259bdfd4a5709f0a1a9366fecbed4f738261eeae7929d005e78f95726",
+        "redis-cli",
+        "CONFIG",
+        "SET",
+        "maxmemory",
+        "384mb"
+      ],
+      "rc": 0,
+      "stdout": "OK\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "docker",
+        "exec",
+        "9c82f41259bdfd4a5709f0a1a9366fecbed4f738261eeae7929d005e78f95726",
+        "redis-cli",
+        "CONFIG",
+        "SET",
+        "maxmemory-policy",
+        "noeviction"
+      ],
+      "rc": 0,
+      "stdout": "OK\n",
+      "stderr": ""
+    }
+  ],
+  "after": {
+    "id": "9c82f41259bdfd4a5709f0a1a9366fecbed4f738261eeae7929d005e78f95726",
+    "memoryBytes": 536870912,
+    "memorySwapBytes": 536870912,
+    "nanoCpus": 500000000,
+    "redisConfig": {
+      "maxmemory-policy": "noeviction",
+      "maxmemory": "402653184"
+    }
+  },
+  "totalApplicationBudgetBytes": 6442450944,
+  "maximumAccountingBytes": 5153960755,
+  "changeAfterFormalFailure": false
+}

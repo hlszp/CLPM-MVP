@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "discoveryAndDirectRowExactlyOneAndIdentical": true,
+  "actualDatasetId": "416c9576-d929-4afb-a404-24d0d5b83474",
+  "sameOriginalRawEvidenceAlreadyInReadSet": true,
+  "actualKpiValuesOrGateRead": false
+}

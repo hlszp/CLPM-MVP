@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/remote-run-39028560853/performance/verify_vectorized_hypothesis.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "elapsedSeconds": 8.99750828742981,
+  "stdoutSha256": "a18a06c2fb89d02d0dc31228b4df535b38cae222e15adb38a06acb293deb6a42",
+  "stderrSha256": "7db42f6d46164d8ea30a82ee538d6b06b54cb0e859b4aa3657b10190217440fc"
+}

@@ -1,0 +1,1 @@
+var e=`演示`,t={title:`项目`,about:`关于`},n={title:e,vben:t};export{n as default,e as title,t as vben};

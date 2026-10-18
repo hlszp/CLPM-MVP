@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f03-local-startup-review-v6/test_independent_startup.py",
+    "-v"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f03-local-startup-review-v6",
+  "startedAt": "2026-10-17T13:58:43.191748+00:00",
+  "finishedAt": "2026-10-17T13:58:43.314882+00:00",
+  "rc": 0,
+  "pythonVersion": "Python 3.12.13",
+  "sourceSha256": "1fc31d5f9c308738e2c88049b63190877ca7c193be2acf315dd39fdfdee21c8d",
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "c079311beaad0d2fc11b8efb6f391069281a3a9051f8da14099e72875d8a79d4"
+}

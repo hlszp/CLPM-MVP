@@ -1,0 +1,270 @@
+{
+  "observedAt": "2026-10-17T10:34:00.609274+00:00",
+  "endpoint": "http://localhost:17115/rest/sql",
+  "queries": [
+    {
+      "sql": "SELECT SERVER_VERSION()",
+      "httpStatus": 200,
+      "responseSha256": "efdf8d4a6cc701f36c484791eb0419f466f6409334f0e2575a5187295df6b4f1",
+      "response": {
+        "code": 0,
+        "column_meta": [
+          [
+            "server_version()",
+            "VARCHAR",
+            7
+          ]
+        ],
+        "data": [
+          [
+            "3.3.6.6"
+          ]
+        ],
+        "rows": 1
+      }
+    },
+    {
+      "sql": "SHOW VARIABLES",
+      "httpStatus": 200,
+      "responseSha256": "80499b5f818054e5a53f38796d1cf485244e048f0eb891b203b5d9e60c2a3e6c",
+      "response": {
+        "code": 0,
+        "column_meta": [
+          [
+            "name",
+            "VARCHAR",
+            30
+          ],
+          [
+            "value",
+            "VARCHAR",
+            4094
+          ],
+          [
+            "scope",
+            "VARCHAR",
+            6
+          ],
+          [
+            "category",
+            "VARCHAR",
+            6
+          ],
+          [
+            "info",
+            "VARCHAR",
+            62
+          ]
+        ],
+        "data": [
+          [
+            "queryRspPolicy",
+            "0",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "mndLogRetention",
+            "2000",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "slowLogThreshold",
+            "10",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "slowLogMaxLen",
+            "4096",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "slowLogScope",
+            "query",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "slowLogExceptDb",
+            "",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "monitorMaxLogs",
+            "100",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "monitorLogProtocol",
+            "0",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "queryRsmaTolerance",
+            "1000",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "concurrentCheckpoint",
+            "1",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "cacheLazyLoadThreshold",
+            "500",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "s3PageCacheSize",
+            "4096",
+            "server",
+            "global",
+            ""
+          ],
+          [
+            "enableCoreFile",
+            "1",
+            "both",
+            "global",
+            ""
+          ]
+        ],
+        "rows": 89,
+        "filter": "only resource-related variables; credential values are not saved"
+      }
+    },
+    {
+      "sql": "SHOW QUERIES",
+      "httpStatus": 200,
+      "responseSha256": "53f84483280efe0ada0b12b56d9b6d640d2ed91348d6f9d21e3e7c85a1d8ed83",
+      "response": {
+        "code": 0,
+        "column_meta": [
+          [
+            "kill_id",
+            "VARCHAR",
+            26
+          ],
+          [
+            "query_id",
+            "BIGINT UNSIGNED",
+            8
+          ],
+          [
+            "conn_id",
+            "INT UNSIGNED",
+            4
+          ],
+          [
+            "app",
+            "VARCHAR",
+            24
+          ],
+          [
+            "pid",
+            "INT",
+            4
+          ],
+          [
+            "user",
+            "VARCHAR",
+            24
+          ],
+          [
+            "end_point",
+            "VARCHAR",
+            22
+          ],
+          [
+            "create_time",
+            "TIMESTAMP",
+            8
+          ],
+          [
+            "exec_usec",
+            "BIGINT",
+            8
+          ],
+          [
+            "stable_query",
+            "BOOL",
+            1
+          ],
+          [
+            "sub_query",
+            "BOOL",
+            1
+          ],
+          [
+            "sub_num",
+            "INT",
+            4
+          ],
+          [
+            "sub_status",
+            "VARCHAR",
+            1000
+          ],
+          [
+            "sql",
+            "VARCHAR",
+            2048
+          ],
+          [
+            "user_app",
+            "VARCHAR",
+            24
+          ],
+          [
+            "user_ip",
+            "VARCHAR",
+            22
+          ]
+        ],
+        "data": [],
+        "rows": 0
+      }
+    },
+    {
+      "sql": "SELECT COUNT(*) FROM performance_schema.perf_queries",
+      "httpStatus": 200,
+      "responseSha256": "a41b4bd162e3d0c3d1fa9a38c85067981af6edfcc0f9b74c32dbe80cb9dd8034",
+      "response": {
+        "code": 0,
+        "column_meta": [
+          [
+            "count(*)",
+            "BIGINT",
+            8
+          ]
+        ],
+        "data": [
+          [
+            0
+          ]
+        ],
+        "rows": 1
+      }
+    }
+  ]
+}

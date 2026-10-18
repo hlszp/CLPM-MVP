@@ -1,0 +1,31 @@
+{
+  "argv": [
+    "/usr/bin/psql",
+    "-X",
+    "--no-password",
+    "-A",
+    "-t",
+    "-h",
+    "localhost",
+    "-p",
+    "5432",
+    "-U",
+    "clpm",
+    "-d",
+    "clpm_critical_e2e",
+    "-v",
+    "loop_id=f352b903-a2a0-4cb9-a57b-fb5a139294d8",
+    "-v",
+    "ts_start=2026-10-17T13:00:00",
+    "-v",
+    "ts_end=2026-10-17T14:00:00",
+    "-f",
+    "/home/runner/work/_temp/critical-e2e/input-evidence/after/policy.sql"
+  ],
+  "startedAtUtc": "2026-10-17T15:20:10.366562+00:00",
+  "rc": 0,
+  "finishedAtUtc": "2026-10-17T15:20:10.398274+00:00",
+  "stdoutSha256": "9e174ad3d6a45a32f18b7cadc4607437250d4ee0a8e2041598d2476f76609849",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "executedSqlSha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+}

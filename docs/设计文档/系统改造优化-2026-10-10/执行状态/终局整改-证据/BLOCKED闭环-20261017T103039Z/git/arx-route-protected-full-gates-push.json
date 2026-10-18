@@ -1,0 +1,17 @@
+{
+  "command": [
+    "git",
+    "push",
+    "github",
+    "fix/final-audit-remediation"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 267.283,
+  "database": "clpm_audit_gate_20261017",
+  "postgres_container": "clpm-mvp-postgres",
+  "shared_business_database_touched": false,
+  "redis_and_tdengine": "disabled for isolated unit gates",
+  "log": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/git/arx-route-protected-full-gates-push.log",
+  "sha256": "2de77d3f989feac29ec44ffe0b976376f4a2f1c8d6fb7e1ff25b7878625093c6"
+}

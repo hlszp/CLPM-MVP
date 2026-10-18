@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/capacity_lifecycle.py",
+    "stop",
+    "03-a-cold-cold-stop"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend",
+  "startedAt": "2026-10-17T20:03:34.119519+00:00",
+  "finishedAt": "2026-10-17T20:03:53.924565+00:00",
+  "rc": 0,
+  "stdout": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/03-a-cold/stop.stdout.log",
+    "sha256": "3f95e306dbc154dbb0776ec9ff985e4da2317555a6fde7340faa96a9d2b542c6"
+  },
+  "stderr": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/03-a-cold/stop.stderr.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

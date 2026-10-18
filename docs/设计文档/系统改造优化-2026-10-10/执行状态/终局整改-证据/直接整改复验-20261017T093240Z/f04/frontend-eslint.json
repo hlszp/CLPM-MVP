@@ -1,0 +1,18 @@
+{
+  "name": "frontend-eslint",
+  "command": [
+    "pnpm",
+    "exec",
+    "eslint",
+    "apps/web-antd/src/api/engineering-template.ts",
+    "apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue",
+    "apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+    "apps/web-antd/src/views/config/engineering-templates/index.vue",
+    "apps/web-antd/src/views/config/engineering-templates/template-utils.ts",
+    "apps/web-antd/src/__tests__/p6-eng-templates.test.ts"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "startedAt": "2026-10-17T09:46:02.731148+00:00",
+  "elapsedSeconds": 2.965,
+  "exitCode": 0
+}

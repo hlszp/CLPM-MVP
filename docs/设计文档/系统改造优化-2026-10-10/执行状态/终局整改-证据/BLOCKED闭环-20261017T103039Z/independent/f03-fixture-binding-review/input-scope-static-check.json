@@ -1,0 +1,25 @@
+{
+  "isolationAndServiceConfigFunctionsUnchanged": true,
+  "originalInputValueQualityTimestampInsertCalls": [
+    {
+      "name": "synth_series",
+      "calls": 1,
+      "astExact": true
+    },
+    {
+      "name": "_td_rows",
+      "calls": 1,
+      "astExact": true
+    },
+    {
+      "name": "execute_native_effective",
+      "calls": 1,
+      "astExact": true
+    }
+  ],
+  "allOriginalGuardTestMethodsUnchanged": true,
+  "originalMethodCountIncludingSetUp": 14,
+  "criticalBusinessSpecSha256": "d8aa48efd47f95ed1d7e1c8c895a3347b5e33f578f0f7a97eb2fca8c330b486c",
+  "businessFourCaseAssertionsUnchanged": true,
+  "status": "REWORK solely for post-commit evidence flag until fixed source verified"
+}

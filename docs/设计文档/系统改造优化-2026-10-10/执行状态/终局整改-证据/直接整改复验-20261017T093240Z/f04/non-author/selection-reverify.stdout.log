@@ -1,0 +1,9 @@
+
+ RUN  v4.1.9 /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+   Start at  17:58:52
+   Duration  373ms (transform 61ms, setup 0ms, import 102ms, tests 26ms, environment 125ms)
+

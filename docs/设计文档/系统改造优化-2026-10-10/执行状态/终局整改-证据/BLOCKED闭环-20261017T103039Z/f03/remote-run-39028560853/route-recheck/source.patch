@@ -1,0 +1,128 @@
+diff --git a/e2e/tests/critical-business.spec.ts b/e2e/tests/critical-business.spec.ts
+index 3181c3e96..92dd20ac3 100644
+--- a/e2e/tests/critical-business.spec.ts
++++ b/e2e/tests/critical-business.spec.ts
+@@ -23,6 +23,28 @@ let taskId: string;
+ let snapshot: Record<string, any>;
+ const tokens = new Map<string, string>();
+ 
++function applicationRoute(url: URL): URL {
++  return url.hash.startsWith('#/') ? new URL(url.hash.slice(1), url.origin) : url;
++}
++
++function applicationRouteUrl(current: URL, path: string): string {
++  const route = new URL(path, current.origin);
++  if (!current.hash.startsWith('#/')) return route.toString();
++  const target = new URL(current);
++  target.hash = `${route.pathname}${route.search}${route.hash}`;
++  return target.toString();
++}
++
++function isAuthenticatedLanding(url: URL, origin: string): boolean {
++  const route = applicationRoute(url);
++  return url.origin === origin &&
++    (route.pathname === '/cockpit' || route.pathname.startsWith('/cockpit/'));
++}
++
++async function gotoApplicationRoute(page: Page, path: string) {
++  await page.goto(applicationRouteUrl(new URL(page.url()), path));
++}
++
+ async function token(request: APIRequestContext, username = 'admin'): Promise<string> {
+   const cached = tokens.get(username);
+   if (cached) return cached;
+@@ -50,7 +72,7 @@ async function read(request: APIRequestContext, path: string) {
+ 
+ async function login(page: Page, username: string) {
+   await page.addInitScript(() => localStorage.setItem('clpm-onboarding-completed', 'true'));
+-  await page.goto('/auth/login');
++  await page.goto('/');
+   await page.getByPlaceholder('请输入用户名').fill(username);
+   await page.getByPlaceholder('请输入密码').fill('admin123');
+   const responsePromise = page.waitForResponse(
+@@ -58,11 +80,14 @@ async function login(page: Page, username: string) {
+       new URL(response.url()).pathname === '/api/v1/auth/login' &&
+       response.request().method() === 'POST',
+   );
++  const origin = new URL(page.url()).origin;
+   await page.getByText('登录', { exact: true }).click();
+   const response = await responsePromise;
+   expect(response.status()).toBe(200);
+   expect((await response.json()).data.user.username).toBe(username);
+-  await page.waitForURL((url) => !url.pathname.includes('/auth/login'));
++  // The isolated admin/sponsor seeds both land at /cockpit. Hash fragments
++  // carry the actual route in the production build; arbitrary hashes cannot pass.
++  await page.waitForURL((url) => isAuthenticatedLanding(url, origin));
+   await expect(page.locator('body')).not.toContainText('访问被拒绝');
+ }
+ 
+@@ -87,7 +112,7 @@ test('CRITICAL-AUTH-001: real login and authenticated identity', async ({ page }
+   const responsePromise = page.waitForResponse(
+     (response) => response.url().includes('/api/v1/loops') && response.request().method() === 'GET',
+   );
+-  await page.goto('/config/loop');
++  await gotoApplicationRoute(page, '/config/loop');
+   const response = await responsePromise;
+   expect(response.status()).toBe(200);
+   await expect(page.locator('.ant-table').first()).toBeVisible();
+@@ -109,7 +134,7 @@ test('CRITICAL-PERM-001: sponsor cannot run calculation or open workbench', asyn
+   });
+   expect(response.status()).toBe(403);
+   await login(page, 'sponsor');
+-  await page.goto(`/loop/workbench360?loopId=${fixture.loopId}`);
++  await gotoApplicationRoute(page, `/loop/workbench360?loopId=${fixture.loopId}`);
+   await expect(page.locator('body')).toContainText(/访问被拒绝|没有权限|无权访问/);
+ });
+ 
+@@ -194,7 +219,24 @@ test('CRITICAL-EVIDENCE-001: task projection links immutable result and real his
+   expect(record.datasetSnapshotId).toMatch(/^[\da-f-]{36}$/);
+   expect(record.configRevision).toMatch(/^(digest:[\da-f]{16}|rev:[^:]+:[\da-f]{16})$/);
+   await login(page, 'admin');
+-  await page.goto(`/metric/loop-evaluation?view=history&taskId=${taskId}`);
++  const historyResponse = page.waitForResponse((response) => {
++    const url = new URL(response.url());
++    return url.pathname === '/api/v1/performance/loops/snapshots' &&
++      url.searchParams.get('taskId') === taskId && response.request().method() === 'GET';
++  });
++  await gotoApplicationRoute(page, `/metric/loop-evaluation?view=history&taskId=${taskId}`);
++  await expect.poll(() => {
++    const route = applicationRoute(new URL(page.url()));
++    return { path: route.pathname, view: route.searchParams.get('view'), taskId: route.searchParams.get('taskId') };
++  }).toEqual({ path: '/metric/loop-evaluation', view: 'history', taskId });
++  const history = await historyResponse;
++  expect(history.status()).toBe(200);
++  const projected = await history.json();
++  expect(projected.code).toBe('0');
++  expect(projected.data.total).toBe(1);
++  expect(projected.data.items).toHaveLength(1);
++  expect(projected.data.items[0].sourceTaskId).toBe(taskId);
++  expect(projected.data.items[0].resultRecordId).toBe(snapshot.resultRecordId);
+   const row = page
+     .locator('.ant-table-tbody tr.ant-table-row')
+     .filter({ hasText: fixture.loopTagName });
+diff --git a/frontend/apps/web-antd/__tests__/e2e/smoke.spec.ts b/frontend/apps/web-antd/__tests__/e2e/smoke.spec.ts
+index 41206084a..cf316e492 100644
+--- a/frontend/apps/web-antd/__tests__/e2e/smoke.spec.ts
++++ b/frontend/apps/web-antd/__tests__/e2e/smoke.spec.ts
+@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
+  * S3-C6: 基本冒烟测试
+  *
+  * 首次集成 E2E 测试，仅验证应用能正常启动和访问登录页。
+- * 使用 continue-on-error: true 标记为非阻塞。
++ * CI 中执行失败会阻塞工作流。
+  */
+ 
+ test.describe('冒烟测试', () => {
+diff --git a/frontend/apps/web-antd/playwright.config.ts b/frontend/apps/web-antd/playwright.config.ts
+index 0005696eb..ed0f92875 100644
+--- a/frontend/apps/web-antd/playwright.config.ts
++++ b/frontend/apps/web-antd/playwright.config.ts
+@@ -5,7 +5,7 @@ import { devices } from '@playwright/test';
+ /**
+  * Playwright E2E 配置（S3-C6: CI 集成 E2E 测试）
+  *
+- * 仅包含基本冒烟测试，首次集成使用 continue-on-error: true 标记为非阻塞。
++ * 仅包含基本冒烟测试；CI 中执行失败会阻塞工作流。
+  */
+ const config: PlaywrightTestConfig = {
+   expect: {

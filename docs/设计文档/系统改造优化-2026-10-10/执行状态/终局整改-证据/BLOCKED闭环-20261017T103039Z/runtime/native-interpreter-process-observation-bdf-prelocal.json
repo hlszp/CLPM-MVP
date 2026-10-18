@@ -1,0 +1,28 @@
+{
+  "observedAt": "2026-10-17T13:02:17.855519+00:00",
+  "ownProcessPid": 36512,
+  "argv0": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+  "argv0SymlinkTarget": "/Users/zhangping/.local/share/uv/python/cpython-3.12-macos-aarch64-none/bin/python3.12",
+  "resolved": "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/bin/python3.12",
+  "resolvedSha256": "36984af9f922aec72ba5b03e811ee92512268785007192e20f826cbd07cf8d04",
+  "actualExecutable": "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/bin/python3.12",
+  "actualExecutableBytes": 49968,
+  "actualExecutableSha256": "36984af9f922aec72ba5b03e811ee92512268785007192e20f826cbd07cf8d04",
+  "nativeProcPidpathRc": 89,
+  "lsof": {
+    "argv": [
+      "lsof",
+      "-a",
+      "-p",
+      "36512",
+      "-d",
+      "cwd,txt",
+      "-Fn"
+    ],
+    "rc": 0,
+    "stdout": "p36512\nfcwd\nn/Users/zhangping/DEV/CLPM-MVP\nftxt\nn/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/bin/python3.12\nftxt\nn/usr/lib/dyld\nftxt\nn/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/libpython3.12.dylib\n",
+    "stderr": ""
+  },
+  "actualExecutableInLsofTxt": true,
+  "note": "own-process native libproc observation; 7 product PIDs must each cross-check actual first-seen lsof; no process was started/stopped"
+}

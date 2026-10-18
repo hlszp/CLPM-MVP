@@ -1,0 +1,64 @@
+{
+  "files": [
+    {
+      "path": "after.json",
+      "bytes": 4925,
+      "sha256": "c3df20baaab9473745f1a1abce2844a6f3883b5f5e35804e6daf70d558b8c8c1"
+    },
+    {
+      "path": "before.json",
+      "bytes": 4925,
+      "sha256": "3f26f6b31860fc8d4b69c6b0fcab7e2dd4b4d8bb8b1f247dab2c6a92fb0a34a9"
+    },
+    {
+      "path": "default-guard.command.json",
+      "bytes": 415,
+      "sha256": "e4cdeda5854a922754b34bde918d2bcfdd5407276c0e02c06afc187986c7bc40"
+    },
+    {
+      "path": "default-guard.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "default-guard.stdout.log",
+      "bytes": 659,
+      "sha256": "8196a40a923d885a48b53fb7f6faa031482953420a328748b60dde1055f81d50"
+    },
+    {
+      "path": "independent-registration-check.json",
+      "bytes": 7750,
+      "sha256": "a51274dbb8f7fe98d2b13122e730c71306688d0ca41b8cf1184f4c887f29fecf"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 745,
+      "sha256": "966fbb17e80892b7e4e290cb5fa259551f19c82c756854b8ce0eb16835b3e5b8"
+    },
+    {
+      "path": "unchanged/backend/pyproject.toml",
+      "bytes": 2745,
+      "sha256": "1d0ece7a4ee0f2f2ce7b66fd1e675a30453e154259d0156cd75bc6c96dd8db67"
+    },
+    {
+      "path": "unchanged/backend/tests/golden/annotated_loops_dataset.json",
+      "bytes": 12458,
+      "sha256": "dafac0d8e320bbe0d5845e60b8eca638764a8ad9952f827c3a058885c2f49814"
+    },
+    {
+      "path": "unchanged/backend/tests/refactor/protected_manifest.py",
+      "bytes": 3243,
+      "sha256": "35f829084d16bfd73dbbf1e7fbb47c08e22fde043eb8f9e50628af0ff87cca65"
+    },
+    {
+      "path": "unchanged/backend/tests/test_annotated_loops_evaluation.py",
+      "bytes": 20924,
+      "sha256": "bc6c2fe5d7d6e5591383347648fee046a1941712fe02dbe13cff3d8479b01cee"
+    },
+    {
+      "path": "unchanged/backend/tests/test_refactor_protected_manifest.py",
+      "bytes": 1868,
+      "sha256": "f8c7aaa0fa50eba8e06379b6ebf442efe068aefe0bda83263dfdac342cab22f9"
+    }
+  ]
+}

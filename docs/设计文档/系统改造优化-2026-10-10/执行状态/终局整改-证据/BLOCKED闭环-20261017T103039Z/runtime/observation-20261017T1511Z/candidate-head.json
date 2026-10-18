@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "git",
+    "-C",
+    "/Users/zhangping/DEV/clpm-remediation-20261017",
+    "rev-parse",
+    "HEAD"
+  ],
+  "startedAtUtc": "2026-10-17T15:10:51.385907+00:00",
+  "finishedAtUtc": "2026-10-17T15:10:51.398227+00:00",
+  "rc": 0,
+  "stdoutSha256": "2df17203a69a4d73c982f880b50d5364f2c74eb2a6a044a4aec51ba824ce8b58",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,27 @@
+[
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/arx.py",
+    "sha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011",
+    "bytes": 4233
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_arx_vectorized_equivalence.py",
+    "sha256": "52ead2de84e319d79afd8a73868e2337449ca3b59f1965fbdc9be8a1c72200bf",
+    "bytes": 5115
+  },
+  {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/arx-boundary-remediation/legacy-arx.py",
+    "sha256": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0",
+    "bytes": 3696
+  },
+  {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/arx-boundary-remediation/first-vectorized-arx.py",
+    "sha256": "5645aa9c47dbe525f4b0112d00edbbc453c8d5ee49074a5c431bfc8b3a9abe85",
+    "bytes": 3766
+  },
+  {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/arx-boundary-remediation/root-arx-list-extreme-probe.json",
+    "sha256": "65b8a3a51bcf36c646562abc96fe8783672ed93d9a68a8373d770065c542b0c2",
+    "bytes": 674
+  }
+]

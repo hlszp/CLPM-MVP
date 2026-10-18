@@ -1,0 +1,12 @@
+{
+  "helper": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/redis-url-guard-v2/prepare_bindings.py",
+    "bytes": 21827,
+    "sha256": "e213f27d9abc631ad3cb11233366e6f631a9fb4d88bcbf3b81cdf0d60464650b",
+    "backupFunctionLine": 502
+  },
+  "firstContextPointedToOldE70BaseFile": true,
+  "backupAstIdenticalToAlreadyReviewedBase": true,
+  "actualCalls": "NONE_STATIC_AST_ONLY",
+  "contract": "7 args; caller captures inherited stdout/stderr; reject nonzero rc/missing file/missing PGDMP header"
+}

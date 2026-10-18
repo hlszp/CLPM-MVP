@@ -1,0 +1,12 @@
+{
+  "method": "POST",
+  "url": "http://127.0.0.1:17101/api/v1/auth/login",
+  "account": "admin",
+  "passwordSource": "repository default test account",
+  "startedAtUtc": "2026-10-17T15:29:58.327973+00:00",
+  "finishedAtUtc": "2026-10-17T15:29:58.736913+00:00",
+  "httpStatus": 200,
+  "privateResponsePath": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/runtime-env-backups/BLOCKED-20261017T103039Z/preformal-bc48701e-auth-root/response.private.json",
+  "responseSha256": "e5c751beb0274aea266be06a5bac029bce64abb6310fcc76bf2cf84a6b4df106",
+  "responseNeverPrinted": true
+}

@@ -1,0 +1,13 @@
+{
+  "submittedAt": "2026-10-17T22:40:02.770992+00:00",
+  "finishedAt": "2026-10-17T22:48:34.383461+00:00",
+  "taskId": "c3f867df-63cf-4a2e-aa77-6749128e42d3",
+  "state": "SUCCESS",
+  "result": {
+    "total": 1000,
+    "succeeded": 1000,
+    "failed": 0,
+    "errors": [],
+    "elapsed": 511.3265919999976
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "at": "2026-10-17T12:41:45.479875+00:00",
+  "controlOwnPid": 16278,
+  "results": [
+    {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "16278",
+        "-d",
+        "cwd,txt",
+        "-Fn"
+      ],
+      "rc": 0,
+      "stdout": "p16278\nfcwd\nn/Users/zhangping/DEV/CLPM-MVP\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_posixsubprocess.cpython-314-darwin.so\nftxt\nn/usr/lib/dyld\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/Python\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "16278",
+        "-d",
+        "cwd,txt",
+        "-Ffn"
+      ],
+      "rc": 0,
+      "stdout": "p16278\nfcwd\nn/Users/zhangping/DEV/CLPM-MVP\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/Resources/Python.app/Contents/MacOS/Python\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/grp.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/fcntl.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_posixsubprocess.cpython-314-darwin.so\nftxt\nn/usr/lib/dyld\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/select.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/_json.cpython-314-darwin.so\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/Python\nftxt\nn/opt/homebrew/Cellar/python@3.14/3.14.4/Frameworks/Python.framework/Versions/3.14/lib/python3.14/lib-dynload/math.cpython-314-darwin.so\n",
+      "stderr": ""
+    }
+  ],
+  "equal": true,
+  "cwdAndTxtPresentInBoth": true
+}

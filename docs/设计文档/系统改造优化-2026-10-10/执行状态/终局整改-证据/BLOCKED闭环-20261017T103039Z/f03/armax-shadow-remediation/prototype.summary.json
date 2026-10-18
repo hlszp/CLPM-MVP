@@ -1,0 +1,11 @@
+{
+  "variant": "prototype",
+  "profileSecondsIncludingEqualCaptureOverhead": 4.741483249992598,
+  "originalLoopCount": 22,
+  "fullIdentificationCount": 22,
+  "armaxCalls": 27,
+  "lstsqMatrices": 4676,
+  "candidateFilesEdited": false,
+  "actualBusinessTasks": 0,
+  "timedPytestPass": false
+}

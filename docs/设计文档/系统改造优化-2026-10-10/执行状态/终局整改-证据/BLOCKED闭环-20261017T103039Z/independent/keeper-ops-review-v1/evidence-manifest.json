@@ -1,0 +1,45 @@
+{
+  "createdAt": "2026-10-17T11:25:47.100802+00:00",
+  "files": [
+    {
+      "path": "initial-inspection-error-v2.json",
+      "size": 186,
+      "sha256": "b79f8ddf666e1fd6767ea16018daf3da282a2c14bc24f8eb4a1b2249b6dccbb1"
+    },
+    {
+      "path": "initial-inspection-error.json",
+      "size": 181,
+      "sha256": "05d4ad6259a5dfdf547a4532256dbbef874c0d0bb6e475115144ea8caad647ee"
+    },
+    {
+      "path": "receipt.md",
+      "size": 3064,
+      "sha256": "a298bcc710e5eb91103f406d1c083eb38486155a345b79c0a4ab223c40b7b5e6"
+    },
+    {
+      "path": "source-and-counterexample.json",
+      "size": 1488,
+      "sha256": "8580519dabec167c42d096f27d52eff722cf3fc80eceff7c3d1d7820a5115265"
+    },
+    {
+      "path": "sources/capacity_lifecycle.py",
+      "size": 7709,
+      "sha256": "52dde260d14e7e945c0eafea87f58faa664611810d66ce5848252c8df452a98b"
+    },
+    {
+      "path": "sources/capture_capacity_runtime_profile.py",
+      "size": 5924,
+      "sha256": "43c4abe622d6526e00b405a41749c12435589a44dbf4fdbadc6c75241cdd229e"
+    },
+    {
+      "path": "sources/run_capacity_series.py",
+      "size": 11641,
+      "sha256": "154f236f8242b9a013758d3371d55d43529abd7ca8bffc2f7071d8468a1f7a59"
+    },
+    {
+      "path": "sources/start_capacity_api_formal.py",
+      "size": 4075,
+      "sha256": "4e6fc0b11d2e158d3be96d0eb7e61ddfd6ee7b07f1ef03b4aacbaeab7042de17"
+    }
+  ]
+}

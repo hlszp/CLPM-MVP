@@ -1,0 +1,119 @@
+5:1. ``--mode standard-hourly``（唯一计入标准小时容量 SLO 的模式）
+23:     运行中快照**）+ 独立 manifest（``--manifest``，scenario 数据文件）逐回路
+30:     manifest expectedStatus 逐回路终态（EVALUATED→SUCCESS+score 非空；
+42:2. ``--mode custom``（loop-evals 吞吐回放，独立单列，**不计 600s 标准 SLO**）
+49:        --mode standard-hourly --ts-start 2026-10-13T02:00:00 \
+50:        --manifest capacity_dataset/manifest_a_2026101302.json \
+51:        --expect-eligible 1000 --barrier-loop-prefix PERF- --dry-run
+54:    uv run python scripts/kpi_capacity_benchmark.py --mode standard-hourly \
+55:        --ts-start 2026-10-13T02:00:00 --manifest ... --dry-run \
+80:DEFAULT_TIMEOUT_SECONDS = 3600.0
+81:DEFAULT_SLO_SECONDS = 600.0
+108:    parser = argparse.ArgumentParser(description="KPI 容量基准（standard-hourly / custom 单列）")
+109:    parser.add_argument(
+111:        choices=("standard-hourly", "custom"),
+112:        default="standard-hourly",
+113:        help="standard-hourly=经 Celery 入口的标准小时容量（唯一计 SLO）；"
+116:    parser.add_argument("--base-url", default=DEFAULT_BASE_URL)
+117:    parser.add_argument("--username", default="admin")
+118:    parser.add_argument("--password", default="admin123")
+119:    parser.add_argument("--loops", type=int, default=1000, help="custom 模式目标 loop-evals 数")
+120:    parser.add_argument(
+123:        help="standard-hourly 冻结窗口起点（ISO 8601，naive UTC，整点）；缺省=上一个完整小时",
+125:    parser.add_argument(
+126:        "--manifest",
+128:        help="standard-hourly 独立 manifest（generate_capacity_dataset 产物；"
+131:    parser.add_argument(
+137:    parser.add_argument(
+140:        help="冻结件落盘目录（投递前写入；dry-run 不落盘）",
+142:    parser.add_argument(
+147:    parser.add_argument(
+148:        "--expect-eligible",
+151:        help="standard-hourly 前置断言：三条件参评回路数（is_active+READY+include_in_evaluation）",
+153:    parser.add_argument(
+154:        "--barrier-loop-prefix",
+158:    parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS)
+159:    parser.add_argument("--slo-seconds", type=float, default=DEFAULT_SLO_SECONDS)
+160:    parser.add_argument("--poll-interval", type=float, default=DEFAULT_POLL_INTERVAL)
+161:    parser.add_argument("--page-size", type=int, default=DEFAULT_PAGE_SIZE)
+162:    parser.add_argument("--retry-seconds", type=float, default=DEFAULT_RETRY_SECONDS)
+163:    parser.add_argument("--batch-spacing", type=float, default=DEFAULT_BATCH_SPACING_SECONDS)
+164:    parser.add_argument(
+169:    parser.add_argument(
+170:        "--dry-run",
+267:# standard-hourly 模式（Celery 入口 + 投递前冻结 + DB 完成屏障 + 绑定核验）
+291:def _load_manifest(path_str: str) -> dict:
+292:    """加载独立 manifest（generate_capacity_dataset 产物）并做结构校验。"""
+296:            f"[preflight] manifest 不存在：{path}（standard-hourly 必须提供独立 manifest）"
+299:        manifest = json.loads(path.read_text(encoding="utf-8"))
+301:        raise SystemExit(f"[preflight] manifest 不是合法 JSON：{path}（{exc}）") from exc
+302:    rows = manifest.get("rows") or []
+307:            raise SystemExit(f"[preflight] manifest 第 {i} 行缺字段 {sorted(missing)}（{path}）")
+309:        raise SystemExit(f"[preflight] manifest rows 为空：{path}")
+310:    return manifest
+313:def _manifest_sha256(path_str: str) -> str:
+318:    """manifest expectedStatus → kpi_snapshot_hourly.status 预期。
+327:    raise SystemExit(f"[preflight] manifest expectedStatus 语义未知：{expected_status!r}")
+341:        prefix: 回路位号前缀（standard-hourly 必填，构成冻结测试身份）。
+523:async def _barrier_snapshot(
+607:        inspect = celery_app.control.inspect(timeout=2.0)
+641:    manifest: dict,
+642:    manifest_path: str,
+652:    for mrow in manifest["rows"]:
+672:        "manifest": {
+673:            "path": manifest_path,
+674:            "sha256": _manifest_sha256(manifest_path),
+675:            "scenario": manifest.get("scenario"),
+676:            "totalLoops": manifest.get("totalLoops"),
+679:        "barrierLoopPrefix": prefix,
+708:    barrier: dict,
+722:    - expected_status：manifest expectedStatus 逐回路核对（EVALUATED→SUCCESS
+734:    ledger_by_loop = {row["loopId"]: row for row in barrier["ledger_rows"]}
+735:    latest_by_loop = {row["loopId"]: row for row in barrier["latest_rows"]}
+736:    node_by_id = {row["plantNodeId"]: row for row in barrier["node_rows"]}
+828:            "ledgerRows": len(barrier["ledger_rows"]),
+919:    print("[barrier] 完成屏障判定（冻结件 × DB 回查 × 任务终态；父任务终态不单独作为屏障）：")
+925:    print(f"  manifest 独立预期: {d['expectedHistogram']}")
+935:    """standard-hourly 模式主流程（预检 → 冻结 → 投递 → 绑定核验屏障）。"""
+938:    prefix = args.barrier_loop_prefix
+941:            "[preflight] standard-hourly 必须提供 --barrier-loop-prefix"
+944:    if not args.manifest:
+946:            "[preflight] standard-hourly 必须提供 --manifest（R06：独立 expected 冻结，"
+947:            "缺 manifest 的行数级核对不得计 SLO/PASS）"
+949:    manifest = _load_manifest(args.manifest)
+950:    if manifest.get("windowStart") != ts_start.isoformat():
+952:            "[preflight] manifest windowStart 与 --ts-start 不一致"
+953:            f"（manifest={manifest.get('windowStart')} vs ts_start={ts_start.isoformat()}）"
+959:    print(f"  barrier_loop_prefix: {prefix}")
+961:        f"  manifest: {args.manifest} (scenario={manifest.get('scenario')}, "
+962:        f"totalLoops={manifest.get('totalLoops')})"
+969:    manifest_tags = {mrow["loopTag"] for mrow in manifest["rows"]}
+977:            f"{args.expect_eligible}（standard-hourly 必须为独立回路集，禁止重放凑数）"
+979:    if manifest_tags != eligible_tags:
+980:        only_manifest = sorted(manifest_tags - eligible_tags)[:5]
+981:        only_eligible = sorted(eligible_tags - manifest_tags)[:5]
+983:            "[preflight] 测试身份核对失败：manifest 与前缀范围 eligible 集合不一致"
+984:            f"（仅在 manifest: {only_manifest}；仅在前缀 eligible: {only_eligible}）"
+986:    print(f"  独立 loopId 断言: {len(eligible_ids)} unique = expect ✓（与 manifest 身份一致 ✓）")
+1021:        manifest=manifest,
+1022:        manifest_path=args.manifest,
+1031:    print(f"  manifest expected 分布: {freeze['expectedStatusHistogram']}")
+1033:    barrier0 = await _barrier_snapshot(ts_start, eligible_ids, predicted_nodes)
+1034:    if barrier0["ledger_rows"] or barrier0["latest_rows"]:
+1037:            f"（ledger={len(barrier0['ledger_rows'])} latest={len(barrier0['latest_rows'])}）"
+1040:    print(f"  投递前既有同窗行: ledger=0 latest=0 node={len(barrier0['node_rows'])} ✓")
+1043:        print("[dry-run] 计划（未投递任何任务、未写入任何数据、未落盘冻结件）：")
+1047:            f"预定节点 {len(predicted_nodes)} + manifest sha256 "
+1048:            f"{freeze['manifest']['sha256'][:16]}… + 算法版本 {algorithm_version}"
+1057:        print("[dry-run] preflight 通过，standard-hourly 就绪")
+1062:    # R06 冻结件投递前落盘（先冻结后投递；dry-run 不落盘）
+1066:        f"freeze_{manifest.get('scenario')}_{ts_start.strftime('%Y%m%d%H')}.json"
+1088:    while time.perf_counter() - submit_started < args.timeout:
+1094:        barrier = await _barrier_snapshot(ts_start, eligible_ids, predicted_nodes)
+1096:            row["sourceTaskId"] for row in barrier["ledger_rows"] if row["sourceTaskId"]
+1108:            barrier,
+1198:    with httpx.Client(timeout=30.0) as client:
+1250:                if time.perf_counter() - started > args.timeout:
+1253:                        f"custom 模式超时：{args.timeout:.0f}s，已完成 {done_evals} loop-evals"
+1278:        print("KPI custom 容量回放结果（loop-evals 口径——不计 standard-hourly 600s SLO）")
+1299:    if args.mode == "standard-hourly":

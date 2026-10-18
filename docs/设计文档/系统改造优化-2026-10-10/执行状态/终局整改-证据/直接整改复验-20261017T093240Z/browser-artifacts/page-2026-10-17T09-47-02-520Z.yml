@@ -1,0 +1,47 @@
+- generic [ref=f7e435]:
+  - generic [ref=f7e436]:
+    - generic [ref=f7e437]:
+      - generic [ref=f7e438]:
+        - generic:
+          - button [ref=f7e439] [cursor=pointer]
+          - button [ref=f7e443] [cursor=pointer]
+          - button [ref=f7e445] [cursor=pointer]
+          - button [ref=f7e447] [cursor=pointer]
+          - button [ref=f7e449] [cursor=pointer]
+          - button [ref=f7e451] [cursor=pointer]
+          - button [ref=f7e453] [cursor=pointer]
+        - button [ref=f7e455] [cursor=pointer]
+      - button [ref=f7e462] [cursor=pointer]
+    - button "dark" [ref=f7e466] [cursor=pointer]
+  - generic [ref=f7e478]:
+    - generic [ref=f7e479]:
+      - generic [aria-hidden]: iCLPM
+      - generic [ref=f7e480]: 工业控制 · 闭环治理 · 绩效优化
+      - heading "致联化工 控制回路性能优化管理系统" [level=2] [ref=f7e481]
+    - img "控制回路性能优化管理系统" [ref=f7e483]
+    - generic "产品能力模块" [ref=f7e485]:
+      - generic [ref=f7e486]: 回路监控
+      - generic [ref=f7e494]: 性能评估
+      - generic [ref=f7e501]: 故障诊断
+      - generic [ref=f7e508]: 参数整定
+      - generic [ref=f7e516]: 闭环处置
+      - generic [ref=f7e522]: 分析改进
+  - generic [ref=f7e531]:
+    - generic [ref=f7e532]:
+      - generic [ref=f7e533]:
+        - heading "欢迎登录" [level=2] [ref=f7e534]
+        - paragraph [ref=f7e535]: iCLPM控制回路性能优化管理系统
+      - generic [ref=f7e537]:
+        - textbox "请输入用户名" [ref=f7e543]
+        - generic [ref=f7e549]:
+          - textbox "请输入密码" [ref=f7e550]
+          - generic [ref=f7e551] [cursor=pointer]
+        - generic [ref=f7e562]:
+          - checkbox "记住我（30天内免登录）" [ref=f7e563] [cursor=pointer]:
+            - checkbox [ref=f7e564]
+          - generic [ref=f7e565] [cursor=pointer]: 记住我（30天内免登录）
+      - button "login" [ref=f7e566] [cursor=pointer]: 登录
+    - generic [ref=f7e568]:
+      - text: Copyright © 2026
+      - link "ZHILIAN 致联信息" [ref=f7e569] [cursor=pointer]:
+        - /url: javascript:void(0)

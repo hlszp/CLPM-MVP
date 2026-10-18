@@ -1,0 +1,10 @@
+{
+  "command": [
+    "pnpm",
+    "run",
+    "check:type"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "exitCode": 0,
+  "elapsedSeconds": 1.13955375
+}

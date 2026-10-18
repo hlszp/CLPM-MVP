@@ -1,0 +1,67 @@
+{
+  "scope": "Pure modules; every comparison uses original scalar routine, exact matrix/response bytes and full result or exception",
+  "cases": 1,
+  "passed": 1,
+  "checks": [
+    {
+      "case": "root-min-int64-python-list",
+      "equal": true,
+      "legacy": {
+        "matrices": [
+          {
+            "matrixSha256": "ef97203ff6d59cc9cd743a5fc9314a67315244485578651c7d03715815d8cb1d",
+            "responseSha256": "716bfc72bb94549075cc2d4f53abe2526000bc5db3d31dc3ca473cfedfd1eef5",
+            "shape": [
+              39,
+              2
+            ],
+            "dtype": "float64",
+            "cContiguous": true,
+            "lagAt21": 9.223372036854776e+18
+          }
+        ],
+        "result": {
+          "a_coeffs": [
+            1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "stable": true
+      },
+      "candidate": {
+        "matrices": [
+          {
+            "matrixSha256": "ef97203ff6d59cc9cd743a5fc9314a67315244485578651c7d03715815d8cb1d",
+            "responseSha256": "716bfc72bb94549075cc2d4f53abe2526000bc5db3d31dc3ca473cfedfd1eef5",
+            "shape": [
+              39,
+              2
+            ],
+            "dtype": "float64",
+            "cContiguous": true,
+            "lagAt21": 9.223372036854776e+18
+          }
+        ],
+        "result": {
+          "a_coeffs": [
+            1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "stable": true
+      }
+    }
+  ]
+}

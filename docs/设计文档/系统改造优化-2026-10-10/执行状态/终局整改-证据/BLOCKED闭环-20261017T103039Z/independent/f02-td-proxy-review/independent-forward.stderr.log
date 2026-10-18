@@ -1,0 +1,15 @@
+test_changed_same_epoch_is_explicit_503 (test_proxy_independent.IndependentProxyTests.test_changed_same_epoch_is_explicit_503) ... ok
+test_concurrent_first_two_exactly_and_atomic_ordinals (test_proxy_independent.IndependentProxyTests.test_concurrent_first_two_exactly_and_atomic_ordinals) ... ok
+test_credentials_absent_from_plain_and_decompressed_evidence (test_proxy_independent.IndependentProxyTests.test_credentials_absent_from_plain_and_decompressed_evidence) ... ok
+test_disarmed_and_true_body_restore (test_proxy_independent.IndependentProxyTests.test_disarmed_and_true_body_restore) ... ok
+test_exact_guards_do_not_consume_failure_counter (test_proxy_independent.IndependentProxyTests.test_exact_guards_do_not_consume_failure_counter) ... ok
+test_persistent_not_auto_green_after_nine (test_proxy_independent.IndependentProxyTests.test_persistent_not_auto_green_after_nine) ... ok
+test_policy_rejects_formal_overlap_wrong_scope_and_relaxed_counts (test_proxy_independent.IndependentProxyTests.test_policy_rejects_formal_overlap_wrong_scope_and_relaxed_counts) ... ok
+test_real_upstream_transport_drop_explicit (test_proxy_independent.IndependentProxyTests.test_real_upstream_transport_drop_explicit) ... ok
+test_startup_armed_external_and_global_listen_rejected (test_proxy_independent.IndependentProxyTests.test_startup_armed_external_and_global_listen_rejected) ... ok
+test_upstream_own_td_error_preserved_and_not_injected (test_proxy_independent.IndependentProxyTests.test_upstream_own_td_error_preserved_and_not_injected) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.249s
+
+OK

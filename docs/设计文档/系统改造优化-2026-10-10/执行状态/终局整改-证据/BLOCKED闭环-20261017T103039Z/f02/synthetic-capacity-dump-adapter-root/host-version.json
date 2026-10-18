@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "/opt/homebrew/bin/pg_dump",
+    "--version"
+  ],
+  "startedAt": "2026-10-17T14:59:37.051302+00:00",
+  "finishedAt": "2026-10-17T14:59:37.062249+00:00",
+  "rc": 0,
+  "stdoutSha256": "85f38fb992ba95c31a202e6e97e261d32b95546fc61acb6a3296956855289412",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

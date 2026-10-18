@@ -1,0 +1,79 @@
+{
+  "files": [
+    {
+      "path": "bootstrap-loop-identities.json",
+      "size": 2515,
+      "sha256": "1f5455ee34c724b0fb0252c1ca387e61295baa6938c06d81323163bfb2aa4c88"
+    },
+    {
+      "path": "bootstrap-only-state.json",
+      "size": 228,
+      "sha256": "0e4df34737095c94acb702201f68a8d810376a13e33a4e68ae0bc688af755125"
+    },
+    {
+      "path": "complete.json",
+      "size": 320,
+      "sha256": "209a1a1411c1bd2acff4117bc88106ce2e4f0e2b365e79091c97ec48d8f48643"
+    },
+    {
+      "path": "create-fresh.json",
+      "size": 232,
+      "sha256": "a6691fe0d191f3438af327f65356d3620c06e59a7e1f15bbfcf8ba5fe1cf2e40"
+    },
+    {
+      "path": "empty-td-response.json",
+      "size": 74,
+      "sha256": "3b9a2c90fcd4d176978021e8d8778f834b9d071bf9d5ca707728fd81e1b24130"
+    },
+    {
+      "path": "executed-source.py",
+      "size": 5296,
+      "sha256": "8038f00f5fed43ec1e595531ef4a974e2d6fc89969caedc1f0e0ba2fda179891"
+    },
+    {
+      "path": "pg-dump-prepared.json",
+      "size": 440,
+      "sha256": "c42ae3963236363d40f4eb9cf11b195c2098e8fd9998d899257d507072a73be5"
+    },
+    {
+      "path": "pg-dump-prepared.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "pg-dump-prepared.stdout",
+      "size": 404565,
+      "sha256": "db0d00321f15eaa434455c8d19aa283545a07cab980c23018bf34e0f1df6fb73"
+    },
+    {
+      "path": "prepared-pg-readonly.json",
+      "size": 164,
+      "sha256": "4e6f028e8ca706915670d18506d9431309749493efd69b45be87a5a4e18a7b6a"
+    },
+    {
+      "path": "process-before.json",
+      "size": 377,
+      "sha256": "8f41e2bef7484f4c5016b621deec67a03de154e6166f5ad9b3ff61deb729e434"
+    },
+    {
+      "path": "process-before.stderr",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "process-before.stdout",
+      "size": 345515,
+      "sha256": "6c6d88060cdc7f29b6488de144a9dbd2c806c38698632d8ac3bf662dee03d178"
+    },
+    {
+      "path": "rename-prepared.json",
+      "size": 249,
+      "sha256": "44511cb3996ae6ef04d0435fe11d8912d7da71561c715b549002a6cd08007a70"
+    },
+    {
+      "path": "unchanged-empty-redis.json",
+      "size": 140,
+      "sha256": "80c516ac5a357a8bd8e8654f397d6100eb6fb97947b8c8d7347a5d868572cf4c"
+    }
+  ]
+}

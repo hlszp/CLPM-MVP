@@ -1,0 +1,12 @@
+{
+  "onlyChangedEntry": "app/services/tuning_identification/arx.py",
+  "beforeGoldenSha256": "f49efd12c5e4a6956ef779729a81ac04879e6536812233a6a8d00e4e607cf8f0",
+  "afterGoldenSha256": "3f26f6b31860fc8d4b69c6b0fcab7e2dd4b4d8bb8b1f247dab2c6a92fb0a34a9",
+  "bytesBefore": 4925,
+  "bytesAfter": 4925,
+  "baselineHeadUnchanged": true,
+  "other40ProtectedHashesUnchanged": true,
+  "testAndCollectorByteIdentical": true,
+  "beforeRc": 1,
+  "afterRc": 0
+}

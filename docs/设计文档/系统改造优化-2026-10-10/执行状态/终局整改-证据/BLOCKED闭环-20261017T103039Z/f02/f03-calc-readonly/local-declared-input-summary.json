@@ -1,0 +1,163 @@
+{
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/fixture.inputs.json",
+  "sourceSha256": "8aae8bbeeb9223652490ef76d74e2c4c44fbeefcea5edbe2cfc0b9ee399f652e",
+  "windowStart": "2026-10-17T11:00:00",
+  "windowEnd": "2026-10-17T12:00:00",
+  "evidenceBoundary": "Declared generated input, not actual TD readback",
+  "roles": {
+    "PV": {
+      "pointId": "30da49c1-2d33-4da5-9487-23027bc9e155",
+      "count": 3600,
+      "qualityHistogram": {
+        "(1, 1)": 3600
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 3599,
+      "first": [
+        0,
+        55.0,
+        1,
+        1
+      ],
+      "last": [
+        3599,
+        61.4931,
+        1,
+        1
+      ]
+    },
+    "SP": {
+      "pointId": "4431bb12-1530-423c-a3bc-1a01a8c8f27c",
+      "count": 3,
+      "qualityHistogram": {
+        "(1, 1)": 3
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 2400,
+      "first": [
+        0,
+        55.0,
+        1,
+        1
+      ],
+      "last": [
+        2400,
+        65.0,
+        1,
+        1
+      ]
+    },
+    "OP": {
+      "pointId": "e9ad0a29-9428-4651-8ae3-cd9ce9f11b29",
+      "count": 3600,
+      "qualityHistogram": {
+        "(1, 1)": 3600
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 3599,
+      "first": [
+        0,
+        49.6505,
+        1,
+        1
+      ],
+      "last": [
+        3599,
+        59.4338,
+        1,
+        1
+      ]
+    },
+    "MODE": {
+      "pointId": "82f3ed25-172b-4c0e-8708-3b8741e757a0",
+      "count": 1,
+      "qualityHistogram": {
+        "(1, 1)": 1
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 0,
+      "first": [
+        0,
+        1.0,
+        1,
+        1
+      ],
+      "last": [
+        0,
+        1.0,
+        1,
+        1
+      ]
+    },
+    "PID_P": {
+      "pointId": "7da14413-761e-4246-a460-8ac5c60ef9ac",
+      "count": 1,
+      "qualityHistogram": {
+        "(1, 1)": 1
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 0,
+      "first": [
+        0,
+        1.2,
+        1,
+        1
+      ],
+      "last": [
+        0,
+        1.2,
+        1,
+        1
+      ]
+    },
+    "PID_I": {
+      "pointId": "3da633fc-e678-495c-839c-e33a9a1ac978",
+      "count": 1,
+      "qualityHistogram": {
+        "(1, 1)": 1
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 0,
+      "first": [
+        0,
+        60.0,
+        1,
+        1
+      ],
+      "last": [
+        0,
+        60.0,
+        1,
+        1
+      ]
+    },
+    "PID_D": {
+      "pointId": "ce950fe9-e70a-4fcd-9739-1cffaa43f8ad",
+      "count": 1,
+      "qualityHistogram": {
+        "(1, 1)": 1
+      },
+      "nullValueCount": 0,
+      "minimumOffset": 0,
+      "maximumOffset": 0,
+      "first": [
+        0,
+        0.0,
+        1,
+        1
+      ],
+      "last": [
+        0,
+        0.0,
+        1,
+        1
+      ]
+    }
+  }
+}

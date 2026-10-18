@@ -1,0 +1,9 @@
+{
+  "state": {
+    "start_record": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/runtime/01-a-cold-formal-start/start.json",
+    "api_pid": 80191,
+    "beat_pid": 80254,
+    "sha": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e"
+  },
+  "recordSha256": "be6d6f40665abd0bb13fc98982efbef1280a0e83d0652ae4d10f1ee76d55cd95"
+}

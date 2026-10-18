@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:05:53.754478+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "run-code",
+    "async (page) => { const results=[]; const handler=async r=>{ if(r.url().includes('/loops/batch') && r.request().method()==='POST') results.push({status:r.status(),request:r.request().postDataJSON(),body:await r.json()}); }; page.on('response',handler); await page.getByTestId('btn-confirm-execute').click(); await page.getByTestId('btn-review-restore').waitFor(); page.off('response',handler); if(results.length!==2 || results.some(r=>r.status!==200||!r.body.data.snapshotId)) throw new Error('missing actual snapshots'); return {results,summary:await page.getByTestId('batch-summary').innerText()}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 1,
+  "elapsed_seconds": 30.487328374991193,
+  "stdout": "### Error\nTimeoutError: locator.click: Timeout 30000ms exceeded.\nCall log:\n\u001b[2m  - waiting for getByTestId('btn-confirm-execute')\u001b[22m\n\n",
+  "stderr": ""
+}

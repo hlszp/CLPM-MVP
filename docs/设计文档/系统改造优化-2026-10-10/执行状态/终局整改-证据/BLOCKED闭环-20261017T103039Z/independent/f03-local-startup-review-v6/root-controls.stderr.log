@@ -1,0 +1,15 @@
+test_extra_or_duplicate_pid_rejected (__main__.Identity.test_extra_or_duplicate_pid_rejected) ... ok
+test_foreign_pool_rejected (__main__.Identity.test_foreign_pool_rejected) ... ok
+test_identity_ignores_busy_state_but_preserves_full_birth_argv_parent (__main__.Identity.test_identity_ignores_busy_state_but_preserves_full_birth_argv_parent) ... ok
+test_missing_wrong_or_stale_pidfile (__main__.Identity.test_missing_wrong_or_stale_pidfile) ... ok
+test_respawn_or_wrong_initial_pid_rejected (__main__.Identity.test_respawn_or_wrong_initial_pid_rejected) ... ok
+test_three_process_old_start_rejected (__main__.Identity.test_three_process_old_start_rejected) ... ok
+test_uninitialized_beat_rejected (__main__.Identity.test_uninitialized_beat_rejected) ... ok
+test_valid (__main__.Identity.test_valid) ... ok
+test_worker_not_ready_or_wrong_parent (__main__.Identity.test_worker_not_ready_or_wrong_parent) ... ok
+test_wrong_pool_command_rejected (__main__.Identity.test_wrong_pool_command_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.001s
+
+OK

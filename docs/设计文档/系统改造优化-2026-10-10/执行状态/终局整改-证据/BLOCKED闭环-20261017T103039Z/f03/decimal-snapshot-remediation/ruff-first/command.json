@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-m",
+    "ruff",
+    "check",
+    "app/services/calc_snapshot.py",
+    "tests/test_calc_snapshot_decimal.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAtUtc": "2026-10-17T14:23:46.709098+00:00",
+  "elapsedSeconds": 0.074132416,
+  "rc": 1,
+  "envOverrides": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "NO_PROXY": "127.0.0.1,localhost,::1",
+    "no_proxy": "127.0.0.1,localhost,::1"
+  },
+  "files": [
+    {
+      "path": "stdout.log",
+      "bytes": 1455,
+      "sha256": "36bd6882d13d3f75c450c23128914c585b75e21539919df23367231c9b5b5d81"
+    },
+    {
+      "path": "stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

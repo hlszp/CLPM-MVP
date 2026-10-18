@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "repos/hlszp/CLPM-MVP/actions/runs?head_sha=add3ae7c6deaf3c1f136f53a14255d8160a68d7d&event=pull_request&per_page=20"
+  ],
+  "rc": 0,
+  "stdoutSha256": "a2790a384d7d281e7395679000c35d27768d89dbd7052f725b8f4688beb59915",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

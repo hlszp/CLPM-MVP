@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_refactor_protected_manifest.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T13:34:23.824041+00:00",
+  "finishedAt": "2026-10-17T13:34:24.640364+00:00",
+  "rc": 0,
+  "updateModeRemovedFromEnvironment": true
+}

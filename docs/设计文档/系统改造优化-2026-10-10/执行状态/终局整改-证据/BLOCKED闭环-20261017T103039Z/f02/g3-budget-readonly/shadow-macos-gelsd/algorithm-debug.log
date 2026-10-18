@@ -1,0 +1,34 @@
+2026-10-17 22:05:48,783|app.services.tuning_identification.pipeline|DEBUG|非参数粗估 K=0.44903554164297954, tau+theta=-185.40652211965025
+2026-10-17 22:05:48,842|app.services.tuning_identification.pipeline|DEBUG|P2-001 FOPDT 延迟搜索: d_max=175 → best_d=5, trace=[(0, 377.3), (1, 377.04), (2, 377.44), (3, 377.49), (4, 372.41)]
+2026-10-17 22:05:48,993|app.services.tuning_identification.pipeline|DEBUG|HISTORICAL_ARMAX @d=5 拟合/转换失败：tau=-1.964874106083494 <= 0，模型不稳定
+2026-10-17 22:05:49,142|app.services.tuning_identification.pipeline|DEBUG|P2-001 SOPDT 延迟搜索: d_max=175 → best_d=5, trace=[(0, 369.83), (1, 369.55), (2, 369.94), (3, 370.02), (4, 364.47)]
+2026-10-17 22:05:49,142|app.services.tuning_identification.pipeline|DEBUG|HISTORICAL_ARX @d=5 拟合/转换失败：负实离散极点（p1=0.582965, p2=-0.321168）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,308|app.services.tuning_identification.pipeline|DEBUG|HISTORICAL_ARMAX @d=5 拟合/转换失败：负实离散极点（p1=0.598108, p2=-0.587751）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,308|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=6 拟合/转换失败：负实离散极点（p1=0.562868, p2=-0.312908）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,476|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=6 拟合/转换失败：负实离散极点（p1=0.556342, p2=-0.812401）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,477|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=4 拟合/转换失败：负实离散极点（p1=0.589376, p2=-0.312142）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,640|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=4 拟合/转换失败：负实离散极点（p1=0.590656, p2=-0.640844）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,641|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=7 拟合/转换失败：负实离散极点（p1=0.570718, p2=-0.305198）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,805|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=7 拟合/转换失败：负实离散极点（p1=0.567512, p2=-0.882506）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,805|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=3 拟合/转换失败：负实离散极点（p1=0.587959, p2=-0.310133）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,972|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=3 拟合/转换失败：负实离散极点（p1=0.888211, p2=-0.0071759）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:49,972|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=8 拟合/转换失败：负实离散极点（p1=0.55898, p2=-0.290629）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:50,137|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=8 拟合/转换失败：负实离散极点（p1=0.600621, p2=-0.669651）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:50,137|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=2 拟合/转换失败：负实离散极点（p1=0.587188, p2=-0.309757）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:50,302|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=2 拟合/转换失败：复共轭极点（disc=-1.374 < 0，振荡/欠阻尼系统），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:50,326|app.services.tuning_identification.pipeline|DEBUG|非参数粗估 K=1.7209311614040095, tau+theta=65.90450437554234
+2026-10-17 22:05:50,385|app.services.tuning_identification.pipeline|DEBUG|P2-001 FOPDT 延迟搜索: d_max=175 → best_d=6, trace=[(0, 355.36), (1, 355.13), (2, 354.25), (3, 355.4), (4, 347.37)]
+2026-10-17 22:05:50,765|app.services.tuning_identification.pipeline|DEBUG|P2-001 SOPDT 延迟搜索: d_max=175 → best_d=6, trace=[(0, 340.45), (1, 340.65), (2, 338.65), (3, 340.76), (4, 333.36)]
+2026-10-17 22:05:50,765|app.services.tuning_identification.pipeline|DEBUG|HISTORICAL_ARX @d=6 拟合/转换失败：负实离散极点（p1=0.603326, p2=-0.373484）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:50,927|app.services.tuning_identification.pipeline|DEBUG|HISTORICAL_ARMAX @d=6 拟合/转换失败：复共轭极点（disc=-0.5812 < 0，振荡/欠阻尼系统），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:50,927|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=7 拟合/转换失败：负实离散极点（p1=0.617354, p2=-0.394144）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,090|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=7 拟合/转换失败：离散极点 |p| >= 1（p1=0.586075, p2=-1.02412）→ 连续极点非负，系统不稳定
+2026-10-17 22:05:51,091|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=5 拟合/转换失败：负实离散极点（p1=0.630217, p2=-0.401448）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,254|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=5 拟合/转换失败：离散极点 |p| >= 1（p1=1.04981, p2=-0.216752）→ 连续极点非负，系统不稳定
+2026-10-17 22:05:51,254|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=8 拟合/转换失败：负实离散极点（p1=0.621504, p2=-0.382303）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,417|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=8 拟合/转换失败：负实离散极点（p1=0.620668, p2=-0.382079）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,418|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=4 拟合/转换失败：负实离散极点（p1=0.629596, p2=-0.383763）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,584|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=4 拟合/转换失败：复共轭极点（disc=-0.5762 < 0，振荡/欠阻尼系统），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,584|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=9 拟合/转换失败：负实离散极点（p1=0.620987, p2=-0.383973）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型
+2026-10-17 22:05:51,746|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARMAX @d=9 拟合/转换失败：离散极点 |p| >= 1（p1=1.75913, p2=-0.613066）→ 连续极点非负，系统不稳定
+2026-10-17 22:05:51,747|app.services.tuning_identification.pipeline|DEBUG|拯救 HISTORICAL_ARX @d=3 拟合/转换失败：负实离散极点（p1=0.636013, p2=-0.395929）映射为复连续极点 s = (ln|p| + jπ)/Ts（振荡模态），SOPDT 仅适用于过阻尼系统；请改用 FOPDT 或振荡模型

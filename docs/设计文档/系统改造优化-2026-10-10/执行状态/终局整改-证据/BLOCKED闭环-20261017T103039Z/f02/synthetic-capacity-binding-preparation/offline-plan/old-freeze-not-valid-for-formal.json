@@ -1,0 +1,7 @@
+{
+  "originalPreserved": true,
+  "oldConfigDigest": "f565705262b238fe16f66830360fe489a9bd2ab61780eb13e49c6b050a98d6d8",
+  "reason": "7000 MVP_INIT intervals do not cover normal20/extra4 synthetic input windows",
+  "state": "INVALID_FOR_FORMAL_EXECUTION",
+  "replacement": "new immutable freeze/digest required after actual INPUT preparation and independent readback"
+}

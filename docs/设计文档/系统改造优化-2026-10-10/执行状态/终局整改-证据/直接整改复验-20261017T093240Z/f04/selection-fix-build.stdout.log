@@ -1,0 +1,1084 @@
+
+> vben-admin-monorepo@5.7.0 build:antd /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+> pnpm run build --filter=@vben/web-antd
+
+
+> vben-admin-monorepo@5.7.0 build /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+> cross-env NODE_OPTIONS=--max-old-space-size=8192 turbo build --filter=@vben/web-antd
+
+
+   • Packages in scope: @vben/web-antd
+   • Running build in 1 packages
+   • Remote caching disabled, using shared worktree cache
+
+@vben-core/typings:build: cache hit, replaying logs 795c4acc93fa2d7f
+@vben-core/icons:build: cache hit, replaying logs cf650cfa5b39f376
+@vben-core/typings:build: 
+@vben-core/typings:build: > @vben-core/typings@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/typings
+@vben-core/typings:build: > pnpm exec tsdown
+@vben-core/typings:build: 
+@vben-core/typings:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/typings:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/typings:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/typings/tsdown.config.ts 
+@vben-core/typings:build: ℹ entry: src/index.ts
+@vben-core/typings:build: ℹ tsconfig: tsconfig.json
+@vben-core/typings:build: ℹ Build start
+@vben-core/typings:build: ℹ dist/index.mjs   0.01 kB │ gzip: 0.03 kB
+@vben-core/design:build: cache hit, replaying logs b8b8bd7757eee7fb
+@vben-core/icons:build: 
+@vben-core/icons:build: > @vben-core/icons@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/icons
+@vben-core/design:build: 
+@vben-core/typings:build: ℹ dist/index.d.ts  9.82 kB │ gzip: 3.62 kB
+@vben-core/typings:build: ℹ 2 files, total: 9.83 kB
+@vben-core/typings:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/typings:build:   - rolldown-plugin-dts:generate (64%)
+@vben-core/design:build: > @vben-core/design@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/design
+@vben-core/design:build: > pnpm vite build
+@vben-core/design:build: 
+@vben-core/design:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/typings:build:   - rolldown-plugin-dts:fake-js (24%)
+@vben-core/typings:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/typings:build: 
+@vben-core/typings:build: ✔ Build complete in 9698ms
+@vben-core/design:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/icons:build: > pnpm exec tsdown
+@vben-core/icons:build: 
+@vben-core/icons:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/design:build: vite v8.0.13 building client environment for production...
+@vben-core/design:build: [2K@vben-core/design:build: transforming...✓ 9 modules transformed.
+@vben-core/design:build: rendering chunks...
+@vben-core/design:build: dist/design.css  155.14 kB
+@vben-core/design:build: dist/index.mjs     0.00 kB
+@vben-core/icons:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/icons:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/icons/tsdown.config.ts 
+@vben-core/icons:build: ℹ entry: src/index.ts
+@vben-core/shared:build: cache hit, replaying logs 3d074b77ca7df72c
+@vben-core/icons:build: ℹ tsconfig: tsconfig.json
+@vben-core/icons:build: ℹ Build start
+@vben-core/icons:build: ℹ dist/index.mjs   2.62 kB │ gzip: 0.83 kB
+@vben-core/icons:build: ℹ dist/index.d.ts  2.87 kB │ gzip: 0.90 kB
+@vben-core/icons:build: ℹ 2 files, total: 5.49 kB
+@vben-core/design:build: 
+@vben-core/design:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/design:build:   - vite:css (69%)
+@vben-core/design:build:   - @tailwindcss/vite:generate:build (30%)
+@vben-core/design:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/design:build: 
+@vben-core/design:build: ✓ built in 8.96s
+@vben-core/shared:build: 
+@vben-core/shared:build: > @vben-core/shared@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/shared
+@vben-core/shared:build: > pnpm exec tsdown
+@vben-core/shared:build: 
+@vben-core/shared:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/shared:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/shared:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/base/shared/tsdown.config.ts 
+@vben-core/shared:build: ℹ entry: src/cache/index.ts, src/color/index.ts, src/constants/index.ts, src/global-state.ts, src/store.ts, src/utils/index.ts
+@vben-core/shared:build: ℹ tsconfig: tsconfig.json
+@vben-core/shared:build: ℹ Build start
+@vben-core/shared:build: ℹ Cleaning 16 files
+@vben-core/shared:build: ℹ dist/utils/index.mjs       23.43 kB │ gzip: 7.54 kB
+@vben-core/shared:build: ℹ dist/cache/index.mjs        8.06 kB │ gzip: 2.36 kB
+@vben-core/shared:build: ℹ dist/color/index.mjs        2.90 kB │ gzip: 1.20 kB
+@vben-core/shared:build: ℹ dist/constants/index.mjs    1.71 kB │ gzip: 0.64 kB
+@vben-core/shared:build: ℹ dist/global-state.mjs       0.49 kB │ gzip: 0.30 kB
+@vben-core/icons:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/icons:build:   - rolldown-plugin-dts:generate (71%)
+@vben-core/icons:build:   - tsdown:deps (17%)
+@vben-core/icons:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/icons:build: 
+@vben-core/icons:build: ✔ Build complete in 14622ms
+@vben-core/shared:build: ℹ dist/store.mjs              0.05 kB │ gzip: 0.06 kB
+@vben-core/shared:build: ℹ dist/utils/index.d.ts       7.04 kB │ gzip: 2.05 kB
+@vben-core/shared:build: ℹ dist/cache/index.d.ts       2.63 kB │ gzip: 0.61 kB
+@vben-core/shared:build: ℹ dist/constants/index.d.ts   1.49 kB │ gzip: 0.47 kB
+@vben-core/shared:build: ℹ dist/color/index.d.ts       0.82 kB │ gzip: 0.30 kB
+@vben-core/shared:build: ℹ dist/global-state.d.ts      0.61 kB │ gzip: 0.28 kB
+@vben-core/shared:build: ℹ dist/store.d.ts             0.04 kB │ gzip: 0.06 kB
+@vben-core/shared:build: ℹ 12 files, total: 49.27 kB
+@vben-core/shared:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/shared:build:   - rolldown-plugin-dts:generate (40%)
+@vben-core/shared:build:   - tsdown:deps (34%)
+@vben-core/shared:build:   - rolldown-plugin-dts:fake-js (18%)
+@vben-core/shared:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/shared:build: 
+@vben-core/shared:build: ✔ Build complete in 15012ms
+@vben-core/composables:build: cache hit, replaying logs 2036eeaa0b61e5a6
+@vben-core/composables:build: 
+@vben-core/composables:build: > @vben-core/composables@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/composables
+@vben-core/composables:build: > pnpm exec tsdown
+@vben-core/composables:build: 
+@vben-core/composables:build: ../../..                                 |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/composables:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/composables:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/composables/tsdown.config.ts 
+@vben-core/composables:build: ℹ entry: src/index.ts
+@vben-core/composables:build: ℹ tsconfig: tsconfig.json
+@vben-core/composables:build: ℹ Build start
+@vben-core/composables:build: ℹ dist/index.mjs   8.64 kB │ gzip: 2.74 kB
+@vben-core/composables:build: ℹ dist/index.d.ts  3.81 kB │ gzip: 1.05 kB
+@vben-core/composables:build: ℹ 2 files, total: 12.45 kB
+@vben-core/composables:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/composables:build:   - rolldown-plugin-dts:generate (50%)
+@vben-core/composables:build:   - tsdown:deps (35%)
+@vben-core/composables:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/composables:build: 
+@vben-core/composables:build: ✔ Build complete in 3836ms
+@vben-core/popup-ui:build: cache hit, replaying logs 46d4f95c3f8adae8
+@vben-core/popup-ui:build: 
+@vben-core/form-ui:build: cache hit, replaying logs 3539a489d59f5235
+@vben-core/popup-ui:build: > @vben-core/popup-ui@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/popup-ui
+@vben-core/popup-ui:build: > pnpm exec tsdown
+@vben-core/popup-ui:build: 
+@vben-core/popup-ui:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/popup-ui:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/popup-ui:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/popup-ui/tsdown.config.ts 
+@vben-core/popup-ui:build: ℹ entry: src/index.ts
+@vben-core/popup-ui:build: ℹ tsconfig: tsconfig.json
+@vben-core/popup-ui:build: ℹ Build start
+@vben-core/popup-ui:build: ℹ dist/index.mjs                       0.70 kB │ gzip: 0.26 kB
+@vben-core/form-ui:build: 
+@vben-core/form-ui:build: > @vben-core/form-ui@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/form-ui
+@vben-core/form-ui:build: > pnpm exec tsdown
+@vben-core/form-ui:build: 
+@vben-core/form-ui:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/form-ui:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/menu-ui:build: cache hit, replaying logs a5e20bf6a19b9b27
+@vben-core/form-ui:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/form-ui/tsdown.config.ts 
+@vben-core/form-ui:build: ℹ entry: src/index.ts
+@vben-core/form-ui:build: ℹ tsconfig: tsconfig.json
+@vben-core/form-ui:build: ℹ Build start
+@vben-core/form-ui:build: ℹ dist/index.mjs                      0.17 kB │ gzip: 0.11 kB
+@vben-core/form-ui:build: ℹ dist/form-api.mjs                  13.73 kB │ gzip: 4.18 kB
+@vben-core/form-ui:build: ℹ dist/form-render/form-field.mjs    13.45 kB │ gzip: 3.76 kB
+@vben-core/form-ui:build: ℹ dist/components/form-actions.mjs    5.61 kB │ gzip: 1.69 kB
+@vben-core/form-ui:build: ℹ dist/form-render/form.mjs           5.39 kB │ gzip: 1.92 kB
+@vben-core/menu-ui:build: 
+@vben-core/menu-ui:build: > @vben-core/menu-ui@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/menu-ui
+@vben-core/menu-ui:build: > pnpm exec tsdown
+@vben-core/menu-ui:build: 
+@vben-core/menu-ui:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/popup-ui:build: ℹ dist/modal/modal.mjs                12.26 kB │ gzip: 3.45 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/drawer.mjs              11.71 kB │ gzip: 3.06 kB
+@vben-core/menu-ui:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/menu-ui:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/menu-ui/tsdown.config.ts 
+@vben-core/popup-ui:build: ℹ dist/alert/alert2.mjs                7.39 kB │ gzip: 2.16 kB
+@vben-core/popup-ui:build: ℹ dist/alert/AlertBuilder.mjs          4.01 kB │ gzip: 1.44 kB
+@vben-core/menu-ui:build: ℹ entry: src/index.ts
+@vben-core/menu-ui:build: ℹ tsconfig: tsconfig.json
+@vben-core/menu-ui:build: ℹ Build start
+@vben-core/popup-ui:build: ℹ dist/modal/use-modal-draggable.mjs   3.21 kB │ gzip: 0.99 kB
+@vben-core/popup-ui:build: ℹ dist/modal/modal-api.mjs             3.08 kB │ gzip: 1.30 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/drawer-api.mjs           2.93 kB │ gzip: 1.25 kB
+@vben-core/menu-ui:build: ℹ dist/index.mjs                                                                                0.26 kB │ gzip: 0.15 kB
+@vben-core/menu-ui:build: ℹ dist/components/menu.vue_vue_type_style_index_0_lang.css                                     13.61 kB │ gzip: 1.89 kB
+@vben-core/popup-ui:build: ℹ dist/modal/use-modal.mjs             2.77 kB │ gzip: 1.10 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/use-drawer.mjs           2.66 kB │ gzip: 1.07 kB
+@vben-core/popup-ui:build: ℹ dist/alert/alert.mjs                 0.46 kB │ gzip: 0.28 kB
+@vben-core/popup-ui:build: ℹ dist/index.d.ts                      1.30 kB │ gzip: 0.39 kB
+@vben-core/form-ui:build: ℹ dist/vben-use-form.mjs              5.33 kB │ gzip: 1.79 kB
+@vben-core/menu-ui:build: ℹ dist/components/menu.mjs                                                                      8.46 kB │ gzip: 2.60 kB
+@vben-core/menu-ui:build: ℹ dist/components/sub-menu.mjs                                                                  7.66 kB │ gzip: 2.27 kB
+@vben-core/menu-ui:build: ℹ dist/components/menu-item.mjs                                                                 4.80 kB │ gzip: 1.67 kB
+@vben-core/menu-ui:build: ℹ dist/components/sub-menu-content.mjs                                                          3.23 kB │ gzip: 1.12 kB
+@vben-core/layout-ui:build: cache hit, replaying logs dae894c9cb5f0701
+@vben-core/form-ui:build: ℹ dist/form-render/dependencies.mjs   3.20 kB │ gzip: 1.08 kB
+@vben-core/form-ui:build: ℹ dist/use-form-context.mjs           2.60 kB │ gzip: 0.91 kB
+@vben-core/form-ui:build: ℹ dist/form-render/expandable.mjs     2.09 kB │ gzip: 0.90 kB
+@vben-core/form-ui:build: ℹ dist/config.mjs                     1.72 kB │ gzip: 0.67 kB
+@vben-core/menu-ui:build: ℹ dist/components/collapse-transition.mjs                                                       2.74 kB │ gzip: 0.72 kB
+@vben-core/menu-ui:build: ℹ dist/components/normal-menu/normal-menu.vue_vue_type_style_index_0_scoped_424fbe3f_lang.css   2.54 kB │ gzip: 0.69 kB
+@vben-core/menu-ui:build: ℹ dist/sub-menu.mjs                                                                             2.40 kB │ gzip: 0.87 kB
+@vben-core/menu-ui:build: ℹ dist/components/normal-menu/normal-menu.mjs                                                   2.21 kB │ gzip: 0.94 kB
+@vben-core/menu-ui:build: ℹ dist/components/menu-badge.mjs                                                                1.84 kB │ gzip: 0.80 kB
+@vben-core/menu-ui:build: ℹ dist/menu.mjs                                                                                 1.23 kB │ gzip: 0.57 kB
+@vben-core/menu-ui:build: ℹ dist/hooks/use-menu-context.mjs                                                               1.01 kB │ gzip: 0.40 kB
+@vben-core/menu-ui:build: ℹ dist/components/menu-badge-dot.mjs                                                            0.94 kB │ gzip: 0.45 kB
+@vben-core/menu-ui:build: ℹ dist/utils/index.mjs                                                                          0.90 kB │ gzip: 0.41 kB
+@vben-core/tabs-ui:build: cache hit, replaying logs a6d609ee3f71b966
+@vben-core/popup-ui:build: ℹ dist/drawer/drawer.vue.d.ts          1.76 kB │ gzip: 0.63 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/drawer.d.ts              1.66 kB │ gzip: 0.66 kB
+@vben-core/popup-ui:build: ℹ dist/modal/modal.d.ts                1.64 kB │ gzip: 0.65 kB
+@vben-core/popup-ui:build: ℹ dist/modal/modal.vue.d.ts            1.51 kB │ gzip: 0.56 kB
+@vben-core/form-ui:build: ℹ dist/form-render/form-label.mjs     1.65 kB │ gzip: 0.72 kB
+@vben-core/form-ui:build: ℹ dist/form-render/helper.mjs         1.14 kB │ gzip: 0.48 kB
+@vben-core/form-ui:build: ℹ dist/use-vben-form.mjs              0.97 kB │ gzip: 0.47 kB
+@vben-core/form-ui:build: ℹ dist/form-render/context.mjs        0.65 kB │ gzip: 0.29 kB
+@vben-core/form-ui:build: ℹ dist/field-name.mjs                 0.36 kB │ gzip: 0.24 kB
+@vben-core/form-ui:build: ℹ dist/index.d.ts                     0.39 kB │ gzip: 0.20 kB
+@vben-core/layout-ui:build: 
+@vben-core/layout-ui:build: > @vben-core/layout-ui@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/layout-ui
+@vben-core/layout-ui:build: > pnpm exec tsdown
+@vben-core/layout-ui:build: 
+@vben-core/form-ui:build: ℹ dist/types.d.ts                     7.39 kB │ gzip: 2.02 kB
+@vben-core/tabs-ui:build: 
+@vben-core/tabs-ui:build: > @vben-core/tabs-ui@5.7.0 build /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/tabs-ui
+@vben-core/tabs-ui:build: > pnpm exec tsdown
+@vben-core/layout-ui:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/layout-ui:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/menu-ui:build: ℹ dist/hooks/use-menu.mjs                                                                       0.88 kB │ gzip: 0.49 kB
+@vben-core/menu-ui:build: ℹ dist/hooks/use-menu-scroll.mjs                                                                0.79 kB │ gzip: 0.41 kB
+@vben-core/menu-ui:build: ℹ dist/_virtual/_/plugin-vue/export-helper.mjs                                                  0.25 kB │ gzip: 0.18 kB
+@vben-core/menu-ui:build: ℹ dist/index.d.ts                                                                               0.66 kB │ gzip: 0.24 kB
+@vben-core/menu-ui:build: ℹ dist/types.d.ts                                                                               1.96 kB │ gzip: 0.60 kB
+@vben-core/menu-ui:build: ℹ dist/components/normal-menu/normal-menu.vue.d.ts                                              0.89 kB │ gzip: 0.42 kB
+@vben-core/menu-ui:build: ℹ dist/menu.vue.d.ts                                                                            0.59 kB │ gzip: 0.32 kB
+@vben-core/menu-ui:build: ℹ dist/components/menu-badge.vue.d.ts                                                           0.56 kB │ gzip: 0.31 kB
+@vben-core/menu-ui:build: ℹ dist/components/normal-menu/normal-menu.d.ts                                                  0.30 kB │ gzip: 0.22 kB
+@vben-core/menu-ui:build: ℹ dist/components/normal-menu/index.d.ts                                                        0.10 kB │ gzip: 0.09 kB
+@vben-core/menu-ui:build: ℹ 25 files, total: 60.80 kB
+@vben-core/menu-ui:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/menu-ui:build:   - unplugin-vue (49%)
+@vben-core/menu-ui:build:   - rolldown-plugin-dts:generate (28%)
+@vben-core/menu-ui:build:   - tsdown:deps (12%)
+@vben-core/menu-ui:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/menu-ui:build: 
+@vben-core/layout-ui:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/layout-ui/tsdown.config.ts 
+@vben-core/layout-ui:build: ℹ entry: src/index.ts
+@vben-core/layout-ui:build: ℹ tsconfig: tsconfig.json
+@vben-core/layout-ui:build: ℹ Build start
+@vben-core/layout-ui:build: ℹ dist/index.mjs                                        0.08 kB │ gzip: 0.09 kB
+@vben-core/tabs-ui:build: 
+@vben-core/tabs-ui:build: ../../../..                              |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+@vben-core/tabs-ui:build: ℹ tsdown v0.22.0 powered by rolldown v1.0.1
+@vben-core/tabs-ui:build: ℹ config file: /Users/zhangping/DEV/clpm-p6-kcode-20261014/frontend/packages/@core/ui-kit/tabs-ui/tsdown.config.ts 
+@vben-core/layout-ui:build: ℹ dist/vben-layout.mjs                                 19.29 kB │ gzip: 4.48 kB
+@vben-core/layout-ui:build: ℹ dist/components/layout-sidebar.mjs                   10.33 kB │ gzip: 2.58 kB
+@vben-core/layout-ui:build: ℹ dist/hooks/use-sidebar-drag.mjs                       3.20 kB │ gzip: 1.00 kB
+@vben-core/layout-ui:build: ℹ dist/components/layout-content.mjs                    1.60 kB │ gzip: 0.70 kB
+@vben-core/tabs-ui:build: ℹ entry: src/index.ts
+@vben-core/tabs-ui:build: ℹ tsconfig: tsconfig.json
+@vben-core/tabs-ui:build: ℹ Build start
+@vben-core/tabs-ui:build: ℹ dist/index.mjs                                                                        0.36 kB │ gzip: 0.17 kB
+@vben-core/tabs-ui:build: ℹ dist/components/tabs-chrome/tabs.mjs                                                  7.32 kB │ gzip: 2.45 kB
+@vben-core/tabs-ui:build: ℹ dist/components/tabs/tabs.mjs                                                         5.95 kB │ gzip: 2.11 kB
+@vben-core/tabs-ui:build: ℹ dist/tabs-view.mjs                                                                    3.85 kB │ gzip: 1.37 kB
+@vben-core/tabs-ui:build: ℹ dist/use-tabs-view-scroll.mjs                                                         3.63 kB │ gzip: 1.23 kB
+@vben-core/tabs-ui:build: ℹ dist/use-tabs-drag.mjs                                                                2.28 kB │ gzip: 0.86 kB
+@vben-core/form-ui:build: ℹ dist/form-api.d.ts                  2.54 kB │ gzip: 0.90 kB
+@vben-core/form-ui:build: ℹ dist/use-vben-form.d.ts             0.55 kB │ gzip: 0.28 kB
+@vben-core/form-ui:build: ℹ dist/config.d.ts                    0.30 kB │ gzip: 0.19 kB
+@vben-core/form-ui:build: ℹ 20 files, total: 69.23 kB
+@vben-core/form-ui:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/form-ui:build:   - unplugin-vue (44%)
+@vben-core/form-ui:build:   - rolldown-plugin-dts:generate (28%)
+@vben-core/form-ui:build:   - tsdown:deps (24%)
+@vben-core/form-ui:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/form-ui:build: 
+@vben-core/form-ui:build: ✔ Build complete in 14433ms
+@vben-core/layout-ui:build: ℹ dist/components/layout-header.mjs                     1.54 kB │ gzip: 0.72 kB
+@vben-core/layout-ui:build: ℹ dist/components/widgets/sidebar-collapse-button.mjs   1.14 kB │ gzip: 0.57 kB
+@vben-core/layout-ui:build: ℹ dist/components/widgets/sidebar-fixed-button.mjs      1.12 kB │ gzip: 0.57 kB
+@vben-core/layout-ui:build: ℹ dist/components/layout-footer.mjs                     0.96 kB │ gzip: 0.53 kB
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/tool-screen.mjs                                               1.03 kB │ gzip: 0.53 kB
+@vben-core/layout-ui:build: ℹ dist/hooks/use-layout.mjs                             0.96 kB │ gzip: 0.44 kB
+@vben-core/menu-ui:build: ✔ Build complete in 13640ms
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/tool-more.mjs                                                 0.91 kB │ gzip: 0.51 kB
+@vben-core/tabs-ui:build: ℹ dist/components/tabs-chrome/tabs.vue_vue_type_style_index_0_scoped_62fdb4ca_lang.css  0.86 kB │ gzip: 0.25 kB
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/tool-refresh.mjs                                              0.78 kB │ gzip: 0.45 kB
+@vben-core/tabs-ui:build: ℹ dist/_virtual/_/plugin-vue/export-helper.mjs                                          0.25 kB │ gzip: 0.18 kB
+@vben-core/layout-ui:build: ℹ dist/components/layout-tabbar.mjs                     0.71 kB │ gzip: 0.41 kB
+@vben-core/layout-ui:build: ℹ dist/index.d.ts                                       0.16 kB │ gzip: 0.11 kB
+@vben-core/layout-ui:build: ℹ dist/vben-layout.vue.d.ts                             3.89 kB │ gzip: 0.99 kB
+@vben-core/layout-ui:build: ℹ dist/vben-layout.d.ts                                 1.19 kB │ gzip: 0.39 kB
+@vben-core/layout-ui:build: ℹ 14 files, total: 46.16 kB
+@vben-core/layout-ui:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/layout-ui:build:   - rolldown-plugin-dts:generate (43%)
+@vben-core/layout-ui:build:   - unplugin-vue (29%)
+@vben-core/layout-ui:build:   - tsdown:deps (21%)
+@vben-core/layout-ui:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/tabs-ui:build: ℹ dist/index.d.ts                                                                       0.49 kB │ gzip: 0.21 kB
+@vben-core/tabs-ui:build: ℹ dist/tabs-view.vue.d.ts                                                               0.99 kB │ gzip: 0.43 kB
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/tool-screen.vue.d.ts                                          0.64 kB │ gzip: 0.32 kB
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/tool-refresh.vue.d.ts                                         0.52 kB │ gzip: 0.28 kB
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/tool-more.vue.d.ts                                            0.52 kB │ gzip: 0.28 kB
+@vben-core/popup-ui:build: ℹ dist/alert/alert.d.ts                1.37 kB │ gzip: 0.58 kB
+@vben-core/layout-ui:build: 
+@vben-core/layout-ui:build: ✔ Build complete in 12408ms
+@vben-core/popup-ui:build: ℹ dist/alert/AlertBuilder.d.ts         0.83 kB │ gzip: 0.27 kB
+@vben-core/popup-ui:build: ℹ dist/alert/alert.vue.d.ts            0.81 kB │ gzip: 0.38 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/drawer-api.d.ts          0.71 kB │ gzip: 0.38 kB
+@vben-core/popup-ui:build: ℹ dist/modal/modal-api.d.ts            0.70 kB │ gzip: 0.38 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/use-drawer.d.ts          0.65 kB │ gzip: 0.28 kB
+@vben-core/popup-ui:build: ℹ dist/modal/use-modal.d.ts            0.63 kB │ gzip: 0.28 kB
+@vben-core/popup-ui:build: ℹ dist/drawer/index.d.ts               0.24 kB │ gzip: 0.15 kB
+@vben-core/popup-ui:build: ℹ dist/alert/index.d.ts                0.23 kB │ gzip: 0.16 kB
+@vben-core/popup-ui:build: ℹ dist/modal/index.d.ts                0.20 kB │ gzip: 0.13 kB
+@vben-core/popup-ui:build: ℹ 26 files, total: 65.43 kB
+@vben-core/popup-ui:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/popup-ui:build:   - unplugin-vue (47%)
+@vben-core/popup-ui:build:   - rolldown-plugin-dts:generate (26%)
+@vben-core/popup-ui:build:   - rolldown-plugin-dts:resolver (15%)
+@vben-core/tabs-ui:build: ℹ dist/types.d.ts                                                                       0.52 kB │ gzip: 0.29 kB
+@vben-core/tabs-ui:build: ℹ dist/components/widgets/index.d.ts                                                    0.17 kB │ gzip: 0.10 kB
+@vben-core/tabs-ui:build: ℹ 18 files, total: 31.05 kB
+@vben-core/tabs-ui:build: [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+@vben-core/tabs-ui:build:   - unplugin-vue (48%)
+@vben-core/tabs-ui:build:   - rolldown-plugin-dts:generate (33%)
+@vben-core/tabs-ui:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/tabs-ui:build: 
+@vben-core/tabs-ui:build: ✔ Build complete in 13288ms
+@vben-core/popup-ui:build: See https://rolldown.rs/options/checks#plugintimings for more details.
+@vben-core/popup-ui:build: 
+@vben-core/popup-ui:build: ✔ Build complete in 14210ms
+@vben/web-antd:build: cache miss, executing cc1f6467f1985786
+@vben/web-antd:build: 
+@vben/web-antd:build: > @vben/web-antd@5.7.0 build /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd
+@vben/web-antd:build: > pnpm vite build --mode production
+@vben/web-antd:build: 
+@vben/web-antd:build: vite v8.0.13 building client environment for production...
+@vben/web-antd:build: [2K@vben/web-antd:build: transforming...✓ 8473 modules transformed.
+@vben/web-antd:build: rendering chunks...
+@vben/web-antd:build: ✨configuration file is build successfully!
+@vben/web-antd:build: dist/_app.config.js                                      0.20 kB
+@vben/web-antd:build: dist/index.html                                          2.72 kB
+@vben/web-antd:build: dist/png/login-control-room-BHaLtEVO.png             2,410.88 kB
+@vben/web-antd:build: dist/css/drill-trend-modal-BsvCLZwR.css                  0.04 kB
+@vben/web-antd:build: dist/css/history-tab-B6tfpW4u.css                        0.04 kB
+@vben/web-antd:build: dist/css/tuning-Cqq24wjt.css                             0.05 kB
+@vben/web-antd:build: dist/css/handling-uvhlt31h.css                           0.05 kB
+@vben/web-antd:build: dist/css/confirm-section-BS3-ml7g.css                    0.06 kB
+@vben/web-antd:build: dist/css/diagnosis-result-panel-CXgUCBqi.css             0.06 kB
+@vben/web-antd:build: dist/css/loop-evaluation-QgAX-_4x.css                    0.09 kB
+@vben/web-antd:build: dist/css/LoopEditDrawer-CMKUPITm.css                     0.10 kB
+@vben/web-antd:build: dist/css/DeltaScatter-DL2-Lf7P.css                       0.17 kB
+@vben/web-antd:build: dist/css/confidence-threshold-lBOGfGzd.css               0.17 kB
+@vben/web-antd:build: dist/css/identify-section-C570rKHJ.css                   0.19 kB
+@vben/web-antd:build: dist/css/event-snapshot-view-CzhegVk6.css                0.20 kB
+@vben/web-antd:build: dist/css/matrix-section-BtC7iMoH.css                     0.21 kB
+@vben/web-antd:build: dist/css/cockpit-radar-CvMJxXju.css                      0.21 kB
+@vben/web-antd:build: dist/css/config-BxvA21dj.css                             0.22 kB
+@vben/web-antd:build: dist/css/performance-CJMksUN0.css                        0.25 kB
+@vben/web-antd:build: dist/css/workbench-radar6-Dr6SV0ua.css                   0.26 kB
+@vben/web-antd:build: dist/css/fitness-donut-Sr3yAQJQ.css                      0.27 kB
+@vben/web-antd:build: dist/css/workbench-kpi-history-Db-hQq67.css              0.27 kB
+@vben/web-antd:build: dist/css/trend-panel-DEOYVIrk.css                        0.27 kB
+@vben/web-antd:build: dist/css/workbench-process-trend-kiqGV8g1.css            0.27 kB
+@vben/web-antd:build: dist/css/benefit-D2WZb6z1.css                            0.30 kB
+@vben/web-antd:build: dist/css/records-BLJWT5JB.css                            0.30 kB
+@vben/web-antd:build: dist/css/alert-statistics-D1i8ncyg.css                   0.32 kB
+@vben/web-antd:build: dist/css/data-quality-DuVwhSbh.css                       0.32 kB
+@vben/web-antd:build: dist/css/handling-BlR0gUQp.css                           0.32 kB
+@vben/web-antd:build: dist/css/record-detail-drawer-JRQHOFYx.css               0.32 kB
+@vben/web-antd:build: dist/css/performance-CWPWgkDu.css                        0.33 kB
+@vben/web-antd:build: dist/css/VerifyDrawer-BVaz9OOE.css                       0.37 kB
+@vben/web-antd:build: dist/css/OrderCreateModal-COmlVClC.css                   0.41 kB
+@vben/web-antd:build: dist/css/use-latest-overview-cache-oI1i7Dv9.css          0.42 kB
+@vben/web-antd:build: dist/css/overview-DJ2ErdkK.css                           0.47 kB
+@vben/web-antd:build: dist/css/indicator-analysis-CK-53xYM.css                 0.48 kB
+@vben/web-antd:build: dist/css/records-Bif4kH3c.css                            0.52 kB
+@vben/web-antd:build: dist/css/unit-auto-pareto-BeDm0mQ5.css                   0.52 kB
+@vben/web-antd:build: dist/css/tab-placeholder-BmkXo7kY.css                    0.53 kB
+@vben/web-antd:build: dist/css/section-placeholder-EPjEJnYP.css                0.55 kB
+@vben/web-antd:build: dist/css/login-Cfd-3JqJ.css                              0.55 kB
+@vben/web-antd:build: dist/css/config-mg_WkEd9.css                             0.56 kB
+@vben/web-antd:build: dist/css/loading-DXYS4l2z.css                            0.56 kB
+@vben/web-antd:build: dist/css/tuning-verify-compare-CHuaE7Sf.css              0.59 kB
+@vben/web-antd:build: dist/css/StatusBar-eMQh0Pg4.css                          0.60 kB
+@vben/web-antd:build: dist/css/diagnosis-Dd--LT9B.css                          0.60 kB
+@vben/web-antd:build: dist/css/loop-pager-CUB-opin.css                         0.61 kB
+@vben/web-antd:build: dist/css/drill-sla-modal-Da93pViC.css                    0.68 kB
+@vben/web-antd:build: dist/css/use-authz-live-Cm6L_mVc.css                     0.69 kB
+@vben/web-antd:build: dist/css/block-state-overlay-oBkUX_VI.css                0.70 kB
+@vben/web-antd:build: dist/css/node-radar-panel-gZgSqI37.css                   0.70 kB
+@vben/web-antd:build: dist/css/simulate-section-lJ2czAld.css                   0.76 kB
+@vben/web-antd:build: dist/css/grading-threshold-D6yvmVwM.css                  0.83 kB
+@vben/web-antd:build: dist/css/SplitBar-DB9UIIII.css                           0.84 kB
+@vben/web-antd:build: dist/css/AllLoopWorkbenchHost-BuFOMfIh.css               0.85 kB
+@vben/web-antd:build: dist/css/workbench-diagnosis-card-Cw-g_nqO.css           0.92 kB
+@vben/web-antd:build: dist/css/monitor-Dt9jDSyt.css                            0.99 kB
+@vben/web-antd:build: dist/css/loops-Ca_JT9aa.css                              1.02 kB
+@vben/web-antd:build: dist/css/plant-node-tree-BDPapCbj.css                    1.07 kB
+@vben/web-antd:build: dist/css/matrix-tab-C0CMf2ak.css                         1.12 kB
+@vben/web-antd:build: dist/css/cockpit-modal-Cy0tPHst.css                      1.17 kB
+@vben/web-antd:build: dist/css/workbench-metric-bars-3I_6aQ-e.css              1.19 kB
+@vben/web-antd:build: dist/css/toolbar-button-D88UArcs.css                     1.20 kB
+@vben/web-antd:build: dist/css/list-modal-EX03mfCA.css                         1.31 kB
+@vben/web-antd:build: dist/css/work-item-list-HmxfwqiW.css                     1.35 kB
+@vben/web-antd:build: dist/css/workbench360-Dhgriddj.css                       1.42 kB
+@vben/web-antd:build: dist/css/WbDrawer-F9hXAN3z.css                           1.42 kB
+@vben/web-antd:build: dist/css/ThumbStrip-kBih4Xle.css                         1.43 kB
+@vben/web-antd:build: dist/css/unit-steady-bars-5o_cR-Mr.css                   1.44 kB
+@vben/web-antd:build: dist/css/history-drawer-ujki0YnL.css                     1.46 kB
+@vben/web-antd:build: dist/css/device-tree-DHVKnGAa.css                        1.51 kB
+@vben/web-antd:build: dist/css/event-detail-modal-CQMcBNHn.css                 1.53 kB
+@vben/web-antd:build: dist/css/kpi-band-B7LgmNIw.css                           1.57 kB
+@vben/web-antd:build: dist/css/theme-toggle-BKQ46UDU.css                       1.63 kB
+@vben/web-antd:build: dist/css/cohort-compare-drawer-BduDhIEQ.css              1.67 kB
+@vben/web-antd:build: dist/css/AttentionDrawer-BRhn8xhG.css                    1.72 kB
+@vben/web-antd:build: dist/css/loops-DChMH-Pr.css                              1.73 kB
+@vben/web-antd:build: dist/css/overview-CI_WKVWq.css                           1.86 kB
+@vben/web-antd:build: dist/css/gate-health-panel-CQw4zTDe.css                  1.87 kB
+@vben/web-antd:build: dist/css/alert-stream-B2VSuHcH.css                       1.94 kB
+@vben/web-antd:build: dist/css/batch-diagnose-modal-j6SVxScO.css               1.99 kB
+@vben/web-antd:build: dist/css/loop-card-DtPgUJEs.css                          2.05 kB
+@vben/web-antd:build: dist/css/overview-C3ikxsSE.css                           2.24 kB
+@vben/web-antd:build: dist/css/my-work-Dc2TC_0p.css                            2.27 kB
+@vben/web-antd:build: dist/css/list-Bz7V9u5S.css                               2.41 kB
+@vben/web-antd:build: dist/css/rank-tab-hUjTqR7c.css                           2.46 kB
+@vben/web-antd:build: dist/css/todo-panel-DzfWFiU6.css                         2.50 kB
+@vben/web-antd:build: dist/css/todo-detail-modal-DLkPsNIs.css                  2.50 kB
+@vben/web-antd:build: dist/css/basic-info-BaXUFeuC.css                         2.56 kB
+@vben/web-antd:build: dist/css/page-toolbar-BGSgM5qY.css                       2.63 kB
+@vben/web-antd:build: dist/css/modules-BtPlE5nP.css                            2.65 kB
+@vben/web-antd:build: dist/css/LoopHeader-DH2BjuUw.css                         2.73 kB
+@vben/web-antd:build: dist/css/JourneyRail-DxWAGfcS.css                        2.75 kB
+@vben/web-antd:build: dist/css/diagnosis-C3tWczMG.css                          2.82 kB
+@vben/web-antd:build: dist/css/TrendChart-CLdlnbeG.css                         2.97 kB
+@vben/web-antd:build: dist/css/device-rank-bars-CqhQvgRn.css                   2.99 kB
+@vben/web-antd:build: dist/css/loop-detail-panel-BxVDbvdv.css                  3.06 kB
+@vben/web-antd:build: dist/css/coverage-panel-BHVIXXqZ.css                     3.17 kB
+@vben/web-antd:build: dist/css/loop-detail-modal-CbZJO0hR.css                  3.18 kB
+@vben/web-antd:build: dist/css/LoopSpine-Bm09_ikq.css                          3.49 kB
+@vben/web-antd:build: dist/css/data-DlYFK1Df.css                               3.53 kB
+@vben/web-antd:build: dist/css/cockpit-header-Bf04NrN4.css                     3.80 kB
+@vben/web-antd:build: dist/css/use-page-toolbar-Bolga5ic.css                   4.07 kB
+@vben/web-antd:build: dist/css/TuningSection-CqM1tjq0.css                      4.51 kB
+@vben/web-antd:build: dist/css/loop-archive-drawer-D43PhlWP.css                4.88 kB
+@vben/web-antd:build: dist/css/manage-COchFqV-.css                             5.46 kB
+@vben/web-antd:build: dist/css/HandlingSection-B219bxAJ.css                    5.79 kB
+@vben/web-antd:build: dist/css/SingleLoopWorkbench-80_P5cU4.css                6.03 kB
+@vben/web-antd:build: dist/css/auth-xLBJndD4.css                               6.13 kB
+@vben/web-antd:build: dist/css/AssessSection-Cx43r_KD.css                      6.23 kB
+@vben/web-antd:build: dist/css/DiagSection-BlGGwdhv.css                        6.47 kB
+@vben/web-antd:build: dist/css/vendor-misc-DkTQMyWH.css                        6.65 kB
+@vben/web-antd:build: dist/css/diagnosis-detail-modal-Cqvqktks.css             7.81 kB
+@vben/web-antd:build: dist/css/pid-dashboard-Bk0_PsDq.css                      8.89 kB
+@vben/web-antd:build: dist/css/clpm-BKbRE52g.css                              16.16 kB
+@vben/web-antd:build: dist/css/basic-BQ88AUi_.css                             22.29 kB
+@vben/web-antd:build: dist/css/bootstrap-Bro-f5iP.css                        202.35 kB
+@vben/web-antd:build: dist/js/polling-BVaPZ_i2.js                              0.03 kB
+@vben/web-antd:build: dist/js/_plugin-vue_export-helper-BS_FnM7m.js            0.08 kB
+@vben/web-antd:build: dist/js/demos-BiP_UX0n.js                                0.10 kB
+@vben/web-antd:build: dist/js/demos-DZzPQvTu.js                                0.11 kB
+@vben/web-antd:build: dist/js/plant-node-C1lBX3wW.js                           0.11 kB
+@vben/web-antd:build: dist/js/profile-CtWItKjT.js                              0.15 kB
+@vben/web-antd:build: dist/js/profile-BoYYbOGh.js                              0.15 kB
+@vben/web-antd:build: dist/js/src-DnNzVU4P.js                                  0.22 kB
+@vben/web-antd:build: dist/js/coming-soon-Dqf-42V2.js                          0.22 kB
+@vben/web-antd:build: dist/js/auth-Duf9ooxD.js                                 0.23 kB
+@vben/web-antd:build: dist/js/cockpit-D1BOEBEa.js                              0.24 kB
+@vben/web-antd:build: dist/js/forbidden-ThljdOOU.js                            0.26 kB
+@vben/web-antd:build: dist/js/internal-error-DyPirh57.js                       0.26 kB
+@vben/web-antd:build: dist/js/offline-b_ykvjsb.js                              0.26 kB
+@vben/web-antd:build: dist/js/src-BGb4PnHF2.js                                 0.27 kB
+@vben/web-antd:build: dist/js/page-BHVJIrEY.js                                 0.27 kB
+@vben/web-antd:build: dist/js/page-V6EYg4uG.js                                 0.28 kB
+@vben/web-antd:build: dist/js/use-config-access-ByzP58OT.js                    0.29 kB
+@vben/web-antd:build: dist/js/extends-DiOqE10O.js                              0.29 kB
+@vben/web-antd:build: dist/js/monitor-iqoShptx.js                              0.32 kB
+@vben/web-antd:build: dist/js/assessment-labels-CC2DBMKp.js                    0.36 kB
+@vben/web-antd:build: dist/js/not-found-B0JszM4F.js                            0.41 kB
+@vben/web-antd:build: dist/js/format-BzfVUA2C.js                               0.45 kB
+@vben/web-antd:build: dist/js/auth-title-B3ZU2WV4.js                           0.46 kB
+@vben/web-antd:build: dist/js/motion-CC0_GgCH.js                               0.49 kB
+@vben/web-antd:build: dist/js/concurrency-KITR0D9P.js                          0.49 kB
+@vben/web-antd:build: dist/js/dict-BjekKufR.js                                 0.51 kB
+@vben/web-antd:build: dist/js/render-content-BwetGond.js                       0.55 kB
+@vben/web-antd:build: dist/js/authorization-DFnO9idi.js                        0.57 kB
+@vben/web-antd:build: dist/js/use-table-density-C7Tik02c.js                    0.59 kB
+@vben/web-antd:build: dist/js/use-latest-request-Dqh9myNt.js                   0.60 kB
+@vben/web-antd:build: dist/js/tab-placeholder-CE-N-GDD.js                      0.64 kB
+@vben/web-antd:build: dist/js/tag-i_hekBqk.js                                  0.65 kB
+@vben/web-antd:build: dist/js/rolldown-runtime-B7dzfUhG.js                     0.69 kB
+@vben/web-antd:build: dist/js/drill-trend-modal-B63z3q-a.js                    0.70 kB
+@vben/web-antd:build: dist/js/block-state-overlay-DAmaywrM.js                  0.71 kB
+@vben/web-antd:build: dist/js/use-loop-palettes-CXB__cUr.js                    0.72 kB
+@vben/web-antd:build: dist/js/reports-CfL4mGFY.js                              0.74 kB
+@vben/web-antd:build: dist/js/use-clpm-roles-pgqh84os.js                       0.75 kB
+@vben/web-antd:build: dist/js/section-placeholder-CgonIoFL.js                  0.77 kB
+@vben/web-antd:build: dist/js/tuning-B9lOuh1f.js                               0.78 kB
+@vben/web-antd:build: dist/js/common-DRQIMANE.js                               0.78 kB
+@vben/web-antd:build: dist/js/handling-DVlcZpNu.js                             0.78 kB
+@vben/web-antd:build: dist/js/use-modules-BYHCvAeQ.js                          0.79 kB
+@vben/web-antd:build: dist/js/common-D6h0Q9_0.js                               0.81 kB
+@vben/web-antd:build: dist/js/use-score-color-DgGy8YjD.js                      0.81 kB
+@vben/web-antd:build: dist/js/constants-Bj6lANm9.js                            0.83 kB
+@vben/web-antd:build: dist/js/token-freshness-Cdu-iiWq.js                      0.85 kB
+@vben/web-antd:build: dist/js/plant-node-BFbaSNcP.js                           0.91 kB
+@vben/web-antd:build: dist/js/format-Di6KvXua.js                               0.95 kB
+@vben/web-antd:build: dist/js/loop-pager-Db4qQX_L.js                           0.95 kB
+@vben/web-antd:build: dist/js/permission-D4DZIlI3.js                           0.97 kB
+@vben/web-antd:build: dist/js/cockpit-BatOTJgF.js                              1.06 kB
+@vben/web-antd:build: dist/js/engineering-template-CH6l4n26.js                 1.06 kB
+@vben/web-antd:build: dist/js/use-polling-CcbTMV5F.js                          1.09 kB
+@vben/web-antd:build: dist/js/dcs-C4xBdxLQ.js                                  1.16 kB
+@vben/web-antd:build: dist/js/src-f6gpCYWp.js                                  1.16 kB
+@vben/web-antd:build: dist/js/HelpBubble-BwRbkHQu.js                           1.20 kB
+@vben/web-antd:build: dist/js/use-cockpit-theme-HSS6Qy4t.js                    1.25 kB
+@vben/web-antd:build: dist/js/Switch-W2u6wU9j.js                               1.29 kB
+@vben/web-antd:build: dist/js/Spark-DGq3c30i.js                                1.29 kB
+@vben/web-antd:build: dist/js/cockpit-modal--4hFp4KH.js                        1.29 kB
+@vben/web-antd:build: dist/js/SplitBar-HrRIu0F0.js                             1.29 kB
+@vben/web-antd:build: dist/js/GateBanner-CZUPmAJL.js                           1.30 kB
+@vben/web-antd:build: dist/js/icon-button-C9KEgEMF.js                          1.31 kB
+@vben/web-antd:build: dist/js/loading-Df1-zI3D.js                              1.31 kB
+@vben/web-antd:build: dist/js/use-clpm-theme-922Wfjlt.js                       1.35 kB
+@vben/web-antd:build: dist/js/OpsKanban-BkiFH4p1.js                            1.36 kB
+@vben/web-antd:build: dist/js/device-tree-DPtH2w8r.js                          1.50 kB
+@vben/web-antd:build: dist/js/use-site-branding-CZRgmdY9.js                    1.51 kB
+@vben/web-antd:build: dist/js/handling-BsmDXuwy.js                             1.54 kB
+@vben/web-antd:build: dist/js/precheck-badge-DWZbF6rP.js                       1.56 kB
+@vben/web-antd:build: dist/js/export-C64Sjdt0.js                               1.59 kB
+@vben/web-antd:build: dist/js/drill-modals-DgBlxN_K.js                         1.61 kB
+@vben/web-antd:build: dist/js/LaneCol-D_j0I00Z.js                              1.70 kB
+@vben/web-antd:build: dist/js/qrcode-login-Df4fFFp7.js                         1.71 kB
+@vben/web-antd:build: dist/js/notification-setting-BDdd2r-D.js                 1.74 kB
+@vben/web-antd:build: dist/js/base-setting-DuIuQhVD.js                         1.76 kB
+@vben/web-antd:build: dist/js/workbench-fitness-badge-BD20YeIr.js              1.82 kB
+@vben/web-antd:build: dist/js/personal-work-CccYwPIZ.js                        1.82 kB
+@vben/web-antd:build: dist/js/use-echarts-preset-BxK8oB-t.js                   1.89 kB
+@vben/web-antd:build: dist/js/diagnosis-BAzebXzx.js                            1.89 kB
+@vben/web-antd:build: dist/js/security-setting-CnMHMEgG.js                     1.96 kB
+@vben/web-antd:build: dist/js/button-DdpmUIC0.js                               1.97 kB
+@vben/web-antd:build: dist/js/tuning-C0DJSkpz.js                               1.97 kB
+@vben/web-antd:build: dist/js/FormLabel-WADdkUXY.js                            1.98 kB
+@vben/web-antd:build: dist/js/list-modal-BZ8gne3r.js                           2.02 kB
+@vben/web-antd:build: dist/js/tippy-BaMzRKiA.js                                2.05 kB
+@vben/web-antd:build: dist/js/profile-diff-view-DZEMnN15.js                    2.05 kB
+@vben/web-antd:build: dist/js/workbench-metric-bars-Cs12OO05.js                2.06 kB
+@vben/web-antd:build: dist/js/page-De0nuB8f.js                                 2.08 kB
+@vben/web-antd:build: dist/js/use-echarts-DAO8L6nP.js                          2.09 kB
+@vben/web-antd:build: dist/js/alert-ws-DEtV8ZUv.js                             2.11 kB
+@vben/web-antd:build: dist/js/drill-sla-modal-BC-aVuk3.js                      2.15 kB
+@vben/web-antd:build: dist/js/password-setting-BA_V3SsW.js                     2.17 kB
+@vben/web-antd:build: dist/js/WbDrawer-C8bPfnKM.js                             2.20 kB
+@vben/web-antd:build: dist/js/forget-password-BizvuU7y.js                      2.22 kB
+@vben/web-antd:build: dist/js/template-utils-BWC_ovmt.js                       2.33 kB
+@vben/web-antd:build: dist/js/workbench-radar6-BFlTlXnA.js                     2.35 kB
+@vben/web-antd:build: dist/js/alert-0B-1j4YM.js                                2.37 kB
+@vben/web-antd:build: dist/js/StatusBar-B0QOv7e6.js                            2.44 kB
+@vben/web-antd:build: dist/js/TaskCard-BbsIEKGT.js                             2.44 kB
+@vben/web-antd:build: dist/js/use-wb360-session-tGw1dBOX.js                    2.55 kB
+@vben/web-antd:build: dist/js/src-DWCr9uCU.js                                  2.62 kB
+@vben/web-antd:build: dist/js/tasks-CumBY3qm.js                                2.65 kB
+@vben/web-antd:build: dist/js/ThumbStrip-BT8m_b0j.js                           2.67 kB
+@vben/web-antd:build: dist/js/node-radar-panel-CgVORibF.js                     2.68 kB
+@vben/web-antd:build: dist/js/code-login-rXnWoOgE.js                           2.70 kB
+@vben/web-antd:build: dist/js/VerifyDrawer-B_CpWKbE.js                         2.72 kB
+@vben/web-antd:build: dist/js/review-drawer-C5RsvBvp.js                        2.74 kB
+@vben/web-antd:build: dist/js/page-toolbar-By_J3oxx.js                         2.77 kB
+@vben/web-antd:build: dist/js/workbench-diagnosis-card-C3O14YLY.js             2.79 kB
+@vben/web-antd:build: dist/js/history-drawer-VIu46iDw.js                       2.82 kB
+@vben/web-antd:build: dist/js/loop-card-DEDtVZLE.js                            2.86 kB
+@vben/web-antd:build: dist/js/constants-faGT2a2V.js                            2.90 kB
+@vben/web-antd:build: dist/js/confirm-section-TKlED5Fd.js                      2.90 kB
+@vben/web-antd:build: dist/js/AttentionDrawer-D8DIR9IM.js                      2.92 kB
+@vben/web-antd:build: dist/js/tooltip-BOmnLFCQ.js                              2.97 kB
+@vben/web-antd:build: dist/js/DgRuleStats-NIVW9xmf.js                          3.09 kB
+@vben/web-antd:build: dist/js/unit-steady-bars-QmY74c9r.js                     3.16 kB
+@vben/web-antd:build: dist/js/trend-panel-CB54AVEH.js                          3.20 kB
+@vben/web-antd:build: dist/js/fallback-C3gMnshD.js                             3.22 kB
+@vben/web-antd:build: dist/js/constants-B1afP5Fk.js                            3.25 kB
+@vben/web-antd:build: dist/js/register-WZdp_PWi.js                             3.31 kB
+@vben/web-antd:build: dist/js/use-loop-follow-CZ6lL6v1.js                      3.34 kB
+@vben/web-antd:build: dist/js/fitness-donut-C6VbwTz2.js                        3.38 kB
+@vben/web-antd:build: dist/js/authentication-jEIx64Er.js                       3.40 kB
+@vben/web-antd:build: dist/js/todo-panel-nQsBWmOY.js                           3.41 kB
+@vben/web-antd:build: dist/js/HandlingReopenList-C54WVD4z.js                   3.41 kB
+@vben/web-antd:build: dist/js/loop-performance-shared-Drt6sprr.js              3.48 kB
+@vben/web-antd:build: dist/js/workbench-context-9wlZGqEV.js                    3.49 kB
+@vben/web-antd:build: dist/js/authentication-DIjkUW6O.js                       3.53 kB
+@vben/web-antd:build: dist/js/JourneyRail-OG2MvwUm.js                          3.63 kB
+@vben/web-antd:build: dist/js/workbench-kpi-history-DtGllEd_.js                3.63 kB
+@vben/web-antd:build: dist/js/profile-DA5zHhyv.js                              3.63 kB
+@vben/web-antd:build: dist/js/avatar-DSeZFch1.js                               3.64 kB
+@vben/web-antd:build: dist/js/EvalHeatMatrix-Dm_KAt5z.js                       3.68 kB
+@vben/web-antd:build: dist/js/alert-stream-CvCRbBcD.js                         3.84 kB
+@vben/web-antd:build: dist/js/workbench360-3YPYTnks.js                         3.86 kB
+@vben/web-antd:build: dist/js/loop-evaluation-ychNA9SB.js                      3.89 kB
+@vben/web-antd:build: dist/js/StaffHBar-CwrIh2yx.js                            3.91 kB
+@vben/web-antd:build: dist/js/toolbar-button-Dwk5kQTZ.js                       4.07 kB
+@vben/web-antd:build: dist/js/batch-runs-drawer-zyLXkewJ.js                    4.08 kB
+@vben/web-antd:build: dist/js/tasks-CuBFHcmi.js                                4.16 kB
+@vben/web-antd:build: dist/js/verification-BzBva0Yk.js                         4.18 kB
+@vben/web-antd:build: dist/js/evidence-drawer-CIs62ef3.js                      4.22 kB
+@vben/web-antd:build: dist/js/use-latest-overview-cache-Pa0JVqMW.js            4.29 kB
+@vben/web-antd:build: dist/js/unit-auto-pareto-Dk6n8Our.js                     4.30 kB
+@vben/web-antd:build: dist/js/diagnosis-CPW_R9UN.js                            4.33 kB
+@vben/web-antd:build: dist/js/TuneQueueRow-QWZ6baMw.js                         4.39 kB
+@vben/web-antd:build: dist/js/ui-CNfTnTV8.js                                   4.39 kB
+@vben/web-antd:build: dist/js/LoopHeader-CgtQghIH.js                           4.42 kB
+@vben/web-antd:build: dist/js/event-detail-modal-DMIHFG8P.js                   4.49 kB
+@vben/web-antd:build: dist/js/assess-trigger-modal-DPIJGvhF.js                 4.51 kB
+@vben/web-antd:build: dist/js/TuningRootCauseDist-C1yTDLL-.js                  4.51 kB
+@vben/web-antd:build: dist/js/performance-B5gErced.js                          4.56 kB
+@vben/web-antd:build: dist/js/OrderCreateModal-DWsOSM_i.js                     4.61 kB
+@vben/web-antd:build: dist/js/EvalSummary-b2QYvTHg.js                          4.64 kB
+@vben/web-antd:build: dist/js/ui-DbuALmIO.js                                   4.64 kB
+@vben/web-antd:build: dist/js/todo-detail-modal-SNVs_dEq.js                    4.65 kB
+@vben/web-antd:build: dist/js/cockpit-header-0YkbIRmi.js                       4.87 kB
+@vben/web-antd:build: dist/js/TuningFitnessCard-DjnBtxlf.js                    4.89 kB
+@vben/web-antd:build: dist/js/LoopSpine-xOCzSBCw.js                            4.91 kB
+@vben/web-antd:build: dist/js/gate-health-panel-BG1BPkDb.js                    4.91 kB
+@vben/web-antd:build: dist/js/use-page-toolbar-FmLhbkBf.js                     5.06 kB
+@vben/web-antd:build: dist/js/DeltaScatter-CdH1dJ6b.js                         5.17 kB
+@vben/web-antd:build: dist/js/AbnormalLoopsTable-DHbp5qfN.js                   5.20 kB
+@vben/web-antd:build: dist/js/DgSummaryBand-CR_sYEis.js                        5.22 kB
+@vben/web-antd:build: dist/js/modules-D3f9HNud.js                              5.24 kB
+@vben/web-antd:build: dist/js/publications-tab-DWNNPM1J.js                     5.26 kB
+@vben/web-antd:build: dist/js/matrix-section-BqV1VAf9.js                       5.41 kB
+@vben/web-antd:build: dist/js/device-rank-bars-CIfBpe1w.js                     5.47 kB
+@vben/web-antd:build: dist/js/workbench-process-trend-CmMCpBDV.js              5.59 kB
+@vben/web-antd:build: dist/js/cockpit-radar-CFhn7KhE.js                        5.62 kB
+@vben/web-antd:build: dist/js/HandlingSlaSummary-CwNrLAxN.js                   5.66 kB
+@vben/web-antd:build: dist/js/TaskDetailCard-DMSAXHpX.js                       5.76 kB
+@vben/web-antd:build: dist/js/batch-detail-drawer-W_zf3zws.js                  5.83 kB
+@vben/web-antd:build: dist/js/ParetoBarLine-CZM8ddKx.js                        5.92 kB
+@vben/web-antd:build: dist/js/LoopDetailDrawer-Bau-3olu.js                     6.02 kB
+@vben/web-antd:build: dist/js/EvalDistributions-Bs9mnilw.js                    6.11 kB
+@vben/web-antd:build: dist/js/kpi-band-rGjML1YX.js                             6.35 kB
+@vben/web-antd:build: dist/js/version-history-tab-BcyXa8Vd.js                  6.36 kB
+@vben/web-antd:build: dist/js/batch-diagnose-modal-C8efN4yc.js                 6.64 kB
+@vben/web-antd:build: dist/js/attention-group-drawer-BbyFDXF-.js               6.65 kB
+@vben/web-antd:build: dist/js/coverage-panel-DqVXlKQ3.js                       6.70 kB
+@vben/web-antd:build: dist/js/DgUnitStackedBar-BIrw_2b-.js                     6.72 kB
+@vben/web-antd:build: dist/js/batch-restore-modal-BV7AyI25.js                  6.73 kB
+@vben/web-antd:build: dist/js/AllLoopWorkbenchHost-FWJHlTtS.js                 6.76 kB
+@vben/web-antd:build: dist/js/overview-BvI1Xs6_.js                             6.78 kB
+@vben/web-antd:build: dist/js/config-Ct161rJO.js                               6.82 kB
+@vben/web-antd:build: dist/js/metrics-panel-DjE7s4Je.js                        6.84 kB
+@vben/web-antd:build: dist/js/TuningLoopDetail-cgfxPJpQ.js                     7.01 kB
+@vben/web-antd:build: dist/js/tuning-verify-compare-B3WTOUX-.js                7.03 kB
+@vben/web-antd:build: dist/js/handling-archive-drawer-CX5Ja5mW.js              7.05 kB
+@vben/web-antd:build: dist/js/handling-detail-drawer-Du2y-rkv.js               7.05 kB
+@vben/web-antd:build: dist/js/icon-500-BJdfWIrX.js                             7.09 kB
+@vben/web-antd:build: dist/js/cohort-compare-drawer-ClWJ3w7c.js                7.20 kB
+@vben/web-antd:build: dist/js/preferences-CQTR6Knd.js                          7.26 kB
+@vben/web-antd:build: dist/js/preferences-C_sDwEDf.js                          7.30 kB
+@vben/web-antd:build: dist/js/backfill-task-drawer-Cq3cgOxx.js                 7.30 kB
+@vben/web-antd:build: dist/js/task-strategy-Br6_XAst.js                        7.64 kB
+@vben/web-antd:build: dist/js/record-detail-drawer-CCdGjbYM.js                 7.74 kB
+@vben/web-antd:build: dist/js/plant-node-tree-DkE75yjw.js                      7.92 kB
+@vben/web-antd:build: dist/js/DiagTriggerModal-Cn4XpWZ6.js                     7.98 kB
+@vben/web-antd:build: dist/js/icon-offline-DK1ZTJ3j.js                         8.09 kB
+@vben/web-antd:build: dist/js/use-loop-realtime-CRsfvFV4.js                    8.17 kB
+@vben/web-antd:build: dist/js/use-clpm-preferences-CKi12LeE.js                 8.37 kB
+@vben/web-antd:build: dist/js/identify-section-BBIvtIAf.js                     8.42 kB
+@vben/web-antd:build: dist/js/loop-detail-modal-DdX-yil7.js                    8.53 kB
+@vben/web-antd:build: dist/js/archive-CwqSve4N.js                              8.59 kB
+@vben/web-antd:build: dist/js/publish-version-modal-vLf-q9OK.js                8.61 kB
+@vben/web-antd:build: dist/js/dict-B5s3nx6F.js                                 8.73 kB
+@vben/web-antd:build: dist/js/confidence-threshold-iEUzB6v7.js                 8.84 kB
+@vben/web-antd:build: dist/js/EvalTrendChart-Coi0QaHa.js                       8.90 kB
+@vben/web-antd:build: dist/js/about-eRLK6oTp.js                                8.93 kB
+@vben/web-antd:build: dist/js/basic-info-tm75zq6p.js                           8.93 kB
+@vben/web-antd:build: dist/js/detail-DfxVPWG1.js                               8.95 kB
+@vben/web-antd:build: dist/js/alert-statistics-D7SbaoRW.js                     9.35 kB
+@vben/web-antd:build: dist/js/icon-403-BLQJFMSI.js                             9.40 kB
+@vben/web-antd:build: dist/js/subscription-22S1DUrk.js                         9.52 kB
+@vben/web-antd:build: dist/js/waveform-chart-B3q30cBC.js                       9.59 kB
+@vben/web-antd:build: dist/js/loop-confidence-content-B-xZAb5L.js              9.60 kB
+@vben/web-antd:build: dist/js/records-DvSw_7sf.js                              9.63 kB
+@vben/web-antd:build: dist/js/grading-threshold-D3jYXlvS.js                    9.68 kB
+@vben/web-antd:build: dist/js/EvalRankTable-DHkG5XNn.js                        9.71 kB
+@vben/web-antd:build: dist/js/event-snapshot-view-CHcwfbdg.js                  9.88 kB
+@vben/web-antd:build: dist/js/theme-toggle-BexG2v_q.js                        10.35 kB
+@vben/web-antd:build: dist/js/clpm-ui-CI0jDVZ6.js                             10.68 kB
+@vben/web-antd:build: dist/js/loop-detail-panel-BSkXYthD.js                   10.69 kB
+@vben/web-antd:build: dist/js/handling-tab-_S55HxQ_.js                        10.88 kB
+@vben/web-antd:build: dist/js/diagnosis-CB3pwyrn.js                           11.04 kB
+@vben/web-antd:build: dist/js/my-work-BbXeq1Mp.js                             11.04 kB
+@vben/web-antd:build: dist/js/engineering-templates-BUXFFGGw.js               11.09 kB
+@vben/web-antd:build: dist/js/TuningSection-C4FZnf0i.js                       11.12 kB
+@vben/web-antd:build: dist/js/rules-BlyVm9cW.js                               11.60 kB
+@vben/web-antd:build: dist/js/auth-B4YXCoZ6.js                                11.62 kB
+@vben/web-antd:build: dist/js/outlier-params-kO08vLrs.js                      11.65 kB
+@vben/web-antd:build: dist/js/loops-76p4S7xv.js                               11.70 kB
+@vben/web-antd:build: dist/js/use-tuning-workbench-BK8aMIU7.js                11.74 kB
+@vben/web-antd:build: dist/js/fitness-threshold-CWrwkaeW.js                   12.08 kB
+@vben/web-antd:build: dist/js/algorithm-params-Dk12rEsK.js                    12.28 kB
+@vben/web-antd:build: dist/js/override-publish-modal-BBJ7uxnt.js              12.29 kB
+@vben/web-antd:build: dist/js/data-quality-BKTdLhYl.js                        12.72 kB
+@vben/web-antd:build: dist/js/tuning-tab-BhoF28W3.js                          12.75 kB
+@vben/web-antd:build: dist/js/batch-apply-modal-BHxmwO8W.js                   12.80 kB
+@vben/web-antd:build: dist/js/overview-Cbqzdv3X.js                            12.81 kB
+@vben/web-antd:build: dist/js/loop-performance-detail-content-C2leTjJE.js     12.85 kB
+@vben/web-antd:build: dist/js/icon-coming-soon-_i0B3h0O.js                    12.90 kB
+@vben/web-antd:build: dist/js/config-definition-9M1f3CrA.js                   13.15 kB
+@vben/web-antd:build: dist/js/simulate-section-Ckwi3ljM.js                    13.26 kB
+@vben/web-antd:build: dist/js/use-drill-D8Gb_gLN.js                           13.52 kB
+@vben/web-antd:build: dist/js/audit-DeXiYm9e.js                               14.46 kB
+@vben/web-antd:build: dist/js/AssessSection-DcL4WwFI.js                       14.80 kB
+@vben/web-antd:build: dist/js/config-DA--ta0H.js                              14.93 kB
+@vben/web-antd:build: dist/js/handling-DN4R30PS.js                            15.12 kB
+@vben/web-antd:build: dist/js/work-item-list-g82BvDU_.js                      15.12 kB
+@vben/web-antd:build: dist/js/HandlingSection-Dy6jHoiC.js                     15.24 kB
+@vben/web-antd:build: dist/js/benefit-iGm60JKF.js                             16.20 kB
+@vben/web-antd:build: dist/js/TrendChart-BLAS1D5j.js                          16.27 kB
+@vben/web-antd:build: dist/js/loop-archive-drawer-D7ss9GT8.js                 16.57 kB
+@vben/web-antd:build: dist/js/diagnosis-result-panel-CYbU-iV2.js              17.09 kB
+@vben/web-antd:build: dist/js/list-CuXsmT1z.js                                17.24 kB
+@vben/web-antd:build: dist/js/data-DVD0ylIp.js                                18.12 kB
+@vben/web-antd:build: dist/js/permissions-DVluzNFs.js                         18.74 kB
+@vben/web-antd:build: dist/js/DiagSection-D1avppPn.js                         19.38 kB
+@vben/web-antd:build: dist/js/users-B-IO93Jz.js                               19.49 kB
+@vben/web-antd:build: dist/js/overview-DGThmi4W.js                            19.75 kB
+@vben/web-antd:build: dist/js/weight-config-DZSSvTbN.js                       20.20 kB
+@vben/web-antd:build: dist/js/performance-CVr8mx7C.js                         20.22 kB
+@vben/web-antd:build: dist/js/events-pdtQb23K.js                              20.24 kB
+@vben/web-antd:build: dist/js/records-DCKhvuig.js                             20.51 kB
+@vben/web-antd:build: dist/js/config-CcNkpW9-.js                              21.22 kB
+@vben/web-antd:build: dist/js/matrix-tab-BQO4bdo7.js                          21.62 kB
+@vben/web-antd:build: dist/js/history-tab-CGLPY8lD.js                         22.56 kB
+@vben/web-antd:build: dist/js/icon-404-AEuvkeNU.js                            24.35 kB
+@vben/web-antd:build: dist/js/list-cEvnDyJs.js                                24.45 kB
+@vben/web-antd:build: dist/js/attention-CBVC5kSJ.js                           24.58 kB
+@vben/web-antd:build: dist/js/order-detail-drawer-UQBtV0NC.js                 25.71 kB
+@vben/web-antd:build: dist/js/config-DDlMOxRK.js                              25.83 kB
+@vben/web-antd:build: dist/js/indicator-analysis-CDS8yYCK.js                  26.15 kB
+@vben/web-antd:build: dist/js/rank-tab-ybL55hwd.js                            26.71 kB
+@vben/web-antd:build: dist/jse/index-index-DFAgy0fB.js                        27.33 kB
+@vben/web-antd:build: dist/js/request-D-rkt_qR.js                             27.61 kB
+@vben/web-antd:build: dist/js/SingleLoopWorkbench-DYwzJJQc.js                 28.19 kB
+@vben/web-antd:build: dist/js/workbench-1ZxWzVbo.js                           29.99 kB
+@vben/web-antd:build: dist/js/diagnosis-detail-modal-Din7R-Fl.js              30.06 kB
+@vben/web-antd:build: dist/js/login-D3dernHr.js                               31.53 kB
+@vben/web-antd:build: dist/js/vendor-icons-BCZTPUK2.js                        31.72 kB
+@vben/web-antd:build: dist/js/use-vben-form-CH6sUQYe.js                       31.73 kB
+@vben/web-antd:build: dist/js/vendor-vue-VPcy6u0H.js                          33.97 kB
+@vben/web-antd:build: dist/js/aas-DKlelDpS.js                                 34.24 kB
+@vben/web-antd:build: dist/js/loops-Crr7RtRu.js                               34.39 kB
+@vben/web-antd:build: dist/js/monitor-cJ0FEgF9.js                             34.63 kB
+@vben/web-antd:build: dist/js/vendor-utils-tzym-DzF.js                        38.47 kB
+@vben/web-antd:build: dist/js/pid-dashboard-CvLoaRE7.js                       39.09 kB
+@vben/web-antd:build: dist/js/manage-k5iH3MGu.js                              41.81 kB
+@vben/web-antd:build: dist/js/LoopEditDrawer-CDAZQmxz.js                      42.06 kB
+@vben/web-antd:build: dist/js/routes-BD8tADVD.js                              45.89 kB
+@vben/web-antd:build: dist/js/use-authz-live-Dx-VwX9X.js                      72.22 kB
+@vben/web-antd:build: dist/js/clpm-NCgstKLd.js                                85.78 kB
+@vben/web-antd:build: dist/js/bootstrap-D6L5Ytba.js                           90.91 kB
+@vben/web-antd:build: dist/js/src-CrYCCxCf.js                                129.77 kB
+@vben/web-antd:build: dist/js/basic-DCPDBHD4.js                              244.28 kB
+@vben/web-antd:build: dist/js/vendor-misc-CCR-E-Fl.js                        738.13 kB
+@vben/web-antd:build: dist/js/vendor-echarts-9efhoxzl.js                     753.41 kB
+@vben/web-antd:build: dist/js/vendor-antd-C7EWqXIS.js                      1,267.88 kB
+@vben/web-antd:build: 
+@vben/web-antd:build: [33m[INEFFECTIVE_DYNAMIC_IMPORT] [0m../../packages/preferences/src/index.ts is dynamically imported by src/main.ts but also statically imported by src/api/request.ts, src/app.vue?vue&type=script&setup=true&lang.ts, src/bootstrap.ts, src/composables/use-authz-live.ts, src/composables/use-clpm-theme.ts, ..., dynamic import will not move module into another chunk.
+@vben/web-antd:build: 
+@vben/web-antd:build: [33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/api/site.ts is dynamically imported by src/composables/use-site-branding.ts but also statically imported by src/composables/use-site-branding.ts, src/views/system/basic-info.vue?vue&type=script&setup=true&lang.ts, dynamic import will not move module into another chunk.
+@vben/web-antd:build: 
+@vben/web-antd:build: ✓ built in 3.60s
+@vben/web-antd:build: 
+@vben/web-antd:build: ✨ [vite-plugin-compression]:algorithm=gzip - compressed file successfully: 
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/AssessSection-Cx43r_KD.css.gz                   6.09kb / gzip: 1.38kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/AttentionDrawer-BRhn8xhG.css.gz                 1.68kb / gzip: 0.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/JourneyRail-DxWAGfcS.css.gz                     2.69kb / gzip: 0.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/LoopHeader-DH2BjuUw.css.gz                      2.67kb / gzip: 0.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/DiagSection-BlGGwdhv.css.gz                     6.32kb / gzip: 1.30kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/HandlingSection-B219bxAJ.css.gz                 5.66kb / gzip: 1.32kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/LoopSpine-Bm09_ikq.css.gz                       3.41kb / gzip: 0.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/TuningSection-CqM1tjq0.css.gz                   4.40kb / gzip: 1.00kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/SingleLoopWorkbench-80_P5cU4.css.gz             5.89kb / gzip: 1.34kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/ThumbStrip-kBih4Xle.css.gz                      1.40kb / gzip: 0.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/TrendChart-CLdlnbeG.css.gz                      2.91kb / gzip: 0.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/alert-stream-B2VSuHcH.css.gz                    1.90kb / gzip: 0.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/WbDrawer-F9hXAN3z.css.gz                        1.40kb / gzip: 0.54kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/batch-diagnose-modal-j6SVxScO.css.gz            1.95kb / gzip: 0.58kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/basic-info-BaXUFeuC.css.gz                      2.50kb / gzip: 0.73kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/cockpit-header-Bf04NrN4.css.gz                  3.71kb / gzip: 1.01kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/auth-xLBJndD4.css.gz                            5.99kb / gzip: 1.51kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/cohort-compare-drawer-BduDhIEQ.css.gz           1.64kb / gzip: 0.50kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/data-DlYFK1Df.css.gz                            3.45kb / gzip: 0.27kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/clpm-BKbRE52g.css.gz                            15.79kb / gzip: 3.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/coverage-panel-BHVIXXqZ.css.gz                  3.10kb / gzip: 0.74kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/cockpit-modal-Cy0tPHst.css.gz                   1.15kb / gzip: 0.48kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/basic-BQ88AUi_.css.gz                           21.78kb / gzip: 3.46kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/device-rank-bars-CqhQvgRn.css.gz                2.93kb / gzip: 0.84kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/device-tree-DHVKnGAa.css.gz                     1.48kb / gzip: 0.51kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/event-detail-modal-CQMcBNHn.css.gz              1.50kb / gzip: 0.52kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/history-drawer-ujki0YnL.css.gz                  1.43kb / gzip: 0.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/gate-health-panel-CQw4zTDe.css.gz               1.83kb / gzip: 0.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/kpi-band-B7LgmNIw.css.gz                        1.54kb / gzip: 0.55kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/list-modal-EX03mfCA.css.gz                      1.28kb / gzip: 0.46kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-card-DtPgUJEs.css.gz                       2.01kb / gzip: 0.63kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/diagnosis-C3tWczMG.css.gz                       2.76kb / gzip: 0.88kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-archive-drawer-D43PhlWP.css.gz             4.77kb / gzip: 1.18kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-detail-modal-CbZJO0hR.css.gz               3.11kb / gzip: 0.74kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/diagnosis-detail-modal-Cqvqktks.css.gz          7.63kb / gzip: 1.37kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loops-DChMH-Pr.css.gz                           1.70kb / gzip: 0.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-detail-panel-BxVDbvdv.css.gz               2.99kb / gzip: 0.83kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/list-Bz7V9u5S.css.gz                            2.36kb / gzip: 0.41kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/matrix-tab-C0CMf2ak.css.gz                      1.10kb / gzip: 0.44kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/manage-COchFqV-.css.gz                          5.33kb / gzip: 0.71kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/modules-BtPlE5nP.css.gz                         2.60kb / gzip: 0.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/overview-C3ikxsSE.css.gz                        2.19kb / gzip: 0.62kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/overview-CI_WKVWq.css.gz                        1.82kb / gzip: 0.61kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/page-toolbar-BGSgM5qY.css.gz                    2.57kb / gzip: 0.62kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/my-work-Dc2TC_0p.css.gz                         2.22kb / gzip: 0.55kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/rank-tab-hUjTqR7c.css.gz                        2.41kb / gzip: 0.50kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/plant-node-tree-BDPapCbj.css.gz                 1.05kb / gzip: 0.43kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/todo-panel-DzfWFiU6.css.gz                      2.44kb / gzip: 0.66kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/todo-detail-modal-DLkPsNIs.css.gz               2.45kb / gzip: 0.74kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/theme-toggle-BKQ46UDU.css.gz                    1.60kb / gzip: 0.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/work-item-list-HmxfwqiW.css.gz                  1.32kb / gzip: 0.44kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/toolbar-button-D88UArcs.css.gz                  1.18kb / gzip: 0.36kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/workbench-metric-bars-3I_6aQ-e.css.gz           1.17kb / gzip: 0.46kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/unit-steady-bars-5o_cR-Mr.css.gz                1.41kb / gzip: 0.54kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/workbench360-Dhgriddj.css.gz                    1.39kb / gzip: 0.48kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/pid-dashboard-Bk0_PsDq.css.gz                   8.69kb / gzip: 1.61kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/use-page-toolbar-Bolga5ic.css.gz                3.97kb / gzip: 0.96kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/vendor-misc-DkTQMyWH.css.gz                     6.50kb / gzip: 1.16kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/index.html.gz                                       2.66kb / gzip: 1.25kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AbnormalLoopsTable-DHbp5qfN.js.gz                5.09kb / gzip: 2.35kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AllLoopWorkbenchHost-FWJHlTtS.js.gz              6.61kb / gzip: 2.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DeltaScatter-CdH1dJ6b.js.gz                      5.05kb / gzip: 2.50kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AttentionDrawer-D8DIR9IM.js.gz                   2.86kb / gzip: 1.62kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DgRuleStats-NIVW9xmf.js.gz                       3.02kb / gzip: 1.44kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DgSummaryBand-CR_sYEis.js.gz                     5.10kb / gzip: 1.95kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AssessSection-DcL4WwFI.js.gz                     14.46kb / gzip: 5.83kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DgUnitStackedBar-BIrw_2b-.js.gz                  6.57kb / gzip: 2.95kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalDistributions-Bs9mnilw.js.gz                 5.98kb / gzip: 2.50kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalHeatMatrix-Dm_KAt5z.js.gz                    3.60kb / gzip: 1.76kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DiagTriggerModal-Cn4XpWZ6.js.gz                  7.80kb / gzip: 3.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalSummary-b2QYvTHg.js.gz                       4.53kb / gzip: 2.08kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/GateBanner-CZUPmAJL.js.gz                        1.27kb / gzip: 0.79kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalRankTable-DHkG5XNn.js.gz                     9.48kb / gzip: 3.57kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/FormLabel-WADdkUXY.js.gz                         1.94kb / gzip: 0.88kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DiagSection-D1avppPn.js.gz                       18.93kb / gzip: 7.06kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HandlingReopenList-C54WVD4z.js.gz                3.34kb / gzip: 1.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HelpBubble-BwRbkHQu.js.gz                        1.17kb / gzip: 0.71kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalTrendChart-Coi0QaHa.js.gz                    8.69kb / gzip: 3.57kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopDetailDrawer-Bau-3olu.js.gz                  5.88kb / gzip: 2.64kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HandlingSection-Dy6jHoiC.js.gz                   14.88kb / gzip: 5.34kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LaneCol-D_j0I00Z.js.gz                           1.67kb / gzip: 0.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopSpine-xOCzSBCw.js.gz                         4.80kb / gzip: 2.25kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopHeader-CgtQghIH.js.gz                        4.33kb / gzip: 2.08kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/OpsKanban-BkiFH4p1.js.gz                         1.33kb / gzip: 0.79kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/OrderCreateModal-DWsOSM_i.js.gz                  4.51kb / gzip: 2.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/JourneyRail-OG2MvwUm.js.gz                       3.54kb / gzip: 1.64kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/Spark-DGq3c30i.js.gz                             1.27kb / gzip: 0.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ParetoBarLine-CZM8ddKx.js.gz                     5.79kb / gzip: 2.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/SplitBar-HrRIu0F0.js.gz                          1.27kb / gzip: 0.71kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TaskCard-BbsIEKGT.js.gz                          2.39kb / gzip: 1.29kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/StatusBar-B0QOv7e6.js.gz                         2.39kb / gzip: 1.27kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TaskDetailCard-DMSAXHpX.js.gz                    5.63kb / gzip: 2.36kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/Switch-W2u6wU9j.js.gz                            1.27kb / gzip: 0.67kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/StaffHBar-CwrIh2yx.js.gz                         3.82kb / gzip: 1.93kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HandlingSlaSummary-CwNrLAxN.js.gz                5.53kb / gzip: 2.51kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ThumbStrip-BT8m_b0j.js.gz                        2.61kb / gzip: 1.23kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopEditDrawer-CDAZQmxz.js.gz                    41.08kb / gzip: 12.79kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuneQueueRow-QWZ6baMw.js.gz                      4.29kb / gzip: 1.71kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningRootCauseDist-C1yTDLL-.js.gz               4.41kb / gzip: 2.18kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/SingleLoopWorkbench-DYwzJJQc.js.gz               27.53kb / gzip: 10.48kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningFitnessCard-DjnBtxlf.js.gz                 4.78kb / gzip: 2.33kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/VerifyDrawer-B_CpWKbE.js.gz                      2.66kb / gzip: 1.52kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TrendChart-BLAS1D5j.js.gz                        15.89kb / gzip: 6.50kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-0B-1j4YM.js.gz                             2.32kb / gzip: 0.69kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningLoopDetail-cgfxPJpQ.js.gz                  6.85kb / gzip: 3.25kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-statistics-D7SbaoRW.js.gz                  9.13kb / gzip: 3.78kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/about-eRLK6oTp.js.gz                             8.72kb / gzip: 3.57kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/WbDrawer-C8bPfnKM.js.gz                          2.16kb / gzip: 1.10kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-ws-DEtV8ZUv.js.gz                          2.06kb / gzip: 0.87kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningSection-C4FZnf0i.js.gz                     10.86kb / gzip: 4.55kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-stream-CvCRbBcD.js.gz                      3.75kb / gzip: 1.88kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/archive-CwqSve4N.js.gz                           8.39kb / gzip: 3.70kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/assess-trigger-modal-DPIJGvhF.js.gz              4.41kb / gzip: 2.19kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/attention-group-drawer-BbyFDXF-.js.gz            6.50kb / gzip: 2.73kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/authentication-jEIx64Er.js.gz                    3.32kb / gzip: 1.70kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/algorithm-params-Dk12rEsK.js.gz                  11.99kb / gzip: 5.13kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/authentication-DIjkUW6O.js.gz                    3.45kb / gzip: 1.48kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/backfill-task-drawer-Cq3cgOxx.js.gz              7.14kb / gzip: 3.00kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/aas-DKlelDpS.js.gz                               33.45kb / gzip: 9.82kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/auth-B4YXCoZ6.js.gz                              11.35kb / gzip: 4.18kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/attention-CBVC5kSJ.js.gz                         24.01kb / gzip: 8.97kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/basic-info-tm75zq6p.js.gz                        8.73kb / gzip: 3.19kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/avatar-DSeZFch1.js.gz                            3.56kb / gzip: 1.46kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-detail-drawer-W_zf3zws.js.gz               5.70kb / gzip: 2.43kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-restore-modal-BV7AyI25.js.gz               6.57kb / gzip: 3.00kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/base-setting-DuIuQhVD.js.gz                      1.72kb / gzip: 0.96kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-runs-drawer-zyLXkewJ.js.gz                 3.99kb / gzip: 1.96kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-apply-modal-BHxmwO8W.js.gz                 12.50kb / gzip: 5.05kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/audit-DeXiYm9e.js.gz                             14.12kb / gzip: 5.14kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/button-DdpmUIC0.js.gz                            1.93kb / gzip: 0.89kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-BatOTJgF.js.gz                           1.04kb / gzip: 0.54kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-diagnose-modal-C8efN4yc.js.gz              6.49kb / gzip: 2.95kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-modal--4hFp4KH.js.gz                     1.27kb / gzip: 0.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/clpm-ui-CI0jDVZ6.js.gz                           10.43kb / gzip: 5.16kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/code-login-rXnWoOgE.js.gz                        2.64kb / gzip: 1.22kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-radar-CFhn7KhE.js.gz                     5.50kb / gzip: 2.46kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/benefit-iGm60JKF.js.gz                           15.82kb / gzip: 6.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cohort-compare-drawer-ClWJ3w7c.js.gz             7.03kb / gzip: 3.40kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-header-0YkbIRmi.js.gz                    4.76kb / gzip: 2.32kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/confidence-threshold-iEUzB6v7.js.gz              8.64kb / gzip: 3.84kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-definition-9M1f3CrA.js.gz                 12.84kb / gzip: 4.56kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/constants-faGT2a2V.js.gz                         2.83kb / gzip: 1.52kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-DDlMOxRK.js.gz                            25.22kb / gzip: 8.34kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/confirm-section-TKlED5Fd.js.gz                   2.84kb / gzip: 1.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-DA--ta0H.js.gz                            14.59kb / gzip: 4.65kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/constants-B1afP5Fk.js.gz                         3.17kb / gzip: 1.54kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-CcNkpW9-.js.gz                            20.73kb / gzip: 7.59kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-Ct161rJO.js.gz                            6.66kb / gzip: 2.59kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/data-quality-BKTdLhYl.js.gz                      12.43kb / gzip: 5.14kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/coverage-panel-DqVXlKQ3.js.gz                    6.55kb / gzip: 2.76kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/dcs-C4xBdxLQ.js.gz                               1.13kb / gzip: 0.40kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/device-tree-DPtH2w8r.js.gz                       1.46kb / gzip: 0.89kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/detail-DfxVPWG1.js.gz                            8.74kb / gzip: 3.33kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/device-rank-bars-CIfBpe1w.js.gz                  5.35kb / gzip: 2.27kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-CB3pwyrn.js.gz                         10.78kb / gzip: 4.28kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/data-DVD0ylIp.js.gz                              17.70kb / gzip: 6.72kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-CPW_R9UN.js.gz                         4.24kb / gzip: 1.91kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-BAzebXzx.js.gz                         1.85kb / gzip: 0.63kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/drill-modals-DgBlxN_K.js.gz                      1.58kb / gzip: 0.71kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/engineering-template-CH6l4n26.js.gz              1.04kb / gzip: 0.41kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/dict-B5s3nx6F.js.gz                              8.53kb / gzip: 3.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/drill-sla-modal-BC-aVuk3.js.gz                   2.11kb / gzip: 1.21kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-result-panel-CYbU-iV2.js.gz            16.69kb / gzip: 6.49kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/event-detail-modal-DMIHFG8P.js.gz                4.39kb / gzip: 1.96kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/export-C64Sjdt0.js.gz                            1.56kb / gzip: 0.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/evidence-drawer-CIs62ef3.js.gz                   4.12kb / gzip: 2.04kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/fitness-donut-C6VbwTz2.js.gz                     3.30kb / gzip: 1.80kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/events-pdtQb23K.js.gz                            19.77kb / gzip: 7.13kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-detail-modal-Din7R-Fl.js.gz            29.36kb / gzip: 9.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/engineering-templates-BUXFFGGw.js.gz             10.84kb / gzip: 4.41kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-BsmDXuwy.js.gz                          1.50kb / gzip: 0.42kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/fallback-C3gMnshD.js.gz                          3.15kb / gzip: 1.23kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/event-snapshot-view-CHcwfbdg.js.gz               9.66kb / gzip: 3.87kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/forget-password-BizvuU7y.js.gz                   2.17kb / gzip: 1.08kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/gate-health-panel-BG1BPkDb.js.gz                 4.80kb / gzip: 2.27kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-detail-drawer-Du2y-rkv.js.gz            6.89kb / gzip: 2.80kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/fitness-threshold-CWrwkaeW.js.gz                 11.80kb / gzip: 4.83kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/history-drawer-VIu46iDw.js.gz                    2.76kb / gzip: 1.51kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-archive-drawer-CX5Ja5mW.js.gz           6.89kb / gzip: 2.49kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-button-C9KEgEMF.js.gz                       1.28kb / gzip: 0.59kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/grading-threshold-D3jYXlvS.js.gz                 9.46kb / gzip: 4.03kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-DN4R30PS.js.gz                          14.77kb / gzip: 5.79kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-500-BJdfWIrX.js.gz                          6.93kb / gzip: 2.19kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-403-BLQJFMSI.js.gz                          9.18kb / gzip: 3.86kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-tab-_S55HxQ_.js.gz                      10.63kb / gzip: 4.41kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-offline-DK1ZTJ3j.js.gz                      7.91kb / gzip: 3.70kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-coming-soon-_i0B3h0O.js.gz                  12.60kb / gzip: 3.95kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/history-tab-CGLPY8lD.js.gz                       22.04kb / gzip: 7.65kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/kpi-band-rGjML1YX.js.gz                          6.21kb / gzip: 2.40kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-404-AEuvkeNU.js.gz                          23.78kb / gzip: 9.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/identify-section-BBIvtIAf.js.gz                  8.23kb / gzip: 3.27kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loading-Df1-zI3D.js.gz                           1.29kb / gzip: 0.77kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/list-CuXsmT1z.js.gz                              16.84kb / gzip: 5.97kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-card-DEDtVZLE.js.gz                         2.80kb / gzip: 1.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/list-modal-BZ8gne3r.js.gz                        1.98kb / gzip: 0.99kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-archive-drawer-D7ss9GT8.js.gz               16.19kb / gzip: 6.06kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-detail-modal-DdX-yil7.js.gz                 8.33kb / gzip: 3.62kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/list-cEvnDyJs.js.gz                              23.89kb / gzip: 8.14kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/indicator-analysis-CDS8yYCK.js.gz                25.55kb / gzip: 9.42kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-confidence-content-B-xZAb5L.js.gz           9.38kb / gzip: 3.84kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-evaluation-ychNA9SB.js.gz                   3.80kb / gzip: 1.87kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-performance-shared-Drt6sprr.js.gz           3.40kb / gzip: 1.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/metrics-panel-DjE7s4Je.js.gz                     6.69kb / gzip: 3.09kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loops-76p4S7xv.js.gz                             11.43kb / gzip: 4.52kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-performance-detail-content-C2leTjJE.js.gz   12.55kb / gzip: 4.24kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/matrix-section-BqV1VAf9.js.gz                    5.29kb / gzip: 2.41kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/modules-D3f9HNud.js.gz                           5.12kb / gzip: 2.36kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/node-radar-panel-CgVORibF.js.gz                  2.62kb / gzip: 1.40kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/login-D3dernHr.js.gz                             30.79kb / gzip: 9.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/my-work-BbXeq1Mp.js.gz                           10.79kb / gzip: 4.54kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-detail-panel-BSkXYthD.js.gz                 10.44kb / gzip: 4.08kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/notification-setting-BDdd2r-D.js.gz              1.71kb / gzip: 0.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/outlier-params-kO08vLrs.js.gz                    11.38kb / gzip: 4.72kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/matrix-tab-BQO4bdo7.js.gz                        21.12kb / gzip: 7.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/override-publish-modal-BBJ7uxnt.js.gz            12.00kb / gzip: 4.64kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/overview-Cbqzdv3X.js.gz                          12.51kb / gzip: 5.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/page-De0nuB8f.js.gz                              2.04kb / gzip: 0.95kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/overview-BvI1Xs6_.js.gz                          6.62kb / gzip: 2.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/manage-k5iH3MGu.js.gz                            40.83kb / gzip: 12.86kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loops-Crr7RtRu.js.gz                             33.58kb / gzip: 11.65kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/performance-B5gErced.js.gz                       4.46kb / gzip: 1.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/page-toolbar-By_J3oxx.js.gz                      2.71kb / gzip: 1.04kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/monitor-cJ0FEgF9.js.gz                           33.82kb / gzip: 11.61kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/plant-node-tree-DkE75yjw.js.gz                   7.73kb / gzip: 2.96kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/order-detail-drawer-UQBtV0NC.js.gz               25.12kb / gzip: 8.14kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/precheck-badge-DWZbF6rP.js.gz                    1.53kb / gzip: 1.03kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/overview-DGThmi4W.js.gz                          19.29kb / gzip: 7.34kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/permissions-DVluzNFs.js.gz                       18.30kb / gzip: 7.21kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/personal-work-CccYwPIZ.js.gz                     1.78kb / gzip: 0.74kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/preferences-CQTR6Knd.js.gz                       7.09kb / gzip: 2.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/profile-diff-view-DZEMnN15.js.gz                 2.01kb / gzip: 1.15kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/preferences-C_sDwEDf.js.gz                       7.13kb / gzip: 3.43kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/password-setting-BA_V3SsW.js.gz                  2.12kb / gzip: 1.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/profile-DA5zHhyv.js.gz                           3.55kb / gzip: 1.67kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/qrcode-login-Df4fFFp7.js.gz                      1.67kb / gzip: 0.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/performance-CVr8mx7C.js.gz                       19.75kb / gzip: 6.91kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/record-detail-drawer-CCdGjbYM.js.gz              7.56kb / gzip: 3.20kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/register-WZdp_PWi.js.gz                          3.24kb / gzip: 1.34kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/publish-version-modal-vLf-q9OK.js.gz             8.41kb / gzip: 3.52kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/publications-tab-DWNNPM1J.js.gz                  5.14kb / gzip: 2.51kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/records-DvSw_7sf.js.gz                           9.41kb / gzip: 3.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/rules-BlyVm9cW.js.gz                             11.33kb / gzip: 4.22kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/records-DCKhvuig.js.gz                           20.04kb / gzip: 8.21kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/pid-dashboard-CvLoaRE7.js.gz                     38.18kb / gzip: 13.03kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/security-setting-CnMHMEgG.js.gz                  1.92kb / gzip: 1.01kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/review-drawer-C5RsvBvp.js.gz                     2.68kb / gzip: 1.52kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/src-f6gpCYWp.js.gz                               1.14kb / gzip: 0.59kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/src-DWCr9uCU.js.gz                               2.56kb / gzip: 1.18kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/simulate-section-Ckwi3ljM.js.gz                  12.96kb / gzip: 4.99kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/subscription-22S1DUrk.js.gz                      9.30kb / gzip: 3.56kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/rank-tab-ybL55hwd.js.gz                          26.09kb / gzip: 9.85kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/template-utils-BWC_ovmt.js.gz                    2.28kb / gzip: 1.24kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/task-strategy-Br6_XAst.js.gz                     7.46kb / gzip: 2.81kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tasks-CuBFHcmi.js.gz                             4.06kb / gzip: 2.08kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tippy-BaMzRKiA.js.gz                             2.00kb / gzip: 0.76kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tasks-CumBY3qm.js.gz                             2.59kb / gzip: 1.42kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/todo-detail-modal-SNVs_dEq.js.gz                 4.55kb / gzip: 2.05kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tooltip-BOmnLFCQ.js.gz                           2.91kb / gzip: 1.14kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/toolbar-button-Dwk5kQTZ.js.gz                    3.98kb / gzip: 1.51kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/trend-panel-CB54AVEH.js.gz                       3.13kb / gzip: 1.70kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/todo-panel-nQsBWmOY.js.gz                        3.33kb / gzip: 1.66kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/request-D-rkt_qR.js.gz                           26.97kb / gzip: 8.89kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tuning-C0DJSkpz.js.gz                            1.93kb / gzip: 0.93kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ui-CNfTnTV8.js.gz                                4.29kb / gzip: 2.30kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/theme-toggle-BexG2v_q.js.gz                      10.11kb / gzip: 3.67kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/unit-auto-pareto-Dk6n8Our.js.gz                  4.20kb / gzip: 2.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tuning-verify-compare-B3WTOUX-.js.gz             6.87kb / gzip: 3.02kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-clpm-theme-922Wfjlt.js.gz                    1.33kb / gzip: 0.60kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/unit-steady-bars-QmY74c9r.js.gz                  3.09kb / gzip: 1.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ui-DbuALmIO.js.gz                                4.54kb / gzip: 1.95kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tuning-tab-BhoF28W3.js.gz                        12.46kb / gzip: 4.98kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-cockpit-theme-HSS6Qy4t.js.gz                 1.23kb / gzip: 0.70kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-echarts-preset-BxK8oB-t.js.gz                1.85kb / gzip: 0.87kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-echarts-DAO8L6nP.js.gz                       2.05kb / gzip: 1.09kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-latest-overview-cache-Pa0JVqMW.js.gz         4.20kb / gzip: 2.29kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/routes-BD8tADVD.js.gz                            44.82kb / gzip: 11.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-clpm-preferences-CKi12LeE.js.gz              8.17kb / gzip: 2.88kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-loop-follow-CZ6lL6v1.js.gz                   3.26kb / gzip: 1.53kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-drill-D8Gb_gLN.js.gz                         13.20kb / gzip: 4.79kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-polling-CcbTMV5F.js.gz                       1.07kb / gzip: 0.56kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-page-toolbar-FmLhbkBf.js.gz                  4.95kb / gzip: 2.13kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-site-branding-CZRgmdY9.js.gz                 1.48kb / gzip: 0.68kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-loop-realtime-CRsfvFV4.js.gz                 7.98kb / gzip: 2.90kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-wb360-session-tGw1dBOX.js.gz                 2.49kb / gzip: 1.14kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-tuning-workbench-BK8aMIU7.js.gz              11.47kb / gzip: 4.21kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/users-B-IO93Jz.js.gz                             19.04kb / gzip: 6.74kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-vben-form-CH6sUQYe.js.gz                     30.99kb / gzip: 10.37kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-icons-BCZTPUK2.js.gz                      30.98kb / gzip: 11.44kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/verification-BzBva0Yk.js.gz                      4.09kb / gzip: 2.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/version-history-tab-BcyXa8Vd.js.gz               6.22kb / gzip: 2.77kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/waveform-chart-B3q30cBC.js.gz                    9.37kb / gzip: 3.75kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-diagnosis-card-C3O14YLY.js.gz          2.73kb / gzip: 1.45kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-vue-VPcy6u0H.js.gz                        33.18kb / gzip: 12.73kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/weight-config-DZSSvTbN.js.gz                     19.73kb / gzip: 6.91kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-context-9wlZGqEV.js.gz                 3.41kb / gzip: 1.68kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-utils-tzym-DzF.js.gz                      37.57kb / gzip: 13.49kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-fitness-badge-BD20YeIr.js.gz           1.78kb / gzip: 1.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-metric-bars-Cs12OO05.js.gz             2.02kb / gzip: 1.06kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-kpi-history-DtGllEd_.js.gz             3.55kb / gzip: 1.77kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/work-item-list-g82BvDU_.js.gz                    14.77kb / gzip: 5.31kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-radar6-BFlTlXnA.js.gz                  2.30kb / gzip: 1.27kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench360-3YPYTnks.js.gz                      3.78kb / gzip: 1.76kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-process-trend-CmMCpBDV.js.gz           5.46kb / gzip: 2.41kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-1ZxWzVbo.js.gz                         29.29kb / gzip: 9.21kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/jse/index-index-DFAgy0fB.js.gz                      26.69kb / gzip: 9.40kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/bootstrap-Bro-f5iP.css.gz                       197.61kb / gzip: 31.20kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/clpm-NCgstKLd.js.gz                              83.77kb / gzip: 26.36kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/bootstrap-D6L5Ytba.js.gz                         88.78kb / gzip: 26.35kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-authz-live-Dx-VwX9X.js.gz                    70.53kb / gzip: 19.07kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/basic-DCPDBHD4.js.gz                             238.56kb / gzip: 58.67kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/src-CrYCCxCf.js.gz                               126.73kb / gzip: 48.00kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-misc-CCR-E-Fl.js.gz                       720.83kb / gzip: 213.39kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-echarts-9efhoxzl.js.gz                    735.75kb / gzip: 245.48kb
+@vben/web-antd:build: dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-antd-C7EWqXIS.js.gz                       1238.17kb / gzip: 375.42kb
+@vben/web-antd:build: 
+@vben/web-antd:build: 
+@vben/web-antd:build: ZIP file created: /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/dist.zip (6535786 total bytes)
+@vben/web-antd:build: Folder has been zipped to: /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/dist.zip
+
+ Tasks:    11 successful, 11 total
+Cached:    10 cached, 11 total
+  Time:    5.63s 
+

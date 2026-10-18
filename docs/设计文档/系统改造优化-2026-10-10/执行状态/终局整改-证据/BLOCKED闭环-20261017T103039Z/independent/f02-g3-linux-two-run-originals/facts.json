@@ -1,0 +1,106 @@
+{
+  "actualCheckouts": {
+    "green": "645241e983856d3012f9ca2310af260ab988646f",
+    "red": "bc48701efe90e2a27555a4f8794f0965e82b0902"
+  },
+  "sameBackendTree": "e6e5fd28bcba319f674281a1704e0a6c86764332",
+  "source17Identical": true,
+  "rawOpPvSame": true,
+  "exactContentConfigMatches": 16,
+  "coefficientDifferenceCounts": {
+    "a": 16,
+    "b": 16,
+    "c": 16,
+    "lastMaxDiff": 16,
+    "iterationsDone": 0
+  },
+  "greenNonconvergenceCount": 16,
+  "redNonconvergenceCount": 16,
+  "greenSummary": {
+    "evidenceRole": "PURE_ALGORITHM_NUMERICAL_DIAGNOSIS_NOT_FORMAL_TEST_OR_ACCEPTANCE",
+    "elapsedSeconds": 4.968239021000045,
+    "identificationSuccess": true,
+    "jointSelected": true,
+    "selectionObservations": 1,
+    "armaxObservations": 16,
+    "networkAttempts": [],
+    "appMainImported": false
+  },
+  "redSummary": {
+    "evidenceRole": "PURE_ALGORITHM_NUMERICAL_DIAGNOSIS_NOT_FORMAL_TEST_OR_ACCEPTANCE",
+    "elapsedSeconds": 6.247571580999988,
+    "identificationSuccess": true,
+    "jointSelected": false,
+    "selectionObservations": 1,
+    "armaxObservations": 16,
+    "networkAttempts": [],
+    "appMainImported": false
+  },
+  "candidateSortFacts": {
+    "baseline": [
+      {
+        "singleBest": {
+          "method": "HISTORICAL_ARX",
+          "confidence": "E",
+          "fittingScore": 6.27,
+          "sortKey": [
+            1,
+            6.27,
+            false
+          ]
+        },
+        "jointBest": {
+          "method": "HISTORICAL_ARX",
+          "confidence": "E",
+          "fittingScore": 6.91,
+          "sortKey": [
+            1,
+            6.91,
+            false
+          ]
+        }
+      }
+    ],
+    "linux": [
+      {
+        "singleBest": {
+          "method": "HISTORICAL_ARMAX",
+          "confidence": "E",
+          "fittingScore": 10.25,
+          "sortKey": [
+            1,
+            10.25,
+            false
+          ]
+        },
+        "jointBest": {
+          "method": "HISTORICAL_ARX",
+          "confidence": "E",
+          "fittingScore": 6.91,
+          "sortKey": [
+            1,
+            6.91,
+            false
+          ]
+        }
+      }
+    ]
+  },
+  "pytestFailedNodes": [
+    {
+      "line": 5049,
+      "raw": "2026-10-17T15:32:29.0183737Z FAILED tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent - AssertionError: 本构造应触发 joint 候选胜出"
+    },
+    {
+      "line": 5052,
+      "raw": "2026-10-17T15:32:29.0187827Z FAILED tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute - AssertionError: 记录 -2.13 vs 独立重算 -3.15"
+    },
+    {
+      "line": 5055,
+      "raw": "2026-10-17T15:32:29.0190648Z FAILED tests/test_g3_app_applicability.py::TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded - AssertionError: assert (True and None is not None)"
+    }
+  ],
+  "causalBoundary": "Same-job independent post-pytest process supports observed symptoms but is not original pytest execution trace; first LS/iteration divergence and ISA causality remain unproven.",
+  "newAlgorithmExecutions": 0,
+  "newLiveCalls": 0
+}

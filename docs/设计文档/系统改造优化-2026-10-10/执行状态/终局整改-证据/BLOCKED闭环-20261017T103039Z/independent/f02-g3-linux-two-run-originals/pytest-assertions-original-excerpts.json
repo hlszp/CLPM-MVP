@@ -1,0 +1,51 @@
+{
+  "sourceSha256": "da42318fe1e28fc27bbd67178579a050e35baf6a6eef5e96da9eae57e00f14a0",
+  "failedNodes": [
+    {
+      "line": 5049,
+      "raw": "2026-10-17T15:32:29.0183737Z FAILED tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent - AssertionError: 本构造应触发 joint 候选胜出"
+    },
+    {
+      "line": 5052,
+      "raw": "2026-10-17T15:32:29.0187827Z FAILED tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute - AssertionError: 记录 -2.13 vs 独立重算 -3.15"
+    },
+    {
+      "line": 5055,
+      "raw": "2026-10-17T15:32:29.0190648Z FAILED tests/test_g3_app_applicability.py::TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded - AssertionError: assert (True and None is not None)"
+    }
+  ],
+  "assertionLines": [
+    {
+      "line": 3752,
+      "raw": "2026-10-17T15:32:27.8486780Z E       assert None is not None"
+    },
+    {
+      "line": 3753,
+      "raw": "2026-10-17T15:32:27.8488205Z E        +  where None = ModelEvidence(n_train=420, n_val=140, n_test=140, r2_val=0.1025, r2_train=0.0918, nrmse_val=0.1757, residual_test_note..., θ ci95=[49.0, 58.0]；P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)'], 'note': 'P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）'}).joint_estimate"
+    },
+    {
+      "line": 3849,
+      "raw": "2026-10-17T15:32:27.8606530Z E       assert 1.0150296719622585 <= 0.2"
+    },
+    {
+      "line": 3850,
+      "raw": "2026-10-17T15:32:27.8606987Z E        +  where 1.0150296719622585 = abs((-2.13 - -3.1450296719622584))"
+    },
+    {
+      "line": 3960,
+      "raw": "2026-10-17T15:32:27.8729720Z E        +  where True = IdentificationResult(success=True, best_model=CandidateModel(params=ModelParams(model_type=<ModelType.FOPDT: 'FOPDT'>,...: 20.0, 'basis': 'WELCH_PSD_NOISE_FLOOR', 'note': '数据信噪比实测 -2.1dB 低于参数级精度承诺下界（20dB），显式不承诺参数级精度（S1-b 裁决：10dB 档转不承诺档）'}}).success"
+    },
+    {
+      "line": 3961,
+      "raw": "2026-10-17T15:32:27.8731565Z E        +  and   None = ModelEvidence(n_train=420, n_val=140, n_test=140, r2_val=0.1025, r2_train=0.0918, nrmse_val=0.1757, residual_test_note..., θ ci95=[49.0, 58.0]；P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)'], 'note': 'P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）'}).joint_estimate"
+    },
+    {
+      "line": 3962,
+      "raw": "2026-10-17T15:32:27.8734039Z E        +    where ModelEvidence(n_train=420, n_val=140, n_test=140, r2_val=0.1025, r2_train=0.0918, nrmse_val=0.1757, residual_test_note..., θ ci95=[49.0, 58.0]；P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)'], 'note': 'P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）'}) = CandidateModel(params=ModelParams(model_type=<ModelType.FOPDT: 'FOPDT'>, K=0.10599615640676478, tau=1.5577677885880532... θ ci95=[49.0, 58.0]；P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)'], 'note': 'P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）'})).evidence"
+    },
+    {
+      "line": 3963,
+      "raw": "2026-10-17T15:32:27.8737211Z E        +      where CandidateModel(params=ModelParams(model_type=<ModelType.FOPDT: 'FOPDT'>, K=0.10599615640676478, tau=1.5577677885880532... θ ci95=[49.0, 58.0]；P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)'], 'note': 'P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）'})) = IdentificationResult(success=True, best_model=CandidateModel(params=ModelParams(model_type=<ModelType.FOPDT: 'FOPDT'>,...: 20.0, 'basis': 'WELCH_PSD_NOISE_FLOOR', 'note': '数据信噪比实测 -2.1dB 低于参数级精度承诺下界（20dB），显式不承诺参数级精度（S1-b 裁决：10dB 档转不承诺档）'}}).best_model"
+    }
+  ]
+}

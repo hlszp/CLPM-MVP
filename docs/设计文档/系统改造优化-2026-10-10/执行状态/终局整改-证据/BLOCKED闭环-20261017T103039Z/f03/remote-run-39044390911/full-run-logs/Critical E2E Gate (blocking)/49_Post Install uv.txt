@@ -1,0 +1,5 @@
+﻿2026-10-17T15:20:13.5284139Z Post job cleanup.
+2026-10-17T15:20:13.6116737Z Pruning cache...
+2026-10-17T15:20:13.6125319Z (node:6977) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-17T15:20:13.6125818Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T15:25:13.6267107Z ##[error]The process '/opt/hostedtoolcache/uv/0.13.1/x86_64/uv' failed with exit code 2

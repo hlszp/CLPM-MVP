@@ -1,0 +1,120 @@
+{
+  "files": [
+    {
+      "file": "author-reader-and-stop-independent.command.json",
+      "bytes": 1061,
+      "sha256": "cf5f52d863b559aad8ca6f83d726ad2e804da1a9be6d00ab8ab044f9128ba232"
+    },
+    {
+      "file": "author-reader-and-stop-independent.stderr.log",
+      "bytes": 147,
+      "sha256": "6187d572ad62e3de9de496d8825c6b18c7498935afcdd863be63d9ac0169b458"
+    },
+    {
+      "file": "author-reader-and-stop-independent.stdout.log",
+      "bytes": 11145,
+      "sha256": "08414842fbbdc5e672124fdc14959553b4095320d1b4f55e9d041cc07ea5e4cc"
+    },
+    {
+      "file": "author-reader-independent-corrected.command.json",
+      "bytes": 986,
+      "sha256": "489b3d3eb1f06f83b94033e2f3c14bb4fd20eea72c7813dfd2d5ec62243fc646"
+    },
+    {
+      "file": "author-reader-independent-corrected.stderr.log",
+      "bytes": 1222,
+      "sha256": "a2d4f3c1c8027cc62c787e40d2f8d1403894b5a9524f94bdeb0c643e630a2ee9"
+    },
+    {
+      "file": "author-reader-independent-corrected.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "author-stop-independent-corrected.command.json",
+      "bytes": 708,
+      "sha256": "dd9f812b27d41767fdacc5453680c8c02637efebc09acb1a91296c3c0b17b7e7"
+    },
+    {
+      "file": "author-stop-independent-corrected.stderr.log",
+      "bytes": 988,
+      "sha256": "4a755a30af9113cabbf0994ae87e6851ffb5052888761f550e947a9c346da0f7"
+    },
+    {
+      "file": "author-stop-independent-corrected.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "delta-check.json",
+      "bytes": 169,
+      "sha256": "bf043a0d599a8bc701b03a467c35b510898fb555e385946a71f1871c182cb0f9"
+    },
+    {
+      "file": "driver.v4.py",
+      "bytes": 42374,
+      "sha256": "83462d20d8fb8cbd0224722ae269eb3f87df5eb6a41b89c653edaff53c39f622"
+    },
+    {
+      "file": "frozen-keeper-local-f03-v4.py",
+      "bytes": 42374,
+      "sha256": "83462d20d8fb8cbd0224722ae269eb3f87df5eb6a41b89c653edaff53c39f622"
+    },
+    {
+      "file": "frozen-source-manifest.json",
+      "bytes": 1113,
+      "sha256": "6c959217289c5ce0c947fbbd487a9ea9798271bcc1ad7668a40bb9906dbe8f85"
+    },
+    {
+      "file": "frozen-test_barrier_delta.py",
+      "bytes": 4815,
+      "sha256": "8b16e26628ca836f7dd9a7fdb259592ae8789bbcc14e9804348ca5be26e91e79"
+    },
+    {
+      "file": "frozen-test_v4_controls.py",
+      "bytes": 13433,
+      "sha256": "0806c843a761fa3664206c272ffa0f0c17dd94a7fada9d3de2690027461053b3"
+    },
+    {
+      "file": "own-reader-boundaries.command.json",
+      "bytes": 830,
+      "sha256": "21ea2ee899e0249052b20f992aca44a125cfc5f19558fbc9a55aeee8e8df9ce0"
+    },
+    {
+      "file": "own-reader-boundaries.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "own-reader-boundaries.stdout.log",
+      "bytes": 98,
+      "sha256": "efb4cc1ce219481f3402d2af55e9136236d8c64373d15989442ebcea41df9cb3"
+    },
+    {
+      "file": "real-atexit-source-crosscheck.json",
+      "bytes": 1379,
+      "sha256": "e9894dabe8e2b468f5d45deaabb3c0e85823c4880a604756e7221944b32039e3"
+    },
+    {
+      "file": "receipt.md",
+      "bytes": 2677,
+      "sha256": "52cbfc0a25fb390409fc8c20bbcf794654dd75503eb38cdb3ba3c39ba524c3e1"
+    },
+    {
+      "file": "root-static-original-crosscheck-v2.json",
+      "bytes": 1150,
+      "sha256": "6695e073145a770e0e6921f3768c072b2bead74fa47d96f9edf54bb300482043"
+    },
+    {
+      "file": "root-static-original-crosscheck.json",
+      "bytes": 4443,
+      "sha256": "5c4efcb640a01ce6c5864d58bfffeb87f2a20f8db0f6169324e1b18e821dfd0b"
+    },
+    {
+      "file": "test_independent_barrier_v4.py",
+      "bytes": 2732,
+      "sha256": "25400ea1900d22bc66c77c7644f8930983449ff259d7275f53cf4a17a0de9cba"
+    }
+  ],
+  "scope": "LOCAL_TOOL_CONTROLS_PASS_REAL_FOUR_PENDING"
+}

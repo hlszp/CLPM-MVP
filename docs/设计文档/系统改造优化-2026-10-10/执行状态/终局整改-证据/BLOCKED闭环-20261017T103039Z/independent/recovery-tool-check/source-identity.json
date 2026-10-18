@@ -1,0 +1,37 @@
+{
+  "sourceFiles": [
+    {
+      "path": "recover_collector_artifacts.py",
+      "sha256": "a189a479701345eafbe0f7116912ca93e5a9e981e7879bfb2036f4cd5fdeac74",
+      "size": 8117
+    },
+    {
+      "path": "test_recover_collector_artifacts.py",
+      "sha256": "afbdf718c3eed00f5e4dd8aa2fedeac942efbf4ed5395cdbb090b02a2e3a01c1",
+      "size": 5020
+    }
+  ],
+  "scope": "Artifact bytes only; no product/network/DB clients",
+  "imports": {
+    "recover_collector_artifacts.py": [
+      "__future__",
+      "argparse",
+      "gzip",
+      "hashlib",
+      "independent_support",
+      "io",
+      "json",
+      "pathlib"
+    ],
+    "test_recover_collector_artifacts.py": [
+      "gzip",
+      "hashlib",
+      "independent_support",
+      "json",
+      "pathlib",
+      "recover_collector_artifacts",
+      "tempfile",
+      "unittest"
+    ]
+  }
+}

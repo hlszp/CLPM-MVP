@@ -1,0 +1,171 @@
+{
+  "oldSha256": "22cc3ddf0aee6339a91b4e54c02b2a9d907273dc585bfa31debc6227224dc11b",
+  "newSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+  "arxDependencySha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011",
+  "cases": [
+    {
+      "case": "big-python-int-list",
+      "parameters": {
+        "d": 1,
+        "na": 2,
+        "nb": 2,
+        "nc": 2,
+        "max_iter": 4
+      },
+      "old": {
+        "value": {
+          "a_coeffs": [
+            7.430250458876542e-24,
+            -1.4786889372366578e-16
+          ],
+          "b_coeffs": [
+            -1.0000000000000004,
+            5.635151652761331e-24
+          ],
+          "c_coeffs": [
+            6.604467574289835e-08,
+            -1.2631702185587073e-09
+          ],
+          "d": 1,
+          "residual_var": 4.78623354531093e+16,
+          "n_samples": 93,
+          "r_squared": 1.0,
+          "iterations": 1
+        },
+        "warnings": [],
+        "leastSquares": [
+          {
+            "matrix": {
+              "shape": [
+                93,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "201994f7f34f1dcb56d48a0e7e4e574efb882671af7e87d53319b0d459ff773b"
+            },
+            "target": {
+              "shape": [
+                93
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7ec397c37313b13e502d18fcab4b00d3be278edfa708f3a306729dbcdb0d6d51"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                93,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7a4a30c74526608c5624a263803d623ff17e816ed0245dc12110599b107ece4e"
+            },
+            "target": {
+              "shape": [
+                93
+              ],
+              "dtype": "float64",
+              "bytesSha256": "5b8d3fe79586582161beca41b891a7b4b0357f662c0f23c2e766e34462676070"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                93,
+                6
+              ],
+              "dtype": "float64",
+              "bytesSha256": "b1e1f4dab76e1f9c2872a9283204c7b2e024a8f597bdc1cdeed7a4c84baed3d6"
+            },
+            "target": {
+              "shape": [
+                93
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7ec397c37313b13e502d18fcab4b00d3be278edfa708f3a306729dbcdb0d6d51"
+            }
+          }
+        ]
+      },
+      "new": {
+        "value": {
+          "a_coeffs": [
+            7.430250458876542e-24,
+            -1.4786889372366578e-16
+          ],
+          "b_coeffs": [
+            -1.0000000000000004,
+            5.635151652761331e-24
+          ],
+          "c_coeffs": [
+            6.604467574289835e-08,
+            -1.2631702185587073e-09
+          ],
+          "d": 1,
+          "residual_var": 4.78623354531093e+16,
+          "n_samples": 93,
+          "r_squared": 1.0,
+          "iterations": 1
+        },
+        "warnings": [],
+        "leastSquares": [
+          {
+            "matrix": {
+              "shape": [
+                93,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "201994f7f34f1dcb56d48a0e7e4e574efb882671af7e87d53319b0d459ff773b"
+            },
+            "target": {
+              "shape": [
+                93
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7ec397c37313b13e502d18fcab4b00d3be278edfa708f3a306729dbcdb0d6d51"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                93,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7a4a30c74526608c5624a263803d623ff17e816ed0245dc12110599b107ece4e"
+            },
+            "target": {
+              "shape": [
+                93
+              ],
+              "dtype": "float64",
+              "bytesSha256": "5b8d3fe79586582161beca41b891a7b4b0357f662c0f23c2e766e34462676070"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                93,
+                6
+              ],
+              "dtype": "float64",
+              "bytesSha256": "b1e1f4dab76e1f9c2872a9283204c7b2e024a8f597bdc1cdeed7a4c84baed3d6"
+            },
+            "target": {
+              "shape": [
+                93
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7ec397c37313b13e502d18fcab4b00d3be278edfa708f3a306729dbcdb0d6d51"
+            }
+          }
+        ]
+      },
+      "exact": true
+    }
+  ],
+  "passed": 1,
+  "failed": 0,
+  "scope": "Exact boundary and least-squares input comparison; not the original 22 full integration cases or critical business KPI oracle"
+}

@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-c",
+    "/dev/null",
+    "-p",
+    "pytest_asyncio.plugin",
+    "--basetemp",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-synthetic-binding-preparation-review/pytest-actual-originals",
+    "test_prepare_bindings.py",
+    "test_redis_url_guard.py",
+    "test_independent_boundaries.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-synthetic-binding-preparation-review/copied-tool-v2",
+  "startedAt": "2026-10-17T15:01:39.875222+00:00",
+  "finishedAt": "2026-10-17T15:01:59.513746+00:00",
+  "rc": 0,
+  "stdoutSha256": "1500059849ee43ceebe49944f75f2242a722fc210361809d3b6d94b8b3fa0bdf",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

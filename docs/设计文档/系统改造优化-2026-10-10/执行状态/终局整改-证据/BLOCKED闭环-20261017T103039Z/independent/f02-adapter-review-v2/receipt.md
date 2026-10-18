@@ -1,0 +1,7 @@
+# F02 适配器v2独立复核
+
+结论：**原取消/NULL准入已修；native查询末端括界 REWORK**。源102197849aa80dcb76da80908ff86600f4c57f96a5359f2c99e16184dc210d28保全为adapter.frozen.py。
+
+同取消原件2例通过；原NULL反例纠正独立工具路径后2例通过，初次导入失败rc2保留；完整作者五文件含probe共73例独立通过。新发现：真实PS查询可从20.5s持续至22s，业务结束21s。若完整原件于该查询后停止，所有query都开始于业务结束之前；v2仅按finishedAt选after，仍发出“括住整个span”的证明。此时实际原生快照可能发生在业务结束前，不能证明有真正after观察。
+
+固定9文件原件在fixed-negative-originals，manifest SHA3e3222da9342fe6102dd7c3f0eb019ef8da70a595202e5c609cd4a2a0b47d82f。replay_fixed_native_boundary.py独立重读相同原件、完整native_bundle文件/哈希前门成功，随后拒绝断言真实rc1/refused:false。原始fixed-native-boundary-original-red.*保留。此为取证准入缺口，不证明产品计算错误；不调整原600s业务SLO。要求after选原ps.startedAt>=spanEnd，before仍ps.finishedAt<=spanStart；存在后轮就用后轮，缺则BLOCKED。已退作者最小修v3。

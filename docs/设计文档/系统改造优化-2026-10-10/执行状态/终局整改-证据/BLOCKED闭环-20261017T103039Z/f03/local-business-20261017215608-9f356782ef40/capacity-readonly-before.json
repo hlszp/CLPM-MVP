@@ -1,0 +1,70 @@
+{
+  "at": "2026-10-17T13:56:09.423717+00:00",
+  "database": "clpm_capacity_20261017_s01",
+  "tables": {
+    "loop_ledger": {
+      "count": 1000,
+      "bytes": 990000,
+      "sha256": "0f13fa91e9b3bf3fa1ddcfb26b16356db618b19da6310f52b2a1470979974fc3",
+      "canonicalBytes": 1047000,
+      "canonicalSha256": "3f922bfccf6babe1e56fa258cda5a3ba148bf49b2ded493c84bfabe2652f55d5"
+    },
+    "tag_registry": {
+      "count": 7000,
+      "bytes": 2691770,
+      "sha256": "066fa9e6336283458d028c2e91c6aa1a1d6f18197493f0c5623c77d24e7a83bf",
+      "canonicalBytes": 2866770,
+      "canonicalSha256": "28be16779fbb47c6ddb6651cc30dfb382a3d1f294bfdc7dbffb37ec21a11c075"
+    },
+    "loop_tag_mapping": {
+      "count": 7000,
+      "bytes": 1554000,
+      "sha256": "90bcf746174638b6342b61f2ba9583f97b82717bd3992363a7f06f38ce929735",
+      "canonicalBytes": 1631000,
+      "canonicalSha256": "be238f1d2094425239b17a59203c00cabb3936def309448cccbb6e28933ad934"
+    },
+    "kpi_snapshot_hourly": {
+      "count": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalBytes": 0,
+      "canonicalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "loop_confidence_latest": {
+      "count": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalBytes": 0,
+      "canonicalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "kpi_node_snapshot_hourly": {
+      "count": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalBytes": 0,
+      "canonicalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "calculation_result_record": {
+      "count": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalBytes": 0,
+      "canonicalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "kpi_snapshot_custom": {
+      "count": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalBytes": 0,
+      "canonicalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "calculation_dataset_snapshot": {
+      "count": 0,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "canonicalBytes": 0,
+      "canonicalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "writes": false
+}

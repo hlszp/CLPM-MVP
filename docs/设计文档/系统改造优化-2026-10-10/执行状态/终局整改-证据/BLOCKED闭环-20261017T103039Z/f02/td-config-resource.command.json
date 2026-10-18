@@ -1,0 +1,16 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "clpm-mvp-tdengine",
+    "sh",
+    "-c",
+    "grep -iE 'mem|query|thread|cores|cache|ratio|pool|concurr|vnode|debug|log|precision' /etc/taos/taos.cfg"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:33:09.235740+00:00",
+  "elapsedSeconds": 0.06636425000000001,
+  "rc": 0,
+  "stdoutSha256": "3293712f4ae31288b65996d1afa1f2dee65af0062fadf85907946318eee94de3",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

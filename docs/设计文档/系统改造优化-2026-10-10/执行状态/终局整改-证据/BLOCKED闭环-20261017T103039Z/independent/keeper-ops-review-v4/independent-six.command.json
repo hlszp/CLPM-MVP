@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "test_resource_gate_independent"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/keeper-ops-review-v4",
+  "startedAt": "2026-10-17T11:41:52.902896+00:00",
+  "endedAt": "2026-10-17T11:41:53.010869+00:00",
+  "rc": 0,
+  "testSha256": "e8fa3065261c8b1bf4a725b046e838edbf6f42cac013d1db20760142b8aa5797",
+  "sourceSha256": "55ff1c4b811fc1bbd55d2b0a810e02fbf1ca69cf88b7154f8504482f99817c00",
+  "scope": "Pure synthetic artifacts only; no connections/actual controls or task submission"
+}

@@ -1,0 +1,23 @@
+{
+  "active": null,
+  "reserved": {
+    "clpm-remediation-20261017@zhangpingdeMacBook-Pro": []
+  },
+  "scheduled": {
+    "clpm-remediation-20261017@zhangpingdeMacBook-Pro": []
+  },
+  "actualBroker": {
+    "host": "127.0.0.1",
+    "port": 17124,
+    "db": "/1",
+    "resultDb": "/2"
+  },
+  "redis": {
+    "role": "master",
+    "runId": "18ddf6758f797ab03e914ee2c51c9a232cb577f7",
+    "dbsize": 3,
+    "brokerLists": {},
+    "unacked": 0,
+    "unackedIndex": 0
+  }
+}

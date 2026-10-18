@@ -1,0 +1,34 @@
+{
+  "sql": "SHOW DATABASES",
+  "response": {
+    "code": 0,
+    "column_meta": [
+      [
+        "name",
+        "VARCHAR",
+        64
+      ]
+    ],
+    "data": [
+      [
+        "information_schema"
+      ],
+      [
+        "performance_schema"
+      ],
+      [
+        "clpm_capacity_20261017_s01"
+      ],
+      [
+        "log"
+      ],
+      [
+        "clpm_ts"
+      ],
+      [
+        "clpm_critical_20261017_local_ts"
+      ]
+    ],
+    "rows": 6
+  }
+}

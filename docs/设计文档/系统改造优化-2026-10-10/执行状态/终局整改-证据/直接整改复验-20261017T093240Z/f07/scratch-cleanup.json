@@ -1,0 +1,19 @@
+{
+  "completed_at": "2026-10-17T09:51:28.719247+00:00",
+  "owned_processes": [
+    {
+      "name": "scratch-api",
+      "pid": 39304,
+      "exit_code": -9
+    },
+    {
+      "name": "scratch-frontend",
+      "pid": 39305,
+      "exit_code": -15
+    }
+  ],
+  "database_dropped": true,
+  "redis_stopped": true,
+  "errors": [],
+  "worker_beat_operation": false
+}

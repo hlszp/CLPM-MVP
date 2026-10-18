@@ -1,0 +1,15 @@
+{
+  "sourceSha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+  "changedFiles": [
+    "_app.config.js"
+  ],
+  "changedKeys": [
+    "VITE_GLOB_API_URL"
+  ],
+  "oldApiUrl": "/api/v1",
+  "newApiUrl": "http://127.0.0.1:17261/api/v1",
+  "allOtherBundleBytesEqual": true,
+  "gzipAndBrNeverNegotiated": true,
+  "sourceDotenvChanged": false,
+  "businessResponsesMocked": false
+}

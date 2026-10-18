@@ -1,0 +1,17 @@
+test_dangling_symlink_is_refused (__main__.AdapterControls.test_dangling_symlink_is_refused) ... ok
+test_dump_nonzero_preserves_partial_file_and_returns_real_rc (__main__.AdapterControls.test_dump_nonzero_preserves_partial_file_and_returns_real_rc) ... ok
+test_exact_original_target_and_localhost_contract (__main__.AdapterControls.test_exact_original_target_and_localhost_contract) ... ok
+test_existing_dump_is_never_overwritten (__main__.AdapterControls.test_existing_dump_is_never_overwritten) ... ok
+test_failed_inspect_never_runs_version_or_dump (__main__.AdapterControls.test_failed_inspect_never_runs_version_or_dump) ... ok
+test_happy_path_exact_same_container_v16_and_private_file (__main__.AdapterControls.test_happy_path_exact_same_container_v16_and_private_file) ... ok
+test_missing_or_wrong_port_mapping_never_dump (__main__.AdapterControls.test_missing_or_wrong_port_mapping_never_dump) ... ok
+test_missing_password_refused_before_any_subprocess (__main__.AdapterControls.test_missing_password_refused_before_any_subprocess) ... ok
+test_symlink_parent_is_refused (__main__.AdapterControls.test_symlink_parent_is_refused) ... ok
+test_wrong_args_and_scope_are_refused_before_any_subprocess (__main__.AdapterControls.test_wrong_args_and_scope_are_refused_before_any_subprocess) ... ok
+test_wrong_container_id_name_or_image_never_dump (__main__.AdapterControls.test_wrong_container_id_name_or_image_never_dump) ... ok
+test_wrong_major_or_unrecognized_version_never_dump (__main__.AdapterControls.test_wrong_major_or_unrecognized_version_never_dump) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.018s
+
+OK

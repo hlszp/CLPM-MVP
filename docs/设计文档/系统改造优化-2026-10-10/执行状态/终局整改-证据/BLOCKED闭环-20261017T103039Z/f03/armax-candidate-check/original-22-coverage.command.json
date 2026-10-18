@@ -1,0 +1,21 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_annotated_loops_evaluation.py::test_core_loops_identification_accuracy",
+    "--cov=app",
+    "--cov-report=term",
+    "--cov-report=json:/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/armax-candidate-check/single-case-coverage.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "startedAt": "2026-10-17T13:17:11.734324+00:00",
+  "finishedAt": "2026-10-17T13:17:35.815606+00:00",
+  "numericalThreads": 1,
+  "coverageGateScope": "targeted instrumentation only; full CI coverage60 unchanged",
+  "stdoutSha256": "75e3068f4079ba03887f1418e897715c2ff0942db0d369abbe0ba1cefea1e20a",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

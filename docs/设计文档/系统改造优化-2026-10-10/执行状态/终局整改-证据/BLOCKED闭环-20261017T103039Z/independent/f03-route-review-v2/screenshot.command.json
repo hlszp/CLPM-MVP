@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "/Users/zhangping/.codex/skills/playwright/scripts/playwright_cli.sh",
+    "-s=f04-route-reverify-20261017",
+    "screenshot"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f03-route-review-v2/output/playwright",
+  "startedAt": "2026-10-17T11:57:30.299602+00:00",
+  "endedAt": "2026-10-17T11:57:30.974101+00:00",
+  "rc": 0
+}

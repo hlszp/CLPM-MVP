@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:02:37.011277+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "open",
+    "http://127.0.0.1:17266/auth/login"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 1.7968786249984987,
+  "stdout": "### Browser `clpm-final-f04` opened with pid 64667.\n### Ran Playwright code\n```js\nawait page.goto('http://127.0.0.1:17266/auth/login');\n```\n### Page\n- Page URL: http://127.0.0.1:17266/auth/login\n- Page Title: CLPM 控制回路性能评估与优化平台\n### Snapshot\n- [Snapshot](.playwright-cli/page-2026-10-17T10-02-36-962Z.yml)\n",
+  "stderr": ""
+}

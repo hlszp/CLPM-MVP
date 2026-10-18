@@ -1,0 +1,10 @@
+{
+  "observedAt": "2026-10-17T12:10:55.672587+00:00",
+  "url": "https://github.com/hlszp/CLPM-MVP/pull/1",
+  "headSha": "8a00175339228a7dd710751d59d626ee97fe2233",
+  "baseSha": "86301e5e3083db0feb5f2d9db8fb9eacc8d3165d",
+  "mergeCommitSha": "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+  "mergeable": true,
+  "mergeableState": "unstable",
+  "draft": true
+}

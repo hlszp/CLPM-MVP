@@ -1,0 +1,233 @@
+"""Shared FastAPI dependencies: JWT extraction, user lookup, RBAC guard.
+
+Usage in endpoints::
+
+    @router.get("/me", dependencies=[Depends(get_current_user)])
+    async def me(user: SysUser = Depends(get_current_user)): ...
+
+    @router.delete("/{id}", dependencies=[Depends(require_roles("ADMIN"))])
+    async def delete_loop(...): ...
+
+    @router.get("", dependencies=[Depends(require_perms("loop:view"))])
+    async def list_loops(...): ...
+
+P4-02：``require_perms`` 是服务端 authorizer 唯一规则——消费 P4-01 授权
+目录（显式 page/action 码）与 DB 持久矩阵（``sys_role_permission``），
+数据库保存驱动真实授权；``require_roles`` 保留角色锚定语义（ADMIN 专属
+系统管理端点、域码下 ADMIN 专属子集端点）。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Awaitable, Callable
+from typing import Any
+
+from fastapi import Depends, Request, status
+from fastapi.security import OAuth2PasswordBearer
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.db import get_db
+from app.core.exceptions import BizError
+from app.core.security import JWTError, decode_token
+from app.models.sys_user import SysUser
+from app.services.auth import ROLE_PERMISSIONS, is_token_blacklisted
+
+# P4-02：require_perms 消费 DB 持久矩阵（延迟导入避免环）；ROLE_PERMISSIONS
+# 静态链保留给 has_perms 旧调用方（历史兼容），不再是服务端 API 门禁事实源。
+
+# Token extraction — auto-populates Swagger UI "Authorize" button.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+
+
+async def get_current_user(
+    request: Request,
+    token: str | None = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> SysUser:
+    """Decode the JWT, check the blacklist, and return the active ``SysUser``.
+
+    Raises ``BizError`` with ``ERR_TOKEN_INVALID`` / ``ERR_TOKEN_EXPIRED`` /
+    ``ERR_ACCOUNT_DISABLED`` on failure.
+    """
+    if not token:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="未携带认证 Token",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    try:
+        payload: dict[str, Any] = decode_token(token)
+    except JWTError as exc:
+        err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
+        raise BizError(
+            code=err_code,
+            message="Token 已过期，请重新登录" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        ) from exc
+
+    # Must be an access token.
+    if payload.get("type") != "access":
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 类型错误，非 Access Token",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    jti = payload.get("jti", "")
+    if jti and await is_token_blacklisted(jti):
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 已被吊销，请重新登录",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    user_id = payload.get("sub", "")
+    if not user_id:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 缺少用户信息",
+            status_code=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    result = await db.execute(select(SysUser).where(SysUser.id == user_id))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        raise BizError(
+            code="ERR_USER_NOT_FOUND",
+            message="用户不存在",
+            status_code=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not user.is_active:
+        raise BizError(
+            code="ERR_ACCOUNT_DISABLED",
+            message="账户已禁用",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+    return user
+
+
+def require_roles(*roles: str) -> Callable[..., Awaitable[SysUser]]:
+    """Return a dependency that enforces the user's role is in ``roles``.
+
+    Usage::
+
+        @router.post("/users", dependencies=[Depends(require_roles("ADMIN"))])
+        async def create_user(...): ...
+    """
+
+    async def _check(user: SysUser = Depends(get_current_user)) -> SysUser:
+        if user.role not in roles:
+            raise BizError(
+                code="ERR_PERMISSION_DENIED",
+                message=f"权限不足，需要以下角色之一: {', '.join(roles)}",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        return user
+
+    return _check
+
+
+# ---------------------------------------------------------------------------
+# Permission-code guard（"模块:操作" 码，与前端 v-permission 口径一致）
+# ---------------------------------------------------------------------------
+
+
+def _perm_matches(granted: str, required: str) -> bool:
+    """Match one granted permission code against a required code.
+
+    通配规则（与前端 v-permission 一致）：
+    - ``*`` 全通（ADMIN）；
+    - ``模块:*`` 匹配该模块下任意操作码（如 ``loop:*`` 匹配 ``loop:view``）；
+    - 其余按精确匹配。
+    """
+    if granted == "*" or granted == required:
+        return True
+    return granted.endswith(":*") and required.startswith(granted[:-1])
+
+
+async def get_scope_ctx(
+    user: SysUser = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """当前用户数据范围上下文（P4-03：ALL/NODE_SUBTREE 贯穿查询/推送/缓存）.
+
+    单测环境（CLPM_TEST_MODE=1）内嵌短路返回 ALL 默认（见
+    services.authz_scope.resolve_scope），不触碰 mock DB。
+    """
+    from app.services.authz_scope import resolve_scope
+
+    return await resolve_scope(db, user.id, user.role)
+
+
+def has_perms(role: str, *codes: str) -> bool:
+    """Return True if ``role``'s granted codes cover all of ``codes``."""
+    granted = ROLE_PERMISSIONS.get(role, [])
+    return all(any(_perm_matches(g, code) for g in granted) for code in codes)
+
+
+def require_perms(*codes: str) -> Callable[..., Awaitable[SysUser]]:
+    """Return a dependency that enforces the user's role holds all ``codes``.
+
+    P4-02 起为服务端 authorizer 唯一规则：码必须在 P4-01 目录（
+    ``services.authz_catalog.CATALOG``）登记，授权判定读 DB 持久矩阵
+    （``sys_role_permission``，经 ``services.authz_runtime`` 每请求比对
+    revision——移除授权即下一请求收紧），不依赖前端常量。
+
+    - 未知码在路由注册期即 ``ValueError``（fail-fast，防拼写漂移）；
+    - SPONSOR 零写红线结构性强制：只读码（``*:view``/tracker:review）
+      之外的动作码恒拒，矩阵编辑不可绕过（P1-04 裁决）。
+
+    用法::
+
+        @router.get("", dependencies=[Depends(require_perms("loop:view"))])
+        async def list_loops(...): ...
+    """
+    from app.services.authz_catalog import CATALOG
+    from app.services.authz_runtime import READ_ONLY_ACTION_CODES
+
+    unknown = [code for code in codes if code not in CATALOG]
+    if unknown:
+        raise ValueError(
+            f"require_perms 引用了未在授权目录登记的码（注册期拒绝）: {', '.join(unknown)}"
+        )
+
+    async def _check(
+        user: SysUser = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ) -> SysUser:
+        from app.services.authz_runtime import get_role_codes
+
+        if user.role == "SPONSOR":
+            write_codes = [code for code in codes if code not in READ_ONLY_ACTION_CODES]
+            if write_codes:
+                raise BizError(
+                    code="ERR_PERMISSION_DENIED",
+                    message=(f"SPONSOR 为只读角色（零写红线），无权执行: {', '.join(write_codes)}"),
+                    status_code=status.HTTP_403_FORBIDDEN,
+                )
+        granted = await get_role_codes(db, user.role)
+        missing = [code for code in codes if code not in granted]
+        if missing:
+            raise BizError(
+                code="ERR_PERMISSION_DENIED",
+                message=f"权限不足，需要权限码: {', '.join(missing)}",
+                status_code=status.HTTP_403_FORBIDDEN,
+            )
+        return user
+
+    return _check
+
+
+__all__ = [
+    "get_current_user",
+    "get_scope_ctx",
+    "has_perms",
+    "oauth2_scheme",
+    "require_perms",
+    "require_roles",
+]

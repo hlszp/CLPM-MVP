@@ -1,0 +1,8 @@
+{
+  "sourceSha256": "92b700b0fae63cd934d2491fccbd0114cb3c08e3d0c8b3314cf63f068713ff0a",
+  "leftRaw": "0.12345678901234567890",
+  "rightRaw": "0.12345678901234567891",
+  "parsedType": "Decimal",
+  "comparedEqual": false,
+  "actualServiceIO": 0
+}

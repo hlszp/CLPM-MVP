@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "e2e/scripts/test_critical_fixture.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "rc": 0,
+  "seconds": 0.08342450000000001
+}

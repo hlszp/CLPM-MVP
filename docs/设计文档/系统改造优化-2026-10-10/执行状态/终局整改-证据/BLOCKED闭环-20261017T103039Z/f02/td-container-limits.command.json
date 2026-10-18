@@ -1,0 +1,15 @@
+{
+  "command": [
+    "docker",
+    "inspect",
+    "clpm-mvp-tdengine",
+    "--format",
+    "{\"image\":{{json .Config.Image}},\"memory\":{{json .HostConfig.Memory}},\"memorySwap\":{{json .HostConfig.MemorySwap}},\"memoryReservation\":{{json .HostConfig.MemoryReservation}},\"nanoCpus\":{{json .HostConfig.NanoCpus}},\"cpuQuota\":{{json .HostConfig.CpuQuota}},\"cpuPeriod\":{{json .HostConfig.CpuPeriod}},\"cpuset\":{{json .HostConfig.CpusetCpus}},\"shm\":{{json .HostConfig.ShmSize}},\"oomKillDisable\":{{json .HostConfig.OomKillDisable}},\"state\":{{json .State}},\"mounts\":{{json .Mounts}}}"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:33:09.235805+00:00",
+  "elapsedSeconds": 0.035857584,
+  "rc": 0,
+  "stdoutSha256": "95900d71675e35f40edca433c711df36151ffac9f824b878653aa446017d8678",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

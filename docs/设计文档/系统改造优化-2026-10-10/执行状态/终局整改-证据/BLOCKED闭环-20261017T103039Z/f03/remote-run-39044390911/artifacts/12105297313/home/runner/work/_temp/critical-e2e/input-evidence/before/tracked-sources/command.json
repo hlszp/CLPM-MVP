@@ -1,0 +1,28 @@
+{
+  "argv": [
+    "git",
+    "ls-files",
+    "--error-unmatch",
+    "--",
+    ".github/workflows/ci.yml",
+    "backend/uv.lock",
+    "backend/app/services/calc_snapshot.py",
+    "backend/app/tasks/kpi_calc.py",
+    "backend/app/services/data_planner.py",
+    "backend/app/services/data_source/logical_wide_builder.py",
+    "backend/app/services/metric_calculator/time_axis.py",
+    "backend/app/services/algorithm_config.py",
+    "backend/app/services/assessment_profile.py",
+    "e2e/scripts/prepare-critical-fixture.py",
+    "e2e/scripts/capture-critical-input-evidence.py",
+    "scripts/run-critical-e2e.sh",
+    "e2e/tests/critical-business.spec.ts",
+    "e2e/scripts/critical-input-policy.sql",
+    "e2e/scripts/critical-input-dataset-row.sql"
+  ],
+  "startedAtUtc": "2026-10-17T15:19:40.262017+00:00",
+  "rc": 0,
+  "finishedAtUtc": "2026-10-17T15:19:40.265429+00:00",
+  "stdoutSha256": "7425d3e63e4573545a028e9afa1b1b4c66809fef214d67c9b2416ee015598cc5",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

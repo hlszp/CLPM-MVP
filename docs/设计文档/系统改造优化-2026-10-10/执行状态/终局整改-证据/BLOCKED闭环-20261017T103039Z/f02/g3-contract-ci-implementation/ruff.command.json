@@ -1,0 +1,46 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "check",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T14:27:38.498962+00:00",
+  "elapsedSeconds": 0.039836542011471465,
+  "rc": 0,
+  "sourceBefore": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17101,
+      "sha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    }
+  ],
+  "sourceAfter": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17101,
+      "sha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    }
+  ],
+  "stdout": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation/ruff.stdout.log",
+    "bytes": 19,
+    "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+  },
+  "stderr": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation/ruff.stderr.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "scope": "STATIC_AND_SERIALIZER_ONLY_NO_ALGORITHM_MAIN"
+}

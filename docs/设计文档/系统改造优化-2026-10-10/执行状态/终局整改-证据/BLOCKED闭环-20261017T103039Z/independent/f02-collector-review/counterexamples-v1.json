@@ -1,0 +1,25 @@
+{
+  "scope": "non-author pure function counterexamples; no network/DB/tasks; verifier weaknesses, not new capacity results",
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/audit_capacity_inputs.py",
+  "sourceSha256": "437c96db4887e137dc4dd957e5abff4bb41f18e2391d32aafd633bdae9904357",
+  "control": {
+    "loopCount": 1000,
+    "pointCount": 7000,
+    "returnedFailures": []
+  },
+  "insufficientPvActuallyAllGood": {
+    "composition": "insufficient",
+    "PV_good_count": 3600,
+    "PV_bad_count": 0,
+    "returnedFailures": [],
+    "acceptedUnexpectedly": true
+  },
+  "manifestDuplicate1001Rows": {
+    "manifestRowCount": 1001,
+    "uniqueTags": 1000,
+    "detailsCount": 7007,
+    "returnedFailures": [],
+    "acceptedUnexpectedly": true
+  },
+  "recordedAt": "2026-10-17T11:01:47.813575+00:00"
+}

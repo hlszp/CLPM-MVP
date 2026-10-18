@@ -1,0 +1,8 @@
+{
+  "filesVerified": 78,
+  "zipSha256": "969c04163b8307ad23973d786d67eb14299dba801708d7e516980f063e5947ab",
+  "zipBytes": 107935,
+  "githubDigestMatches": true,
+  "xmlOrJunitFilesInAllArtifact": [],
+  "backendJUnit": "No Backend JUnit is available in uploaded artifacts; workflow pytest command does not configure --junitxml. No claim about unuploaded runner files; complete backend console and full-run ZIP retained."
+}

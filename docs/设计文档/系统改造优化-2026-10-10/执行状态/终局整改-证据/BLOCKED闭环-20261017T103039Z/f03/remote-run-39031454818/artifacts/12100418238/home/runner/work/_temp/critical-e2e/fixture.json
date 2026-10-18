@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "inputOnly": true,
+  "environment": "disposable-github-ci",
+  "executionLocation": "github-actions",
+  "candidateSha": "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+  "loopId": "ae890ff2-e857-4b58-bfab-b54b3124660d",
+  "loopTagName": "CRITICAL-E2E-39031454818-1-FLOW001",
+  "windowStart": "2026-10-17T10:00:00",
+  "windowEnd": "2026-10-17T11:00:00",
+  "generator": "generate_capacity_dataset.synth_series(seed=1,normal,steady,span=100)",
+  "inputs": {
+    "PV": {
+      "pointId": "a6915c90-203c-4483-a878-26abe191cad4",
+      "count": 3600,
+      "sha256": "b2944b3107ebed9800c87b8abfecbe183b2ec89a5c8704a06389b150d27de7ea"
+    },
+    "SP": {
+      "pointId": "3d990cd6-4fb2-44d9-9ea4-5b2146b0d618",
+      "count": 3,
+      "sha256": "8801ac3c2afe2a541f833a6919c309a297dfe3c2a2c594b4292892ab4a49b70b"
+    },
+    "OP": {
+      "pointId": "4a0de134-806e-47c1-beb4-1e578db4fb95",
+      "count": 3600,
+      "sha256": "5dbe2dd798b6539aa11cc35b4fb6511c07fd74cb4fa06f2b284b3dff85728c19"
+    },
+    "MODE": {
+      "pointId": "31f6b1c3-4fea-4897-aef2-685fbf0bb95b",
+      "count": 1,
+      "sha256": "83a1e3efa4561cb08b41220539a1e1e2fb9fe0a4040990f3026c1a116bb15c61"
+    },
+    "PID_P": {
+      "pointId": "7e1f6535-5a28-4b47-9201-fe5835d2205a",
+      "count": 1,
+      "sha256": "c36ed1f03275a86b67a3323facf240174817cceaed0cff1058f3ce9a2839f2b0"
+    },
+    "PID_I": {
+      "pointId": "e2478284-35f5-4ccc-84cc-5ae15e060dbe",
+      "count": 1,
+      "sha256": "eb6f3e8d55c180dc3a0014f688d209c80924897f5c4ebc2ecea541025444ffa5"
+    },
+    "PID_D": {
+      "pointId": "5cb9b08e-a8a5-4d22-80ad-b3d990c85ca3",
+      "count": 1,
+      "sha256": "14026c0173534f0bb012e1eaef07dff356151d0a0c3d1f8b152ce3cd0a5f5ff4"
+    }
+  },
+  "rawInputArtifact": "fixture.inputs.json",
+  "rawInputSha256": "04e40b71df8f3f95864dae9c35278d25178651b07ea189fc07c306a5819308c8"
+}

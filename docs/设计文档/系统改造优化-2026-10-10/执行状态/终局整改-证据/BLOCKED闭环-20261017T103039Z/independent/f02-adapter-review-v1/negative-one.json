@@ -1,0 +1,206 @@
+{
+  "events": [
+    {
+      "observerUtc": "2026-10-17T08:00:01+00:00",
+      "event": {
+        "type": "task-received",
+        "uuid": "parent-original",
+        "name": "app.tasks.kpi_calc.calculate_hourly_kpi",
+        "kwargs": "{'ts_start': '2026-10-15T12:00:00'}",
+        "parent_id": null,
+        "root_id": "parent-original",
+        "pid": 101,
+        "hostname": "synthetic@host",
+        "timestamp": 1792224001.0
+      }
+    },
+    {
+      "observerUtc": "2026-10-17T08:00:02+00:00",
+      "event": {
+        "type": "task-started",
+        "uuid": "parent-original",
+        "pid": 101,
+        "hostname": "synthetic@host",
+        "timestamp": 1792224002.0
+      }
+    },
+    {
+      "observerUtc": "2026-10-17T08:00:01+00:00",
+      "event": {
+        "type": "task-received",
+        "uuid": "child-original",
+        "name": "app.tasks.kpi_calc.calculate_node_kpi_hourly",
+        "kwargs": "{'ts_start': '2026-10-15T12:00:00', 'ts_end': '2026-10-15T13:00:00'}",
+        "parent_id": "parent-original",
+        "root_id": "parent-original",
+        "pid": 101,
+        "hostname": "synthetic@host",
+        "timestamp": 1792224001.0
+      }
+    },
+    {
+      "observerUtc": "2026-10-17T08:00:02+00:00",
+      "event": {
+        "type": "task-started",
+        "uuid": "child-original",
+        "pid": 101,
+        "hostname": "synthetic@host",
+        "timestamp": 1792224002.0
+      }
+    }
+  ],
+  "redis": {
+    "taskMeta": {
+      "parent-original": {
+        "status": "SUCCESS",
+        "date_done": "2026-10-17T08:00:20+00:00",
+        "result": {
+          "total": 1000
+        }
+      },
+      "child-original": {
+        "status": "SUCCESS",
+        "date_done": "2026-10-17T08:00:21+00:00",
+        "result": {
+          "total": 20,
+          "success": 20,
+          "skipped": 0,
+          "failed": 0,
+          "cancelled": 1
+        }
+      }
+    }
+  },
+  "runtime": {
+    "members": [
+      {
+        "pid": 100,
+        "ppid": 1,
+        "role": "api",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "100",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m uvicorn app.main:app"
+      },
+      {
+        "pid": 101,
+        "ppid": 100,
+        "role": "worker_master",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "101",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m celery -A synthetic worker --hostname synthetic@%h"
+      },
+      {
+        "pid": 102,
+        "ppid": 100,
+        "role": "beat",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "102",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m celery -A synthetic beat -l info"
+      },
+      {
+        "pid": 103,
+        "ppid": 101,
+        "role": "worker_child",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "103",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m celery -A synthetic worker --hostname synthetic@%h"
+      },
+      {
+        "pid": 104,
+        "ppid": 101,
+        "role": "worker_child",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "104",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m celery -A synthetic worker --hostname synthetic@%h"
+      },
+      {
+        "pid": 105,
+        "ppid": 101,
+        "role": "worker_child",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "105",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m celery -A synthetic worker --hostname synthetic@%h"
+      },
+      {
+        "pid": 106,
+        "ppid": 101,
+        "role": "worker_child",
+        "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "identity": "106",
+        "startedAtLocal": "Sat Oct 17 15:00:00 2026",
+        "argv": "/synthetic/python -m celery -A synthetic worker --hostname synthetic@%h"
+      }
+    ]
+  },
+  "scope": {
+    "scopes": {
+      "node-0": [],
+      "node-1": [],
+      "node-2": [],
+      "node-3": [],
+      "node-4": [],
+      "node-5": [],
+      "node-6": [],
+      "node-7": [],
+      "node-8": [],
+      "node-9": [],
+      "node-10": [],
+      "node-11": [],
+      "node-12": [],
+      "node-13": [],
+      "node-14": [],
+      "node-15": [],
+      "node-16": [],
+      "node-17": [],
+      "node-18": [],
+      "node-19": []
+    },
+    "querySourceRef": {
+      "path": "actual-source",
+      "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "scopeRef": {
+      "path": "actual-scope",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    "_poolProof": {
+      "kind": "derivedFromClosedWorkerPoolIdentity",
+      "producerMasterPid": 101,
+      "masterArgv": "/synthetic/python -m celery -A synthetic worker --hostname synthetic@%h",
+      "loadedSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "expectedNativePids": [
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106
+      ],
+      "poolPids": [
+        103,
+        104,
+        105,
+        106
+      ],
+      "intervalStart": "2026-10-17T08:00:00+00:00",
+      "intervalEnd": "2026-10-17T08:00:30+00:00",
+      "checkedSamples": 16,
+      "executorPid": null,
+      "boundary": "Celery event.pid is the master dispatcher producer, not the prefork executor. Every possible pool member has the same frozen code identity and continuous PID/ancestry/argv samples; actual executor PID remains unknown."
+    }
+  },
+  "parent": "parent-original",
+  "child": "child-original",
+  "window": {
+    "tsStart": "2026-10-15T12:00:00",
+    "tsEnd": "2026-10-15T13:00:00"
+  },
+  "observedAt": "2026-10-17T08:00:25+00:00"
+}

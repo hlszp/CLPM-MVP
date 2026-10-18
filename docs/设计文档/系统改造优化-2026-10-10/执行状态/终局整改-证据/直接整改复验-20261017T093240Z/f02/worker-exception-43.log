@@ -1,0 +1,100 @@
+2026-10-16 07:12:17,665 | WARNING  | app.tasks.kpi_calc | DataPlanner 取数失败（回路 PERF-T0980）: [0x073a]: Query memory exhausted
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/tasks/kpi_calc.py", line 2497, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 387, in request_bundles
+    data_blocks = await self._execute_query_plan(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 659, in _execute_query_plan
+    results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 638, in _process_non_reuse
+    data_block = await self._query_and_preprocess(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 722, in _query_and_preprocess
+    raw = await self._query_fn(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 128, in _query_fn_point
+    return await _point_or_mixed_query(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 202, in _point_or_mixed_query
+    raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/logical_wide_builder.py", line 315, in build_logical_wide
+    per_point = await asyncio.gather(
+                ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 117, in awaited
+    return await operation
+           ^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/point_history_repository.py", line 263, in read_events
+    rows = await execute_native(sql)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 182, in execute_native
+    return await asyncio.wait_for(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 143, in threaded
+    return await asyncio.get_running_loop().run_in_executor(executor, fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 166, in _execute
+    cursor.execute(sql)
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/cursor.py", line 55, in execute
+    self._response = self._c.sql(operation, req_id=req_id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/restclient.py", line 129, in sql
+    raise ConnectError(resp["desc"], resp["code"])
+taosrest.errors.ConnectError: [0x073a]: Query memory exhausted
+2026-10-16 07:12:17,666 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ed4ec582-c9e6-4508-a97a-22b62a9fa345:BASE:1792072800:1792076400:2s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,667 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ed4ec582-c9e6-4508-a97a-22b62a9fa345, tagGroup=BASE, tags=['pv', 'sp'], interval=2s
+2026-10-16 07:12:17,667 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ed4ec582-c9e6-4508-a97a-22b62a9fa345:MODE_HF:1792072800:1792076400:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,667 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ed4ec582-c9e6-4508-a97a-22b62a9fa345, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-16 07:12:17,668 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ed4ec582-c9e6-4508-a97a-22b62a9fa345:OP_HF:1792072800:1792076400:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,668 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ed4ec582-c9e6-4508-a97a-22b62a9fa345, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-16 07:12:17,655 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.434, cutoff=0.10Hz, freq=0.5Hz
+2026-10-16 07:12:17,656 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-16 07:12:17,673 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ed4ec582-c9e6-4508-a97a-22b62a9fa345:PVOP_HF:1792072800:1792076400:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,673 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ed4ec582-c9e6-4508-a97a-22b62a9fa345, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-16 07:12:17,660 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-16 07:12:17,671 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=26da73e2-f7da-49eb-8fb4-0319d14d9eb8, tagGroup=PVOP_HF, points=3601, query=5.788s, preprocess=0.269s
+2026-10-16 07:12:17,676 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ed4ec582-c9e6-4508-a97a-22b62a9fa345:QUALITY_HF:1792072800:1792076400:1s:KEEP_ALL:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,677 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ed4ec582-c9e6-4508-a97a-22b62a9fa345, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-16 07:12:17,677 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:d671d036-fb68-4c93-a60b-f74be7ad2323:BASE:1792072800:1792076400:5s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,677 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=d671d036-fb68-4c93-a60b-f74be7ad2323, tagGroup=BASE, tags=['pv', 'sp'], interval=5s
+2026-10-16 07:12:17,678 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:d671d036-fb68-4c93-a60b-f74be7ad2323:MODE_HF:1792072800:1792076400:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,678 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=d671d036-fb68-4c93-a60b-f74be7ad2323, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-16 07:12:17,678 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:d671d036-fb68-4c93-a60b-f74be7ad2323:OP_HF:1792072800:1792076400:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,678 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=d671d036-fb68-4c93-a60b-f74be7ad2323, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-16 07:12:17,679 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:d671d036-fb68-4c93-a60b-f74be7ad2323:PVOP_HF:1792072800:1792076400:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,679 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=d671d036-fb68-4c93-a60b-f74be7ad2323, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-16 07:12:17,672 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-16 07:12:17,679 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:d671d036-fb68-4c93-a60b-f74be7ad2323:QUALITY_HF:1792072800:1792076400:1s:KEEP_ALL:pre_v2:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3
+2026-10-16 07:12:17,680 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=d671d036-fb68-4c93-a60b-f74be7ad2323, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-16 07:12:17,672 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-16 07:12:17,672 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.434, cutoff=0.10Hz, freq=0.5Hz
+2026-10-16 07:12:17,673 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-16 07:12:17,676 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-16 07:12:17,679 | DEBUG    | app.services.data_planner | 预处理完成: loop=26da73e2-f7da-49eb-8fb4-0319d14d9eb8, tagGroup=PVOP_HF, points=3601, valid_rate=0.9997
+2026-10-16 07:12:17,681 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-16 07:12:17,681 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=10, reasons={457: ['FROZEN'], 458: ['FROZEN'], 459: ['FROZEN'], 460: ['FROZEN'], 461: ['FROZEN']}
+2026-10-16 07:12:17,697 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=ea586f32-c1bf-4b7d-b249-f0794fc23b54, tagGroup=BASE, points=3601, controlType=FC
+2026-10-16 07:12:17,688 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=None
+2026-10-16 07:12:17,690 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-16 07:12:17,690 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-16 07:12:17,691 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1776] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-16 07:12:17,691 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=26da73e2-f7da-49eb-8fb4-0319d14d9eb8, tagGroup=QUALITY_HF, points=3601, query=5.797s, preprocess=0.280s
+2026-10-16 07:12:17,692 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1776] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警

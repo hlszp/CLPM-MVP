@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:00:38.280497+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "network-state-set",
+    "offline"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.47816066700033844,
+  "stdout": "### Result\nNetwork is now offline\n### Ran Playwright code\n```js\nawait page.context().setOffline(true);\n```\n### Page\n- Page URL: http://127.0.0.1:17266/monitor/loops?view=workspace&keyword=AUDIT-F07&timeWindow=24h&fitnessLevels=\n- Page Title: 回路监视 - iCLPM 系统\n- Console: 1 errors, 2 warnings\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T09-55-55-943Z.log#L7\n",
+  "stderr": ""
+}

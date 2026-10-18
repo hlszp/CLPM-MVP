@@ -1,0 +1,14 @@
+{
+  "refusedBeforeImportsOrWrites": [
+    "CI=true is required",
+    "GITHUB_ACTIONS=true is required",
+    "POSTGRES_HOST must be a disposable loopback CI service",
+    "REDIS_HOST must be a disposable loopback CI service",
+    "TDENGINE_HOST must be a disposable loopback CI service",
+    "POSTGRES_DB must be clpm_critical_e2e",
+    "TDENGINE_DB must be clpm_critical_e2e_ts",
+    "GITHUB_RUN_ID must be present",
+    "GITHUB_RUN_ATTEMPT must be present",
+    "GITHUB_SHA must identify the fixed checkout"
+  ]
+}

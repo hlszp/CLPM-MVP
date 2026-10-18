@@ -1,0 +1,46 @@
+{
+  "sourceOnlyTwoBackticksAdded": true,
+  "fiveActualResponses": [
+    {
+      "label": "unquoted-limit0",
+      "tdCode": 9728,
+      "rows": null,
+      "rawSha256": "e805683a70e8cb485ff72ce3f7cba35107d6f4ada7d051a295ca1205cf5a7f24",
+      "metadataRawExact": true
+    },
+    {
+      "label": "unquoted-limit1",
+      "tdCode": 9728,
+      "rows": null,
+      "rawSha256": "3f6ff4a3df06e6dae130a57f2a546b54e9a3b29dbd2fac2736ebe9c3c54899b4",
+      "metadataRawExact": true
+    },
+    {
+      "label": "quoted-limit0",
+      "tdCode": 0,
+      "rows": 0,
+      "rawSha256": "abcb3c0a2ed38970202c9833738c143cca999b2ae9219137f923a85de49aa690",
+      "metadataRawExact": true
+    },
+    {
+      "label": "quoted-limit1",
+      "tdCode": 0,
+      "rows": 1,
+      "rawSha256": "7106191bb78b04d993970a445fc58cb13e7dc8f986eaa4e4d56367fe6544daa5",
+      "metadataRawExact": true
+    },
+    {
+      "label": "quoted-full-window",
+      "tdCode": 0,
+      "rows": 3600,
+      "rawSha256": "85fef1a09cb6e193e7411286f0b12a0ce1fafb1972302ee5b9f6e7e18c0b1ca0",
+      "metadataRawExact": true
+    }
+  ],
+  "fullPvRows": 3600,
+  "timestampQualityPointAndFloatHexExactForEveryRow": true,
+  "tolerance": 0,
+  "productValidatorImported": false,
+  "networkCallsByReviewer": 0,
+  "inputOnly": true
+}

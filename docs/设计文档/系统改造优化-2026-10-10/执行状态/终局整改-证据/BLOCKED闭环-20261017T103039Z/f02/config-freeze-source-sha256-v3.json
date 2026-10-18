@@ -1,0 +1,16 @@
+{
+  "frozenAt": "2026-10-17T11:34:59.583411+00:00",
+  "files": [
+    {
+      "file": "freeze_capacity_configuration.py",
+      "sha256": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e",
+      "bytes": 29547
+    },
+    {
+      "file": "test_freeze_capacity_configuration.py",
+      "sha256": "d500e7e6b306abbbba519de687f118aece889f1168d9bb574f6ff3c42523b92e",
+      "bytes": 8858
+    }
+  ],
+  "scope": "Evidence-only v3: bind 20 unique original audit directories/manifests/windows to immutable planned batches and same real 1000/7000 identities; actual PG must equal audited input identities"
+}

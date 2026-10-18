@@ -1,0 +1,10 @@
+{
+  "ready_at": "2026-10-17T09:51:51.048285+00:00",
+  "api": "http://127.0.0.1:17261",
+  "frontend": "http://127.0.0.1:17266",
+  "api_pid": 54398,
+  "frontend_pid": 54399,
+  "redis_container": "252f58fa73736a3a0b19b3081ad4e345e4be876e2330babbcfe0e69be2374c95",
+  "postgres_database": "clpm_final_reverify_20261017_093240_phase2",
+  "worker_beat_started": false
+}

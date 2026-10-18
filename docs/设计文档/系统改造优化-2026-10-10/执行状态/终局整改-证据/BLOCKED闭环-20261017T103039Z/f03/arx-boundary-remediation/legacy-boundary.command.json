@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/arx-boundary-remediation/run_frozen_function_tests.py",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/arx-boundary-remediation/legacy-arx.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "elapsedSeconds": 2.0416598320007324,
+  "sourceSha256": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0",
+  "stdoutSha256": "8fd7039325f227ca0e152ae7b02c0bae2e52278987a9f2b0f40404f3f7111beb",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

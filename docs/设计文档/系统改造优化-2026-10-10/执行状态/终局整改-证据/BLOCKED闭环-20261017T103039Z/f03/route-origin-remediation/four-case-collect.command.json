@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "npx",
+    "--no-install",
+    "playwright",
+    "test",
+    "--config=playwright.critical.config.ts",
+    "--list",
+    "--reporter=json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "rc": 0,
+  "elapsedSeconds": 0.6432349681854248,
+  "currentSpecSha256": "c492347c387fcba3d954450f99bba41fe25a7c73f9988b03dcdded5ffb7c553f",
+  "stdoutSha256": "bafb0314f54974dc4e7a09daae285e9aac9bd816fb2fa521869d5596617cb379",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

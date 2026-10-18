@@ -1,0 +1,78 @@
+{
+  "readAt": "2026-10-17T13:08:29.971908+00:00",
+  "candidateSha": "edfa831afd6069963e7f6f73c2721637d6a199b5",
+  "loopId": "c87ea558-f4bd-4c97-9607-435297fcf3a7",
+  "windowStart": "2026-10-17T11:00:00",
+  "windowEnd": "2026-10-17T12:00:00",
+  "sourceRefs": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/fixture.json",
+      "bytes": 1890,
+      "sha256": "e4f58781cd96599432b22006ac1a097dc7b319a785b8a7661d9de27de9b30810"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/fixture.inputs.json",
+      "bytes": 581660,
+      "sha256": "8aae8bbeeb9223652490ef76d74e2c4c44fbeefcea5edbe2cfc0b9ee399f652e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/fixture.imports.json",
+      "bytes": 1319,
+      "sha256": "7d4897e973bb74ed4edce0e66f6e98fae888768de6edb8a0602071be28826a2c"
+    }
+  ],
+  "rawRolesIndependentlyRehashed": [
+    {
+      "role": "PV",
+      "count": 3600,
+      "firstOffset": 0,
+      "lastOffset": 3599,
+      "seriesSHA": "b2944b3107ebed9800c87b8abfecbe183b2ec89a5c8704a06389b150d27de7ea"
+    },
+    {
+      "role": "SP",
+      "count": 3,
+      "firstOffset": 0,
+      "lastOffset": 2400,
+      "seriesSHA": "8801ac3c2afe2a541f833a6919c309a297dfe3c2a2c594b4292892ab4a49b70b"
+    },
+    {
+      "role": "OP",
+      "count": 3600,
+      "firstOffset": 0,
+      "lastOffset": 3599,
+      "seriesSHA": "5dbe2dd798b6539aa11cc35b4fb6511c07fd74cb4fa06f2b284b3dff85728c19"
+    },
+    {
+      "role": "MODE",
+      "count": 1,
+      "firstOffset": 0,
+      "lastOffset": 0,
+      "seriesSHA": "83a1e3efa4561cb08b41220539a1e1e2fb9fe0a4040990f3026c1a116bb15c61"
+    },
+    {
+      "role": "PID_P",
+      "count": 1,
+      "firstOffset": 0,
+      "lastOffset": 0,
+      "seriesSHA": "c36ed1f03275a86b67a3323facf240174817cceaed0cff1058f3ce9a2839f2b0"
+    },
+    {
+      "role": "PID_I",
+      "count": 1,
+      "firstOffset": 0,
+      "lastOffset": 0,
+      "seriesSHA": "eb6f3e8d55c180dc3a0014f688d209c80924897f5c4ebc2ecea541025444ffa5"
+    },
+    {
+      "role": "PID_D",
+      "count": 1,
+      "firstOffset": 0,
+      "lastOffset": 0,
+      "seriesSHA": "14026c0173534f0bb012e1eaef07dff356151d0a0c3d1f8b152ce3cd0a5f5ff4"
+    }
+  ],
+  "actualMetricsRead": false,
+  "expectedMetricsComputed": false,
+  "reason": "Await real input NPZ/manifest/effective parameters; no range-only expectations"
+}

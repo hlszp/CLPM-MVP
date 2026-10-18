@@ -1,0 +1,68 @@
+[
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/scripts/run-critical-e2e.sh",
+    "relativePath": "scripts/run-critical-e2e.sh",
+    "bytes": 2895,
+    "sha256": "7bbd52348ef46c0d312aaf03190c1d93438292a98e71bbad2a0211c43f369fe3"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/.github/workflows/ci.yml",
+    "relativePath": ".github/workflows/ci.yml",
+    "bytes": 12486,
+    "sha256": "e472f023a16de21d0fbf7637d83eb261a8b9936daef04e72a5a8ddd77d224896"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/package.json",
+    "relativePath": "e2e/package.json",
+    "bytes": 591,
+    "sha256": "d2647e50cb75f022ec4f8a8ccafd02f14736a176514e7127ebe0eb6fe69b7622"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tsconfig.json",
+    "relativePath": "e2e/tsconfig.json",
+    "bytes": 543,
+    "sha256": "c50e25f864681f96d1a04d075efccb3cf1974f3618f6559e32351a01e091f46a"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/critical-cases.json",
+    "relativePath": "e2e/critical-cases.json",
+    "bytes": 359,
+    "sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/playwright.critical.config.ts",
+    "relativePath": "e2e/playwright.critical.config.ts",
+    "bytes": 351,
+    "sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py",
+    "relativePath": "e2e/scripts/prepare-critical-fixture.py",
+    "bytes": 8514,
+    "sha256": "ba89e4996b11c8477ce97c7aa0e71ae001b43280a3633ce01696284656f0d33b"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/test-critical-gate.mjs",
+    "relativePath": "e2e/scripts/test-critical-gate.mjs",
+    "bytes": 6695,
+    "sha256": "e0e86e4f0c7fe71707563318e2efcad47df8187dce55b79065be3feee3b71e14"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/test_critical_fixture.py",
+    "relativePath": "e2e/scripts/test_critical_fixture.py",
+    "bytes": 1325,
+    "sha256": "3ce51a4be0a905d0fc01351550c709c29e26e381770b3dbed43fbb45112f98ab"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/validate-critical-results.mjs",
+    "relativePath": "e2e/scripts/validate-critical-results.mjs",
+    "bytes": 3903,
+    "sha256": "6067419dbd02014818c19d5682284d9e1d365767945efa7f2d145d0c7ce743f4"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts",
+    "relativePath": "e2e/tests/critical-business.spec.ts",
+    "bytes": 8212,
+    "sha256": "ad19423f239803ab49b795a942ce479d176d1dc87abed6630a0d17b8aef3f6bb"
+  }
+]

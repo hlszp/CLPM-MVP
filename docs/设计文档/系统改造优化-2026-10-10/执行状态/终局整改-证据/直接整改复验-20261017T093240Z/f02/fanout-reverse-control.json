@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "negative_fanout_plugin",
+    "tests/test_g5_data_acquisition_failure.py::test_sibling_queries_settle_before_local_retry",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "rc": 1,
+  "expectedRc": 1,
+  "elapsed": 2.3065288066864014,
+  "pluginSha256": "349ef0bd964df0a4c4c501704141335918d818c62368142d70b071224bfc5e20",
+  "stdoutSha256": "1d79d7b34a017fee361d724e3f932cff53939695a0cf46a484f71536ded5bb66",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "mechanism": "dedicated pytest process replaces both call sites with original asyncio.gather in memory; no file mutation"
+}

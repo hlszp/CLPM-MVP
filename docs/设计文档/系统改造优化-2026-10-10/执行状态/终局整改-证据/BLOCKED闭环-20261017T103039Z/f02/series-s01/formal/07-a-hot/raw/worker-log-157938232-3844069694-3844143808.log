@@ -1,0 +1,388 @@
+2026-10-18 06:44:13,193 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=MODE_HF, points=3601, query=2.405s, preprocess=0.180s
+2026-10-18 06:44:13,194 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={4: ['JUMP', 'SPIKE', 'HF_NOISE'], 6: ['JUMP', 'HF_NOISE'], 10: ['JUMP', 'SPIKE', 'HF_NOISE'], 11: ['JUMP', 'HF_NOISE'], 20: ['JUMP', 'HF_NOISE']}
+2026-10-18 06:44:13,194 | DEBUG    | app.services.data_planner | 预处理完成: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=MODE_HF, points=3601, valid_rate=0.6904
+2026-10-18 06:44:13,205 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,215 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=2486, bad=1115, missing=0, valid_rate=0.6904, good_value_rate=1.0
+2026-10-18 06:44:13,224 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.6904 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,228 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_29767f8f-050c-4dd7-bda3-f6032f431a41_PVOP_HF_1s, block_valid_rate=0.6904, loop_valid_rate=0.6904, loop_confidence=C, segments=17
+2026-10-18 06:44:13,229 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=PVOP_HF, points=3601, query=2.569s, preprocess=0.051s
+2026-10-18 06:44:13,229 | DEBUG    | app.services.data_planner | 预处理完成: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=PVOP_HF, points=3601, valid_rate=0.6904
+2026-10-18 06:44:13,238 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=OP_HF, points=3601, controlType=TC
+2026-10-18 06:44:13,249 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.498, cutoff=0.05Hz, freq=0.2Hz
+2026-10-18 06:44:13,253 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={4: ['JUMP', 'SPIKE', 'HF_NOISE'], 6: ['JUMP', 'HF_NOISE'], 10: ['JUMP', 'SPIKE', 'HF_NOISE'], 11: ['JUMP', 'HF_NOISE'], 20: ['JUMP', 'HF_NOISE']}
+2026-10-18 06:44:13,263 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=2486, bad=1115, missing=0, valid_rate=0.6904, good_value_rate=None
+2026-10-18 06:44:13,268 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.6904 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,269 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_29767f8f-050c-4dd7-bda3-f6032f431a41_OP_HF_1s, block_valid_rate=0.6904, loop_valid_rate=0.6904, loop_confidence=C, segments=17
+2026-10-18 06:44:13,279 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=OP_HF, points=3601, query=2.628s, preprocess=0.041s
+2026-10-18 06:44:13,279 | DEBUG    | app.services.data_planner | 预处理完成: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, tagGroup=OP_HF, points=3601, valid_rate=0.6904
+2026-10-18 06:44:13,300 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=MODE_HF, points=3601, controlType=PC
+2026-10-18 06:44:13,308 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=OP_HF, points=3601, controlType=PC
+2026-10-18 06:44:13,312 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,313 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=QUALITY_HF, points=3601, controlType=PC
+2026-10-18 06:44:13,318 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=PVOP_HF, points=3601, controlType=PC
+2026-10-18 06:44:13,331 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.532, cutoff=0.10Hz, freq=0.5Hz
+2026-10-18 06:44:13,332 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-18 06:44:13,332 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.532, cutoff=0.10Hz, freq=0.5Hz
+2026-10-18 06:44:13,337 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=None
+2026-10-18 06:44:13,337 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.532, cutoff=0.10Hz, freq=0.5Hz
+2026-10-18 06:44:13,392 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 06:44:13,395 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,396 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-18 06:44:13,397 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-18 06:44:13,399 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:13,410 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_707ebf3c-71f8-4721-8683-f5f27594e509_OP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 06:44:13,413 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,416 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 06:44:13,416 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_707ebf3c-71f8-4721-8683-f5f27594e509_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 06:44:13,417 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=5, reasons={94: ['FROZEN'], 95: ['FROZEN'], 96: ['FROZEN'], 97: ['FROZEN'], 98: ['FROZEN']}
+2026-10-18 06:44:13,423 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,428 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=OP_HF, points=3601, query=2.242s, preprocess=0.129s
+2026-10-18 06:44:13,432 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:13,432 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=5, reasons={94: ['FROZEN'], 95: ['FROZEN'], 96: ['FROZEN'], 97: ['FROZEN'], 98: ['FROZEN']}
+2026-10-18 06:44:13,432 | DEBUG    | app.services.data_planner | 预处理完成: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=OP_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,438 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,444 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:13,444 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=QUALITY_HF, points=3601, query=2.246s, preprocess=0.140s
+2026-10-18 06:44:13,444 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_707ebf3c-71f8-4721-8683-f5f27594e509_MODE_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 06:44:13,447 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,448 | DEBUG    | app.services.data_planner | 预处理完成: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=QUALITY_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,448 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_707ebf3c-71f8-4721-8683-f5f27594e509_PVOP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 06:44:13,457 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=OP_HF, points=3601, controlType=LC
+2026-10-18 06:44:13,460 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,463 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=None
+2026-10-18 06:44:13,466 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,466 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc_OP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 06:44:13,466 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=MODE_HF, points=3601, query=2.236s, preprocess=0.174s
+2026-10-18 06:44:13,466 | DEBUG    | app.services.data_planner | 预处理完成: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=MODE_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,466 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=PVOP_HF, points=3601, query=2.260s, preprocess=0.149s
+2026-10-18 06:44:13,466 | DEBUG    | app.services.data_planner | 预处理完成: loop=707ebf3c-71f8-4721-8683-f5f27594e509, tagGroup=PVOP_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,475 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=PVOP_HF, points=3601, controlType=LC
+2026-10-18 06:44:13,485 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=QUALITY_HF, points=3601, controlType=LC
+2026-10-18 06:44:13,486 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,487 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=OP_HF, points=3601, query=2.178s, preprocess=0.031s
+2026-10-18 06:44:13,487 | DEBUG    | app.services.data_planner | 预处理完成: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=OP_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,488 | INFO     | app.services.cache.l1_datablock | L1 cache Pipeline 批量写入: total=4, written=4, skipped=0
+2026-10-18 06:44:13,488 | INFO     | app.services.data_planner | DataPlanner 缓存写入: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, blocks=4, written=4
+2026-10-18 06:44:13,489 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,489 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=accuracy_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,491 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,491 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=fast_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,492 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,493 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=steady_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,500 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,501 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=effective_auto_rate, tagGroup=MODE_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,505 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 06:44:13,507 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=good_value_rate, tagGroup=QUALITY_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,509 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:13,509 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,511 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,511 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,515 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:13,515 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,515 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 06:44:13,519 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,527 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,527 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 06:44:13,527 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc_PVOP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 06:44:13,528 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=saturation_rate, tagGroup=MODE_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,535 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,535 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=stiction_index, tagGroup=PVOP_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,542 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid && consecutive_valid', total=3601, masked=329 (9.1%)
+2026-10-18 06:44:13,542 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=output_trip_index, tagGroup=OP_HF, total=3601, masked=329 (9.1%), valid_rate=0.6904
+2026-10-18 06:44:13,546 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,547 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=auto_mode_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=0.6904
+2026-10-18 06:44:13,548 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,548 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=settling_time, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,549 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,549 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=instrument_fault_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,550 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,550 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,551 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,551 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,552 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,552 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,553 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,553 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,556 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,557 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_mean, tagGroup=OP_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,560 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,560 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_std, tagGroup=OP_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,562 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,562 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,563 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,563 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,570 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,570 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_linearity, tagGroup=PVOP_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,577 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,577 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_nonlinearity, tagGroup=PVOP_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,580 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=2486 (69.0%)
+2026-10-18 06:44:13,580 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_operating_range, tagGroup=OP_HF, total=3601, masked=2486 (69.0%), valid_rate=0.6904
+2026-10-18 06:44:13,582 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,582 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=setpoint_crossing_count, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,583 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:13,583 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_amplitude, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,583 | DEBUG    | app.services.data_planner | DataPlanner 填充 OP 限位(预加载/归一化): loop=29767f8f-050c-4dd7-bda3-f6032f431a41, op_low=0.0, op_high=100.0
+2026-10-18 06:44:13,640 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=MODE_HF, points=3601, controlType=LC
+2026-10-18 06:44:13,645 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,661 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=QUALITY_HF, points=3601, query=2.204s, preprocess=0.177s
+2026-10-18 06:44:13,661 | DEBUG    | app.services.data_planner | 预处理完成: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=QUALITY_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,661 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=PVOP_HF, points=3601, query=2.195s, preprocess=0.187s
+2026-10-18 06:44:13,662 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,662 | DEBUG    | app.services.data_planner | 预处理完成: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=PVOP_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,670 | DEBUG    | app.services.cache.l2_bundle | L2 cache SET: key=pdb_l2:29767f8f-050c-4dd7-bda3-f6032f431a41:8990decd:d336f692:TC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, ttl=600s, bundles=25, payload_bytes=89552
+2026-10-18 06:44:13,671 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,671 | DEBUG    | app.services.data_planner | DataPlanner L2 写入: key=pdb_l2:29767f8f-050c-4dd7-bda3-f6032f431a41:8990decd:d336f692:TC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, bundles=25
+2026-10-18 06:44:13,675 | INFO     | app.services.data_planner | DataPlanner 完成: loop=29767f8f-050c-4dd7-bda3-f6032f431a41, bundles=25, cached_blocks=5
+2026-10-18 06:44:13,677 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:13,740 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:13,749 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:13,749 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc_MODE_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 06:44:13,751 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=MODE_HF, points=3601, query=2.362s, preprocess=0.111s
+2026-10-18 06:44:13,751 | DEBUG    | app.services.data_planner | 预处理完成: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, tagGroup=MODE_HF, points=3601, valid_rate=1.0000
+2026-10-18 06:44:13,751 | INFO     | app.services.cache.l1_datablock | L1 cache Pipeline 批量写入: total=4, written=4, skipped=0
+2026-10-18 06:44:13,752 | INFO     | app.services.data_planner | DataPlanner 缓存写入: loop=707ebf3c-71f8-4721-8683-f5f27594e509, blocks=4, written=4
+2026-10-18 06:44:13,755 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,755 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=accuracy_rate, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,759 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,759 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=fast_rate, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,763 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,763 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=steady_rate, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,770 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,770 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=effective_auto_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,771 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=good_value_rate, tagGroup=QUALITY_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,774 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,774 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_rate, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,781 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,781 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=saturation_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,799 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,800 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=stiction_index, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,808 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid && consecutive_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,815 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=output_trip_index, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,830 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,834 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=auto_mode_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,849 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,850 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=settling_time, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,852 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,852 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=instrument_fault_rate, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,854 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,854 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_mean, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,856 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,856 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_std, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,858 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,858 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_mean, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,860 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,860 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_std, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,870 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,870 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_mean, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,879 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,879 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_std, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,882 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,882 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_mean, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,886 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,886 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_std, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,892 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,892 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_linearity, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,899 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,899 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_nonlinearity, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,903 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:13,903 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_operating_range, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,906 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,906 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=setpoint_crossing_count, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,910 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=1801, masked=1801 (100.0%)
+2026-10-18 06:44:13,910 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_amplitude, tagGroup=BASE, total=1801, masked=1801 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:13,910 | DEBUG    | app.services.data_planner | DataPlanner 填充 OP 限位(预加载/归一化): loop=707ebf3c-71f8-4721-8683-f5f27594e509, op_low=0.0, op_high=100.0
+2026-10-18 06:44:13,967 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=132bd9fe-c0e8-498c-bb69-91199c7b8ebe, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-15T18:00:00~2026-10-15T19:00:00, control=LC
+2026-10-18 06:44:14,028 | DEBUG    | app.services.cache.l2_bundle | L2 cache MISS: key=pdb_l2:132bd9fe-c0e8-498c-bb69-91199c7b8ebe:8990decd:d336f692:LC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,028 | DEBUG    | app.services.data_planner | 跳过 CONFIG 指标（无时序数据）: ideal_settling_time
+2026-10-18 06:44:14,028 | INFO     | app.services.data_planner | DataPlanner HF 独立读取（BASE=5s 粗于 HF 所需 1s，禁止派生）: control=LC
+2026-10-18 06:44:14,028 | INFO     | app.services.data_planner | DataPlanner 查询计划: loop=132bd9fe-c0e8-498c-bb69-91199c7b8ebe, metrics=27→tagGroups=5, tasks=["BASE(metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'oscillation_rate', 'settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'error_mean', 'error_std', 'setpoint_crossing_count', 'oscillation_amplitude'],tags=['pv', 'sp'],interval=5s,reuse=None)", "MODE_HF(metrics=['effective_auto_rate', 'saturation_rate', 'auto_mode_rate'],tags=['mode', 'op', 'pv', 'sp'],interval=1s,reuse=None)", "OP_HF(metrics=['output_trip_index', 'op_mean', 'op_std', 'valve_operating_range'],tags=['op'],interval=1s,reuse=None)", "PVOP_HF(metrics=['stiction_index', 'valve_linearity', 'valve_nonlinearity'],tags=['op', 'pv'],interval=1s,reuse=None)", "QUALITY_HF(metrics=['good_value_rate'],tags=['pv_quality'],interval=1s,reuse=None)"]
+2026-10-18 06:44:14,042 | DEBUG    | app.services.cache.l2_bundle | L2 cache SET: key=pdb_l2:707ebf3c-71f8-4721-8683-f5f27594e509:8990decd:d336f692:PC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, ttl=600s, bundles=25, payload_bytes=88540
+2026-10-18 06:44:14,042 | DEBUG    | app.services.data_planner | DataPlanner L2 写入: key=pdb_l2:707ebf3c-71f8-4721-8683-f5f27594e509:8990decd:d336f692:PC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, bundles=25
+2026-10-18 06:44:14,042 | INFO     | app.services.data_planner | DataPlanner 完成: loop=707ebf3c-71f8-4721-8683-f5f27594e509, bundles=25, cached_blocks=5
+2026-10-18 06:44:14,045 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:132bd9fe-c0e8-498c-bb69-91199c7b8ebe:MODE_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,045 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=132bd9fe-c0e8-498c-bb69-91199c7b8ebe, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 06:44:14,047 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:132bd9fe-c0e8-498c-bb69-91199c7b8ebe:OP_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,047 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=132bd9fe-c0e8-498c-bb69-91199c7b8ebe, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 06:44:14,048 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:132bd9fe-c0e8-498c-bb69-91199c7b8ebe:PVOP_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,048 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=132bd9fe-c0e8-498c-bb69-91199c7b8ebe, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 06:44:14,049 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:132bd9fe-c0e8-498c-bb69-91199c7b8ebe:QUALITY_HF:1792058400:1792062000:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,049 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=132bd9fe-c0e8-498c-bb69-91199c7b8ebe, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 06:44:14,050 | DEBUG    | app.services.cache.l1_datablock | L1 cache HIT: key=pdb:132bd9fe-c0e8-498c-bb69-91199c7b8ebe:BASE:1792058400:1792062000:5s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, points=721, tagGroup=BASE
+2026-10-18 06:44:14,051 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=1e353f63-196b-450f-9ddb-bd472f8a3261, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-15T18:00:00~2026-10-15T19:00:00, control=FC
+2026-10-18 06:44:14,052 | INFO     | app.services.cache.l1_datablock | L1 cache Pipeline 批量写入: total=4, written=4, skipped=0
+2026-10-18 06:44:14,052 | INFO     | app.services.data_planner | DataPlanner 缓存写入: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, blocks=4, written=4
+2026-10-18 06:44:14,054 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,054 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=accuracy_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,055 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,056 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=fast_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,057 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,058 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=steady_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,065 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,065 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=effective_auto_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,065 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=good_value_rate, tagGroup=QUALITY_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,066 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,067 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,074 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,074 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=saturation_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,080 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,080 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=stiction_index, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,087 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid && consecutive_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,088 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=output_trip_index, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,092 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,092 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=auto_mode_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,093 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,093 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=settling_time, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,094 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,094 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=instrument_fault_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,095 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,095 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,096 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,096 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,098 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,098 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,099 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,099 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,103 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,103 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_mean, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,107 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,107 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_std, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,108 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,109 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,110 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,110 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,117 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,117 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_linearity, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,124 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,124 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_nonlinearity, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,128 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,128 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_operating_range, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,130 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,130 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=setpoint_crossing_count, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,131 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-18 06:44:14,131 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_amplitude, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,131 | DEBUG    | app.services.data_planner | DataPlanner 填充 OP 限位(预加载/归一化): loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, op_low=0.0, op_high=100.0
+2026-10-18 06:44:14,170 | DEBUG    | app.services.cache.l2_bundle | L2 cache MISS: key=pdb_l2:1e353f63-196b-450f-9ddb-bd472f8a3261:8990decd:d336f692:FC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,171 | DEBUG    | app.services.data_planner | 跳过 CONFIG 指标（无时序数据）: ideal_settling_time
+2026-10-18 06:44:14,171 | INFO     | app.services.data_planner | DataPlanner 查询计划: loop=1e353f63-196b-450f-9ddb-bd472f8a3261, metrics=27→tagGroups=5, tasks=["BASE(metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'oscillation_rate', 'settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'error_mean', 'error_std', 'setpoint_crossing_count', 'oscillation_amplitude'],tags=['mode', 'op', 'pv', 'pv_quality', 'sp'],interval=1s,reuse=None)", "MODE_HF(metrics=['effective_auto_rate', 'saturation_rate', 'auto_mode_rate'],tags=['mode', 'op', 'pv', 'sp'],interval=1s,reuse=BASE)", "OP_HF(metrics=['output_trip_index', 'op_mean', 'op_std', 'valve_operating_range'],tags=['op'],interval=1s,reuse=BASE)", "PVOP_HF(metrics=['stiction_index', 'valve_linearity', 'valve_nonlinearity'],tags=['op', 'pv'],interval=1s,reuse=BASE)", "QUALITY_HF(metrics=['good_value_rate'],tags=['pv_quality'],interval=1s,reuse=BASE)"]
+2026-10-18 06:44:14,175 | DEBUG    | app.services.cache.l2_bundle | L2 cache SET: key=pdb_l2:6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc:8990decd:d336f692:LC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, ttl=600s, bundles=25, payload_bytes=79460
+2026-10-18 06:44:14,175 | DEBUG    | app.services.data_planner | DataPlanner L2 写入: key=pdb_l2:6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc:8990decd:d336f692:LC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, bundles=25
+2026-10-18 06:44:14,175 | INFO     | app.services.data_planner | DataPlanner 完成: loop=6eb6ca2a-b893-45bb-a060-ac5f8dcee0dc, bundles=25, cached_blocks=5
+2026-10-18 06:44:14,177 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=61855851-784f-426d-8fcc-eea85b28c8a1, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-15T18:00:00~2026-10-15T19:00:00, control=TC
+2026-10-18 06:44:14,181 | DEBUG    | app.services.cache.l1_datablock | L1 cache HIT: key=pdb:1e353f63-196b-450f-9ddb-bd472f8a3261:BASE:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, points=3601, tagGroup=BASE
+2026-10-18 06:44:14,191 | DEBUG    | app.services.cache.l2_bundle | L2 cache MISS: key=pdb_l2:61855851-784f-426d-8fcc-eea85b28c8a1:8990decd:d336f692:TC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,191 | DEBUG    | app.services.data_planner | 跳过 CONFIG 指标（无时序数据）: ideal_settling_time
+2026-10-18 06:44:14,191 | INFO     | app.services.data_planner | DataPlanner HF 独立读取（BASE=5s 粗于 HF 所需 1s，禁止派生）: control=TC
+2026-10-18 06:44:14,191 | INFO     | app.services.data_planner | DataPlanner 查询计划: loop=61855851-784f-426d-8fcc-eea85b28c8a1, metrics=27→tagGroups=5, tasks=["BASE(metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'oscillation_rate', 'settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'error_mean', 'error_std', 'setpoint_crossing_count', 'oscillation_amplitude'],tags=['pv', 'sp'],interval=5s,reuse=None)", "MODE_HF(metrics=['effective_auto_rate', 'saturation_rate', 'auto_mode_rate'],tags=['mode', 'op', 'pv', 'sp'],interval=1s,reuse=None)", "OP_HF(metrics=['output_trip_index', 'op_mean', 'op_std', 'valve_operating_range'],tags=['op'],interval=1s,reuse=None)", "PVOP_HF(metrics=['stiction_index', 'valve_linearity', 'valve_nonlinearity'],tags=['op', 'pv'],interval=1s,reuse=None)", "QUALITY_HF(metrics=['good_value_rate'],tags=['pv_quality'],interval=1s,reuse=None)"]
+2026-10-18 06:44:14,245 | DEBUG    | app.services.data_planner | 从 BASE 派生 MODE_HF: tags=['mode', 'op', 'pv', 'sp'], points=3601
+2026-10-18 06:44:14,246 | DEBUG    | app.services.data_planner | 从 BASE 派生 OP_HF: tags=['op'], points=3601
+2026-10-18 06:44:14,246 | DEBUG    | app.services.data_planner | 从 BASE 派生 PVOP_HF: tags=['op', 'pv'], points=3601
+2026-10-18 06:44:14,246 | DEBUG    | app.services.data_planner | 从 BASE 派生 QUALITY_HF: tags=['pv_quality'], points=3601
+2026-10-18 06:44:14,259 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,259 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=accuracy_rate, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,266 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,272 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=fast_rate, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,279 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,279 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=steady_rate, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,286 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,287 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=effective_auto_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,287 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=good_value_rate, tagGroup=QUALITY_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,294 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,294 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_rate, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,301 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,301 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=saturation_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,308 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,308 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=stiction_index, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,315 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid && consecutive_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,315 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=output_trip_index, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,319 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,319 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=auto_mode_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,326 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,327 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=settling_time, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,331 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,331 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=instrument_fault_rate, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,335 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,335 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_mean, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,339 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,339 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_std, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,344 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,344 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_mean, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,348 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,348 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_std, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,352 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,352 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_mean, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,355 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,355 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=op_std, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,362 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,363 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_mean, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,376 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,381 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=error_std, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,391 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,391 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_linearity, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,398 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,398 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_nonlinearity, tagGroup=PVOP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,402 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,402 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=valve_operating_range, tagGroup=OP_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,409 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,409 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=setpoint_crossing_count, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,416 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=3601, masked=3601 (100.0%)
+2026-10-18 06:44:14,416 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_amplitude, tagGroup=BASE, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-18 06:44:14,416 | DEBUG    | app.services.data_planner | DataPlanner 填充 OP 限位(预加载/归一化): loop=1e353f63-196b-450f-9ddb-bd472f8a3261, op_low=0.0, op_high=100.0
+2026-10-18 06:44:14,512 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:61855851-784f-426d-8fcc-eea85b28c8a1:MODE_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,513 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=61855851-784f-426d-8fcc-eea85b28c8a1, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 06:44:14,514 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:61855851-784f-426d-8fcc-eea85b28c8a1:OP_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,514 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=61855851-784f-426d-8fcc-eea85b28c8a1, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 06:44:14,514 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:61855851-784f-426d-8fcc-eea85b28c8a1:PVOP_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,514 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=61855851-784f-426d-8fcc-eea85b28c8a1, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 06:44:14,515 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:61855851-784f-426d-8fcc-eea85b28c8a1:QUALITY_HF:1792058400:1792062000:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,515 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=61855851-784f-426d-8fcc-eea85b28c8a1, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 06:44:14,525 | DEBUG    | app.services.cache.l1_datablock | L1 cache HIT: key=pdb:61855851-784f-426d-8fcc-eea85b28c8a1:BASE:1792058400:1792062000:5s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, points=721, tagGroup=BASE
+2026-10-18 06:44:14,538 | DEBUG    | app.services.cache.l2_bundle | L2 cache SET: key=pdb_l2:1e353f63-196b-450f-9ddb-bd472f8a3261:8990decd:d336f692:FC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, ttl=600s, bundles=25, payload_bytes=133872
+2026-10-18 06:44:14,538 | DEBUG    | app.services.data_planner | DataPlanner L2 写入: key=pdb_l2:1e353f63-196b-450f-9ddb-bd472f8a3261:8990decd:d336f692:FC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, bundles=25
+2026-10-18 06:44:14,538 | INFO     | app.services.data_planner | DataPlanner 完成: loop=1e353f63-196b-450f-9ddb-bd472f8a3261, bundles=25, cached_blocks=5
+2026-10-18 06:44:14,552 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=0c0b63fd-792f-4e73-991e-7c26c7d40c2c, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-15T18:00:00~2026-10-15T19:00:00, control=PC
+2026-10-18 06:44:14,642 | DEBUG    | app.services.cache.l2_bundle | L2 cache MISS: key=pdb_l2:0c0b63fd-792f-4e73-991e-7c26c7d40c2c:8990decd:d336f692:PC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,642 | DEBUG    | app.services.data_planner | 跳过 CONFIG 指标（无时序数据）: ideal_settling_time
+2026-10-18 06:44:14,643 | INFO     | app.services.data_planner | DataPlanner HF 独立读取（BASE=2s 粗于 HF 所需 1s，禁止派生）: control=PC
+2026-10-18 06:44:14,643 | INFO     | app.services.data_planner | DataPlanner 查询计划: loop=0c0b63fd-792f-4e73-991e-7c26c7d40c2c, metrics=27→tagGroups=5, tasks=["BASE(metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'oscillation_rate', 'settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'error_mean', 'error_std', 'setpoint_crossing_count', 'oscillation_amplitude'],tags=['pv', 'sp'],interval=2s,reuse=None)", "MODE_HF(metrics=['effective_auto_rate', 'saturation_rate', 'auto_mode_rate'],tags=['mode', 'op', 'pv', 'sp'],interval=1s,reuse=None)", "OP_HF(metrics=['output_trip_index', 'op_mean', 'op_std', 'valve_operating_range'],tags=['op'],interval=1s,reuse=None)", "PVOP_HF(metrics=['stiction_index', 'valve_linearity', 'valve_nonlinearity'],tags=['op', 'pv'],interval=1s,reuse=None)", "QUALITY_HF(metrics=['good_value_rate'],tags=['pv_quality'],interval=1s,reuse=None)"]
+2026-10-18 06:44:14,651 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:0c0b63fd-792f-4e73-991e-7c26c7d40c2c:MODE_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,651 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=0c0b63fd-792f-4e73-991e-7c26c7d40c2c, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 06:44:14,653 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:0c0b63fd-792f-4e73-991e-7c26c7d40c2c:OP_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,653 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=0c0b63fd-792f-4e73-991e-7c26c7d40c2c, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 06:44:14,653 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:0c0b63fd-792f-4e73-991e-7c26c7d40c2c:PVOP_HF:1792058400:1792062000:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,653 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=0c0b63fd-792f-4e73-991e-7c26c7d40c2c, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 06:44:14,654 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:0c0b63fd-792f-4e73-991e-7c26c7d40c2c:QUALITY_HF:1792058400:1792062000:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 06:44:14,654 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=0c0b63fd-792f-4e73-991e-7c26c7d40c2c, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 06:44:14,661 | DEBUG    | app.services.cache.l1_datablock | L1 cache HIT: key=pdb:0c0b63fd-792f-4e73-991e-7c26c7d40c2c:BASE:1792058400:1792062000:2s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, points=1801, tagGroup=BASE
+2026-10-18 06:44:14,876 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=MODE_HF, points=3601, controlType=TC
+2026-10-18 06:44:14,881 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:14,885 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=13, reasons={14: ['JUMP'], 143: ['JUMP'], 900: ['JUMP'], 1249: ['JUMP'], 1622: ['JUMP']}
+2026-10-18 06:44:14,897 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:14,902 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=PVOP_HF, points=3601, controlType=TC
+2026-10-18 06:44:14,909 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:14,972 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=13, reasons={14: ['JUMP'], 143: ['JUMP'], 900: ['JUMP'], 1249: ['JUMP'], 1622: ['JUMP']}
+2026-10-18 06:44:14,974 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3588, bad=13, missing=0, valid_rate=0.9964, good_value_rate=1.0
+2026-10-18 06:44:14,983 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.9964 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:14,983 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac_MODE_HF_1s, block_valid_rate=0.9964, loop_valid_rate=0.9964, loop_confidence=A, segments=12
+2026-10-18 06:44:14,987 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-18 06:44:14,993 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3588, bad=13, missing=0, valid_rate=0.9964, good_value_rate=1.0
+2026-10-18 06:44:14,997 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.9964 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:14,997 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac_PVOP_HF_1s, block_valid_rate=0.9964, loop_valid_rate=0.9964, loop_confidence=A, segments=12
+2026-10-18 06:44:15,000 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=MODE_HF, points=3601, query=2.250s, preprocess=0.125s
+2026-10-18 06:44:15,000 | DEBUG    | app.services.data_planner | 预处理完成: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=MODE_HF, points=3601, valid_rate=0.9964
+2026-10-18 06:44:15,001 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=PVOP_HF, points=3601, query=2.273s, preprocess=0.103s
+2026-10-18 06:44:15,002 | DEBUG    | app.services.data_planner | 预处理完成: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=PVOP_HF, points=3601, valid_rate=0.9964
+2026-10-18 06:44:15,011 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=QUALITY_HF, points=3601, controlType=TC
+2026-10-18 06:44:15,022 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=OP_HF, points=3601, controlType=TC
+2026-10-18 06:44:15,028 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=13, reasons={14: ['JUMP'], 143: ['JUMP'], 900: ['JUMP'], 1249: ['JUMP'], 1622: ['JUMP']}
+2026-10-18 06:44:15,030 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3588, bad=13, missing=0, valid_rate=0.9964, good_value_rate=None
+2026-10-18 06:44:15,034 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.9964 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:15,035 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac_OP_HF_1s, block_valid_rate=0.9964, loop_valid_rate=0.9964, loop_confidence=A, segments=12
+2026-10-18 06:44:15,042 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 06:44:15,045 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 06:44:15,045 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1182] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 06:44:15,046 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 06:44:15,046 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 06:44:15,123 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=OP_HF, points=3601, query=2.396s, preprocess=0.102s
+2026-10-18 06:44:15,123 | DEBUG    | app.services.data_planner | 预处理完成: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=OP_HF, points=3601, valid_rate=0.9964
+2026-10-18 06:44:15,123 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=QUALITY_HF, points=3601, query=2.384s, preprocess=0.113s
+2026-10-18 06:44:15,123 | DEBUG    | app.services.data_planner | 预处理完成: loop=ef9bc40c-6d7f-4ef0-972a-46ab17fe09ac, tagGroup=QUALITY_HF, points=3601, valid_rate=1.0000

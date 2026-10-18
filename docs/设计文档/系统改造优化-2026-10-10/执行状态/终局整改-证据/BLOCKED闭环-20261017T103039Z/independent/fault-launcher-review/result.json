@@ -1,0 +1,28 @@
+{
+  "at": "2026-10-17T11:58:04.396571+00:00",
+  "status": "PASS",
+  "scope": "Static only; launcher not executed, no actual socket requests or process control",
+  "checks": {
+    "formalSourceFrozen": true,
+    "faultSourceFrozen": true,
+    "exactFormalAfterRemovingApprovedProxyGuard": true,
+    "policyPinnedToActualGitSha": true,
+    "samePrivateDatabase": true,
+    "policyMustBeDisarmed": true,
+    "liveHealthDisarmedNoInflight": true,
+    "healthBindsExactPolicyHash": true,
+    "proxyHealthTrustEnvOff": true,
+    "guardBeforePopen": true,
+    "syntaxCompiledOnly": true
+  },
+  "sources": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/start_capacity_api_formal.py",
+      "sha256": "50662e8a4b1a9025f4f96d15081aa43902481cc363f56d98b5c70b60261f7e23"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/start_capacity_api_fault.py",
+      "sha256": "cf49f4a7cb0a708dc7702453bdc56ab16e4593baadb9cc93c48287e655463f5d"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+│  ruff staged (skip) no files for inspection
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.05 seconds)
+[fix/final-audit-remediation e418ac92] fix(e2e): honor hash routes in critical flows
+ 1 file changed, 47 insertions(+), 5 deletions(-)

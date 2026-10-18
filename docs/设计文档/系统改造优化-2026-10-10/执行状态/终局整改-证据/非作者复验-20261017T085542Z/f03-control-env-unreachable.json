@@ -1,0 +1,21 @@
+{
+  "name": "f03-control-env-unreachable",
+  "command": [
+    "bash",
+    "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/gate-control/scripts/run-critical-e2e.sh"
+  ],
+  "cwd": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/gate-control",
+  "fixture_only": true,
+  "environment": {
+    "E2E_BASE_URL": "http://127.0.0.1:49964",
+    "E2E_API_BASE_URL": "http://127.0.0.1:49964",
+    "npm_config_offline": "true",
+    "CI": "1"
+  },
+  "started_at": "2026-10-17T08:57:32.295299+00:00",
+  "elapsed_seconds": 0.021290000004228204,
+  "exit_code": 2,
+  "script_sha256": "f4a51693bf2ebc4c88e76ff80b12558981769eb0bcf845173183c3be1bee887f",
+  "stdout_sha256": "c59983bf6ce331de92d5e00677629dc2c5ee70183b3405d70ba6eb5ee7507375",
+  "stderr_sha256": "08c79d62979ef5e8402b37813a9e9c112b136d28f9ba8d233dbd399343b336bc"
+}

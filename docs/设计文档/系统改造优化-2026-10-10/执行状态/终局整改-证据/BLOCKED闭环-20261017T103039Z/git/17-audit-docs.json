@@ -1,0 +1,17 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "docs(audit): retain runtime and residual boundaries",
+    "-m",
+    "Preserve original audit findings and dated receipts. Keep live F02/F03 acceptance blocked until real evidence and independent verification exist."
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 0.19386911392211914,
+  "changed_lines": 414,
+  "numstat": "22\t44\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8fd0\u884c\u6765\u6e90\u53f0\u8d26.md\n33\t51\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u9057\u7559\u7d22\u5f15.md\n87\t177\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539\u53f0\u8d26.md\n",
+  "stdout_sha256": "96bb896247f7ec73e8be8f9baa3177e7c673dd50878ce87751c97d4404ce960a",
+  "stderr_sha256": "76c58f29f9e7ad07179222530ca119203f2074163903bf68d850fef8469183c3",
+  "commit": "6ec7e473f73200f743660b5990027575743372e0"
+}

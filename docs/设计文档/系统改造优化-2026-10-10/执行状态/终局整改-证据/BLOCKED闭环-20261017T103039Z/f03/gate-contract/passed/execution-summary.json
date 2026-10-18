@@ -1,0 +1,106 @@
+{
+  "mode": "run",
+  "passed": true,
+  "exitCode": 0,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T10:38:25.197Z",
+    "duration": 322.29200000000003,
+    "expected": 4,
+    "skipped": 0,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 2,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T10:38:25.477Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 0,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T10:38:25.496Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 0,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T10:38:25.501Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 0,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T10:38:25.506Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    }
+  ],
+  "violations": []
+}

@@ -1,0 +1,19 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "test(e2e): \u5206\u5f00\u8bb0\u5f55\u63d0\u4ea4\u4e0e\u8bfb\u56de\u9a8c\u8bc1",
+    "-m",
+    "\u975e\u4f5c\u8005\u53cd\u4f8b\u8bc1\u5b9e\u5199\u4e8b\u52a1\u5df2\u63d0\u4ea4\u540e\u8bfb\u56de\u5931\u8d25\u4ecd\u6807\u672a\u63d0\u4ea4\u3002\u7acb\u5373\u4fdd\u5168\u771f\u5b9e\u63d0\u4ea4\u4e8b\u5b9e\uff0c\u8bfb\u56de\u53ea\u6709\u5b8c\u6574\u9a8c\u8bc1\u4e0e\u53ea\u8bfb\u4e8b\u52a1\u7ed3\u675f\u540e\u6807\u901a\u8fc7\uff0c\u5931\u8d25\u7ee7\u7eed\u975e\u96f6\u5e76\u4fdd\u7559\u5df2\u63d0\u4ea4\u8f93\u5165\u3002"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.202,
+  "database": "clpm_audit_gate_20261017",
+  "postgres_container": "clpm-mvp-postgres",
+  "shared_business_database_touched": false,
+  "redis_and_tdengine": "disabled for isolated unit gates",
+  "log": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/git/committed-input-evidence-state-commit.log",
+  "sha256": "d0650584a57f64cf58a6d0a9a4e6af32a775283b564c9a7ae2e6f0113fd0452e"
+}

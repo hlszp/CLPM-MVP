@@ -1,0 +1,96 @@
+﻿2026-10-17T14:42:06.6862870Z ##[group]Run actions/checkout@v4
+2026-10-17T14:42:06.6863450Z with:
+2026-10-17T14:42:06.6863696Z   repository: hlszp/CLPM-MVP
+2026-10-17T14:42:06.6866281Z   token: ***
+2026-10-17T14:42:06.6866512Z   ssh-strict: true
+2026-10-17T14:42:06.6866760Z   ssh-user: git
+2026-10-17T14:42:06.6866998Z   persist-credentials: true
+2026-10-17T14:42:06.6867251Z   clean: true
+2026-10-17T14:42:06.6867484Z   sparse-checkout-cone-mode: true
+2026-10-17T14:42:06.6867754Z   fetch-depth: 1
+2026-10-17T14:42:06.6867964Z   fetch-tags: false
+2026-10-17T14:42:06.6868188Z   show-progress: true
+2026-10-17T14:42:06.6868409Z   lfs: false
+2026-10-17T14:42:06.6868611Z   submodules: false
+2026-10-17T14:42:06.6868856Z   set-safe-directory: true
+2026-10-17T14:42:06.6869110Z   allow-unsafe-pr-checkout: false
+2026-10-17T14:42:06.6869468Z env:
+2026-10-17T14:42:06.6869661Z   CI: true
+2026-10-17T14:42:06.6869870Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T14:42:06.6870106Z   OMP_NUM_THREADS: 1
+2026-10-17T14:42:06.6870323Z   MKL_NUM_THREADS: 1
+2026-10-17T14:42:06.6870607Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T14:42:06.6870844Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T14:42:06.6871082Z ##[endgroup]
+2026-10-17T14:42:06.7834407Z Syncing repository: hlszp/CLPM-MVP
+2026-10-17T14:42:06.7835761Z ##[group]Getting Git version info
+2026-10-17T14:42:06.7836127Z Working directory is '/home/runner/work/CLPM-MVP/CLPM-MVP'
+2026-10-17T14:42:06.7836650Z [command]/usr/bin/git version
+2026-10-17T14:42:06.7931403Z git version 2.55.0
+2026-10-17T14:42:06.7951966Z ##[endgroup]
+2026-10-17T14:42:06.7965489Z Temporarily overriding HOME='/home/runner/work/_temp/87a8defa-9c26-4b95-bc8f-41efe582db55' before making global git config changes
+2026-10-17T14:42:06.7966817Z Adding repository directory to the temporary git global config as a safe directory
+2026-10-17T14:42:06.7971924Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/CLPM-MVP/CLPM-MVP
+2026-10-17T14:42:06.8021322Z Deleting the contents of '/home/runner/work/CLPM-MVP/CLPM-MVP'
+2026-10-17T14:42:06.8025909Z ##[group]Initializing the repository
+2026-10-17T14:42:06.8030733Z [command]/usr/bin/git init /home/runner/work/CLPM-MVP/CLPM-MVP
+2026-10-17T14:42:06.8139288Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-10-17T14:42:06.8140431Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-10-17T14:42:06.8144952Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-10-17T14:42:06.8145928Z hint: call:
+2026-10-17T14:42:06.8146618Z hint:
+2026-10-17T14:42:06.8147179Z hint: 	git config --global init.defaultBranch <name>
+2026-10-17T14:42:06.8147738Z hint:
+2026-10-17T14:42:06.8148268Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-10-17T14:42:06.8149066Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-10-17T14:42:06.8149866Z hint:
+2026-10-17T14:42:06.8150188Z hint: 	git branch -m <name>
+2026-10-17T14:42:06.8150543Z hint:
+2026-10-17T14:42:06.8151067Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-10-17T14:42:06.8152000Z Initialized empty Git repository in /home/runner/work/CLPM-MVP/CLPM-MVP/.git/
+2026-10-17T14:42:06.8155619Z [command]/usr/bin/git remote add origin https://github.com/hlszp/CLPM-MVP
+2026-10-17T14:42:06.8201638Z ##[endgroup]
+2026-10-17T14:42:06.8202408Z ##[group]Disabling automatic garbage collection
+2026-10-17T14:42:06.8205981Z [command]/usr/bin/git config --local gc.auto 0
+2026-10-17T14:42:06.8236795Z ##[endgroup]
+2026-10-17T14:42:06.8237427Z ##[group]Setting up auth
+2026-10-17T14:42:06.8243680Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-10-17T14:42:06.8272333Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-10-17T14:42:06.8609416Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-10-17T14:42:06.8647133Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-10-17T14:42:06.8857536Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-10-17T14:42:06.8887548Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-10-17T14:42:06.9071122Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-10-17T14:42:06.9113052Z ##[endgroup]
+2026-10-17T14:42:06.9113839Z ##[group]Fetching the repository
+2026-10-17T14:42:06.9123149Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +645241e983856d3012f9ca2310af260ab988646f:refs/remotes/pull/1/merge
+2026-10-17T14:42:10.4596321Z From https://github.com/hlszp/CLPM-MVP
+2026-10-17T14:42:10.4597121Z  * [new ref]         645241e983856d3012f9ca2310af260ab988646f -> pull/1/merge
+2026-10-17T14:42:10.4599986Z ##[endgroup]
+2026-10-17T14:42:10.4600497Z ##[group]Determining the checkout info
+2026-10-17T14:42:10.4603132Z ##[endgroup]
+2026-10-17T14:42:10.4608988Z [command]/usr/bin/git sparse-checkout disable
+2026-10-17T14:42:10.4663312Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-10-17T14:42:10.4699953Z ##[group]Checking out the ref
+2026-10-17T14:42:10.4704454Z [command]/usr/bin/git checkout --progress --force refs/remotes/pull/1/merge
+2026-10-17T14:42:11.1805117Z Note: switching to 'refs/remotes/pull/1/merge'.
+2026-10-17T14:42:11.1805650Z 
+2026-10-17T14:42:11.1806134Z You are in 'detached HEAD' state. You can look around, make experimental
+2026-10-17T14:42:11.1806624Z changes and commit them, and you can discard any commits you make in this
+2026-10-17T14:42:11.1807096Z state without impacting any branches by switching back to a branch.
+2026-10-17T14:42:11.1807460Z 
+2026-10-17T14:42:11.1807684Z If you want to create a new branch to retain commits you create, you may
+2026-10-17T14:42:11.1808108Z do so (now or later) by using -c with the switch command. Example:
+2026-10-17T14:42:11.1808353Z 
+2026-10-17T14:42:11.1808466Z   git switch -c <new-branch-name>
+2026-10-17T14:42:11.1808640Z 
+2026-10-17T14:42:11.1808743Z Or undo this operation with:
+2026-10-17T14:42:11.1808902Z 
+2026-10-17T14:42:11.1808991Z   git switch -
+2026-10-17T14:42:11.1809143Z 
+2026-10-17T14:42:11.1809345Z Turn off this advice by setting config variable advice.detachedHead to false
+2026-10-17T14:42:11.1809629Z 
+2026-10-17T14:42:11.1809964Z HEAD is now at 645241e Merge c6fa2b489af66da392ea72fa387629f1607ba613 into 86301e5e3083db0feb5f2d9db8fb9eacc8d3165d
+2026-10-17T14:42:11.1833034Z ##[endgroup]
+2026-10-17T14:42:11.1874288Z [command]/usr/bin/git log -1 --format=%H
+2026-10-17T14:42:11.1897035Z 645241e983856d3012f9ca2310af260ab988646f

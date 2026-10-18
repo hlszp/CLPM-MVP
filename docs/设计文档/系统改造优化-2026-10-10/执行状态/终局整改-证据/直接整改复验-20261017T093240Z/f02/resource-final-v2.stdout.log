@@ -1,0 +1,31 @@
+........................................................................ [ 18%]
+........................................................................ [ 37%]
+........................................................................ [ 56%]
+........................................................................ [ 75%]
+........................................................................ [ 93%]
+.......................                                                  [100%]
+=============================== warnings summary ===============================
+../../CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+tests/test_kpi_calc.py::TestPersistSnapshotLineagePassThrough::test_persist_custom_snapshot_passes_lineage_fields
+  /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/core/g5_trace.py:79: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    return await fn(*args, **kwargs)
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_kpi_calc.py::TestPersistSnapshotLineagePassThrough::test_persist_standard_snapshot_still_writes_lineage_fields
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/_pytest/stash.py:108: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    del self._storage[key]
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+tests/test_kpi_calc.py::TestPersistSnapshotInconclusiveConfidenceE::test_composite_none_passes_lineage_confidence_to_persist
+  /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/tasks/kpi_calc.py:2138: RuntimeWarning: coroutine 'AsyncMockMixin._execute_mock_call' was never awaited
+    return None
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+383 passed, 4 warnings in 40.79s

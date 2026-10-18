@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "docker",
+    "run",
+    "-d",
+    "--name",
+    "clpm-f03-redis-20261017-local",
+    "--label",
+    "clpm.audit.owner=final-remediation-f03-local-20261017",
+    "--memory",
+    "512m",
+    "--cpus",
+    "0.5",
+    "-p",
+    "127.0.0.1:17124:6379",
+    "redis:7-alpine",
+    "redis-server",
+    "--maxmemory",
+    "384mb",
+    "--maxmemory-policy",
+    "noeviction",
+    "--appendonly",
+    "no",
+    "--save",
+    ""
+  ],
+  "startedAt": "2026-10-17T13:29:17.731376+00:00",
+  "finishedAt": "2026-10-17T13:29:18.131076+00:00",
+  "rc": 0,
+  "stdoutSha256": "3d8bbd7f5e2083aee7d1d287e358b378b81a887005ac0878a73ae1703354dcfa",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

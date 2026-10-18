@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "test_resource_gate_independent.ResourceGateCounterexamples.test_redis_outofmemoryerror_is_resource_failure",
+    "test_resource_gate_independent.ResourceGateCounterexamples.test_redis_oom_command_is_resource_failure"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/keeper-ops-review-v5",
+  "startedAt": "2026-10-17T11:43:04.185243+00:00",
+  "endedAt": "2026-10-17T11:43:04.255082+00:00",
+  "rc": 1,
+  "sourceSha256": "37b5476009a63747609ab0f7705de0cecd1066269331385539d172c71416c1d4",
+  "scope": "Pure file fixtures only; corrected reverse identity uses archived37 rather than already-fixed55"
+}

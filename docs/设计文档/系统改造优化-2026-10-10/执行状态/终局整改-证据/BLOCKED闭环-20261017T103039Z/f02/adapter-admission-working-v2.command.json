@@ -1,0 +1,19 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "test_adapt_capacity_artifacts.py",
+    "test_adapt_capacity_full_shape.py",
+    "test_adapt_capacity_identity.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+  "startedAt": "2026-10-17T12:37:30.797961+00:00",
+  "elapsedSeconds": 1.0175315410015173,
+  "rc": 0,
+  "stdoutSha256": "6e3e5aca33d5d9ab88db21fdaebb852232d32f4467ccc19645640828d1a78b9d",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,24 @@
+diff --git a/backend/app/services/tuning_identification/arx.py b/backend/app/services/tuning_identification/arx.py
+index 27daee9d9..6b888f26f 100644
+--- a/backend/app/services/tuning_identification/arx.py
++++ b/backend/app/services/tuning_identification/arx.py
+@@ -89,13 +89,12 @@ def identify_arx(
+     n_params = na + nb
+     Phi = np.zeros((rows, n_params))
+     y_reg = np.zeros(rows)
+-    for i in range(rows):
+-        idx = max_lag + i
+-        for j in range(na):
+-            Phi[i, j] = -y[idx - 1 - j]
+-        for j in range(nb):
+-            Phi[i, na + j] = u[idx - d - j]
+-        y_reg[i] = y[idx]
++    # 同一回归矩阵按列填充，避免时滞/不确定性扫描逐点进入 Python。
++    for j in range(na):
++        Phi[:, j] = -np.asarray(y[max_lag - 1 - j : n - 1 - j])
++    for j in range(nb):
++        Phi[:, na + j] = u[max_lag - d - j : n - d - j]
++    y_reg[:] = y[max_lag:]
+ 
+     # 最小二乘
+     theta, _, _, _ = np.linalg.lstsq(Phi, y_reg, rcond=None)

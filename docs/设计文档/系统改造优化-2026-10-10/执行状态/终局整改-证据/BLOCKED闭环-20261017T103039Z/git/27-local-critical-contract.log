@@ -1,0 +1,8 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+│  ruff staged (skip) no files for inspection
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.04 seconds)
+[fix/final-audit-remediation edfa831a] test(e2e): verify isolated local business flows
+ 3 files changed, 238 insertions(+), 18 deletions(-)

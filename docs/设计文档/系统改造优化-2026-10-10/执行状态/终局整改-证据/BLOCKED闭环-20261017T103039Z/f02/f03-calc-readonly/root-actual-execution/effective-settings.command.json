@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-c",
+    "import json;from app.core.config import settings;print(json.dumps({\"HISTORY_STORAGE_MODE\":settings.HISTORY_STORAGE_MODE,\"TDENGINE_DB\":settings.TDENGINE_DB}))"
+  ],
+  "startedAt": "2026-10-17T13:15:18.749319+00:00",
+  "finishedAt": "2026-10-17T13:15:18.846166+00:00",
+  "rc": 0,
+  "sourceSettingsSha256": "71690d96afb96f626ceaac7f68694a1f9b571afb4b61f1aa30fe608cc033d13e",
+  "stdoutSha256": "bbcabc9dc89737d48215f9e7c0ae6bba93a0f8fc4f30055148fa9cb2ca66ce0e",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,10 @@
+### Ran Playwright code
+```js
+await (async(page)=>{await page.goto(new URL('/auth/login#//foreign.invalid/cockpit',page.url()).href); const result=await page.evaluate(()=>({url:location.href,accepted:window.helpers.isAuthenticatedLanding(new URL(location.href),location.origin)})); if(result.accepted)throw new Error('False authenticated landing: '+JSON.stringify(result));console.log(JSON.stringify(result));})(page);
+```
+### Page
+- Page URL: http://127.0.0.1:57039/auth/login#//foreign.invalid/cockpit
+- Page Title: Independent route fixture
+- Console: 1 errors, 0 warnings
+### Events
+- New console entries: .playwright-cli/console-2026-10-17T11-57-27-163Z.log#L1-L3

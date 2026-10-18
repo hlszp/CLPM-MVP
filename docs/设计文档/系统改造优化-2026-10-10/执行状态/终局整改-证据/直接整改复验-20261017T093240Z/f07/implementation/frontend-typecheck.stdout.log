@@ -1,0 +1,4 @@
+
+> @vben/web-antd@5.7.0 typecheck /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd
+> vue-tsc --noEmit --skipLibCheck
+

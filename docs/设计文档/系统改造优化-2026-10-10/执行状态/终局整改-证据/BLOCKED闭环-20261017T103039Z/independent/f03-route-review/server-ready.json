@@ -1,0 +1,10 @@
+{
+  "at": "2026-10-17T11:46:28.990Z",
+  "pid": 59590,
+  "address": {
+    "address": "127.0.0.1",
+    "family": "IPv4",
+    "port": 60134
+  },
+  "productServiceTouched": false
+}

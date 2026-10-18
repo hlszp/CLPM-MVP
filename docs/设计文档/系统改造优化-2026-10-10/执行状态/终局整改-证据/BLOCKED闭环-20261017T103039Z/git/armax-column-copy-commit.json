@@ -1,0 +1,19 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "perf(tuning): \u6309\u5217\u6784\u9020ARMAX\u56de\u5f52\u77e9\u9635",
+    "-m",
+    "\u8fdc\u7aef\u539f\u59cb22\u7ec4\u8fa8\u8bc6\u6d4b\u8bd5\u8d85\u65f6\u3002\u4ec5\u66ff\u6362\u56fa\u5b9a\u77e9\u9635\u586b\u5145\uff0c\u4fdd\u6301\u9012\u63a8\u3001\u8fed\u4ee3\u3001\u6c42\u89e3\u4e0e\u8bef\u5dee\u516c\u5f0f\u3002\u72ec\u7acb\u5bf9\u7167\u786e\u8ba422\u7ec4\u5b8c\u6574\u7ed3\u679c\u53ca24018\u6b21\u6c42\u89e3\u8f93\u5165\u9010\u5b57\u8282\u4e00\u81f4\uff0c\u8fb9\u754c\u8f93\u5165\u4fdd\u7559\u539f\u8def\u5f84\u3002"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.196,
+  "database": "clpm_audit_gate_20261017",
+  "postgres_container": "clpm-mvp-postgres",
+  "shared_business_database_touched": false,
+  "redis_and_tdengine": "disabled for isolated unit gates",
+  "log": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/git/armax-column-copy-commit.log",
+  "sha256": "3839ac4e2a738eb98dcb0f4edcc9bc7af6131170fca5af29254a22ce756e821d"
+}

@@ -1,0 +1,28 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/ci-input-evidence-capture/check-workflow-and-shell.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAtUtc": "2026-10-17T15:06:24.641188+00:00",
+  "elapsedSeconds": 1.2970146250154357,
+  "rc": 0,
+  "envOverrides": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "NO_PROXY": "127.0.0.1,localhost,::1",
+    "no_proxy": "127.0.0.1,localhost,::1"
+  },
+  "files": [
+    {
+      "path": "stdout.log",
+      "bytes": 930,
+      "sha256": "c653f6f3a106ba1a5f340a24ea8d411b06240ace6725979efeffa40707baad7c"
+    },
+    {
+      "path": "stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

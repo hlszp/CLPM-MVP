@@ -1,0 +1,1 @@
+{"proxyPort": 61538, "upstreamPort": 61537, "bothEphemeralLoopback": true, "threadsStopped": true, "actualServiceTouched": false, "upstreamRequests": [{"sha256": "3f93f88f2190fdab8b8104b46c9abc3aceaf5cfca80f441bebc194de20802a14", "path": "/rest/sql?password=INDEPENDENT_SYNTHETIC_SECRET_7c91", "authorizationPresent": false}]}

@@ -1,0 +1,12 @@
+{
+  "command": [
+    "cat",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/drive2a.sh"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:33:09.235708+00:00",
+  "elapsedSeconds": 0.005400874999999999,
+  "rc": 0,
+  "stdoutSha256": "f60aa73c42506e6c8d2c6a9870808787c88988e143426bfe268dd249a5d1e323",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

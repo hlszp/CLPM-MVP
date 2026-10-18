@@ -1,0 +1,14 @@
+E731 Do not assign a `lambda` expression, use a `def`
+   --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/verify_closed_endpoints_raw.py:175:5
+    |
+173 |         (row["id"], row["tag_name"]) for row in old_identity["loops"]
+174 |     )
+175 |     binding = lambda row: (row["loop_id"], row["tag_role"], row["tag_id"])
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+176 |     assert sorted(map(binding, mappings)) == sorted(
+177 |         map(binding, old_identity["mappings"])
+    |
+help: Rewrite `binding` as a `def`
+
+Found 1 error.
+No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).

@@ -1,0 +1,16 @@
+{
+  "command": [
+    "env",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHONPATH=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-c",
+    "from freeze_capacity_configuration import completed_inputs,canonical,sha\nfrom pathlib import Path\nimport json\ne=Path(\"/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z\")/'f02'\nr=completed_inputs(e/'input-series-audit-v2/progress.json',e/'series-s01/planned-batches.json')\nresult={'status':'ACTUAL_TWENTY_INPUT_ARTIFACT_GATE_PASS','normalInputWindows':20,'uniqueActualLoopIds':len(r['verifiedLoopIdentity']),'actualPointRoleBindings':len(r['verifiedPointBindings']),'plannedBatchesSha256':r['verifiedPlannedBatchesSha256'],'loopIdentitySha256':sha(canonical(r['verifiedLoopIdentity'])),'pointBindingsSha256':sha(canonical(r['verifiedPointBindings'])),'boundary':'Pure read of real audit originals/plan/identities; no live PG/API/config freeze or business tasks.'}\np=e/'actual-twenty-input-identity-gate.json'\nwith p.open('xb') as f:f.write(canonical(result))\nprint(json.dumps(result))\n"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "startedAt": "2026-10-17T11:44:08.955530+00:00",
+  "elapsedSeconds": 0.5117634169873782,
+  "rc": 0,
+  "stdoutSha256": "f349cc0110e555617816ab7bd47aac85d42d6c4486ca1c73acd891befcc46427",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

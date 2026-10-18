@@ -1,0 +1,9 @@
+{
+  "beforeSha256": "47b1927f2c535cd76b67fb9bf01704c613c0fb395703aa868f1b736db731ec56",
+  "afterSha256": "8029ba978c5e2ab05ab82c69e1b0de0174ba657ab39cae0c1072fea5a240be1b",
+  "onlyChange": {
+    "oldTarget": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+    "actualTarget": "/Users/zhangping/DEV/clpm-remediation-20261017"
+  },
+  "scope": "same original full committed/blob/runtime hash checks, retargeted to local imported source; no service or checkout action"
+}

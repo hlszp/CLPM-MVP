@@ -1,0 +1,11 @@
+{
+  "command": [
+    "node",
+    "--input-type=module",
+    "-e",
+    "import('@playwright/test')"
+  ],
+  "cwd": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/candidate/e2e",
+  "exit_code": 1,
+  "note": "Clean archived e2e subtree; frontend dependency links exist in sibling frontend only."
+}

@@ -1,0 +1,74 @@
+{
+  "frozenAt": "2026-10-17T10:54:02.508050+00:00",
+  "changedInThisPhase": [
+    ".github/workflows/ci.yml"
+  ],
+  "head": "d8200eedd02aa785105eeceb5246dc6bf297e6b4",
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "bytes": 13247,
+      "sha256": "7f0fc547d35e394acd0f37c7bdabda183d1ad77c0f805e78b891be2fe69a5cf1"
+    },
+    {
+      "path": "scripts/run-critical-e2e.sh",
+      "bytes": 2895,
+      "sha256": "7bbd52348ef46c0d312aaf03190c1d93438292a98e71bbad2a0211c43f369fe3"
+    },
+    {
+      "path": "e2e/package.json",
+      "bytes": 591,
+      "sha256": "d2647e50cb75f022ec4f8a8ccafd02f14736a176514e7127ebe0eb6fe69b7622"
+    },
+    {
+      "path": "e2e/package-lock.json",
+      "bytes": 3439,
+      "sha256": "ca5e75dab3da8d4f0cc7f5da6f818b31f9f97d78b72112e37dc1b75cff8db165"
+    },
+    {
+      "path": "e2e/tsconfig.json",
+      "bytes": 543,
+      "sha256": "c50e25f864681f96d1a04d075efccb3cf1974f3618f6559e32351a01e091f46a"
+    },
+    {
+      "path": "e2e/critical-cases.json",
+      "bytes": 359,
+      "sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c"
+    },
+    {
+      "path": "e2e/playwright.config.ts",
+      "bytes": 1766,
+      "sha256": "7246ae4a0592d063b41e0b7e343171b6dfe986b2964384b0b7c29719242e2f38"
+    },
+    {
+      "path": "e2e/playwright.critical.config.ts",
+      "bytes": 351,
+      "sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4"
+    },
+    {
+      "path": "e2e/scripts/prepare-critical-fixture.py",
+      "bytes": 12221,
+      "sha256": "a449126876e6d4764d28c22c6f718e4eb86b3d1fb94c53941ad42fa56bbbdc8d"
+    },
+    {
+      "path": "e2e/scripts/test-critical-gate.mjs",
+      "bytes": 6695,
+      "sha256": "e0e86e4f0c7fe71707563318e2efcad47df8187dce55b79065be3feee3b71e14"
+    },
+    {
+      "path": "e2e/scripts/test_critical_fixture.py",
+      "bytes": 2754,
+      "sha256": "5e1ba4676785ac50db08049a869e5dcad6628577059ba128c6e01babd71b83b1"
+    },
+    {
+      "path": "e2e/scripts/validate-critical-results.mjs",
+      "bytes": 3903,
+      "sha256": "6067419dbd02014818c19d5682284d9e1d365767945efa7f2d145d0c7ce743f4"
+    },
+    {
+      "path": "e2e/tests/critical-business.spec.ts",
+      "bytes": 8220,
+      "sha256": "78bad7ee99e20b7ff5ef2e4c6c5e459cb1d3c4fbdb2a58dff107f70fee221de6"
+    }
+  ]
+}

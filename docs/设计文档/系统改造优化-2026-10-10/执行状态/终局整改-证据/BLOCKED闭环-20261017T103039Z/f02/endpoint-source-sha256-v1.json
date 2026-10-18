@@ -1,0 +1,20 @@
+{
+  "frozenAt": "2026-10-17T11:43:44.621570+00:00",
+  "files": [
+    {
+      "file": "capture_closed_window_endpoints.py",
+      "sha256": "6f841e7d577975095b332b3015081ba34a303adebf509e0a65a32bffbb4c7b9b",
+      "bytes": 21324
+    },
+    {
+      "file": "test_capture_closed_window_endpoints.py",
+      "sha256": "e331cdc2e8e2d37c5ab23e73319d45736c37a190c0d19ff5672df679a5688232",
+      "bytes": 6439
+    }
+  ],
+  "dependencies": {
+    "audit_capacity_inputs.py": "8bd8cb604032d85948cc6bc1f429974b93424e3ab1f7648af62cebcc2e1a3b6d",
+    "freeze_capacity_configuration.py": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e"
+  },
+  "scope": "Keeper-run read-only exact closed endpoint capture, only pure disk/response selftests by author; no real endpoint query yet"
+}

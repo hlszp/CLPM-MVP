@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "docker",
+    "inspect",
+    "clpm-f03-redis-20261017-local"
+  ],
+  "cwd": null,
+  "startedAt": "2026-10-17T14:42:26.182829+00:00",
+  "finishedAt": "2026-10-17T14:42:26.220354+00:00",
+  "rc": 0,
+  "stdoutSha256": "53f83068fe3aeb484b4ea22c1151ddae760c39b589cc6aafe72bdea67a55bce7",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environmentReference": "environment-safe.json; credentials never logged"
+}

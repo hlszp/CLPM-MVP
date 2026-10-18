@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "node",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/check-response-code.mjs"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "rc": 0,
+  "startedAt": "2026-10-17T10:38:02.273720+00:00",
+  "finishedAt": "2026-10-17T10:38:02.541914+00:00"
+}

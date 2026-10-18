@@ -1,0 +1,26 @@
+{
+  "testSourceSha256": "4bb5acd73a8be5ba1376c0e6ac945761b2dbc205a5de91387245628cd4f0a10b",
+  "mainSourceSha256": "5f59552d61e4e1229d4b784471b17f3c00a42af797d810dc5194f73c6624252b",
+  "originalRealBeatPid": 70527,
+  "testError": null,
+  "unmockedByTestPgrepCalls": [
+    {
+      "pattern": "celery.*-A app\\.tasks\\.celery_app.*beat.*clpm\\-remediation\\-20261017/",
+      "matchesRecordedRealBeat": true
+    }
+  ],
+  "unmockedByTestTerminationCalls": [
+    {
+      "pids": [
+        70527
+      ],
+      "label": "Celery Beat（遗留）"
+    }
+  ],
+  "productModulesImported": false,
+  "networkOperations": 0,
+  "actualSignalsSent": 0,
+  "allProcessSignallingBoundariesIntercepted": true,
+  "testIsolatedFromOtherProjectProcesses": false,
+  "scope": "Reachability counterexample only; historical signal sender remains unproven"
+}

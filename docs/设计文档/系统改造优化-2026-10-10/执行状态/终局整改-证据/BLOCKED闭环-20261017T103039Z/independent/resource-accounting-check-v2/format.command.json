@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "format",
+    "independent_resource_accounting.py",
+    "verify_capacity_series_frozen_profile.py",
+    "test_resource_accounting.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent",
+  "startedAt": "2026-10-17T11:35:44.536590+00:00",
+  "endedAt": "2026-10-17T11:35:44.551101+00:00",
+  "rc": 0,
+  "scope": "Independent raw resource arithmetic and new series adapter synthetic fixtures only"
+}

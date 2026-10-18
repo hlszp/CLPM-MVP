@@ -1,0 +1,1425 @@
+﻿2026-10-17T15:18:31.4966110Z ##[group]Run pnpm run test:unit
+2026-10-17T15:18:31.4966394Z [36;1mpnpm run test:unit[0m
+2026-10-17T15:18:31.5001666Z shell: /usr/bin/bash -e {0}
+2026-10-17T15:18:31.5001953Z env:
+2026-10-17T15:18:31.5002128Z   CI: true
+2026-10-17T15:18:31.5002356Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T15:18:31.5002629Z ##[endgroup]
+2026-10-17T15:18:31.9646457Z 
+2026-10-17T15:18:31.9647445Z > vben-admin-monorepo@5.7.0 test:unit /home/runner/work/CLPM-MVP/CLPM-MVP/frontend
+2026-10-17T15:18:31.9648123Z > vitest run --dom
+2026-10-17T15:18:31.9648316Z 
+2026-10-17T15:18:32.4921423Z 
+2026-10-17T15:18:32.4924470Z [1m[30m[46m RUN [49m[39m[22m [36mv4.1.9 [39m[90m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend[39m
+2026-10-17T15:18:32.4925028Z 
+2026-10-17T15:18:36.0949803Z  [32m✓[39m apps/web-antd/src/__tests__/p6-pl-reconciliation.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 236[2mms[22m[39m
+2026-10-17T15:18:36.2779172Z  [32m✓[39m apps/web-antd/src/__tests__/my-work.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 370[2mms[22m[39m
+2026-10-17T15:18:39.0942896Z  [32m✓[39m apps/web-antd/src/__tests__/p6-eng-templates.test.ts [2m([22m[2m28 tests[22m[2m)[22m[33m 2879[2mms[22m[39m
+2026-10-17T15:18:39.0959302Z      [33m[2m✓[22m[39m 1000 条跨页选择的预览和执行均分 5 批，丢响应后沿原 operationId 幂等重试 [33m 1728[2mms[22m[39m
+2026-10-17T15:18:39.0960559Z      [33m[2m✓[22m[39m 5 批共1000条原始NULL/pin可审查，零写入预检后确认分批恢复并呈现冲突/幂等状态 [33m 679[2mms[22m[39m
+2026-10-17T15:18:39.1741020Z  [32m✓[39m apps/web-antd/src/__tests__/p6-r0x-tuning-evidence.test.ts [2m([22m[2m23 tests[22m[2m)[22m[33m 746[2mms[22m[39m
+2026-10-17T15:18:39.4160221Z [90mstderr[2m | apps/web-antd/src/__tests__/p6-03-info-hierarchy.test.ts[2m > [22m[2mpid-dashboard（PL-04/PL-05：常驻 N/E + F 参考同显 + series 断言）[2m > [22m[2m常驻 N/E 绑定名册字段（scorableLoopCount/eligibleLoopCount）+ 截至 + 原因
+2026-10-17T15:18:39.4162952Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.4165267Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.4167648Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.4170052Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.4172120Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.4174416Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.4176827Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.4179443Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.4181569Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.4183795Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.4186456Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.4188133Z   at <ATooltip title="均分口径：窗口内暂无 metricStats（历史快照不可追溯），显示已评加权均分" > 
+2026-10-17T15:18:39.4188739Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.4189215Z   at <VTUROOT>
+2026-10-17T15:18:39.4190321Z [Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.4193059Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.4195128Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.4197471Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.4199328Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.4201949Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.4204175Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.4206479Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.4208927Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.4211440Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.4213729Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.4215110Z   at <ATooltip title="当前：评分最低，点击切换为最高" > 
+2026-10-17T15:18:39.4215620Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.4216105Z   at <VTUROOT>
+2026-10-17T15:18:39.4216343Z 
+2026-10-17T15:18:39.4561974Z [90mstderr[2m | apps/web-antd/src/__tests__/p6-03-info-hierarchy.test.ts[2m > [22m[2mpid-dashboard（PL-04/PL-05：常驻 N/E + F 参考同显 + series 断言）[2m > [22m[2mF 参考同显块：均分/参考数量/动态证据不足/覆盖/来源，不冒充正式 F/P
+2026-10-17T15:18:39.4619052Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.4636840Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.4679161Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.4681525Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.4683869Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.4686625Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.4689525Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.4692031Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.4694347Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.4696705Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.4699156Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.4700690Z   at <ATooltip title="均分口径：窗口内暂无 metricStats（历史快照不可追溯），显示已评加权均分" > 
+2026-10-17T15:18:39.4701306Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.4701731Z   at <VTUROOT>
+2026-10-17T15:18:39.4702929Z [Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.4704885Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.4706933Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.4739683Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.4741898Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.4743927Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.4746236Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.4749280Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.4751438Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.4753585Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.4755855Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.4757218Z   at <ATooltip title="当前：评分最低，点击切换为最高" > 
+2026-10-17T15:18:39.4757716Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.4758133Z   at <VTUROOT>
+2026-10-17T15:18:39.4758323Z 
+2026-10-17T15:18:39.4859020Z [90mstderr[2m | apps/web-antd/src/__tests__/p6-03-info-hierarchy.test.ts[2m > [22m[2mpid-dashboard（PL-04/PL-05：常驻 N/E + F 参考同显 + series 断言）[2m > [22m[2mseries 断言：无名册桶为 null 断点（不画作 0），折线 connectNulls=false
+2026-10-17T15:18:39.4875022Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.4919153Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.4921837Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.4941686Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.4974181Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.4976600Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.4979248Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.4981433Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.4983447Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.4985447Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.4987597Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.4989165Z   at <ATooltip title="均分口径：窗口内暂无 metricStats（历史快照不可追溯），显示已评加权均分" > 
+2026-10-17T15:18:39.4989690Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.4990073Z   at <VTUROOT>
+2026-10-17T15:18:39.4991212Z [Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.4993136Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.4995172Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.5002079Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.5004391Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.5006411Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.5038437Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.5040767Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.5042698Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.5044607Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.5046510Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.5047709Z   at <ATooltip title="当前：评分最低，点击切换为最高" > 
+2026-10-17T15:18:39.5047997Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.5048251Z   at <VTUROOT>
+2026-10-17T15:18:39.5048368Z 
+2026-10-17T15:18:39.5193808Z [90mstderr[2m | apps/web-antd/src/__tests__/p6-03-info-hierarchy.test.ts[2m > [22m[2mpid-dashboard（PL-04/PL-05：常驻 N/E + F 参考同显 + series 断言）[2m > [22m[2m全无名册（历史快照不可追溯）：诚实态，不编造 N/E 与 F 参考
+2026-10-17T15:18:39.5224642Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.5248993Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.5278803Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.5308854Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.5338787Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.5340974Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.5369048Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.5398793Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.5428802Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.5430847Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.5432943Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.5458128Z   at <ATooltip title="均分口径：窗口内暂无 metricStats（历史快照不可追溯），显示已评加权均分" > 
+2026-10-17T15:18:39.5616820Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.5677731Z   at <VTUROOT>
+2026-10-17T15:18:39.5696521Z [Vue warn]: Failed setting prop "children" on <a-tooltip-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:39.5748822Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:39.5751970Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:39.5793019Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:39.5810743Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:39.5816608Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:39.5819941Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:39.5822139Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:39.5824283Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:39.5826591Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:39.5828949Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:39.5830270Z   at <ATooltip title="当前：评分最低，点击切换为最高" > 
+2026-10-17T15:18:39.5830765Z   at <PidDashboard ref="VTU_COMPONENT" > 
+2026-10-17T15:18:39.5831363Z   at <VTUROOT>
+2026-10-17T15:18:39.5831608Z 
+2026-10-17T15:18:39.7609392Z  [32m✓[39m apps/web-antd/src/__tests__/p6-03-info-hierarchy.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 491[2mms[22m[39m
+2026-10-17T15:18:39.9681616Z  [32m✓[39m apps/web-antd/src/__tests__/use-loop-realtime.test.ts [2m([22m[2m33 tests[22m[2m)[22m[32m 72[2mms[22m[39m
+2026-10-17T15:18:40.6979841Z  [32m✓[39m apps/web-antd/src/__tests__/p6-01ba-nav-groups.test.ts [2m([22m[2m32 tests[22m[2m)[22m[32m 119[2mms[22m[39m
+2026-10-17T15:18:40.7280750Z DOMException [AbortError]: The operation was aborted.
+2026-10-17T15:18:40.7353491Z     at Fetch.onAsyncTaskManagerAbort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+2026-10-17T15:18:40.7355061Z     at Object.<anonymous> (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+2026-10-17T15:18:40.7429187Z     at AsyncTaskManager.abortAll (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+2026-10-17T15:18:40.7458889Z     at AsyncTaskManager.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+2026-10-17T15:18:40.7485858Z     at DetachedBrowserFrame.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+2026-10-17T15:18:40.7508420Z     at DetachedWindowAPI.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+2026-10-17T15:18:40.7559333Z     at teardownWindow (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+2026-10-17T15:18:40.7590868Z     at Object.teardown (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+2026-10-17T15:18:40.7595941Z     at file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+2026-10-17T15:18:40.7598689Z     at Traces.$ (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+2026-10-17T15:18:42.5603729Z  [32m✓[39m apps/web-antd/src/__tests__/loop-follow.test.ts [2m([22m[2m21 tests[22m[2m)[22m[32m 188[2mms[22m[39m
+2026-10-17T15:18:43.1009407Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR15 前端兼容：消息分发[2m > [22m[2mbatch 批量帧逐条分发给回调
+2026-10-17T15:18:43.1028507Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1057509Z 
+2026-10-17T15:18:43.1116000Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR15 前端兼容：消息分发[2m > [22m[2mping/未知 type 控制帧忽略，单对象帧照常分发
+2026-10-17T15:18:43.1158149Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1158871Z 
+2026-10-17T15:18:43.1176927Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR18 连接竞态[2m > [22m[2m断线→重连 timer 触发→页面 connect：全程 ≤1 个有效 socket
+2026-10-17T15:18:43.1178327Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1179062Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1179777Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1180712Z [RealtimeWS] 已连接
+2026-10-17T15:18:43.1181135Z 
+2026-10-17T15:18:43.1182087Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR18 连接竞态[2m > [22m[2m页面 connect 清除挂起的重连 timer（不再交错建连）
+2026-10-17T15:18:43.1183143Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1183783Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1184409Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1185056Z [RealtimeWS] 已连接
+2026-10-17T15:18:43.1185423Z 
+2026-10-17T15:18:43.1186411Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR18 连接竞态[2m > [22m[2mtoken 变更换路径走同一状态机：旧 socket 被关闭且其事件被忽略
+2026-10-17T15:18:43.1187748Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1188136Z 
+2026-10-17T15:18:43.1189133Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR18 连接竞态[2m > [22m[2m多次挂载/卸载（connect/disconnect 循环）无连接泄漏
+2026-10-17T15:18:43.1190169Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1190791Z [RealtimeWS] 已连接
+2026-10-17T15:18:43.1191345Z [RealtimeWS] 已连接
+2026-10-17T15:18:43.1191673Z 
+2026-10-17T15:18:43.1259195Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR19 状态通知[2m > [22m[2m每次通知时 getter 值一致：offline→online→offline→reconnecting→online
+2026-10-17T15:18:43.1260587Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1261282Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1262017Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1262617Z [RealtimeWS] 已连接
+2026-10-17T15:18:43.1262963Z 
+2026-10-17T15:18:43.1264018Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR19 状态通知[2m > [22m[2m显式 disconnect 通知 offline 且不再自动重连
+2026-10-17T15:18:43.1265299Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1265661Z 
+2026-10-17T15:18:43.1266560Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mR19 状态通知[2m > [22m[2m同一时刻至多一个重连 timer
+2026-10-17T15:18:43.1267682Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1268358Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1269024Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1269587Z [RealtimeWS] 已连接
+2026-10-17T15:18:43.1270255Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1271123Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1271509Z 
+2026-10-17T15:18:43.1829102Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2m订阅过滤协议（2026-09-06 接通）[2m > [22m[2m未声明兴趣的连接不发送 subscribe（旧版全量转发语义）
+2026-10-17T15:18:43.1848426Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1848980Z 
+2026-10-17T15:18:43.1850080Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2m订阅过滤协议（2026-09-06 接通）[2m > [22m[2m声明兴趣后 open 自动发送订阅帧，重连后自动重发
+2026-10-17T15:18:43.1878441Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1879349Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1880145Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1880460Z 
+2026-10-17T15:18:43.1881488Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2m订阅过滤协议（2026-09-06 接通）[2m > [22m[2m声明兴趣后 open 自动发送订阅帧，重连后自动重发
+2026-10-17T15:18:43.1908664Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1909095Z 
+2026-10-17T15:18:43.1910948Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2m订阅过滤协议（2026-09-06 接通）[2m > [22m[2mclearInterest 发送空订阅（非实时页零流量）且替换语义生效
+2026-10-17T15:18:43.1912176Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1912576Z 
+2026-10-17T15:18:43.1914211Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m双 owner 并集：open 发送 tags/loops 并集帧
+2026-10-17T15:18:43.1915065Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1915661Z 
+2026-10-17T15:18:43.1916913Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m释放 owner B 不影响 owner A；全部释放后显式空并集（零流量）
+2026-10-17T15:18:43.1929514Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1930185Z 
+2026-10-17T15:18:43.1931579Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m同 owner 重复注册幂等：内容相同零发送，内容变化整体替换
+2026-10-17T15:18:43.1932891Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1933365Z 
+2026-10-17T15:18:43.1934582Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m释放不存在的 owner 为幂等空操作（不发帧不报错）
+2026-10-17T15:18:43.1935775Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1936146Z 
+2026-10-17T15:18:43.1964018Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m断线重连后自动重发当前并集
+2026-10-17T15:18:43.1965860Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1966590Z [RealtimeWS] 连接关闭 (code=1006)
+2026-10-17T15:18:43.1969795Z [RealtimeWS] 3000ms 后重连 (第1次)
+2026-10-17T15:18:43.1970242Z 
+2026-10-17T15:18:43.1971221Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m断线重连后自动重发当前并集
+2026-10-17T15:18:43.1996221Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1996698Z 
+2026-10-17T15:18:43.1997964Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m反复注册/释放无残留：全释放后新注册只含新 owner 内容
+2026-10-17T15:18:43.1998863Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.1999169Z 
+2026-10-17T15:18:43.2009883Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2munregisterAllInterests 清空全部 owner 并发空并集；从未声明时空操作
+2026-10-17T15:18:43.2011055Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.2011299Z 
+2026-10-17T15:18:43.2020352Z [90mstderr[2m | apps/web-antd/src/__tests__/realtime-ws.test.ts[2m > [22m[2mP6 O02-RT：owner 兴趣 registry（并集/释放隔离/重连重发）[2m > [22m[2m兼容层 subscribe 与 owner 并集共存：释放 owner 不影响兼容切片
+2026-10-17T15:18:43.2021770Z [22m[39m[RealtimeWS] 已连接
+2026-10-17T15:18:43.2022435Z 
+2026-10-17T15:18:43.2055508Z  [32m✓[39m apps/web-antd/src/__tests__/realtime-ws.test.ts [2m([22m[2m22 tests[22m[2m)[22m[32m 162[2mms[22m[39m
+2026-10-17T15:18:44.1065979Z [90mstderr[2m | apps/web-antd/src/__tests__/task-list.test.ts[2m > [22m[2m统一任务列表 task/list.vue AUTH-03 角色显隐[2m > [22m[2muT-TASKLIST-016: ADMIN 可见批量删除/取消/删除（对齐后端 _TASK_CREATOR_ROLES）
+2026-10-17T15:18:44.1068603Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.1070797Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.1089370Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.1119103Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.1121777Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.1124395Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.1126712Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.1129433Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.1131847Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.1134218Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.1136593Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.1168464Z   at <ASelect value=undefined onUpdate:value=fn placeholder="发起方：全部"  ... > 
+2026-10-17T15:18:44.1170679Z   at <ASpace> 
+2026-10-17T15:18:44.1171301Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.1172110Z   at <VTUROOT>
+2026-10-17T15:18:44.1173406Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.1175547Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.1177816Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.1179987Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.1182414Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.1184557Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.1186835Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.1190444Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.1192660Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.1194765Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.1196914Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.1212415Z   at <ASelect key=0 value=undefined onUpdate:value=fn  ... > 
+2026-10-17T15:18:44.1213130Z   at <ASpace> 
+2026-10-17T15:18:44.1213598Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.1214064Z   at <VTUROOT>
+2026-10-17T15:18:44.1215260Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.1217518Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.1219618Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.1221637Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.1223760Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.1225961Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.1228408Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.1230672Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.1232834Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.1235193Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.1237723Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.1239264Z   at <ASelect value=undefined onUpdate:value=fn placeholder="状态筛选"  ... > 
+2026-10-17T15:18:44.1239844Z   at <ASpace> 
+2026-10-17T15:18:44.1240333Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.1240777Z   at <VTUROOT>
+2026-10-17T15:18:44.1240998Z 
+2026-10-17T15:18:44.1506406Z [90mstderr[2m | apps/web-antd/src/__tests__/task-list.test.ts[2m > [22m[2m统一任务列表 task/list.vue AUTH-03 角色显隐[2m > [22m[2muT-TASKLIST-016: IC_ENGINEER 可见批量删除/取消/删除（对齐后端 _TASK_CREATOR_ROLES）
+2026-10-17T15:18:44.1509239Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.1511974Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.1515313Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.1518274Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.1521003Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.1523475Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.1526186Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.1529527Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.1532318Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.1535549Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.1538564Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.1540954Z   at <ASelect value=undefined onUpdate:value=fn placeholder="发起方：全部"  ... > 
+2026-10-17T15:18:44.1542017Z   at <ASpace> 
+2026-10-17T15:18:44.1542981Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.1543815Z   at <VTUROOT>
+2026-10-17T15:18:44.1545692Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.1548850Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.1551348Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.1553892Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.1556477Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.1559287Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.1573386Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.1577321Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.1583616Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.1603492Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.1607484Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.1610582Z   at <ASelect key=0 value=undefined onUpdate:value=fn  ... > 
+2026-10-17T15:18:44.1623607Z   at <ASpace> 
+2026-10-17T15:18:44.1657534Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.1658280Z   at <VTUROOT>
+2026-10-17T15:18:44.1659426Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.1661685Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.1664021Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.1666142Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.1668384Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.1670510Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.1672798Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.1674945Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.1677062Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.1679414Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.1681565Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.1683017Z   at <ASelect value=undefined onUpdate:value=fn placeholder="状态筛选"  ... > 
+2026-10-17T15:18:44.1683642Z   at <ASpace> 
+2026-10-17T15:18:44.1684070Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.1684553Z   at <VTUROOT>
+2026-10-17T15:18:44.1684767Z 
+2026-10-17T15:18:44.2169438Z [90mstderr[2m | apps/web-antd/src/__tests__/task-list.test.ts[2m > [22m[2m统一任务列表 task/list.vue AUTH-03 角色显隐[2m > [22m[2muT-TASKLIST-016: PE_ENGINEER 可见批量删除/取消/删除（对齐后端 _TASK_CREATOR_ROLES）
+2026-10-17T15:18:44.2171662Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2198990Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2229217Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2239199Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2241575Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2243750Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2247043Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2249700Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2251995Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2254571Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2256962Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2258736Z   at <ASelect value=undefined onUpdate:value=fn placeholder="发起方：全部"  ... > 
+2026-10-17T15:18:44.2259526Z   at <ASpace> 
+2026-10-17T15:18:44.2260081Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2260609Z   at <VTUROOT>
+2026-10-17T15:18:44.2261969Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2264053Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2266336Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2268653Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2270916Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2273025Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2275432Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2277873Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2280129Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2282439Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2284621Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2286392Z   at <ASelect key=0 value=undefined onUpdate:value=fn  ... > 
+2026-10-17T15:18:44.2287008Z   at <ASpace> 
+2026-10-17T15:18:44.2287756Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2288341Z   at <VTUROOT>
+2026-10-17T15:18:44.2289561Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2291719Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2293946Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2296182Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2298510Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2300647Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2303090Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2305584Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2308026Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2310443Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2312800Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2314355Z   at <ASelect value=undefined onUpdate:value=fn placeholder="状态筛选"  ... > 
+2026-10-17T15:18:44.2315137Z   at <ASpace> 
+2026-10-17T15:18:44.2315667Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2316245Z   at <VTUROOT>
+2026-10-17T15:18:44.2316528Z 
+2026-10-17T15:18:44.2459179Z [90mstderr[2m | apps/web-antd/src/__tests__/task-list.test.ts[2m > [22m[2m统一任务列表 task/list.vue AUTH-03 角色显隐[2m > [22m[2muT-TASKLIST-017: EXPERT 不可见批量删除/取消/删除（后端必 403 的按钮不渲染）
+2026-10-17T15:18:44.2461703Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2463963Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2466404Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2471553Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2473829Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2476183Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2479045Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2481581Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2483898Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2486489Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2489205Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2491026Z   at <ASelect value=undefined onUpdate:value=fn placeholder="发起方：全部"  ... > 
+2026-10-17T15:18:44.2491846Z   at <ASpace> 
+2026-10-17T15:18:44.2492479Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2493198Z   at <VTUROOT>
+2026-10-17T15:18:44.2494641Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2497355Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2499734Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2502200Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2504646Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2507467Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2510171Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2512848Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2515646Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2518339Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2520904Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2522610Z   at <ASelect key=0 value=undefined onUpdate:value=fn  ... > 
+2026-10-17T15:18:44.2523409Z   at <ASpace> 
+2026-10-17T15:18:44.2524092Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2524733Z   at <VTUROOT>
+2026-10-17T15:18:44.2526182Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2528745Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2531168Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2533565Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2535238Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2536742Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2539326Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2541421Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2542873Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2544273Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2545741Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2546752Z   at <ASelect value=undefined onUpdate:value=fn placeholder="状态筛选"  ... > 
+2026-10-17T15:18:44.2547363Z   at <ASpace> 
+2026-10-17T15:18:44.2547829Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2548253Z   at <VTUROOT>
+2026-10-17T15:18:44.2548512Z 
+2026-10-17T15:18:44.2870110Z [90mstderr[2m | apps/web-antd/src/__tests__/task-list.test.ts[2m > [22m[2m统一任务列表 task/list.vue AUTH-03 角色显隐[2m > [22m[2muT-TASKLIST-017: SPONSOR 不可见批量删除/取消/删除（后端必 403 的按钮不渲染）
+2026-10-17T15:18:44.2872901Z [22m[39m[Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2875490Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2878620Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2881425Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2883999Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2886393Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2890375Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2892908Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2895409Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2897893Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2900376Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2901744Z   at <ASelect value=undefined onUpdate:value=fn placeholder="发起方：全部"  ... > 
+2026-10-17T15:18:44.2902380Z   at <ASpace> 
+2026-10-17T15:18:44.2902899Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2903409Z   at <VTUROOT>
+2026-10-17T15:18:44.2904743Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2906879Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2909212Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2911252Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2913523Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2916004Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2918789Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2921175Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2923654Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2925966Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2928444Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2929732Z   at <ASelect key=0 value=undefined onUpdate:value=fn  ... > 
+2026-10-17T15:18:44.2930403Z   at <ASpace> 
+2026-10-17T15:18:44.2930852Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2931440Z   at <VTUROOT>
+2026-10-17T15:18:44.2932618Z [Vue warn]: Failed setting prop "children" on <a-select-stub>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:18:44.2934630Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:18:44.2936757Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:18:44.2939032Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:18:44.2941180Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:18:44.2943299Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:18:44.2945511Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:18:44.2948100Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:18:44.2950523Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:18:44.2952687Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:18:44.2955106Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:18:44.2956630Z   at <ASelect value=undefined onUpdate:value=fn placeholder="状态筛选"  ... > 
+2026-10-17T15:18:44.2957399Z   at <ASpace> 
+2026-10-17T15:18:44.2957907Z   at <TaskList ref="VTU_COMPONENT" > 
+2026-10-17T15:18:44.2958393Z   at <VTUROOT>
+2026-10-17T15:18:44.2958654Z 
+2026-10-17T15:18:44.2984723Z  [32m✓[39m apps/web-antd/src/__tests__/task-list.test.ts [2m([22m[2m20 tests[22m[2m)[22m[33m 514[2mms[22m[39m
+2026-10-17T15:18:44.5091404Z  [32m✓[39m apps/web-antd/src/__tests__/store.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+2026-10-17T15:18:45.4289533Z  [32m✓[39m packages/@core/preferences/__tests__/preferences.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 184[2mms[22m[39m
+2026-10-17T15:18:47.0790492Z  [32m✓[39m apps/web-antd/src/__tests__/clpm-preferences.test.ts [2m([22m[2m13 tests[22m[2m)[22m[32m 24[2mms[22m[39m
+2026-10-17T15:18:47.7725718Z  [32m✓[39m apps/web-antd/src/__tests__/p6-02b-drill-context.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 22[2mms[22m[39m
+2026-10-17T15:18:48.3549947Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2mHTTP 成功返回 0 条：latest 空态 + 历史空态，不显示任何失败提示
+2026-10-17T15:18:48.3608410Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:48.3627738Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.3687790Z   at <VTUROOT>
+2026-10-17T15:18:48.3737998Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:48.3768207Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.3808514Z   at <VTUROOT>
+2026-10-17T15:18:48.3817768Z 
+2026-10-17T15:18:48.4283870Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m历史 422 失败：显式原因 + 重试，不冒充"暂无历史评估记录"
+2026-10-17T15:18:48.4318796Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:48.4327723Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.4363160Z   at <VTUROOT>
+2026-10-17T15:18:48.4365396Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:48.4366266Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.4398066Z   at <VTUROOT>
+2026-10-17T15:18:48.4413824Z 
+2026-10-17T15:18:48.4637379Z  [32m✓[39m apps/web-antd/src/__tests__/wb360-resume.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+2026-10-17T15:18:48.5742016Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m历史 500 失败：显式原因 + 重试，不冒充"暂无历史评估记录"
+2026-10-17T15:18:48.5758822Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:48.5760036Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.5760888Z   at <VTUROOT>
+2026-10-17T15:18:48.5761504Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:48.5762300Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.5763056Z   at <VTUROOT>
+2026-10-17T15:18:48.5763415Z 
+2026-10-17T15:18:48.7159445Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m历史 超时 失败：显式原因 + 重试，不冒充"暂无历史评估记录"
+2026-10-17T15:18:48.7178696Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:48.7199182Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.7218625Z   at <VTUROOT>
+2026-10-17T15:18:48.7219423Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:48.7220571Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.7221381Z   at <VTUROOT>
+2026-10-17T15:18:48.7221840Z 
+2026-10-17T15:18:48.8711985Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2mlatest 500 失败：概要显式错误 + 重试；历史成功仍可用（独立失败域）
+2026-10-17T15:18:48.8744981Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:48.8768255Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.8796661Z   at <VTUROOT>
+2026-10-17T15:18:48.8797811Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:48.8798711Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.8799533Z   at <VTUROOT>
+2026-10-17T15:18:48.8799925Z 
+2026-10-17T15:18:48.9589093Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2mlatest 成功 + 历史失败：概要正常展示，历史显式报错（历史失败不阻塞概要）
+2026-10-17T15:18:48.9627389Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:48.9688039Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.9690210Z   at <VTUROOT>
+2026-10-17T15:18:48.9768037Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:48.9798138Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:48.9837979Z   at <VTUROOT>
+2026-10-17T15:18:48.9867628Z 
+2026-10-17T15:18:49.1492807Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m403：latest 与历史均为权限提示，不显示空态冒充
+2026-10-17T15:18:49.1494672Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.1513209Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.1514114Z   at <VTUROOT>
+2026-10-17T15:18:49.1514917Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.1515624Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.1516298Z   at <VTUROOT>
+2026-10-17T15:18:49.1516650Z 
+2026-10-17T15:18:49.2152963Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m403 切换回路：旧回路概要与历史数据不泄漏（越权旧详情不保留）
+2026-10-17T15:18:49.2183238Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.2208291Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.2238230Z   at <VTUROOT>
+2026-10-17T15:18:49.2268199Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.2298310Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.2309895Z   at <VTUROOT>
+2026-10-17T15:18:49.2347666Z 
+2026-10-17T15:18:49.3625811Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2mlatest 重试成功恢复：错误消失、概要渲染
+2026-10-17T15:18:49.3626889Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.3627554Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.3628033Z   at <VTUROOT>
+2026-10-17T15:18:49.3628705Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.3629158Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.3629619Z   at <VTUROOT>
+2026-10-17T15:18:49.3629754Z 
+2026-10-17T15:18:49.4597354Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m第二页失败：保留第 1 页数据与页码对应 + "旧数据"标注；重试重发失败页并恢复
+2026-10-17T15:18:49.4618940Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.4622085Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.4622876Z   at <VTUROOT>
+2026-10-17T15:18:49.4623508Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.4624364Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.4625059Z   at <VTUROOT>
+2026-10-17T15:18:49.4625399Z 
+2026-10-17T15:18:49.5770694Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2mA 慢 B 快切换：只显示 B 的概要与历史，A 迟到响应被丢弃
+2026-10-17T15:18:49.5779293Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.5780539Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.5781284Z   at <VTUROOT>
+2026-10-17T15:18:49.5781968Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.5782882Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.5783595Z   at <VTUROOT>
+2026-10-17T15:18:49.5784018Z 
+2026-10-17T15:18:49.6732524Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m组件关闭后迟到返回不污染：unmount 后旧响应不写入，新实例不受影响
+2026-10-17T15:18:49.6748887Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.6778479Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.6807983Z   at <VTUROOT>
+2026-10-17T15:18:49.6808656Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.6838486Z   at <LoopConfidenceContent loopId="loop-A" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.6868154Z   at <VTUROOT>
+2026-10-17T15:18:49.6870651Z 
+2026-10-17T15:18:49.6954103Z [90mstderr[2m | apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts[2m > [22m[2mG3-R03 loop-confidence-content 历史分页四态[2m > [22m[2m组件关闭后迟到返回不污染：unmount 后旧响应不写入，新实例不受影响
+2026-10-17T15:18:49.6988627Z [22m[39m[Vue warn]: injection "Symbol(route location)" not found. 
+2026-10-17T15:18:49.7008318Z   at <LoopConfidenceContent loopId="loop-B" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.7037961Z   at <VTUROOT>
+2026-10-17T15:18:49.7038750Z [Vue warn]: injection "Symbol(router)" not found. 
+2026-10-17T15:18:49.7068329Z   at <LoopConfidenceContent loopId="loop-B" ref="VTU_COMPONENT" > 
+2026-10-17T15:18:49.7087775Z   at <VTUROOT>
+2026-10-17T15:18:49.7107706Z 
+2026-10-17T15:18:49.7719437Z  [32m✓[39m apps/web-antd/src/views/metric/components/__tests__/loop-confidence-content-error-states.test.ts [2m([22m[2m12 tests[22m[2m)[22m[33m 1550[2mms[22m[39m
+2026-10-17T15:18:49.9416988Z  [32m✓[39m apps/web-antd/src/__tests__/p6-01b-suggestions.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 125[2mms[22m[39m
+2026-10-17T15:18:50.7353131Z  [32m✓[39m apps/web-antd/src/__tests__/cockpit-p5-04-server-filtering.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+2026-10-17T15:18:51.3293519Z  [32m✓[39m apps/web-antd/src/__tests__/wb360-single-loop.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+2026-10-17T15:18:51.6589734Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-fleet-view.test.ts[2m > [22m[2mLoopFleetView 表格列增强[2m > [22m[2m列顺序符合现行清单（量程合并单位，可信度移除，操作列收尾）
+2026-10-17T15:18:51.6592324Z [22m[39m[Vue warn]: Invalid watch source:  { value: [32m'online'[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:18:51.6593876Z   at <LoopFleetView showStats=false showAutoRefresh=false ref="VTU_COMPONENT" > 
+2026-10-17T15:18:51.6594622Z   at <VTUROOT>
+2026-10-17T15:18:51.6594927Z 
+2026-10-17T15:18:51.6769506Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-fleet-view.test.ts[2m > [22m[2mLoopFleetView 表格列增强[2m > [22m[2m量程列默认显示，原量程/单位独立列已合并移除
+2026-10-17T15:18:51.6776006Z [22m[39m[Vue warn]: Invalid watch source:  { value: [32m'online'[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:18:51.6777772Z   at <LoopFleetView showStats=false showAutoRefresh=false ref="VTU_COMPONENT" > 
+2026-10-17T15:18:51.6778667Z   at <VTUROOT>
+2026-10-17T15:18:51.6779158Z 
+2026-10-17T15:18:51.6844015Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-fleet-view.test.ts[2m > [22m[2mLoopFleetView 表格列增强[2m > [22m[2m默认排序：评分升序（最差在前）
+2026-10-17T15:18:51.6859140Z [22m[39m[Vue warn]: Invalid watch source:  { value: [32m'online'[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:18:51.6878073Z   at <LoopFleetView showStats=false showAutoRefresh=false ref="VTU_COMPONENT" > 
+2026-10-17T15:18:51.6879132Z   at <VTUROOT>
+2026-10-17T15:18:51.6879464Z 
+2026-10-17T15:18:51.7047875Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-fleet-view.test.ts[2m > [22m[2mLoopFleetView 表格列增强[2m > [22m[2m列标题使用标杆命名
+2026-10-17T15:18:51.7069056Z [22m[39m[Vue warn]: Invalid watch source:  { value: [32m'online'[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:18:51.7112927Z   at <LoopFleetView showStats=false showAutoRefresh=false ref="VTU_COMPONENT" > 
+2026-10-17T15:18:51.7138046Z   at <VTUROOT>
+2026-10-17T15:18:51.7167620Z 
+2026-10-17T15:18:51.7169368Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-fleet-view.test.ts[2m > [22m[2mLoopFleetView 关注星标（P6-05 关注入口）[2m > [22m[2m操作列星标：共享集回显初始态（已关注实心金色/未关注空心），点击调共享 toggle
+2026-10-17T15:18:51.7198935Z [22m[39m[Vue warn]: Invalid watch source:  { value: [32m'online'[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:18:51.7228343Z   at <LoopFleetView showStats=false showAutoRefresh=false ref="VTU_COMPONENT" > 
+2026-10-17T15:18:51.7258243Z   at <VTUROOT>
+2026-10-17T15:18:51.7259056Z 
+2026-10-17T15:18:51.7289271Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-fleet-view.test.ts[2m > [22m[2mLoopFleetView 关注星标（P6-05 关注入口）[2m > [22m[2m关注集加载失败：如实提示（星标初始态可能不准，不静默假空）
+2026-10-17T15:18:51.7318882Z [22m[39m[Vue warn]: Invalid watch source:  { value: [32m'online'[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:18:51.7348138Z   at <LoopFleetView showStats=false showAutoRefresh=false ref="VTU_COMPONENT" > 
+2026-10-17T15:18:51.7349082Z   at <VTUROOT>
+2026-10-17T15:18:51.7377706Z 
+2026-10-17T15:18:51.7408492Z  [32m✓[39m apps/web-antd/src/__tests__/loop-fleet-view.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 112[2mms[22m[39m
+2026-10-17T15:18:52.6272583Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-edit-drawer.test.ts[2m > [22m[2m回路编辑抽屉 LoopEditDrawer ENG-01 保存失败阻断向导推进[2m > [22m[2muT-LED-001: 保存失败（API reject）不推进到步骤 2，不 emit saved
+2026-10-17T15:18:52.6289204Z [22m[39m操作失败: { response: { status: [33m500[39m, data: { message: [32m'服务异常'[39m } }, config: {} }
+2026-10-17T15:18:52.6317648Z 
+2026-10-17T15:18:52.6949613Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-edit-drawer.test.ts[2m > [22m[2m回路编辑抽屉 LoopEditDrawer ENG-01 保存失败阻断向导推进[2m > [22m[2muT-LED-003: 非 HTTP 层异常（无 response，本地兜底提示路径）同样阻断推进
+2026-10-17T15:18:52.6950903Z [22m[39m操作失败: Error: render failed
+2026-10-17T15:18:52.6951596Z     at [90m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mapps/web-antd/src/__tests__/loop-edit-drawer.test.ts:198:7
+2026-10-17T15:18:52.6952917Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+2026-10-17T15:18:52.6954148Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+2026-10-17T15:18:52.6955254Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+2026-10-17T15:18:52.6955946Z     at new Promise (<anonymous>)
+2026-10-17T15:18:52.6956814Z     at runWithCancel [90m(file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+2026-10-17T15:18:52.6958400Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+2026-10-17T15:18:52.6959229Z     at new Promise (<anonymous>)
+2026-10-17T15:18:52.6960211Z     at runWithTimeout [90m(file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+2026-10-17T15:18:52.6961561Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
+2026-10-17T15:18:52.6962114Z 
+2026-10-17T15:18:52.7211721Z [90mstderr[2m | apps/web-antd/src/__tests__/loop-edit-drawer.test.ts[2m > [22m[2m回路编辑抽屉 LoopEditDrawer ENG-01 保存失败阻断向导推进[2m > [22m[2muT-LED-004: doSaveTagMapping 失败 rejection 向调用方传播（父组件 confirmSave 契约）
+2026-10-17T15:18:52.7238447Z [22m[39m操作失败: Error: boom
+2026-10-17T15:18:52.7268586Z     at [90m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mapps/web-antd/src/__tests__/loop-edit-drawer.test.ts:212:55
+2026-10-17T15:18:52.7270865Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:302:11
+2026-10-17T15:18:52.7298896Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:1903:26
+2026-10-17T15:18:52.7329108Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2326:20
+2026-10-17T15:18:52.7344093Z     at new Promise (<anonymous>)
+2026-10-17T15:18:52.7346260Z     at runWithCancel [90m(file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2323:10[90m)[39m
+2026-10-17T15:18:52.7349268Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2305:20
+2026-10-17T15:18:52.7351130Z     at new Promise (<anonymous>)
+2026-10-17T15:18:52.7399854Z     at runWithTimeout [90m(file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2272:10[90m)[39m
+2026-10-17T15:18:52.7403666Z     at [90mfile:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vitest+runner@4.1.9/node_modules/[4m@vitest/runner[24m/dist/chunk-artifact.js:2955:64
+2026-10-17T15:18:52.7447900Z 
+2026-10-17T15:18:52.7843531Z  [32m✓[39m apps/web-antd/src/__tests__/loop-edit-drawer.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 167[2mms[22m[39m
+2026-10-17T15:18:53.5469632Z AggregateError: 
+2026-10-17T15:18:53.5498204Z     at internalConnectMultiple (node:net:1135:18)
+2026-10-17T15:18:53.5508052Z     at afterConnectMultiple (node:net:1716:7) {
+2026-10-17T15:18:53.5537981Z   code: 'ECONNREFUSED',
+2026-10-17T15:18:53.5538520Z   [errors]: [
+2026-10-17T15:18:53.5539068Z     Error: connect ECONNREFUSED ::1:3000
+2026-10-17T15:18:53.5539653Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.5540311Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.5568047Z       errno: -111,
+2026-10-17T15:18:53.5597895Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.5627873Z       syscall: 'connect',
+2026-10-17T15:18:53.5628706Z       address: '::1',
+2026-10-17T15:18:53.5632510Z       port: 3000
+2026-10-17T15:18:53.5633014Z     },
+2026-10-17T15:18:53.5633647Z     Error: connect ECONNREFUSED 127.0.0.1:3000
+2026-10-17T15:18:53.5634305Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.5635070Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.5635672Z       errno: -111,
+2026-10-17T15:18:53.5636127Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.5636795Z       syscall: 'connect',
+2026-10-17T15:18:53.5637526Z       address: '127.0.0.1',
+2026-10-17T15:18:53.5638052Z       port: 3000
+2026-10-17T15:18:53.5638465Z     }
+2026-10-17T15:18:53.5638864Z   ]
+2026-10-17T15:18:53.5639325Z }
+2026-10-17T15:18:53.6517761Z AggregateError: 
+2026-10-17T15:18:53.6518905Z     at internalConnectMultiple (node:net:1135:18)
+2026-10-17T15:18:53.6519938Z     at afterConnectMultiple (node:net:1716:7) {
+2026-10-17T15:18:53.6520756Z   code: 'ECONNREFUSED',
+2026-10-17T15:18:53.6521526Z   [errors]: [
+2026-10-17T15:18:53.6522248Z     Error: connect ECONNREFUSED ::1:3000
+2026-10-17T15:18:53.6523153Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.6523865Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.6524482Z       errno: -111,
+2026-10-17T15:18:53.6525127Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.6525745Z       syscall: 'connect',
+2026-10-17T15:18:53.6526303Z       address: '::1',
+2026-10-17T15:18:53.6526964Z       port: 3000
+2026-10-17T15:18:53.6527691Z     },
+2026-10-17T15:18:53.6528255Z     Error: connect ECONNREFUSED 127.0.0.1:3000
+2026-10-17T15:18:53.6528990Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.6529779Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.6530512Z       errno: -111,
+2026-10-17T15:18:53.6531088Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.6531692Z       syscall: 'connect',
+2026-10-17T15:18:53.6532375Z       address: '127.0.0.1',
+2026-10-17T15:18:53.6532961Z       port: 3000
+2026-10-17T15:18:53.6533527Z     }
+2026-10-17T15:18:53.6534116Z   ]
+2026-10-17T15:18:53.6534634Z }
+2026-10-17T15:18:53.8276897Z AggregateError: 
+2026-10-17T15:18:53.8277836Z     at internalConnectMultiple (node:net:1135:18)
+2026-10-17T15:18:53.8278571Z     at afterConnectMultiple (node:net:1716:7) {
+2026-10-17T15:18:53.8279469Z   code: 'ECONNREFUSED',
+2026-10-17T15:18:53.8279884Z   [errors]: [
+2026-10-17T15:18:53.8280394Z     Error: connect ECONNREFUSED ::1:3000
+2026-10-17T15:18:53.8280953Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.8281378Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.8281791Z       errno: -111,
+2026-10-17T15:18:53.8282090Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.8282427Z       syscall: 'connect',
+2026-10-17T15:18:53.8282777Z       address: '::1',
+2026-10-17T15:18:53.8283056Z       port: 3000
+2026-10-17T15:18:53.8283362Z     },
+2026-10-17T15:18:53.8283716Z     Error: connect ECONNREFUSED 127.0.0.1:3000
+2026-10-17T15:18:53.8284170Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.8284580Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.8284974Z       errno: -111,
+2026-10-17T15:18:53.8285279Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.8285588Z       syscall: 'connect',
+2026-10-17T15:18:53.8285963Z       address: '127.0.0.1',
+2026-10-17T15:18:53.8286259Z       port: 3000
+2026-10-17T15:18:53.8286538Z     }
+2026-10-17T15:18:53.8286836Z   ]
+2026-10-17T15:18:53.8287107Z }
+2026-10-17T15:18:53.8825620Z  [32m✓[39m apps/web-antd/src/__tests__/loop-aas.test.ts [2m([22m[2m8 tests[22m[2m)[22m[33m 556[2mms[22m[39m
+2026-10-17T15:18:53.8830755Z AggregateError: 
+2026-10-17T15:18:53.8838583Z     at internalConnectMultiple (node:net:1135:18)
+2026-10-17T15:18:53.8839392Z     at afterConnectMultiple (node:net:1716:7) {
+2026-10-17T15:18:53.8840110Z   code: 'ECONNREFUSED',
+2026-10-17T15:18:53.8840805Z   [errors]: [
+2026-10-17T15:18:53.8841380Z     Error: connect ECONNREFUSED ::1:3000
+2026-10-17T15:18:53.8842096Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.8842797Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.8843367Z       errno: -111,
+2026-10-17T15:18:53.8843945Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.8844498Z       syscall: 'connect',
+2026-10-17T15:18:53.8845010Z       address: '::1',
+2026-10-17T15:18:53.8845514Z       port: 3000
+2026-10-17T15:18:53.8846019Z     },
+2026-10-17T15:18:53.8846526Z     Error: connect ECONNREFUSED 127.0.0.1:3000
+2026-10-17T15:18:53.8847359Z         at createConnectionError (node:net:1679:14)
+2026-10-17T15:18:53.8847994Z         at afterConnectMultiple (node:net:1709:16) {
+2026-10-17T15:18:53.8848556Z       errno: -111,
+2026-10-17T15:18:53.8849093Z       code: 'ECONNREFUSED',
+2026-10-17T15:18:53.8849536Z       syscall: 'connect',
+2026-10-17T15:18:53.8849971Z       address: '127.0.0.1',
+2026-10-17T15:18:53.8850430Z       port: 3000
+2026-10-17T15:18:53.8850845Z     }
+2026-10-17T15:18:53.8851273Z   ]
+2026-10-17T15:18:53.8851681Z }
+2026-10-17T15:18:54.2909485Z  [32m✓[39m apps/web-antd/src/__tests__/wb360-route-adapter.test.ts [2m([22m[2m25 tests[22m[2m)[22m[32m 31[2mms[22m[39m
+2026-10-17T15:18:55.6739687Z  [32m✓[39m apps/web-antd/src/views/metric/components/__tests__/loop-performance-detail-error-states.test.ts [2m([22m[2m16 tests[22m[2m)[22m[33m 1433[2mms[22m[39m
+2026-10-17T15:18:56.4582582Z  [32m✓[39m apps/web-antd/src/__tests__/diagnosis-config-method-meta.test.ts [2m([22m[2m3 tests[22m[2m)[22m[33m 369[2mms[22m[39m
+2026-10-17T15:18:56.5056670Z  [32m✓[39m apps/web-antd/src/__tests__/algorithm-params-registry.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 167[2mms[22m[39m
+2026-10-17T15:18:57.6504475Z  [32m✓[39m packages/stores/src/modules/tabbar.test.ts [2m([22m[2m16 tests[22m[2m)[22m[32m 231[2mms[22m[39m
+2026-10-17T15:18:57.6630049Z  [32m✓[39m apps/web-antd/src/__tests__/personal-work-conflict.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 29[2mms[22m[39m
+2026-10-17T15:18:58.1922704Z  [32m✓[39m apps/web-antd/src/__tests__/use-saved-view.test.ts [2m([22m[2m35 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+2026-10-17T15:18:58.5747052Z  [32m✓[39m apps/web-antd/src/__tests__/directives.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 52[2mms[22m[39m
+2026-10-17T15:18:59.0617280Z [90mstderr[2m | apps/web-antd/src/__tests__/interceptors.test.ts[2m > [22m[2maxios 拦截器测试[2m > [22m[2muT-HTTP-005: refreshToken 刷新失败时触发登录过期（modal 模式）
+2026-10-17T15:18:59.0619434Z [22m[39mRefresh token failed, please login again.
+2026-10-17T15:18:59.0620444Z Access token or refresh token is invalid or expired. 
+2026-10-17T15:18:59.0620884Z 
+2026-10-17T15:18:59.0809036Z  [32m✓[39m apps/web-antd/src/__tests__/interceptors.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 33[2mms[22m[39m
+2026-10-17T15:18:59.3028622Z  [32m✓[39m apps/web-antd/src/__tests__/wb360-session.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+2026-10-17T15:18:59.3856300Z  [32m✓[39m apps/web-antd/src/__tests__/routes-perm-code.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:18:59.6959293Z  [32m✓[39m apps/web-antd/src/__tests__/use-monitor-context.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+2026-10-17T15:19:00.1523516Z  [32m✓[39m packages/@core/ui-kit/form-ui/__tests__/form-api.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+2026-10-17T15:19:00.7029155Z  [32m✓[39m apps/web-antd/src/__tests__/use-loop-changes.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:00.9078414Z  [32m✓[39m apps/web-antd/src/__tests__/trend-sampling.test.ts [2m([22m[2m19 tests[22m[2m)[22m[33m 643[2mms[22m[39m
+2026-10-17T15:19:00.9079961Z      [33m[2m✓[22m[39m uT-API-004: 所有时间窗的 pvQuality 值均为合法枚举 [33m 626[2mms[22m[39m
+2026-10-17T15:19:01.6419804Z  [32m✓[39m apps/web-antd/src/__tests__/cockpit-drill-honesty.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 27[2mms[22m[39m
+2026-10-17T15:19:03.3131809Z  [32m✓[39m apps/web-antd/src/__tests__/loop-monitor-realtime.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+2026-10-17T15:19:03.9029570Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2m初始状态：onceVisible=false，isVisible=false
+2026-10-17T15:19:03.9060289Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9061858Z 
+2026-10-17T15:19:03.9089104Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2mshouldLoad：onceVisible=false 时不加载
+2026-10-17T15:19:03.9130019Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9157704Z 
+2026-10-17T15:19:03.9188736Z  [32m✓[39m apps/web-antd/src/__tests__/use-section-visibility.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 20[2mms[22m[39m
+2026-10-17T15:19:03.9209104Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2mshouldLoad：onceVisible=false 且无 loopId 时不加载
+2026-10-17T15:19:03.9212519Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9222725Z 
+2026-10-17T15:19:03.9288197Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2mregister 后触发可见回调：onceVisible=true 且不再回退
+2026-10-17T15:19:03.9290963Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9292577Z 
+2026-10-17T15:19:03.9294179Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2monceVisible=true 后 shouldLoad 返回 true（有 loopId）
+2026-10-17T15:19:03.9296559Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9297956Z 
+2026-10-17T15:19:03.9299018Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2monceVisible=true 但无 loopId 时 shouldLoad 返回 false
+2026-10-17T15:19:03.9301201Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9302302Z 
+2026-10-17T15:19:03.9303143Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2mreset：清除 onceVisible 和 isVisible
+2026-10-17T15:19:03.9305280Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9306451Z 
+2026-10-17T15:19:03.9307472Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2mregister(null)：不崩溃，不 observe
+2026-10-17T15:19:03.9309699Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9310897Z 
+2026-10-17T15:19:03.9311825Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2mregister 切换元素：先 unobserve 旧元素
+2026-10-17T15:19:03.9314001Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9315124Z 
+2026-10-17T15:19:03.9316193Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2m无 IntersectionObserver 支持：register 直接标记可见
+2026-10-17T15:19:03.9348869Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9350423Z 
+2026-10-17T15:19:03.9351512Z [90mstderr[2m | apps/web-antd/src/__tests__/use-section-visibility.test.ts[2m > [22m[2museSectionVisibility[2m > [22m[2m自定义 rootMargin 和 threshold 透传
+2026-10-17T15:19:03.9353814Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:03.9364178Z 
+2026-10-17T15:19:04.0889546Z  [32m✓[39m apps/web-antd/src/views/metric/components/__tests__/loop-performance-detail-semantic.test.ts [2m([22m[2m6 tests[22m[2m)[22m[33m 524[2mms[22m[39m
+2026-10-17T15:19:04.1058509Z DOMException [AbortError]: The operation was aborted.
+2026-10-17T15:19:04.1059999Z     at Fetch.onAsyncTaskManagerAbort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+2026-10-17T15:19:04.1061799Z     at Object.<anonymous> (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+2026-10-17T15:19:04.1063472Z     at AsyncTaskManager.abortAll (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+2026-10-17T15:19:04.1065326Z     at AsyncTaskManager.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+2026-10-17T15:19:04.1067260Z     at DetachedBrowserFrame.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+2026-10-17T15:19:04.1069290Z     at DetachedWindowAPI.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+2026-10-17T15:19:04.1071284Z     at teardownWindow (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+2026-10-17T15:19:04.1073747Z     at Object.teardown (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+2026-10-17T15:19:04.1076235Z     at file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+2026-10-17T15:19:04.1078622Z     at Traces.$ (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+2026-10-17T15:19:04.2453454Z [90mstderr[2m | apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts[2m > [22m[2mDiagnosisResultPanel[2m > [22m[2m渲染主分类卡：分类名/置信度/严重度
+2026-10-17T15:19:04.2455841Z [22m[39m[Vue warn]: Invalid watch source:  { value: [33mfalse[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:19:04.2457571Z   at <DiagnosisResultPanel detail= {
+2026-10-17T15:19:04.2458167Z   id: [32m'run-1'[39m,
+2026-10-17T15:19:04.2458722Z   taskId: [32m'task-1'[39m,
+2026-10-17T15:19:04.2459343Z   loopId: [32m'loop-1'[39m,
+2026-10-17T15:19:04.2460317Z   loopTagName: [32m'FIC-101'[39m,
+2026-10-17T15:19:04.2460957Z   triggeredBy: [32m'tester'[39m,
+2026-10-17T15:19:04.2461662Z   timeWindowStart: [32m'2026-08-15T00:00:00'[39m,
+2026-10-17T15:19:04.2462387Z   timeWindowEnd: [32m'2026-08-15T07:00:00'[39m,
+2026-10-17T15:19:04.2463121Z   operatorGroup: [32m'full'[39m,
+2026-10-17T15:19:04.2463768Z   status: [32m'SUCCESS'[39m,
+2026-10-17T15:19:04.2464412Z   primaryCategory: [32m'INSTRUMENT'[39m,
+2026-10-17T15:19:04.2465114Z   primaryCategoryLabel: [32m'仪表/测量问题'[39m,
+2026-10-17T15:19:04.2465797Z   primaryConfidence: [33m0.85[39m,
+2026-10-17T15:19:04.2466326Z   secondaryCategories: [],
+2026-10-17T15:19:04.2466901Z   pendingReview: [
+2026-10-17T15:19:04.2467553Z     {
+2026-10-17T15:19:04.2468063Z       category: [32m'TUNING'[39m,
+2026-10-17T15:19:04.2469115Z       categoryLabel: [32m'参数问题（PID 整定）'[39m,
+2026-10-17T15:19:04.2469742Z       confidence: [33m0.9[39m,
+2026-10-17T15:19:04.2470401Z       basis: [36m[Array][39m,
+2026-10-17T15:19:04.2470997Z       status: [32m'pending_review'[39m,
+2026-10-17T15:19:04.2471724Z       contaminationNote: [32m'主因仪表污染了参数判定，修复后复诊'[39m
+2026-10-17T15:19:04.2472344Z     }
+2026-10-17T15:19:04.2472755Z   ],
+2026-10-17T15:19:04.2473272Z   severity: [32m'HIGH'[39m,
+2026-10-17T15:19:04.2473946Z   createdAt: [32m'2026-08-16T12:00:00'[39m,
+2026-10-17T15:19:04.2474518Z   dataGate: {
+2026-10-17T15:19:04.2475006Z     passed: [33mtrue[39m,
+2026-10-17T15:19:04.2475632Z     pointCount: [33m3500[39m,
+2026-10-17T15:19:04.2476257Z     expectedPoints: [33m3600[39m,
+2026-10-17T15:19:04.2490371Z     validRate: [33m0.97[39m,
+2026-10-17T15:19:04.2538158Z     confidenceLevel: [32m'A'[39m,
+2026-10-17T15:19:04.2568216Z     gapRatio: [33m0.03[39m,
+2026-10-17T15:19:04.2579600Z     reason: [1mnull[22m
+2026-10-17T15:19:04.2580216Z   },
+2026-10-17T15:19:04.2580754Z   operatorResults: {},
+2026-10-17T15:19:04.2581231Z   fusionResults: {
+2026-10-17T15:19:04.2581735Z     QUALITY_ABNORMAL: {
+2026-10-17T15:19:04.2582396Z       family: [32m'sensor'[39m,
+2026-10-17T15:19:04.2583046Z       symptomTag: [32m'QUALITY_ABNORMAL'[39m,
+2026-10-17T15:19:04.2583723Z       detected: [33mtrue[39m,
+2026-10-17T15:19:04.2584369Z       confidence: [33m0.85[39m,
+2026-10-17T15:19:04.2584876Z       fused: [33mfalse[39m
+2026-10-17T15:19:04.2585413Z     }
+2026-10-17T15:19:04.2585867Z   },
+2026-10-17T15:19:04.2586302Z   symptomTags: {},
+2026-10-17T15:19:04.2586770Z   rationale: [],
+2026-10-17T15:19:04.2587494Z   recommendations: [
+2026-10-17T15:19:04.2587961Z     {
+2026-10-17T15:19:04.2588686Z       content: [32m'检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）'[39m,
+2026-10-17T15:19:04.2589443Z       basis: [32m'传感器故障子类型 frozen'[39m,
+2026-10-17T15:19:04.2590073Z       direction: [32m'校验/维护'[39m,
+2026-10-17T15:19:04.2590699Z       priority: [33m1[39m
+2026-10-17T15:19:04.2591227Z     },
+2026-10-17T15:19:04.2591618Z     {
+2026-10-17T15:19:04.2592275Z       content: [32m'修复仪表后重新发起诊断确认参数问题'[39m,
+2026-10-17T15:19:04.2592918Z       basis: [32m'待复核：超调 35%'[39m,
+2026-10-17T15:19:04.2593572Z       direction: [32m'复诊'[39m,
+2026-10-17T15:19:04.2594170Z       priority: [33m2[39m
+2026-10-17T15:19:04.2594659Z     }
+2026-10-17T15:19:04.2595064Z   ],
+2026-10-17T15:19:04.2595619Z   evidenceCharts: [90mundefined[39m
+2026-10-17T15:19:04.2596217Z } ref="VTU_COMPONENT" > 
+2026-10-17T15:19:04.2596738Z   at <VTUROOT>
+2026-10-17T15:19:04.2597083Z 
+2026-10-17T15:19:04.2989078Z [90mstderr[2m | apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts[2m > [22m[2mDiagnosisResultPanel[2m > [22m[2m渲染待复核 chip 并含"需复诊"标记与污染说明 tooltip
+2026-10-17T15:19:04.3028928Z [22m[39m[Vue warn]: Invalid watch source:  { value: [33mfalse[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:19:04.3030512Z   at <DiagnosisResultPanel detail= {
+2026-10-17T15:19:04.3088073Z   id: [32m'run-1'[39m,
+2026-10-17T15:19:04.3117935Z   taskId: [32m'task-1'[39m,
+2026-10-17T15:19:04.3167943Z   loopId: [32m'loop-1'[39m,
+2026-10-17T15:19:04.3201748Z   loopTagName: [32m'FIC-101'[39m,
+2026-10-17T15:19:04.3209520Z   triggeredBy: [32m'tester'[39m,
+2026-10-17T15:19:04.3210187Z   timeWindowStart: [32m'2026-08-15T00:00:00'[39m,
+2026-10-17T15:19:04.3210963Z   timeWindowEnd: [32m'2026-08-15T07:00:00'[39m,
+2026-10-17T15:19:04.3211549Z   operatorGroup: [32m'full'[39m,
+2026-10-17T15:19:04.3212051Z   status: [32m'SUCCESS'[39m,
+2026-10-17T15:19:04.3212709Z   primaryCategory: [32m'INSTRUMENT'[39m,
+2026-10-17T15:19:04.3213348Z   primaryCategoryLabel: [32m'仪表/测量问题'[39m,
+2026-10-17T15:19:04.3214066Z   primaryConfidence: [33m0.85[39m,
+2026-10-17T15:19:04.3214641Z   secondaryCategories: [],
+2026-10-17T15:19:04.3215155Z   pendingReview: [
+2026-10-17T15:19:04.3215559Z     {
+2026-10-17T15:19:04.3218734Z       category: [32m'TUNING'[39m,
+2026-10-17T15:19:04.3230569Z       categoryLabel: [32m'参数问题（PID 整定）'[39m,
+2026-10-17T15:19:04.3257443Z       confidence: [33m0.9[39m,
+2026-10-17T15:19:04.3283602Z       basis: [36m[Array][39m,
+2026-10-17T15:19:04.3308481Z       status: [32m'pending_review'[39m,
+2026-10-17T15:19:04.3338169Z       contaminationNote: [32m'主因仪表污染了参数判定，修复后复诊'[39m
+2026-10-17T15:19:04.3358130Z     }
+2026-10-17T15:19:04.3387711Z   ],
+2026-10-17T15:19:04.3398030Z   severity: [32m'HIGH'[39m,
+2026-10-17T15:19:04.3428340Z   createdAt: [32m'2026-08-16T12:00:00'[39m,
+2026-10-17T15:19:04.3447868Z   dataGate: {
+2026-10-17T15:19:04.3478164Z     passed: [33mtrue[39m,
+2026-10-17T15:19:04.3488149Z     pointCount: [33m3500[39m,
+2026-10-17T15:19:04.3518203Z     expectedPoints: [33m3600[39m,
+2026-10-17T15:19:04.3527941Z     validRate: [33m0.97[39m,
+2026-10-17T15:19:04.3563499Z     confidenceLevel: [32m'A'[39m,
+2026-10-17T15:19:04.3580481Z     gapRatio: [33m0.03[39m,
+2026-10-17T15:19:04.3594777Z     reason: [1mnull[22m
+2026-10-17T15:19:04.3659479Z   },
+2026-10-17T15:19:04.3687926Z   operatorResults: {},
+2026-10-17T15:19:04.3718094Z   fusionResults: {
+2026-10-17T15:19:04.3741001Z     QUALITY_ABNORMAL: {
+2026-10-17T15:19:04.3768001Z       family: [32m'sensor'[39m,
+2026-10-17T15:19:04.3769115Z       symptomTag: [32m'QUALITY_ABNORMAL'[39m,
+2026-10-17T15:19:04.3798097Z       detected: [33mtrue[39m,
+2026-10-17T15:19:04.3828141Z       confidence: [33m0.85[39m,
+2026-10-17T15:19:04.3837936Z       fused: [33mfalse[39m
+2026-10-17T15:19:04.3916642Z     }
+2026-10-17T15:19:04.3923083Z   },
+2026-10-17T15:19:04.3924553Z   symptomTags: {},
+2026-10-17T15:19:04.3925066Z   rationale: [],
+2026-10-17T15:19:04.3925613Z   recommendations: [
+2026-10-17T15:19:04.3926091Z     {
+2026-10-17T15:19:04.3926830Z       content: [32m'检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）'[39m,
+2026-10-17T15:19:04.3927776Z       basis: [32m'传感器故障子类型 frozen'[39m,
+2026-10-17T15:19:04.3928419Z       direction: [32m'校验/维护'[39m,
+2026-10-17T15:19:04.3929001Z       priority: [33m1[39m
+2026-10-17T15:19:04.3929505Z     },
+2026-10-17T15:19:04.3929890Z     {
+2026-10-17T15:19:04.3930446Z       content: [32m'修复仪表后重新发起诊断确认参数问题'[39m,
+2026-10-17T15:19:04.3931077Z       basis: [32m'待复核：超调 35%'[39m,
+2026-10-17T15:19:04.3931661Z       direction: [32m'复诊'[39m,
+2026-10-17T15:19:04.3932229Z       priority: [33m2[39m
+2026-10-17T15:19:04.3932673Z     }
+2026-10-17T15:19:04.3933054Z   ],
+2026-10-17T15:19:04.3933604Z   evidenceCharts: [90mundefined[39m
+2026-10-17T15:19:04.3934122Z } ref="VTU_COMPONENT" > 
+2026-10-17T15:19:04.3934604Z   at <VTUROOT>
+2026-10-17T15:19:04.3934995Z 
+2026-10-17T15:19:04.3935969Z [90mstderr[2m | apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts[2m > [22m[2mDiagnosisResultPanel[2m > [22m[2m渲染并存问题 chips
+2026-10-17T15:19:04.3937872Z [22m[39m[Vue warn]: Invalid watch source:  { value: [33mfalse[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:19:04.3939024Z   at <DiagnosisResultPanel detail= {
+2026-10-17T15:19:04.3939577Z   id: [32m'run-1'[39m,
+2026-10-17T15:19:04.3940093Z   taskId: [32m'task-1'[39m,
+2026-10-17T15:19:04.3940838Z   loopId: [32m'loop-1'[39m,
+2026-10-17T15:19:04.3941448Z   loopTagName: [32m'FIC-101'[39m,
+2026-10-17T15:19:04.3942014Z   triggeredBy: [32m'tester'[39m,
+2026-10-17T15:19:04.3942698Z   timeWindowStart: [32m'2026-08-15T00:00:00'[39m,
+2026-10-17T15:19:04.3943364Z   timeWindowEnd: [32m'2026-08-15T07:00:00'[39m,
+2026-10-17T15:19:04.3944010Z   operatorGroup: [32m'full'[39m,
+2026-10-17T15:19:04.3944604Z   status: [32m'SUCCESS'[39m,
+2026-10-17T15:19:04.3945173Z   primaryCategory: [32m'INSTRUMENT'[39m,
+2026-10-17T15:19:04.3945930Z   primaryCategoryLabel: [32m'仪表/测量问题'[39m,
+2026-10-17T15:19:04.3946546Z   primaryConfidence: [33m0.85[39m,
+2026-10-17T15:19:04.3947052Z   secondaryCategories: [
+2026-10-17T15:19:04.3947658Z     {
+2026-10-17T15:19:04.3948120Z       category: [32m'UTILIZATION'[39m,
+2026-10-17T15:19:04.3978564Z  [32m✓[39m apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 190[2mms[22m[39m
+2026-10-17T15:19:04.3995610Z       categoryLabel: [32m'投用/操作问题'[39m,
+2026-10-17T15:19:04.3998735Z       confidence: [33m0.7[39m,
+2026-10-17T15:19:04.3999366Z       basis: [36m[Array][39m,
+2026-10-17T15:19:04.4000042Z       status: [32m'secondary'[39m
+2026-10-17T15:19:04.4000677Z     }
+2026-10-17T15:19:04.4001064Z   ],
+2026-10-17T15:19:04.4001491Z   pendingReview: [
+2026-10-17T15:19:04.4002231Z     {
+2026-10-17T15:19:04.4003076Z       category: [32m'TUNING'[39m,
+2026-10-17T15:19:04.4003837Z       categoryLabel: [32m'参数问题（PID 整定）'[39m,
+2026-10-17T15:19:04.4004663Z       confidence: [33m0.9[39m,
+2026-10-17T15:19:04.4005221Z       basis: [36m[Array][39m,
+2026-10-17T15:19:04.4005861Z       status: [32m'pending_review'[39m,
+2026-10-17T15:19:04.4006585Z       contaminationNote: [32m'主因仪表污染了参数判定，修复后复诊'[39m
+2026-10-17T15:19:04.4007109Z     }
+2026-10-17T15:19:04.4007696Z   ],
+2026-10-17T15:19:04.4008157Z   severity: [32m'HIGH'[39m,
+2026-10-17T15:19:04.4008805Z   createdAt: [32m'2026-08-16T12:00:00'[39m,
+2026-10-17T15:19:04.4009388Z   dataGate: {
+2026-10-17T15:19:04.4009836Z     passed: [33mtrue[39m,
+2026-10-17T15:19:04.4010408Z     pointCount: [33m3500[39m,
+2026-10-17T15:19:04.4011049Z     expectedPoints: [33m3600[39m,
+2026-10-17T15:19:04.4011571Z     validRate: [33m0.97[39m,
+2026-10-17T15:19:04.4012058Z     confidenceLevel: [32m'A'[39m,
+2026-10-17T15:19:04.4012574Z     gapRatio: [33m0.03[39m,
+2026-10-17T15:19:04.4013048Z     reason: [1mnull[22m
+2026-10-17T15:19:04.4013434Z   },
+2026-10-17T15:19:04.4013849Z   operatorResults: {},
+2026-10-17T15:19:04.4014260Z   fusionResults: {
+2026-10-17T15:19:04.4014713Z     QUALITY_ABNORMAL: {
+2026-10-17T15:19:04.4015337Z       family: [32m'sensor'[39m,
+2026-10-17T15:19:04.4015878Z       symptomTag: [32m'QUALITY_ABNORMAL'[39m,
+2026-10-17T15:19:04.4016507Z       detected: [33mtrue[39m,
+2026-10-17T15:19:04.4017030Z       confidence: [33m0.85[39m,
+2026-10-17T15:19:04.4017698Z       fused: [33mfalse[39m
+2026-10-17T15:19:04.4018212Z     }
+2026-10-17T15:19:04.4018615Z   },
+2026-10-17T15:19:04.4019058Z   symptomTags: {},
+2026-10-17T15:19:04.4019571Z   rationale: [],
+2026-10-17T15:19:04.4020103Z   recommendations: [
+2026-10-17T15:19:04.4020545Z     {
+2026-10-17T15:19:04.4021375Z       content: [32m'检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）'[39m,
+2026-10-17T15:19:04.4022054Z       basis: [32m'传感器故障子类型 frozen'[39m,
+2026-10-17T15:19:04.4022655Z       direction: [32m'校验/维护'[39m,
+2026-10-17T15:19:04.4023263Z       priority: [33m1[39m
+2026-10-17T15:19:04.4023690Z     },
+2026-10-17T15:19:04.4024086Z     {
+2026-10-17T15:19:04.4024633Z       content: [32m'修复仪表后重新发起诊断确认参数问题'[39m,
+2026-10-17T15:19:04.4025214Z       basis: [32m'待复核：超调 35%'[39m,
+2026-10-17T15:19:04.4025801Z       direction: [32m'复诊'[39m,
+2026-10-17T15:19:04.4026319Z       priority: [33m2[39m
+2026-10-17T15:19:04.4026815Z     }
+2026-10-17T15:19:04.4027663Z   ],
+2026-10-17T15:19:04.4028234Z   evidenceCharts: [90mundefined[39m
+2026-10-17T15:19:04.4028760Z } ref="VTU_COMPONENT" > 
+2026-10-17T15:19:04.4029236Z   at <VTUROOT>
+2026-10-17T15:19:04.4029668Z 
+2026-10-17T15:19:04.4030665Z [90mstderr[2m | apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts[2m > [22m[2mDiagnosisResultPanel[2m > [22m[2m按后端排序渲染建议，首条标记"优先"
+2026-10-17T15:19:04.4032399Z [22m[39m[Vue warn]: Invalid watch source:  { value: [33mfalse[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:19:04.4033455Z   at <DiagnosisResultPanel detail= {
+2026-10-17T15:19:04.4034275Z   id: [32m'run-1'[39m,
+2026-10-17T15:19:04.4034861Z   taskId: [32m'task-1'[39m,
+2026-10-17T15:19:04.4035362Z   loopId: [32m'loop-1'[39m,
+2026-10-17T15:19:04.4035937Z   loopTagName: [32m'FIC-101'[39m,
+2026-10-17T15:19:04.4036556Z   triggeredBy: [32m'tester'[39m,
+2026-10-17T15:19:04.4037330Z   timeWindowStart: [32m'2026-08-15T00:00:00'[39m,
+2026-10-17T15:19:04.4038192Z   timeWindowEnd: [32m'2026-08-15T07:00:00'[39m,
+2026-10-17T15:19:04.4038914Z   operatorGroup: [32m'full'[39m,
+2026-10-17T15:19:04.4039545Z   status: [32m'SUCCESS'[39m,
+2026-10-17T15:19:04.4040145Z   primaryCategory: [32m'INSTRUMENT'[39m,
+2026-10-17T15:19:04.4040802Z   primaryCategoryLabel: [32m'仪表/测量问题'[39m,
+2026-10-17T15:19:04.4041409Z   primaryConfidence: [33m0.85[39m,
+2026-10-17T15:19:04.4042010Z   secondaryCategories: [],
+2026-10-17T15:19:04.4042521Z   pendingReview: [
+2026-10-17T15:19:04.4042941Z     {
+2026-10-17T15:19:04.4043500Z       category: [32m'TUNING'[39m,
+2026-10-17T15:19:04.4044176Z       categoryLabel: [32m'参数问题（PID 整定）'[39m,
+2026-10-17T15:19:04.4044779Z       confidence: [33m0.9[39m,
+2026-10-17T15:19:04.4045425Z       basis: [36m[Array][39m,
+2026-10-17T15:19:04.4046095Z       status: [32m'pending_review'[39m,
+2026-10-17T15:19:04.4046861Z       contaminationNote: [32m'主因仪表污染了参数判定，修复后复诊'[39m
+2026-10-17T15:19:04.4047621Z     }
+2026-10-17T15:19:04.4048017Z   ],
+2026-10-17T15:19:04.4048515Z   severity: [32m'HIGH'[39m,
+2026-10-17T15:19:04.4049168Z   createdAt: [32m'2026-08-16T12:00:00'[39m,
+2026-10-17T15:19:04.4049734Z   dataGate: {
+2026-10-17T15:19:04.4050251Z     passed: [33mtrue[39m,
+2026-10-17T15:19:04.4050805Z     pointCount: [33m3500[39m,
+2026-10-17T15:19:04.4051345Z     expectedPoints: [33m3600[39m,
+2026-10-17T15:19:04.4052028Z     validRate: [33m0.97[39m,
+2026-10-17T15:19:04.4052599Z     confidenceLevel: [32m'A'[39m,
+2026-10-17T15:19:04.4053113Z     gapRatio: [33m0.03[39m,
+2026-10-17T15:19:04.4053662Z     reason: [1mnull[22m
+2026-10-17T15:19:04.4054211Z   },
+2026-10-17T15:19:04.4054653Z   operatorResults: {},
+2026-10-17T15:19:04.4055096Z   fusionResults: {
+2026-10-17T15:19:04.4055535Z     QUALITY_ABNORMAL: {
+2026-10-17T15:19:04.4056301Z       family: [32m'sensor'[39m,
+2026-10-17T15:19:04.4056943Z       symptomTag: [32m'QUALITY_ABNORMAL'[39m,
+2026-10-17T15:19:04.4057708Z       detected: [33mtrue[39m,
+2026-10-17T15:19:04.4058517Z       confidence: [33m0.85[39m,
+2026-10-17T15:19:04.4059042Z       fused: [33mfalse[39m
+2026-10-17T15:19:04.4059513Z     }
+2026-10-17T15:19:04.4059930Z   },
+2026-10-17T15:19:04.4060425Z   symptomTags: {},
+2026-10-17T15:19:04.4060882Z   rationale: [],
+2026-10-17T15:19:04.4061390Z   recommendations: [
+2026-10-17T15:19:04.4061834Z     {
+2026-10-17T15:19:04.4062424Z       content: [32m'检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）'[39m,
+2026-10-17T15:19:04.4063132Z       basis: [32m'传感器故障子类型 frozen'[39m,
+2026-10-17T15:19:04.4063690Z       direction: [32m'校验/维护'[39m,
+2026-10-17T15:19:04.4064339Z       priority: [33m1[39m
+2026-10-17T15:19:04.4064832Z     },
+2026-10-17T15:19:04.4065294Z     {
+2026-10-17T15:19:04.4065878Z       content: [32m'修复仪表后重新发起诊断确认参数问题'[39m,
+2026-10-17T15:19:04.4066442Z       basis: [32m'待复核：超调 35%'[39m,
+2026-10-17T15:19:04.4077687Z       direction: [32m'复诊'[39m,
+2026-10-17T15:19:04.4078318Z       priority: [33m2[39m
+2026-10-17T15:19:04.4078906Z     }
+2026-10-17T15:19:04.4079541Z   ],
+2026-10-17T15:19:04.4080188Z   evidenceCharts: [90mundefined[39m
+2026-10-17T15:19:04.4080759Z } ref="VTU_COMPONENT" > 
+2026-10-17T15:19:04.4081238Z   at <VTUROOT>
+2026-10-17T15:19:04.4081670Z 
+2026-10-17T15:19:04.4082719Z [90mstderr[2m | apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts[2m > [22m[2mDiagnosisResultPanel[2m > [22m[2m渲染命中症状标签（含置信度）
+2026-10-17T15:19:04.4084545Z [22m[39m[Vue warn]: Invalid watch source:  { value: [33mfalse[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:19:04.4085656Z   at <DiagnosisResultPanel detail= {
+2026-10-17T15:19:04.4086207Z   id: [32m'run-1'[39m,
+2026-10-17T15:19:04.4086709Z   taskId: [32m'task-1'[39m,
+2026-10-17T15:19:04.4087406Z   loopId: [32m'loop-1'[39m,
+2026-10-17T15:19:04.4088004Z   loopTagName: [32m'FIC-101'[39m,
+2026-10-17T15:19:04.4088689Z   triggeredBy: [32m'tester'[39m,
+2026-10-17T15:19:04.4089401Z   timeWindowStart: [32m'2026-08-15T00:00:00'[39m,
+2026-10-17T15:19:04.4090098Z   timeWindowEnd: [32m'2026-08-15T07:00:00'[39m,
+2026-10-17T15:19:04.4090743Z   operatorGroup: [32m'full'[39m,
+2026-10-17T15:19:04.4091325Z   status: [32m'SUCCESS'[39m,
+2026-10-17T15:19:04.4092083Z   primaryCategory: [32m'INSTRUMENT'[39m,
+2026-10-17T15:19:04.4092772Z   primaryCategoryLabel: [32m'仪表/测量问题'[39m,
+2026-10-17T15:19:04.4093370Z   primaryConfidence: [33m0.85[39m,
+2026-10-17T15:19:04.4093835Z   secondaryCategories: [],
+2026-10-17T15:19:04.4094312Z   pendingReview: [
+2026-10-17T15:19:04.4094759Z     {
+2026-10-17T15:19:04.4095221Z       category: [32m'TUNING'[39m,
+2026-10-17T15:19:04.4095884Z       categoryLabel: [32m'参数问题（PID 整定）'[39m,
+2026-10-17T15:19:04.4096430Z       confidence: [33m0.9[39m,
+2026-10-17T15:19:04.4097034Z       basis: [36m[Array][39m,
+2026-10-17T15:19:04.4097728Z       status: [32m'pending_review'[39m,
+2026-10-17T15:19:04.4098410Z       contaminationNote: [32m'主因仪表污染了参数判定，修复后复诊'[39m
+2026-10-17T15:19:04.4099027Z     }
+2026-10-17T15:19:04.4099416Z   ],
+2026-10-17T15:19:04.4099923Z   severity: [32m'HIGH'[39m,
+2026-10-17T15:19:04.4100528Z   createdAt: [32m'2026-08-16T12:00:00'[39m,
+2026-10-17T15:19:04.4101089Z   dataGate: {
+2026-10-17T15:19:04.4101572Z     passed: [33mtrue[39m,
+2026-10-17T15:19:04.4102179Z     pointCount: [33m3500[39m,
+2026-10-17T15:19:04.4102795Z     expectedPoints: [33m3600[39m,
+2026-10-17T15:19:04.4103375Z     validRate: [33m0.97[39m,
+2026-10-17T15:19:04.4103992Z     confidenceLevel: [32m'A'[39m,
+2026-10-17T15:19:04.4104544Z     gapRatio: [33m0.03[39m,
+2026-10-17T15:19:04.4105133Z     reason: [1mnull[22m
+2026-10-17T15:19:04.4105580Z   },
+2026-10-17T15:19:04.4105980Z   operatorResults: {},
+2026-10-17T15:19:04.4106495Z   fusionResults: {
+2026-10-17T15:19:04.4106938Z     QUALITY_ABNORMAL: {
+2026-10-17T15:19:04.4107672Z       family: [32m'sensor'[39m,
+2026-10-17T15:19:04.4108329Z       symptomTag: [32m'QUALITY_ABNORMAL'[39m,
+2026-10-17T15:19:04.4108970Z       detected: [33mtrue[39m,
+2026-10-17T15:19:04.4109583Z       confidence: [33m0.85[39m,
+2026-10-17T15:19:04.4110179Z       fused: [33mfalse[39m
+2026-10-17T15:19:04.4110644Z     }
+2026-10-17T15:19:04.4111225Z   },
+2026-10-17T15:19:04.4111675Z   symptomTags: {},
+2026-10-17T15:19:04.4112105Z   rationale: [],
+2026-10-17T15:19:04.4112572Z   recommendations: [
+2026-10-17T15:19:04.4113039Z     {
+2026-10-17T15:19:04.4113632Z       content: [32m'检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）'[39m,
+2026-10-17T15:19:04.4114371Z       basis: [32m'传感器故障子类型 frozen'[39m,
+2026-10-17T15:19:04.4115022Z       direction: [32m'校验/维护'[39m,
+2026-10-17T15:19:04.4115607Z       priority: [33m1[39m
+2026-10-17T15:19:04.4116116Z     },
+2026-10-17T15:19:04.4116535Z     {
+2026-10-17T15:19:04.4117095Z       content: [32m'修复仪表后重新发起诊断确认参数问题'[39m,
+2026-10-17T15:19:04.4118008Z       basis: [32m'待复核：超调 35%'[39m,
+2026-10-17T15:19:04.4118642Z       direction: [32m'复诊'[39m,
+2026-10-17T15:19:04.4119192Z       priority: [33m2[39m
+2026-10-17T15:19:04.4119715Z     }
+2026-10-17T15:19:04.4120289Z   ],
+2026-10-17T15:19:04.4120787Z   evidenceCharts: [90mundefined[39m
+2026-10-17T15:19:04.4121417Z } ref="VTU_COMPONENT" > 
+2026-10-17T15:19:04.4121899Z   at <VTUROOT>
+2026-10-17T15:19:04.4122231Z 
+2026-10-17T15:19:04.4123313Z [90mstderr[2m | apps/web-antd/src/__tests__/diagnosis-result-panel.test.ts[2m > [22m[2mDiagnosisResultPanel[2m > [22m[2m数据不足时显示门禁原因告警
+2026-10-17T15:19:04.4125270Z [22m[39m[Vue warn]: Invalid watch source:  { value: [33mfalse[39m } A watch source can only be a getter/effect function, a ref, a reactive object, or an array of these types. 
+2026-10-17T15:19:04.4126409Z   at <DiagnosisResultPanel detail= {
+2026-10-17T15:19:04.4127038Z   id: [32m'run-1'[39m,
+2026-10-17T15:19:04.4127674Z   taskId: [32m'task-1'[39m,
+2026-10-17T15:19:04.4128416Z   loopId: [32m'loop-1'[39m,
+2026-10-17T15:19:04.4128989Z   loopTagName: [32m'FIC-101'[39m,
+2026-10-17T15:19:04.4129640Z   triggeredBy: [32m'tester'[39m,
+2026-10-17T15:19:04.4130346Z   timeWindowStart: [32m'2026-08-15T00:00:00'[39m,
+2026-10-17T15:19:04.4131088Z   timeWindowEnd: [32m'2026-08-15T07:00:00'[39m,
+2026-10-17T15:19:04.4131771Z   operatorGroup: [32m'full'[39m,
+2026-10-17T15:19:04.4132421Z   status: [32m'SUCCESS'[39m,
+2026-10-17T15:19:04.4133077Z   primaryCategory: [32m'DATA_INSUFFICIENT'[39m,
+2026-10-17T15:19:04.4133825Z   primaryCategoryLabel: [32m'数据不足/无法判定'[39m,
+2026-10-17T15:19:04.4134544Z   primaryConfidence: [33m0.85[39m,
+2026-10-17T15:19:04.4148067Z   secondaryCategories: [],
+2026-10-17T15:19:04.4148736Z   pendingReview: [],
+2026-10-17T15:19:04.4149386Z   severity: [1mnull[22m,
+2026-10-17T15:19:04.4150012Z   createdAt: [32m'2026-08-16T12:00:00'[39m,
+2026-10-17T15:19:04.4150658Z   dataGate: {
+2026-10-17T15:19:04.4151175Z     passed: [33mfalse[39m,
+2026-10-17T15:19:04.4151784Z     pointCount: [33m12[39m,
+2026-10-17T15:19:04.4152511Z     expectedPoints: [33m3600[39m,
+2026-10-17T15:19:04.4153100Z     validRate: [33m0.1[39m,
+2026-10-17T15:19:04.4153650Z     confidenceLevel: [32m'E'[39m,
+2026-10-17T15:19:04.4154270Z     gapRatio: [33m0.9[39m,
+2026-10-17T15:19:04.4154933Z     reason: [32m'有效数据点 12 不足（门槛 32 点）'[39m
+2026-10-17T15:19:04.4155557Z   },
+2026-10-17T15:19:04.4156054Z   operatorResults: {},
+2026-10-17T15:19:04.4156531Z   fusionResults: {
+2026-10-17T15:19:04.4157057Z     QUALITY_ABNORMAL: {
+2026-10-17T15:19:04.4157818Z       family: [32m'sensor'[39m,
+2026-10-17T15:19:04.4158440Z       symptomTag: [32m'QUALITY_ABNORMAL'[39m,
+2026-10-17T15:19:04.4159143Z       detected: [33mtrue[39m,
+2026-10-17T15:19:04.4159728Z       confidence: [33m0.85[39m,
+2026-10-17T15:19:04.4160293Z       fused: [33mfalse[39m
+2026-10-17T15:19:04.4160841Z     }
+2026-10-17T15:19:04.4161265Z   },
+2026-10-17T15:19:04.4161711Z   symptomTags: {},
+2026-10-17T15:19:04.4162200Z   rationale: [],
+2026-10-17T15:19:04.4162713Z   recommendations: [
+2026-10-17T15:19:04.4163148Z     {
+2026-10-17T15:19:04.4163847Z       content: [32m'检查校验变送器/仪表与通信链路（修复后复诊确认下游结论）'[39m,
+2026-10-17T15:19:04.4164571Z       basis: [32m'传感器故障子类型 frozen'[39m,
+2026-10-17T15:19:04.4165245Z       direction: [32m'校验/维护'[39m,
+2026-10-17T15:19:04.4165867Z       priority: [33m1[39m
+2026-10-17T15:19:04.4166563Z     },
+2026-10-17T15:19:04.4167721Z     {
+2026-10-17T15:19:04.4168366Z       content: [32m'修复仪表后重新发起诊断确认参数问题'[39m,
+2026-10-17T15:19:04.4169014Z       basis: [32m'待复核：超调 35%'[39m,
+2026-10-17T15:19:04.4169649Z       direction: [32m'复诊'[39m,
+2026-10-17T15:19:04.4170245Z       priority: [33m2[39m
+2026-10-17T15:19:04.4170765Z     }
+2026-10-17T15:19:04.4171254Z   ],
+2026-10-17T15:19:04.4171799Z   evidenceCharts: [90mundefined[39m
+2026-10-17T15:19:04.4172346Z } ref="VTU_COMPONENT" > 
+2026-10-17T15:19:04.4172866Z   at <VTUROOT>
+2026-10-17T15:19:04.4173196Z 
+2026-10-17T15:19:04.4306869Z  [32m✓[39m apps/web-antd/src/__tests__/cockpit-assessment-rank-tree.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+2026-10-17T15:19:04.7215336Z  [32m✓[39m apps/web-antd/src/__tests__/use-polling.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 18[2mms[22m[39m
+2026-10-17T15:19:05.1899229Z  [32m✓[39m apps/web-antd/src/__tests__/use-tuning-workbench-saveplan.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+2026-10-17T15:19:05.3017956Z  [32m✓[39m packages/utils/src/helpers/__tests__/generate-menus.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+2026-10-17T15:19:05.6929350Z  [32m✓[39m apps/web-antd/src/__tests__/cockpit-score-rank.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 19[2mms[22m[39m
+2026-10-17T15:19:06.2479400Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/inference.test.ts [2m([22m[2m27 tests[22m[2m)[22m[32m 16[2mms[22m[39m
+2026-10-17T15:19:06.6899025Z  [32m✓[39m packages/@core/base/shared/src/cache/__tests__/storage-manager.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+2026-10-17T15:19:07.0558181Z  [32m✓[39m apps/web-antd/src/__tests__/monitor-context-toolbar.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 86[2mms[22m[39m
+2026-10-17T15:19:07.5141941Z  [32m✓[39m apps/web-antd/src/__tests__/event-snapshot-view.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 146[2mms[22m[39m
+2026-10-17T15:19:07.5701864Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/tree.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:07.9898131Z  [32m✓[39m packages/effects/request/src/request-client/modules/downloader.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+2026-10-17T15:19:08.0064263Z  [32m✓[39m apps/web-antd/src/__tests__/routes-authority.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:08.0709186Z  [32m✓[39m apps/web-antd/src/__tests__/role-default-home.test.ts [2m([22m[2m9 tests[22m[2m)[22m[33m 472[2mms[22m[39m
+2026-10-17T15:19:08.0711175Z      [33m[2m✓[22m[39m 服务端偏好为合法站内路径 → 优先于角色映射 [33m 465[2mms[22m[39m
+2026-10-17T15:19:08.5614275Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/date.test.ts [2m([22m[2m15 tests[22m[2m)[22m[32m 17[2mms[22m[39m
+2026-10-17T15:19:09.1815677Z  [32m✓[39m apps/web-antd/src/__tests__/token-freshness.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+2026-10-17T15:19:09.7619871Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mguard：初始 epoch 匹配时通过
+2026-10-17T15:19:09.7622709Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.7624272Z 
+2026-10-17T15:19:09.7645612Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mguard：bump 后旧 epoch 失效
+2026-10-17T15:19:09.7660516Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.7662402Z 
+2026-10-17T15:19:09.7689274Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mguard：targetId 不匹配时拒绝（即使 epoch 相同）
+2026-10-17T15:19:09.7692181Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.7693630Z 
+2026-10-17T15:19:09.7695280Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mbump(null)：清空目标，所有 guard 拒绝
+2026-10-17T15:19:09.7720647Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.7723078Z 
+2026-10-17T15:19:09.7724212Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mrun：任务正常完成
+2026-10-17T15:19:09.7726770Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.7728462Z 
+2026-10-17T15:19:09.7729600Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2m快速切换场景：A 慢 / B 快，最终只写入 B（旧响应丢弃）
+2026-10-17T15:19:09.7732282Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.7733658Z 
+2026-10-17T15:19:09.8138880Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mcancelAll：递增代次并取消在途请求
+2026-10-17T15:19:09.8141745Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.8143336Z 
+2026-10-17T15:19:09.8676782Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2m连续 20 次切换：最后一次的响应才写入
+2026-10-17T15:19:09.8729453Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.8730945Z 
+2026-10-17T15:19:09.9070843Z [90mstderr[2m | apps/web-antd/src/__tests__/use-latest-request.test.ts[2m > [22m[2museLatestRequest[2m > [22m[2mrun 中抛异常不外泄（静默丢弃）
+2026-10-17T15:19:09.9073407Z [22m[39m[Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:09.9074886Z 
+2026-10-17T15:19:09.9086683Z  [32m✓[39m apps/web-antd/src/__tests__/use-latest-request.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 153[2mms[22m[39m
+2026-10-17T15:19:10.4921665Z [90mstderr[2m | apps/web-antd/src/__tests__/wb360-assess-latest.test.ts[2m > [22m[2muse-assess-history 最新评估独立查询（P1-03 IA-03）[2m > [22m[2mlatest 来自 latestOnly 独立查询，翻页/来源过滤不改变头部事实
+2026-10-17T15:19:10.4948654Z [22m[39m[Vue warn]: provide() can only be used inside setup().
+2026-10-17T15:19:10.4977843Z 
+2026-10-17T15:19:10.4979178Z  [32m✓[39m apps/web-antd/src/__tests__/wb360-assess-latest.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+2026-10-17T15:19:10.4981518Z [90mstderr[2m | apps/web-antd/src/__tests__/wb360-assess-latest.test.ts[2m > [22m[2muse-assess-history 最新评估独立查询（P1-03 IA-03）[2m > [22m[2m独立查询失败：latest 置空 + latestError（不渲染旧事实）
+2026-10-17T15:19:10.5008333Z [22m[39m[Vue warn]: provide() can only be used inside setup().
+2026-10-17T15:19:10.5037586Z 
+2026-10-17T15:19:10.9749178Z  [32m✓[39m apps/web-antd/src/__tests__/metrics-panel.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 66[2mms[22m[39m
+2026-10-17T15:19:11.0045317Z DOMException [AbortError]: The operation was aborted.
+2026-10-17T15:19:11.0047863Z     at Fetch.onAsyncTaskManagerAbort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+2026-10-17T15:19:11.0050100Z     at Object.<anonymous> (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+2026-10-17T15:19:11.0052349Z     at AsyncTaskManager.abortAll (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+2026-10-17T15:19:11.0054486Z     at AsyncTaskManager.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+2026-10-17T15:19:11.0056673Z     at DetachedBrowserFrame.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+2026-10-17T15:19:11.0058889Z     at DetachedWindowAPI.abort (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+2026-10-17T15:19:11.0061277Z     at teardownWindow (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+2026-10-17T15:19:11.0063980Z     at Object.teardown (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+2026-10-17T15:19:11.0066370Z     at file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+2026-10-17T15:19:11.0071414Z     at Traces.$ (file:///home/runner/work/CLPM-MVP/CLPM-MVP/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+2026-10-17T15:19:11.0269599Z  [32m✓[39m apps/web-antd/src/__tests__/use-score-color.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 9[2mms[22m[39m
+2026-10-17T15:19:11.4469467Z  [32m✓[39m apps/web-antd/src/__tests__/attention-verifying.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+2026-10-17T15:19:11.4655942Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/util.test.ts [2m([22m[2m14 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+2026-10-17T15:19:11.6641292Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList[2m > [22m[2m初始窗口：仅渲染视口（默认 600px）+ overscan，而非全量
+2026-10-17T15:19:11.6670077Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6689778Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6700941Z 
+2026-10-17T15:19:11.6705586Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList[2m > [22m[2m滚动后窗口平移：起点索引与 offsetY 正确
+2026-10-17T15:19:11.6708265Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6711112Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6712561Z 
+2026-10-17T15:19:11.6713530Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList[2m > [22m[2m滚到底部：窗口收敛不越界
+2026-10-17T15:19:11.6715908Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6719071Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6720403Z 
+2026-10-17T15:19:11.6721387Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList[2m > [22m[2m空列表：无渲染项、总高为 0
+2026-10-17T15:19:11.6722750Z  [32m✓[39m apps/web-antd/src/__tests__/use-virtual-list.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 13[2mms[22m[39m
+2026-10-17T15:19:11.6725029Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6734229Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6735716Z 
+2026-10-17T15:19:11.6737003Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList（MW-P0-01 工作台行高 76px）[2m > [22m[2m76px 行高：总高度 = items.length × 76
+2026-10-17T15:19:11.6739648Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6742488Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6744133Z 
+2026-10-17T15:19:11.6745297Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList（MW-P0-01 工作台行高 76px）[2m > [22m[2m76px 行高：滚动到末尾，最后一项完整可达
+2026-10-17T15:19:11.6748334Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6751212Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6752659Z 
+2026-10-17T15:19:11.6753903Z [90mstderr[2m | apps/web-antd/src/__tests__/use-virtual-list.test.ts[2m > [22m[2museVirtualList（MW-P0-01 工作台行高 76px）[2m > [22m[2m76px 行高：可视起止索引正确（视口 600px）
+2026-10-17T15:19:11.6756440Z [22m[39m[Vue warn]: onMounted is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6759318Z [Vue warn]: onBeforeUnmount is called when there is no active component instance to be associated with. Lifecycle injection APIs can only be used during execution of setup(). If you are using async setup(), make sure to register lifecycle hooks before the first await statement.
+2026-10-17T15:19:11.6760659Z 
+2026-10-17T15:19:11.9911171Z  [32m✓[39m packages/effects/request/src/request-client/modules/sse.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+2026-10-17T15:19:12.2428200Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/letter.test.ts [2m([22m[2m23 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+2026-10-17T15:19:12.6599720Z [90mstderr[2m | apps/web-antd/src/__tests__/use-diagnosis-runner.test.ts[2m > [22m[2museDiagnosisRunner[2m > [22m[2mtrigger 后轮询进度，终态 SUCCESS 停止并加载结果
+2026-10-17T15:19:12.6628782Z [22m[39m[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+2026-10-17T15:19:12.6657545Z 
+2026-10-17T15:19:12.6689047Z [90mstderr[2m | apps/web-antd/src/__tests__/use-diagnosis-runner.test.ts[2m > [22m[2museDiagnosisRunner[2m > [22m[2mFAILED 终态记录错误信息
+2026-10-17T15:19:12.6690702Z  [32m✓[39m apps/web-antd/src/__tests__/use-diagnosis-runner.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+2026-10-17T15:19:12.6718470Z [22m[39m[Vue warn] onScopeDispose() is called when there is no active effect scope to be associated with.
+2026-10-17T15:19:12.6727589Z 
+2026-10-17T15:19:13.0001363Z  [32m✓[39m packages/effects/request/src/request-client/modules/uploader.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+2026-10-17T15:19:13.3474330Z  [32m✓[39m packages/@core/ui-kit/popup-ui/src/drawer/__tests__/drawer-api.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 7[2mms[22m[39m
+2026-10-17T15:19:13.6947500Z  [32m✓[39m packages/@core/ui-kit/popup-ui/src/modal/__tests__/modal-api.test.ts [2m([22m[2m11 tests[22m[2m)[22m[32m 12[2mms[22m[39m
+2026-10-17T15:19:13.8232161Z  [32m✓[39m apps/web-antd/src/__tests__/numeric.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:14.3909052Z  [32m✓[39m apps/web-antd/src/__tests__/state-overlay.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 76[2mms[22m[39m
+2026-10-17T15:19:14.6397729Z  [32m✓[39m apps/web-antd/src/__tests__/batch-runs-drawer.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 34[2mms[22m[39m
+2026-10-17T15:19:15.3779086Z  [32m✓[39m apps/web-antd/src/__tests__/score-sparkline-null-gap.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 69[2mms[22m[39m
+2026-10-17T15:19:15.5121291Z  [32m✓[39m packages/effects/request/src/request-client/request-client.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 14[2mms[22m[39m
+2026-10-17T15:19:15.8200239Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/dom.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:16.1992487Z  [32m✓[39m packages/utils/src/helpers/__tests__/generate-routes-frontend.test.ts [2m([22m[2m6 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:16.3259394Z  [32m✓[39m apps/web-antd/src/__tests__/loop-detail-drawer-kpi-scale.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 246[2mms[22m[39m
+2026-10-17T15:19:16.3855443Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/resources.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 15[2mms[22m[39m
+2026-10-17T15:19:16.6519499Z  [32m✓[39m packages/utils/src/helpers/__tests__/find-menu-by-path.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+2026-10-17T15:19:16.8922103Z  [32m✓[39m internal/node-utils/src/__tests__/path.test.ts [2m([22m[2m9 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:19:16.9029037Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/stack.test.ts [2m([22m[2m12 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:17.4256312Z  [32m✓[39m apps/web-antd/src/__tests__/list-modal-failure-state.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 80[2mms[22m[39m
+2026-10-17T15:19:17.4675059Z  [32m✓[39m apps/web-antd/src/__tests__/workbench-no-fabricated-data.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:19:17.7885384Z  [32m✓[39m packages/effects/common-ui/src/components/page/__tests__/page.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 58[2mms[22m[39m
+2026-10-17T15:19:18.1194820Z  [32m✓[39m apps/web-antd/src/__tests__/loop-palettes.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:18.3669467Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/state-handler.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 38[2mms[22m[39m
+2026-10-17T15:19:18.5924681Z  [32m✓[39m packages/utils/src/helpers/__tests__/merge-route-modules.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+2026-10-17T15:19:18.8658278Z  [32m✓[39m packages/@core/base/shared/src/color/__tests__/convert.test.ts [2m([22m[2m7 tests[22m[2m)[22m[32m 11[2mms[22m[39m
+2026-10-17T15:19:19.2012038Z  [32m✓[39m apps/web-antd/src/__tests__/cockpit-loops-mode-label.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 5[2mms[22m[39m
+2026-10-17T15:19:19.3896502Z  [32m✓[39m internal/node-utils/src/__tests__/hash.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:19:19.6521542Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/unique.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:19:19.8789177Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/diff.test.ts [2m([22m[2m8 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:19:20.1096815Z  [32m✓[39m apps/web-antd/src/__tests__/p7-02-attention-terminology.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 6[2mms[22m[39m
+2026-10-17T15:19:20.3091707Z  [32m✓[39m apps/web-antd/src/__tests__/use-table-density.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:20.3896125Z  [32m✓[39m apps/web-antd/src/views/diagnosis/__tests__/normalize-category.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:20.5916596Z  [32m✓[39m apps/web-antd/src/__tests__/score-grade-boundary.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 4[2mms[22m[39m
+2026-10-17T15:19:20.8890661Z Warning: A vi.mock("sortablejs/modular/sortable.complete.esm.js") call in "/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/composables/src/__tests__/use-sortable.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+2026-10-17T15:19:20.8908477Z See: https://vitest.dev/guide/mocking/modules#how-it-works
+2026-10-17T15:19:20.9225782Z  [32m✓[39m packages/@core/composables/src/__tests__/use-sortable.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 10[2mms[22m[39m
+2026-10-17T15:19:21.1625430Z  [32m✓[39m apps/web-antd/src/__tests__/utils.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 48[2mms[22m[39m
+2026-10-17T15:19:21.6399357Z  [32m✓[39m packages/stores/src/modules/access.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+2026-10-17T15:19:21.6848503Z  [32m✓[39m apps/web-antd/src/__tests__/workbench-ranking-empty.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 4[2mms[22m[39m
+2026-10-17T15:19:22.0965700Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/update-css-variables.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 8[2mms[22m[39m
+2026-10-17T15:19:22.3049552Z  [32m✓[39m packages/stores/src/modules/user.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 10[2mms[22m[39m
+2026-10-17T15:19:22.5804632Z  [32m✓[39m packages/@core/base/shared/src/utils/__tests__/window.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 5[2mms[22m[39m
+2026-10-17T15:19:22.5859406Z [90mstderr[2m | apps/web-antd/src/__tests__/day-delta-badge.test.ts[2m > [22m[2mdayDeltaBadge[2m > [22m[2mWORSENED：红 ▼绝对值
+2026-10-17T15:19:22.5878243Z [22m[39m[Vue warn]: Failed setting prop "children" on <span>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:19:22.5909394Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:19:22.5939349Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:19:22.5968990Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:19:22.5971351Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:19:22.5999376Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:19:22.6026023Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:19:22.6036436Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:19:22.6069434Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:19:22.6099347Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:19:22.6129242Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:19:22.6131734Z   at <Anonymous title="较昨日评分恶化 7.0 分，建议优先关注" trigger="hover" open=undefined  ... > 
+2026-10-17T15:19:22.6178076Z   at <ATooltip key=0 title="较昨日评分恶化 7.0 分，建议优先关注" > 
+2026-10-17T15:19:22.6208257Z   at <DayDeltaBadge delta=-7 trend="WORSENED" ref="VTU_COMPONENT" > 
+2026-10-17T15:19:22.6217932Z   at <VTUROOT>
+2026-10-17T15:19:22.6230715Z 
+2026-10-17T15:19:22.6231877Z [90mstderr[2m | apps/web-antd/src/__tests__/day-delta-badge.test.ts[2m > [22m[2mdayDeltaBadge[2m > [22m[2mIMPROVED：绿 ▲delta
+2026-10-17T15:19:22.6233915Z [22m[39m[Vue warn]: Failed setting prop "children" on <span>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:19:22.6235833Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:19:22.6238243Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:19:22.6244023Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:19:22.6246443Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:19:22.6248818Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:19:22.6251178Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:19:22.6253625Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:19:22.6255696Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:19:22.6258089Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:19:22.6260246Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:19:22.6261873Z   at <Anonymous title="较昨日评分好转 3.5 分" trigger="hover" open=undefined  ... > 
+2026-10-17T15:19:22.6263024Z   at <ATooltip key=0 title="较昨日评分好转 3.5 分" > 
+2026-10-17T15:19:22.6263758Z   at <DayDeltaBadge delta=3.5 trend="IMPROVED" ref="VTU_COMPONENT" > 
+2026-10-17T15:19:22.6264365Z   at <VTUROOT>
+2026-10-17T15:19:22.6264610Z 
+2026-10-17T15:19:22.6265417Z [90mstderr[2m | apps/web-antd/src/__tests__/day-delta-badge.test.ts[2m > [22m[2mdayDeltaBadge[2m > [22m[2mNEW：蓝「新增」
+2026-10-17T15:19:22.6297572Z [22m[39m[Vue warn]: Failed setting prop "children" on <span>: value undefined is invalid. TypeError: Cannot set property children of [object Object] which has only a getter
+2026-10-17T15:19:22.6300200Z     at patchDOMProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:618:13[90m)[39m
+2026-10-17T15:19:22.6302574Z     at patchProp [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-dom@3.5.34/node_modules/[4m@vue/runtime-dom[24m/dist/runtime-dom.cjs.js:729:5[90m)[39m
+2026-10-17T15:19:22.6304677Z     at mountElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5624:11[90m)[39m
+2026-10-17T15:19:22.6306774Z     at processElement [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5561:7[90m)[39m
+2026-10-17T15:19:22.6309244Z     at patch [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5427:11[90m)[39m
+2026-10-17T15:19:22.6311517Z     at ReactiveEffect.componentUpdateFn [as fn] [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6077:11[90m)[39m
+2026-10-17T15:19:22.6313903Z     at ReactiveEffect.run [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+reactivity@3.5.34/node_modules/[4m@vue/reactivity[24m/dist/reactivity.cjs.js:264:19[90m)[39m
+2026-10-17T15:19:22.6316129Z     at setupRenderEffect [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:6205:5[90m)[39m
+2026-10-17T15:19:22.6318401Z     at mountComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5977:7[90m)[39m
+2026-10-17T15:19:22.6320006Z     at processComponent [90m(/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/[39mnode_modules/[4m.pnpm[24m/@vue+runtime-core@3.5.34/node_modules/[4m@vue/runtime-core[24m/dist/runtime-core.cjs.js:5929:9[90m)[39m 
+2026-10-17T15:19:22.6321005Z   at <Anonymous title="昨日无基线快照，今日首次出分" trigger="hover" open=undefined  ... > 
+2026-10-17T15:19:22.6321615Z   at <ATooltip key=0 title="昨日无基线快照，今日首次出分" > 
+2026-10-17T15:19:22.6322073Z   at <DayDeltaBadge delta=null trend="NEW" ref="VTU_COMPONENT" > 
+2026-10-17T15:19:22.6322711Z   at <VTUROOT>
+2026-10-17T15:19:22.6322954Z 
+2026-10-17T15:19:22.6354137Z  [32m✓[39m apps/web-antd/src/__tests__/day-delta-badge.test.ts [2m([22m[2m5 tests[22m[2m)[22m[32m 114[2mms[22m[39m
+2026-10-17T15:19:22.7295471Z  [32m✓[39m packages/@core/preferences/__tests__/config.test.ts [2m([22m[2m1 test[22m[2m)[22m[32m 5[2mms[22m[39m
+2026-10-17T15:19:22.7340561Z 
+2026-10-17T15:19:22.7358569Z [2m Test Files [22m [1m[32m106 passed[39m[22m[90m (106)[39m
+2026-10-17T15:19:22.7359790Z [2m      Tests [22m [1m[32m1021 passed[39m[22m[90m (1021)[39m
+2026-10-17T15:19:22.7360673Z [2m   Start at [22m 15:18:32
+2026-10-17T15:19:22.7361981Z [2m   Duration [22m 50.21s[2m (transform 10.92s, setup 0ms, import 86.30s, tests 14.68s, environment 32.67s)[22m
+2026-10-17T15:19:22.7363010Z 

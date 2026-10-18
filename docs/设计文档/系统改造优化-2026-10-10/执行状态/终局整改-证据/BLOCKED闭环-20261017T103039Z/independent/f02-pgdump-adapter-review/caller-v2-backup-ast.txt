@@ -1,0 +1,209 @@
+AsyncFunctionDef(
+  name='backup',
+  args=arguments(
+    posonlyargs=[],
+    args=[
+      arg(arg='out')],
+    kwonlyargs=[],
+    kw_defaults=[],
+    defaults=[]),
+  body=[
+    Assign(
+      targets=[
+        Name(id='path', ctx=Store())],
+      value=BinOp(
+        left=Name(id='out', ctx=Load()),
+        op=Div(),
+        right=Constant(value='before.dump'))),
+    Assign(
+      targets=[
+        Name(id='argv', ctx=Store())],
+      value=List(
+        elts=[
+          Attribute(
+            value=Name(id='args', ctx=Load()),
+            attr='pg_dump',
+            ctx=Load()),
+          BinOp(
+            left=Constant(value='--host='),
+            op=Add(),
+            right=Subscript(
+              value=Name(id='cfg', ctx=Load()),
+              slice=Constant(value='POSTGRES_HOST'),
+              ctx=Load())),
+          Constant(value='--port=17102'),
+          Constant(value='--username=clpm'),
+          BinOp(
+            left=Constant(value='--dbname='),
+            op=Add(),
+            right=Name(id='DATABASE', ctx=Load())),
+          Constant(value='--format=custom'),
+          Constant(value='--no-owner'),
+          BinOp(
+            left=Constant(value='--file='),
+            op=Add(),
+            right=Call(
+              func=Name(id='str', ctx=Load()),
+              args=[
+                Name(id='path', ctx=Load())],
+              keywords=[]))],
+        ctx=Load())),
+    With(
+      items=[
+        withitem(
+          context_expr=Call(
+            func=Attribute(
+              value=BinOp(
+                left=Name(id='out', ctx=Load()),
+                op=Div(),
+                right=Constant(value='pg-dump.stdout.log')),
+              attr='open',
+              ctx=Load()),
+            args=[
+              Constant(value='xb')],
+            keywords=[]),
+          optional_vars=Name(id='stdout', ctx=Store())),
+        withitem(
+          context_expr=Call(
+            func=Attribute(
+              value=BinOp(
+                left=Name(id='out', ctx=Load()),
+                op=Div(),
+                right=Constant(value='pg-dump.stderr.log')),
+              attr='open',
+              ctx=Load()),
+            args=[
+              Constant(value='xb')],
+            keywords=[]),
+          optional_vars=Name(id='stderr', ctx=Store()))],
+      body=[
+        Assign(
+          targets=[
+            Name(id='proc', ctx=Store())],
+          value=Call(
+            func=Attribute(
+              value=Name(id='subprocess', ctx=Load()),
+              attr='run',
+              ctx=Load()),
+            args=[
+              Name(id='argv', ctx=Load())],
+            keywords=[
+              keyword(
+                arg='env',
+                value=Dict(
+                  keys=[
+                    None,
+                    Constant(value='PGPASSWORD')],
+                  values=[
+                    Attribute(
+                      value=Name(id='os', ctx=Load()),
+                      attr='environ',
+                      ctx=Load()),
+                    Subscript(
+                      value=Name(id='cfg', ctx=Load()),
+                      slice=Constant(value='POSTGRES_PASSWORD'),
+                      ctx=Load())])),
+              keyword(
+                arg='stdout',
+                value=Name(id='stdout', ctx=Load())),
+              keyword(
+                arg='stderr',
+                value=Name(id='stderr', ctx=Load()))]))]),
+    Assign(
+      targets=[
+        Name(id='result', ctx=Store())],
+      value=Dict(
+        keys=[
+          Constant(value='argv'),
+          Constant(value='rc'),
+          Constant(value='nativeEnvSha256')],
+        values=[
+          Name(id='argv', ctx=Load()),
+          Attribute(
+            value=Name(id='proc', ctx=Load()),
+            attr='returncode',
+            ctx=Load()),
+          Call(
+            func=Name(id='sha', ctx=Load()),
+            args=[
+              Attribute(
+                value=Name(id='args', ctx=Load()),
+                attr='native_env_file',
+                ctx=Load())],
+            keywords=[])])),
+    Expr(
+      value=Call(
+        func=Name(id='dump', ctx=Load()),
+        args=[
+          BinOp(
+            left=Name(id='out', ctx=Load()),
+            op=Div(),
+            right=Constant(value='pg-dump-command.json')),
+          Name(id='result', ctx=Load())],
+        keywords=[])),
+    If(
+      test=BoolOp(
+        op=Or(),
+        values=[
+          Attribute(
+            value=Name(id='proc', ctx=Load()),
+            attr='returncode',
+            ctx=Load()),
+          UnaryOp(
+            op=Not(),
+            operand=Call(
+              func=Attribute(
+                value=Name(id='path', ctx=Load()),
+                attr='is_file',
+                ctx=Load()),
+              args=[],
+              keywords=[])),
+          Compare(
+            left=Subscript(
+              value=Call(
+                func=Attribute(
+                  value=Name(id='path', ctx=Load()),
+                  attr='read_bytes',
+                  ctx=Load()),
+                args=[],
+                keywords=[]),
+              slice=Slice(
+                upper=Constant(value=5)),
+              ctx=Load()),
+            ops=[
+              NotEq()],
+            comparators=[
+              Constant(value=b'PGDMP')])]),
+      body=[
+        Raise(
+          exc=Call(
+            func=Name(id='ValueError', ctx=Load()),
+            args=[
+              Constant(value='full original pg_dump failed')],
+            keywords=[]))],
+      orelse=[]),
+    Return(
+      value=Dict(
+        keys=[
+          None,
+          Constant(value='fileSha256'),
+          Constant(value='bytes')],
+        values=[
+          Name(id='result', ctx=Load()),
+          Call(
+            func=Name(id='sha', ctx=Load()),
+            args=[
+              Name(id='path', ctx=Load())],
+            keywords=[]),
+          Attribute(
+            value=Call(
+              func=Attribute(
+                value=Name(id='path', ctx=Load()),
+                attr='stat',
+                ctx=Load()),
+              args=[],
+              keywords=[]),
+            attr='st_size',
+            ctx=Load())]))],
+  decorator_list=[],
+  type_params=[])

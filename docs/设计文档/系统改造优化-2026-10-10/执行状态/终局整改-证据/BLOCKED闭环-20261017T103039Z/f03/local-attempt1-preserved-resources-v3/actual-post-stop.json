@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-17T12:51:44.253232+00:00",
+  "actualApiExit": {
+    "pid": 17116,
+    "rc": -2,
+    "at": "2026-10-17T12:47:28.761534+00:00"
+  },
+  "originalMembersStillPresent": [],
+  "selectedRawPsLines": [],
+  "psRc": 0,
+  "driverStopPassed": false,
+  "scope": "actual cleanup closure only; original rc -2/stop rc1 retained"
+}

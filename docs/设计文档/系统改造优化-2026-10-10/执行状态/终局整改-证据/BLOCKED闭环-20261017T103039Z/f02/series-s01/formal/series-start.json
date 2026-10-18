@@ -1,0 +1,7 @@
+{
+  "startedAt": "2026-10-17T22:38:54.083503+00:00",
+  "candidateSha": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e",
+  "protocolSha256": "1c269b2b305a06f93c9be143b39a8010e94644ca6a4306414314cade6f2bff80",
+  "requiredBatches": 20,
+  "acceptance": "all 20 required; one failure stops entire series"
+}

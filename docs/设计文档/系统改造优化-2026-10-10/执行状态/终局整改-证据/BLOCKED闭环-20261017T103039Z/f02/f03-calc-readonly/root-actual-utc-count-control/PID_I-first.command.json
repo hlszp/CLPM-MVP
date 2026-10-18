@@ -1,0 +1,20 @@
+{
+  "role": "PID_I",
+  "pointId": "3da633fc-e678-495c-839c-e33a9a1ac978",
+  "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='3da633fc-e678-495c-839c-e33a9a1ac978' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+  "startedAt": "2026-10-17T13:17:01.375753+00:00",
+  "finishedAt": "2026-10-17T13:17:01.377865+00:00",
+  "httpStatus": 200,
+  "serverCode": 0,
+  "data": [
+    [
+      "2026-10-17T11:00:00.000Z",
+      60,
+      1,
+      1
+    ]
+  ],
+  "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_I-first.body.json",
+  "bytes": 176,
+  "sha256": "ca3bfb4ed677232be8e917ac950e2ab4f3d1f37a1cc6d2e9da11493939389476"
+}

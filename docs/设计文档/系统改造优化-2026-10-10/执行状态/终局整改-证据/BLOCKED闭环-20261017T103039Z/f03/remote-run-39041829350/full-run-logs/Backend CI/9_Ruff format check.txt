@@ -1,0 +1,19 @@
+﻿2026-10-17T14:42:14.6771687Z ##[group]Run uv run ruff format --check .
+2026-10-17T14:42:14.6772145Z [36;1muv run ruff format --check .[0m
+2026-10-17T14:42:14.6812585Z shell: /usr/bin/bash -e {0}
+2026-10-17T14:42:14.6813144Z env:
+2026-10-17T14:42:14.6813447Z   CI: true
+2026-10-17T14:42:14.6813749Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T14:42:14.6814132Z   OMP_NUM_THREADS: 1
+2026-10-17T14:42:14.6814427Z   MKL_NUM_THREADS: 1
+2026-10-17T14:42:14.6814735Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T14:42:14.6815046Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T14:42:14.6815472Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:42:14.6816016Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T14:42:14.6816505Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:42:14.6816952Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:42:14.6817504Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:42:14.6817963Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T14:42:14.6818555Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T14:42:14.6818911Z ##[endgroup]
+2026-10-17T14:42:14.9629153Z 925 files already formatted

@@ -1,0 +1,12 @@
+AssertionError [ERR_ASSERTION]: invalid hash //foreign.invalid/cockpit must not be an authenticated landing
+
+true !== false
+
+    at file:///Users/zhangping/DEV/CLPM-MVP/docs/%E8%AE%BE%E8%AE%A1%E6%96%87%E6%A1%A3/%E7%B3%BB%E7%BB%9F%E6%94%B9%E9%80%A0%E4%BC%98%E5%8C%96-2026-10-10/%E6%89%A7%E8%A1%8C%E7%8A%B6%E6%80%81/%E7%BB%88%E5%B1%80%E6%95%B4%E6%94%B9-%E8%AF%81%E6%8D%AE/BLOCKED%E9%97%AD%E7%8E%AF-20261017T103039Z/f03/route-origin-remediation/verify-route.mjs:95:14 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: true,
+  expected: false,
+  operator: 'strictEqual',
+  diff: 'simple'
+}

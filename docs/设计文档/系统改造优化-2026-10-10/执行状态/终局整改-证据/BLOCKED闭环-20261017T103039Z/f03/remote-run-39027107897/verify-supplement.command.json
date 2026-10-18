@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/remote-run-39027107897/verify-supplement.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "rc": 0,
+  "elapsedSeconds": 1.223555088043213,
+  "stdoutSha256": "b20a23f84c6ae0e3c328dbdd46c1036a5fe57da1a0b8dd41cdbea1589f67cff3",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

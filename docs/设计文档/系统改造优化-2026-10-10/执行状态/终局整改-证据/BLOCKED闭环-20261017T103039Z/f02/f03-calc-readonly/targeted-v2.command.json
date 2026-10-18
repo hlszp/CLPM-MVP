@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-c",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/pyproject.toml",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_calc_snapshot.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_api_tasks.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_kpi_calc.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_g5_data_acquisition_failure.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_p5_02_batch_io_budget.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly",
+  "startedAt": "2026-10-17T13:19:48.460283+00:00",
+  "elapsedSeconds": 6.3983941249898635,
+  "rc": 0,
+  "stdoutSha256": "ed78d151d24a73bba637c2079ed81bc6599ad8075a35bb6ce39390986e8a6f56",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "noBusinessDotEnv": true
+}

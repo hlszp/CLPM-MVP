@@ -1,0 +1,946 @@
+{
+  "success": true,
+  "modelType": "FOPDT",
+  "params": {
+    "K": -0.024279,
+    "tau": 0.7945,
+    "theta": 177.0
+  },
+  "fittingScore": 6.91,
+  "confidenceLevel": "E",
+  "identifyMethod": "HISTORICAL_ARX",
+  "excitationScore": 99.86,
+  "residualTestPassed": false,
+  "aic": 488.76,
+  "bic": 497.12,
+  "evidence": {
+    "split": {
+      "train": 840,
+      "val": 280,
+      "test": 280
+    },
+    "r2Val": 0.0,
+    "r2Train": 0.0691,
+    "nrmseVal": 0.0,
+    "residualTest": "joint xcorr_exceed(worst)=0.238",
+    "meanCoherence": null,
+    "algorithmVersion": "TUNE_IDENT_v1.8",
+    "dataHash": "",
+    "thetaSource": "SEARCHED",
+    "delaySearchTrace": [
+      {
+        "d": 0,
+        "bic": 836.09
+      },
+      {
+        "d": 2,
+        "bic": 829.36
+      },
+      {
+        "d": 4,
+        "bic": 811.36
+      },
+      {
+        "d": 6,
+        "bic": 792.42
+      },
+      {
+        "d": 8,
+        "bic": 809.96
+      },
+      {
+        "d": 10,
+        "bic": 813.38
+      },
+      {
+        "d": 12,
+        "bic": 799.8
+      },
+      {
+        "d": 14,
+        "bic": 798.44
+      },
+      {
+        "d": 16,
+        "bic": 785.66
+      },
+      {
+        "d": 18,
+        "bic": 792.1
+      },
+      {
+        "d": 20,
+        "bic": 789.96
+      },
+      {
+        "d": 22,
+        "bic": 788.08
+      },
+      {
+        "d": 24,
+        "bic": 788.52
+      },
+      {
+        "d": 26,
+        "bic": 784.34
+      },
+      {
+        "d": 28,
+        "bic": 774.43
+      },
+      {
+        "d": 30,
+        "bic": 780.0
+      },
+      {
+        "d": 32,
+        "bic": 777.44
+      },
+      {
+        "d": 34,
+        "bic": 773.46
+      },
+      {
+        "d": 36,
+        "bic": 769.21
+      },
+      {
+        "d": 38,
+        "bic": 766.96
+      },
+      {
+        "d": 40,
+        "bic": 764.12
+      },
+      {
+        "d": 42,
+        "bic": 763.04
+      },
+      {
+        "d": 44,
+        "bic": 759.16
+      },
+      {
+        "d": 46,
+        "bic": 755.24
+      },
+      {
+        "d": 48,
+        "bic": 750.79
+      },
+      {
+        "d": 50,
+        "bic": 748.21
+      },
+      {
+        "d": 52,
+        "bic": 736.77
+      },
+      {
+        "d": 54,
+        "bic": 728.51
+      },
+      {
+        "d": 56,
+        "bic": 729.83
+      },
+      {
+        "d": 58,
+        "bic": 722.78
+      },
+      {
+        "d": 60,
+        "bic": 719.48
+      },
+      {
+        "d": 99,
+        "bic": 641.82
+      },
+      {
+        "d": 172,
+        "bic": 511.73
+      },
+      {
+        "d": 173,
+        "bic": 507.23
+      },
+      {
+        "d": 174,
+        "bic": 505.31
+      },
+      {
+        "d": 175,
+        "bic": 500.26
+      },
+      {
+        "d": 176,
+        "bic": 499.34
+      },
+      {
+        "d": 177,
+        "bic": 497.12
+      },
+      {
+        "d": 178,
+        "bic": 497.67
+      }
+    ],
+    "reasonCodes": [
+      "NEGATIVE_GAIN",
+      "VAL_STATIONARY",
+      "HEURISTIC_2TS",
+      "FINAL_TEST_FAILED",
+      "CROSS_WINDOW_UNSTABLE",
+      "LOW_SNR_PARAM_UNCOMMITTED"
+    ],
+    "parameterUncertainty": null,
+    "cleaningStats": {
+      "original_points": 1600,
+      "interpolated_points": 0,
+      "dropped_points": 0,
+      "valid_points": 1400,
+      "valid_rate": 0.875,
+      "n_large_gaps": 1
+    },
+    "physicalFeasibility": {
+      "passed": false,
+      "reasonCode": "NEGATIVE_GAIN",
+      "details": "K=-0.02428 < 0，过程增益为负（逆向过程或符号错误）"
+    },
+    "finalTest": {
+      "status": "FAILED",
+      "r2": 0.0,
+      "n": 280,
+      "note": "各段尾段 20% 池化自由仿真（P-24 与主路径尾段终验同语义）"
+    },
+    "nonparamCheck": null,
+    "ipdtDrift": null,
+    "estimatorProfile": {
+      "profileVersion": "TUNE_IDENT_PROFILE_v1",
+      "structure": "FOPDT",
+      "estimator": "HISTORICAL_ARX",
+      "orders": {
+        "na": 1,
+        "nb": 1,
+        "nc": 0
+      },
+      "delaySamples": 177,
+      "delayAdjustedFrom": null,
+      "joint": true,
+      "segmentCount": 2
+    },
+    "delaySearchInfo": {
+      "boundaryHit": null,
+      "maxD": 178,
+      "candidateCount": 33
+    },
+    "spExogeneity": null,
+    "jointEstimate": {
+      "ran": true,
+      "method": "SEGMENT_BLOCK_STACKING",
+      "segmentCount": 2,
+      "segments": [
+        {
+          "start": 900,
+          "end": 1600,
+          "pointCount": 700,
+          "opMean": 54.832826,
+          "pvMean": 82.409239
+        },
+        {
+          "start": 0,
+          "end": 700,
+          "pointCount": 700,
+          "opMean": 39.603035,
+          "pvMean": 59.261757
+        }
+      ],
+      "sharedAB": true,
+      "perSegmentBias": "P-23 每段独立去均值偏置（段间不共享，均值入 segments[].opMean/pvMean）",
+      "noCrossGapConcat": true,
+      "estimatesRun": {
+        "perWindowMax": 9,
+        "jointMax": 4,
+        "cap": 27,
+        "budget": "B-09"
+      }
+    },
+    "finalEventTest": null,
+    "reselectUncertainty": {
+      "method": "RESELECT_DELAY_STRUCTURE",
+      "status": "COMPLETED",
+      "nRepetitions": 48,
+      "nValid": 48,
+      "segmentsUsed": 2,
+      "structureCounts": {
+        "FOPDT": 48,
+        "SOPDT": 0
+      },
+      "budget": {
+        "dimension": "RESELECT_REPETITIONS",
+        "repetitions": 48,
+        "segments": 2,
+        "total": 96,
+        "cap": 192,
+        "budget": "B-10",
+        "perRepChain": "ARX BIC 时滞重选（≤8 候选+平局集抽样+±2 精修）+ 结构重选（Occam 镜像）+ ARX 参数拟合"
+      },
+      "K": {
+        "ci95": [
+          -0.0674,
+          0.0361
+        ]
+      },
+      "theta": {
+        "ci95": [
+          49.0,
+          58.0
+        ],
+        "widthSeconds": 9.0,
+        "degenerate": false
+      },
+      "tau": {
+        "ci95": [
+          0.4192,
+          1.2191
+        ]
+      }
+    },
+    "lowSnr": {
+      "mode": "PARAM_ACCURACY_UNCOMMITTED",
+      "snrDb": -3.15,
+      "thresholdDb": 20.0,
+      "basis": "WELCH_PSD_NOISE_FLOOR_JOINT_AGGREGATE",
+      "note": "多窗共同估计（2 段堆叠）聚合信噪比实测 -3.1dB 低于参数级精度承诺下界（20dB，逐段功率 ΣS/ΣN 聚合），显式不承诺参数级精度（S1-b 裁决：10dB 档转不承诺档）"
+    },
+    "finalVerification": {
+      "status": "FAILED",
+      "channels": {
+        "finalTest": {
+          "status": "FAILED",
+          "r2": 0.0,
+          "n": 280
+        },
+        "finalEventTest": null
+      },
+      "crossWindowStability": {
+        "stable": false,
+        "maxRelativeDeviation": 1.333,
+        "threshold": 0.25
+      },
+      "reselectUncertainty": {
+        "status": "COMPLETED",
+        "nRepetitions": 48
+      },
+      "basis": [
+        "finalTest: FAILED(r2=0.0, n=280, ptpRange=None；终验段独立自由仿真，不参与选模)",
+        "finalEventTest: 未运行（无与选模用窗不重叠的独立事件）",
+        "crossWindowStability: UNSTABLE(maxRelativeDeviation=1.333≤0.25；P-25 跨窗稳定性，超差另有可信度封顶)",
+        "reselectUncertainty: COMPLETED(nRepetitions=48, θ ci95=[49.0, 58.0]；P-26 重选不确定性，K/τ 区间偏窄已知悉（06c 验收 D1）)"
+      ],
+      "note": "P3-03 终验节点：模型级终验结论（终验通过+结构支持方可整定；终验不参与选模，只降不升）"
+    }
+  },
+  "candidateModels": [
+    {
+      "modelType": "FOPDT",
+      "params": {
+        "K": 0.072906,
+        "tau": 0.8862,
+        "theta": 5.0
+      },
+      "fittingScore": 6.27,
+      "confidence": "E",
+      "aic": 413.49,
+      "bic": 421.54
+    },
+    {
+      "modelType": "IPDT",
+      "params": {
+        "K": 0.039859,
+        "theta": 175.0
+      },
+      "fittingScore": 0.0,
+      "confidence": "E",
+      "aic": 370.2,
+      "bic": 380.7
+    },
+    {
+      "modelType": "FOPDT",
+      "params": {
+        "K": 0.095744,
+        "tau": 0.8302,
+        "theta": 6.0
+      },
+      "fittingScore": 0.0,
+      "confidence": "E",
+      "aic": 369.42,
+      "bic": 377.47
+    },
+    {
+      "modelType": "FOPDT",
+      "params": {
+        "K": 0.1152,
+        "tau": 1.4226,
+        "theta": 6.0
+      },
+      "fittingScore": 0.0,
+      "confidence": "E",
+      "aic": 395.15,
+      "bic": 407.22
+    },
+    {
+      "modelType": "IPDT",
+      "params": {
+        "K": -0.042682,
+        "theta": 172.0
+      },
+      "fittingScore": 0.0,
+      "confidence": "E",
+      "aic": 358.81,
+      "bic": 369.35
+    },
+    {
+      "modelType": "FOPDT",
+      "params": {
+        "K": -0.024279,
+        "tau": 0.7945,
+        "theta": 177.0
+      },
+      "fittingScore": 6.91,
+      "confidence": "E",
+      "aic": 488.76,
+      "bic": 497.12
+    }
+  ],
+  "modelRole": {
+    "bestExplanatory": {
+      "modelType": "FOPDT",
+      "fittingScore": 6.91,
+      "confidence": "E",
+      "finalVerification": "FAILED"
+    },
+    "tunable": null,
+    "note": "结构支持的可整定候选 FOPDT 模型级终验未通过（finalVerification=FAILED）——可整定判定=终验通过+结构支持，二者缺一不可（07§2 训练好、终验差的模型不得晋升；终验不参与选模，不回取次优候选）"
+  },
+  "algorithmVersion": "TUNE_IDENT_v1.8",
+  "reason": "joint(P-22): 2 段堆叠共同估计, R²_val=0.000, R²_train=0.069, R²_final=0.000(FAILED), joint xcorr_exceed(worst)=0.238, BIC=497.1, NEGATIVE_GAIN, VAL_STATIONARY, FINAL_TEST_FAILED, CROSS_WINDOW_UNSTABLE(maxDev=1.33>0.25), LOW_SNR_PARAM_UNCOMMITTED(snr≈-3.1dB)",
+  "preprocessing": {
+    "multiWindow": {
+      "checkedWindows": [
+        {
+          "start": 900,
+          "end": 1600
+        },
+        {
+          "start": 0,
+          "end": 700
+        }
+      ],
+      "succeededWindows": [
+        {
+          "start": 900,
+          "end": 1600,
+          "fittingScore": 6.27
+        },
+        {
+          "start": 0,
+          "end": 700,
+          "fittingScore": 0.0
+        }
+      ],
+      "selectedWindow": {
+        "start": 900,
+        "end": 700
+      },
+      "jointEstimate": {
+        "ran": true,
+        "segmentCount": 2,
+        "segments": [
+          {
+            "start": 900,
+            "end": 1600,
+            "pointCount": 700,
+            "opMean": 54.832826,
+            "pvMean": 82.409239
+          },
+          {
+            "start": 0,
+            "end": 700,
+            "pointCount": 700,
+            "opMean": 39.603035,
+            "pvMean": 59.261757
+          }
+        ],
+        "method": "SEGMENT_BLOCK_STACKING",
+        "delayTraceByStructure": {
+          "FOPDT": [
+            {
+              "d": 0,
+              "bic": 836.09
+            },
+            {
+              "d": 2,
+              "bic": 829.36
+            },
+            {
+              "d": 4,
+              "bic": 811.36
+            },
+            {
+              "d": 6,
+              "bic": 792.42
+            },
+            {
+              "d": 8,
+              "bic": 809.96
+            },
+            {
+              "d": 10,
+              "bic": 813.38
+            },
+            {
+              "d": 12,
+              "bic": 799.8
+            },
+            {
+              "d": 14,
+              "bic": 798.44
+            },
+            {
+              "d": 16,
+              "bic": 785.66
+            },
+            {
+              "d": 18,
+              "bic": 792.1
+            },
+            {
+              "d": 20,
+              "bic": 789.96
+            },
+            {
+              "d": 22,
+              "bic": 788.08
+            },
+            {
+              "d": 24,
+              "bic": 788.52
+            },
+            {
+              "d": 26,
+              "bic": 784.34
+            },
+            {
+              "d": 28,
+              "bic": 774.43
+            },
+            {
+              "d": 30,
+              "bic": 780.0
+            },
+            {
+              "d": 32,
+              "bic": 777.44
+            },
+            {
+              "d": 34,
+              "bic": 773.46
+            },
+            {
+              "d": 36,
+              "bic": 769.21
+            },
+            {
+              "d": 38,
+              "bic": 766.96
+            },
+            {
+              "d": 40,
+              "bic": 764.12
+            },
+            {
+              "d": 42,
+              "bic": 763.04
+            },
+            {
+              "d": 44,
+              "bic": 759.16
+            },
+            {
+              "d": 46,
+              "bic": 755.24
+            },
+            {
+              "d": 48,
+              "bic": 750.79
+            },
+            {
+              "d": 50,
+              "bic": 748.21
+            },
+            {
+              "d": 52,
+              "bic": 736.77
+            },
+            {
+              "d": 54,
+              "bic": 728.51
+            },
+            {
+              "d": 56,
+              "bic": 729.83
+            },
+            {
+              "d": 58,
+              "bic": 722.78
+            },
+            {
+              "d": 60,
+              "bic": 719.48
+            },
+            {
+              "d": 99,
+              "bic": 641.82
+            },
+            {
+              "d": 172,
+              "bic": 511.73
+            },
+            {
+              "d": 173,
+              "bic": 507.23
+            },
+            {
+              "d": 174,
+              "bic": 505.31
+            },
+            {
+              "d": 175,
+              "bic": 500.26
+            },
+            {
+              "d": 176,
+              "bic": 499.34
+            },
+            {
+              "d": 177,
+              "bic": 497.12
+            },
+            {
+              "d": 178,
+              "bic": 497.67
+            }
+          ],
+          "SOPDT": [
+            {
+              "d": 0,
+              "bic": 802.13
+            },
+            {
+              "d": 2,
+              "bic": 798.89
+            },
+            {
+              "d": 4,
+              "bic": 781.25
+            },
+            {
+              "d": 6,
+              "bic": 766.5
+            },
+            {
+              "d": 8,
+              "bic": 786.41
+            },
+            {
+              "d": 10,
+              "bic": 785.89
+            },
+            {
+              "d": 12,
+              "bic": 774.69
+            },
+            {
+              "d": 14,
+              "bic": 771.95
+            },
+            {
+              "d": 16,
+              "bic": 758.8
+            },
+            {
+              "d": 18,
+              "bic": 765.0
+            },
+            {
+              "d": 20,
+              "bic": 763.15
+            },
+            {
+              "d": 22,
+              "bic": 762.09
+            },
+            {
+              "d": 24,
+              "bic": 761.02
+            },
+            {
+              "d": 26,
+              "bic": 756.83
+            },
+            {
+              "d": 28,
+              "bic": 749.7
+            },
+            {
+              "d": 30,
+              "bic": 752.3
+            },
+            {
+              "d": 32,
+              "bic": 750.05
+            },
+            {
+              "d": 34,
+              "bic": 745.85
+            },
+            {
+              "d": 36,
+              "bic": 742.53
+            },
+            {
+              "d": 38,
+              "bic": 740.14
+            },
+            {
+              "d": 40,
+              "bic": 737.56
+            },
+            {
+              "d": 42,
+              "bic": 736.85
+            },
+            {
+              "d": 44,
+              "bic": 733.54
+            },
+            {
+              "d": 46,
+              "bic": 730.19
+            },
+            {
+              "d": 48,
+              "bic": 726.57
+            },
+            {
+              "d": 50,
+              "bic": 722.99
+            },
+            {
+              "d": 52,
+              "bic": 710.31
+            },
+            {
+              "d": 54,
+              "bic": 703.55
+            },
+            {
+              "d": 56,
+              "bic": 703.81
+            },
+            {
+              "d": 58,
+              "bic": 696.55
+            },
+            {
+              "d": 60,
+              "bic": 693.99
+            },
+            {
+              "d": 99,
+              "bic": 625.38
+            },
+            {
+              "d": 172,
+              "bic": 501.6
+            },
+            {
+              "d": 173,
+              "bic": 495.99
+            },
+            {
+              "d": 174,
+              "bic": 494.53
+            },
+            {
+              "d": 175,
+              "bic": 488.32
+            },
+            {
+              "d": 176,
+              "bic": 487.09
+            },
+            {
+              "d": 177,
+              "bic": 485.33
+            },
+            {
+              "d": 178,
+              "bic": 485.51
+            }
+          ]
+        },
+        "budget": {
+          "dimension": "METHOD_STRUCTURE_SEGMENTS",
+          "cap": 27,
+          "note": "B-09：逐窗 ≤9（3 结构×≤3 方法）+ 联合 ≤4（2 方法×2 结构），结构性未超限"
+        }
+      },
+      "crossWindowStability": {
+        "threshold": 0.25,
+        "stable": false,
+        "maxRelativeDeviation": 1.333,
+        "pairs": [
+          {
+            "i": 0,
+            "j": 2,
+            "structure": "FOPDT",
+            "deviations": {
+              "K": 1.333,
+              "theta": 0.9718,
+              "tau": 0.1035
+            },
+            "max": 1.333
+          }
+        ],
+        "note": "P-25 跨窗稳定性：多窗/多实验同结构参数两两相对偏差 ≤25% 才可升 B 及以上"
+      },
+      "budgetTermination": null
+    },
+    "segmentCatalog": [
+      {
+        "segmentId": "SEG-001",
+        "indexStart": 0,
+        "indexEnd": 700,
+        "tsStart": 0.0,
+        "tsEnd": 700.0,
+        "durationSeconds": 700.0,
+        "pointCount": 700,
+        "validSampleRatio": 1.0,
+        "mode": "UNKNOWN",
+        "regimeId": null,
+        "pidVersion": null,
+        "sampleInterval": 1.0,
+        "exclusionReason": null,
+        "qualifyTier": 1,
+        "excitationScore": 90.2,
+        "excitationSufficient": true,
+        "infoMovement": 40.203796
+      },
+      {
+        "segmentId": "SEG-002",
+        "indexStart": 700,
+        "indexEnd": 900,
+        "tsStart": 700.0,
+        "tsEnd": 900.0,
+        "durationSeconds": 200.0,
+        "pointCount": 200,
+        "validSampleRatio": 0.0,
+        "mode": "UNKNOWN",
+        "regimeId": null,
+        "pidVersion": null,
+        "sampleInterval": 1.0,
+        "exclusionReason": "DATA_GAP",
+        "qualifyTier": null
+      },
+      {
+        "segmentId": "SEG-003",
+        "indexStart": 900,
+        "indexEnd": 1600,
+        "tsStart": 900.0,
+        "tsEnd": 1600.0,
+        "durationSeconds": 700.0,
+        "pointCount": 700,
+        "validSampleRatio": 1.0,
+        "mode": "UNKNOWN",
+        "regimeId": null,
+        "pidVersion": null,
+        "sampleInterval": 1.0,
+        "exclusionReason": null,
+        "qualifyTier": 1,
+        "excitationScore": 88.94,
+        "excitationSufficient": true,
+        "infoMovement": 38.1449
+      }
+    ],
+    "windowSearch": {
+      "ran": true,
+      "scanGrid": {
+        "windowMinutes": [
+          120.0,
+          60.0,
+          30.0
+        ],
+        "stepRatio": 6,
+        "minWindowPoints": 600,
+        "infoMinMovement": 0.02
+      },
+      "events": [],
+      "windowsChecked": [
+        {
+          "start": 900,
+          "end": 1600,
+          "score": 20.1596,
+          "valPtp": 9.7073,
+          "segPtp": 10.9047,
+          "info": 38.1449,
+          "source": "SEGMENT_WHOLE",
+          "segmentId": "SEG-003",
+          "eventId": null
+        },
+        {
+          "start": 0,
+          "end": 700,
+          "score": 18.6307,
+          "valPtp": 8.1469,
+          "segPtp": 10.9676,
+          "info": 40.203796,
+          "source": "SEGMENT_WHOLE",
+          "segmentId": "SEG-001",
+          "eventId": null
+        }
+      ],
+      "windowsRejected": [],
+      "notSearched": [
+        {
+          "start": 700,
+          "end": 900,
+          "reason": "SEGMENT_EXCLUDED:DATA_GAP",
+          "segmentId": "SEG-002"
+        }
+      ],
+      "budgetTermination": null,
+      "windowsSelected": [
+        {
+          "start": 900,
+          "end": 1600,
+          "score": 20.1596
+        },
+        {
+          "start": 0,
+          "end": 700,
+          "score": 18.6307
+        }
+      ]
+    },
+    "lowSnr": {
+      "mode": "PARAM_ACCURACY_UNCOMMITTED",
+      "snrDb": -3.15,
+      "thresholdDb": 20.0,
+      "basis": "WELCH_PSD_NOISE_FLOOR_JOINT_AGGREGATE",
+      "note": "多窗共同估计（2 段堆叠）聚合信噪比实测 -3.1dB 低于参数级精度承诺下界（20dB，逐段功率 ΣS/ΣN 聚合），显式不承诺参数级精度（S1-b 裁决：10dB 档转不承诺档）"
+    }
+  },
+  "thetaSource": "SEARCHED"
+}

@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "test:gate-contract"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "startedAt": "2026-10-17T12:00:10.630301+00:00",
+  "endedAt": "2026-10-17T12:00:17.623997+00:00",
+  "rc": 0,
+  "note": "Use the actual e2e/package.json test:gate-contract name; preceding test:critical-gate missing-script rc1 is retained as reviewer command error."
+}

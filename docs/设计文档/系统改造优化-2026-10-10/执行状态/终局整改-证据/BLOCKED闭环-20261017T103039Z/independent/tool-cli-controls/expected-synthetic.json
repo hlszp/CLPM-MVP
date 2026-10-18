@@ -1,0 +1,1 @@
+{"kind": "SYNTHETIC-CLI-CONTROL", "verdict": "PASS", "readActualMetrics": false, "fixtureLoopId": "SYNTHETIC-VERIFIER-CONTROL", "identity": {"algorithmVersion": "synthetic"}, "expected": {"goodValueRate": 100, "autoModeRate": 100, "steadyRate": 80}, "tolerancesPercentagePoints": {"unrounded": 1e-08, "rounded2dp": 0.005}}

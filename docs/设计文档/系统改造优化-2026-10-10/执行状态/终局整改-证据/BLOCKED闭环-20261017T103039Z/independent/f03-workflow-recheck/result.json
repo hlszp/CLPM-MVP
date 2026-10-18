@@ -1,0 +1,12 @@
+{
+  "scope": "Non-author static workflow context and real isolated bash path step only; actual GitHub jobs/business still unverified",
+  "sourceSha256": "7f0fc547d35e394acd0f37c7bdabda183d1ad77c0f805e78b891be2fe69a5cf1",
+  "sourceUnchanged": true,
+  "binarySha256": "8db11704dc296f096216db4db65d86cd7f0ebfdf4c38453a1da276b137b88388",
+  "originalRc": 1,
+  "fixedRc": 0,
+  "oldThreeRunnerContextErrors": true,
+  "envStepRc": 0,
+  "verdict": "PASS",
+  "networkOrBusinessOperations": false
+}

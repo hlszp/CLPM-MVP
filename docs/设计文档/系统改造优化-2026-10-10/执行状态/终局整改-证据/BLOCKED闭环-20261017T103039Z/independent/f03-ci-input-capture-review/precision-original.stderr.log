@@ -1,0 +1,5 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/probe_ci_policy_precision.py", line 18, in <module>
+    assert first != second, "distinct exact PG numeric policies must not collapse to one float"
+           ^^^^^^^^^^^^^^^
+AssertionError: distinct exact PG numeric policies must not collapse to one float

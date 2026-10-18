@@ -1,0 +1,179 @@
+base_url=http://127.0.0.1:46497
+api_url=http://127.0.0.1:46497/api/v1
+artifacts=/home/runner/work/_temp/critical-e2e/contract/part-skipped
+PLAYWRIGHT_COLLECT_EXIT=0
+{
+  "mode": "collect",
+  "passed": true,
+  "exitCode": 0,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T12:11:49.054Z",
+    "duration": 79.404,
+    "expected": 0,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    }
+  ],
+  "violations": []
+}
+{
+  "mode": "run",
+  "passed": false,
+  "exitCode": 3,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T12:11:49.599Z",
+    "duration": 470.12899999999996,
+    "expected": 3,
+    "skipped": 1,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "skipped",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "skipped",
+          "duration": 3,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:11:49.970Z",
+          "annotations": [
+            {
+              "type": "skip",
+              "description": "controlled runtime skip",
+              "location": {
+                "file": "/tmp/clpm-gate-contract-IPVlVM/fixture/e2e/tests/critical-business.spec.ts",
+                "line": 4,
+                "column": 12
+              }
+            }
+          ],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 5,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:11:50.005Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 2,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:11:50.028Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 1,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:11:50.040Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    }
+  ],
+  "violations": [
+    "CRITICAL-AUTH-001: expectedStatus=skipped",
+    "CRITICAL-AUTH-001: outcome=skipped",
+    "CRITICAL-AUTH-001: status=skipped",
+    "skipped=1",
+    "passed=3, required=4"
+  ]
+}
+PLAYWRIGHT_EXIT=0
+CONTRACT_EXIT=3
+CRITICAL_E2E_GATE=FAIL

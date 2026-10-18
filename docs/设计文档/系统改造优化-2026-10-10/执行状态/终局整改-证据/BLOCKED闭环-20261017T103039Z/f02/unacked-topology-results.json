@@ -1,0 +1,589 @@
+{
+  "capturedAt": "2026-10-17T10:39:20.738498+00:00",
+  "boundary": "READ ONLY; no ACK/revoke/purge/control.inspect RPC",
+  "unacked": [
+    {
+      "deliveryTag": "2e861acc-14e0-480f-85f4-f892d3e6a2b0",
+      "unackedScore": 1792233480.00206,
+      "taskId": "d4e46e6d-bfec-4cb7-84a9-923f1edd09ab",
+      "taskName": "app.tasks.alert_patrol.run_alert_patrol",
+      "rootId": "d4e46e6d-bfec-4cb7-84a9-923f1edd09ab",
+      "parentId": null,
+      "origin": "gen57324@zhangpingdeMacBook-Pro",
+      "eta": null,
+      "retries": 0,
+      "exchange": "",
+      "routingKey": "default",
+      "argumentShape": {
+        "positionalCount": 0,
+        "kwargsKeys": [],
+        "window": {}
+      },
+      "backendState": {
+        "status": "STARTED",
+        "date_done": null,
+        "task_id": "d4e46e6d-bfec-4cb7-84a9-923f1edd09ab"
+      }
+    },
+    {
+      "deliveryTag": "1408aae7-bc31-44d5-b0b8-52b21b850604",
+      "unackedScore": 1792233540.0216289,
+      "taskId": "f66a879f-07cb-4260-aa83-54d5972f063b",
+      "taskName": "app.tasks.alert_patrol.run_alert_patrol",
+      "rootId": "f66a879f-07cb-4260-aa83-54d5972f063b",
+      "parentId": null,
+      "origin": "gen57324@zhangpingdeMacBook-Pro",
+      "eta": null,
+      "retries": 0,
+      "exchange": "",
+      "routingKey": "default",
+      "argumentShape": {
+        "positionalCount": 0,
+        "kwargsKeys": [],
+        "window": {}
+      },
+      "backendState": {
+        "status": "STARTED",
+        "date_done": null,
+        "task_id": "f66a879f-07cb-4260-aa83-54d5972f063b"
+      }
+    },
+    {
+      "deliveryTag": "7e21d745-b77a-486f-9997-5cb4348a6ef2",
+      "unackedScore": 1792151160.001982,
+      "taskId": "b25595ea-ce8b-47d2-bf99-d46b188d6cf1",
+      "taskName": "app.tasks.alert_patrol.run_alert_patrol",
+      "rootId": "b25595ea-ce8b-47d2-bf99-d46b188d6cf1",
+      "parentId": null,
+      "origin": "gen7958@zhangpingdeMacBook-Pro",
+      "eta": null,
+      "retries": 0,
+      "exchange": "",
+      "routingKey": "default",
+      "argumentShape": {
+        "positionalCount": 0,
+        "kwargsKeys": [],
+        "window": {}
+      },
+      "backendState": {
+        "status": "STARTED",
+        "date_done": null,
+        "task_id": "b25595ea-ce8b-47d2-bf99-d46b188d6cf1"
+      }
+    }
+  ],
+  "unackedCount": 3,
+  "recentTaskRecords": [
+    {
+      "recordId": "223c5158-e504-488d-a66c-072f6234b880",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T10:00:00.025690+00:00",
+      "started_at": "2026-10-17T10:00:00.026936+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "45c6e456-5e31-4709-91ae-e1833bece86e",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T09:00:00.027039+00:00",
+      "started_at": "2026-10-17T09:00:00.028047+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "8c39b3f0-f9da-4e3a-92d6-c1eeef408efd",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T08:00:00.029662+00:00",
+      "started_at": "2026-10-17T08:00:00.030373+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "37dd21c5-546a-43f0-900d-73700bea9db1",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T07:00:00.039355+00:00",
+      "started_at": "2026-10-17T07:00:00.040196+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "d2b6edb0-dd8f-4142-a217-812e585c4387",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T06:00:00.071136+00:00",
+      "started_at": "2026-10-17T06:00:00.072009+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "04f5e5d9-3d64-4044-b06c-7d2dfc5c0ec3",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T05:00:00.025952+00:00",
+      "started_at": "2026-10-17T05:00:00.026710+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "b9921c5c-3f31-4bf2-8364-00fdfef740dd",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T04:00:00.078111+00:00",
+      "started_at": "2026-10-17T04:00:00.078947+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "5f0cb7d9-8416-4209-970e-5c5edb0de006",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T03:00:00.029085+00:00",
+      "started_at": "2026-10-17T03:00:00.030076+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "865531d1-612c-401f-85bd-876c5718e85c",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T02:29:48.158484+00:00",
+      "started_at": "2026-10-17T02:29:48.159294+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "fb35ad61-d619-4255-999b-16a8de890b97",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-17T02:19:38.497457+00:00",
+      "started_at": "2026-10-17T02:19:38.498290+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "6825b8c8-fd5b-4569-aa2b-3a5d84c5f392",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T21:00:00.029929+00:00",
+      "started_at": "2026-10-16T21:00:00.030810+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "2c3fd626-89c6-41ab-aa21-f6e2946c2a0c",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T20:00:00.434371+00:00",
+      "started_at": "2026-10-16T20:00:00.461797+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "46c4bc34-f328-4d53-b7dc-35b7640ec54b",
+      "task_type": "TUNING",
+      "status": "FAILED",
+      "loops_total": "",
+      "loops_done": "",
+      "created_at": "2026-10-16T19:54:18.893631+00:00",
+      "started_at": "",
+      "triggered_by": "user",
+      "celery_task_id": "100131b0-10a1-475d-b769-1a7b09a40ae0"
+    },
+    {
+      "recordId": "ff905d25-76d9-4507-9718-6666670daf01",
+      "task_type": "TUNING",
+      "status": "PENDING",
+      "loops_total": "",
+      "loops_done": "",
+      "created_at": "2026-10-16T19:54:04.234106+00:00",
+      "started_at": "",
+      "triggered_by": "user",
+      "celery_task_id": "8b635afa-30e9-4386-961d-ad6ce7416c26"
+    },
+    {
+      "recordId": "d3cb543b-ebfc-4151-82b2-58dc3ce1fd8d",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T19:00:03.421930+00:00",
+      "started_at": "2026-10-16T19:00:03.422868+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "3bde44a4-ca05-4f3d-ad1e-888006b0b2ce",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T18:00:00.031464+00:00",
+      "started_at": "2026-10-16T18:00:00.033161+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "016b3955-667a-4543-b699-fbd48aa83392",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T17:00:03.244207+00:00",
+      "started_at": "2026-10-16T17:00:03.245102+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "2bdb4c2d-a85c-4f03-bd31-95678fb7c1a3",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T16:00:00.038618+00:00",
+      "started_at": "2026-10-16T16:00:00.039468+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "a16c3ded-a707-4bf9-92da-8cf2f6c90712",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T15:00:00.031339+00:00",
+      "started_at": "2026-10-16T15:00:00.032007+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "ae8db055-f099-4d00-b8bb-07bb1bf4c339",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T14:00:03.048257+00:00",
+      "started_at": "2026-10-16T14:00:03.048962+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "f5b1b89d-d5af-4882-a637-174f7af81f9f",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T13:00:03.447625+00:00",
+      "started_at": "2026-10-16T13:00:03.448806+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "8f68c1cc-3686-4e59-a156-c211a85a4c22",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T12:00:00.040682+00:00",
+      "started_at": "2026-10-16T12:00:00.041985+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "c3254fb0-9e41-4838-9401-9e31abf25ae2",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T11:00:00.035304+00:00",
+      "started_at": "2026-10-16T11:00:00.036188+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "8ab48ac1-4652-4eef-b4ed-a462a2c78040",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T10:00:00.024205+00:00",
+      "started_at": "2026-10-16T10:00:00.025126+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "855040f5-f154-4d3a-bf7b-23760720c124",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T09:00:00.033651+00:00",
+      "started_at": "2026-10-16T09:00:00.034513+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "cb7b1158-7000-4eb1-a93c-96a511c66c19",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T08:26:57.696413+00:00",
+      "started_at": "2026-10-16T08:26:57.697440+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "9e6e57fb-1966-4f87-ae14-376af66b9d78",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T08:00:00.043958+00:00",
+      "started_at": "2026-10-16T08:00:00.045341+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "28a5b932-771e-4973-8689-df2832dfc9cc",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T07:34:16.269398+00:00",
+      "started_at": "2026-10-16T07:34:16.270451+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "a344830f-ecd0-4ef2-add1-bb14d56d9104",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T07:00:00.481880+00:00",
+      "started_at": "2026-10-16T07:00:00.485423+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "981fad9a-52cf-4a0a-932f-01ee2ad98198",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T06:55:04.730529+00:00",
+      "started_at": "2026-10-16T06:55:04.731340+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "012c317c-b7f2-4dd3-98ae-184b3023053a",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T06:00:00.403069+00:00",
+      "started_at": "2026-10-16T06:00:00.410198+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "78e86be2-c85c-422b-b9b4-16f5f163364c",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T05:25:15.347488+00:00",
+      "started_at": "2026-10-16T05:25:15.420531+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "80854518-92d7-489a-b473-df4f3a23f768",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T05:14:52.286658+00:00",
+      "started_at": "2026-10-16T05:14:52.312583+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "fd73ab83-9e56-46e3-b842-f347bcf474db",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T05:12:37.310863+00:00",
+      "started_at": "2026-10-16T05:12:37.313448+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "53ab766a-2f61-457c-8aca-0ad74b361dcc",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T04:58:30.086527+00:00",
+      "started_at": "2026-10-16T04:58:30.088532+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "ca90f94d-9358-4470-ae85-3c10c180560f",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T04:13:09.853556+00:00",
+      "started_at": "2026-10-16T04:13:09.855537+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "cfc49825-2d33-409a-bd8e-1db3297237b3",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T03:03:19.743174+00:00",
+      "started_at": "2026-10-16T03:03:19.744711+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "109d6ba0-9ca3-46ae-a9f6-41f08e83e983",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T02:49:42.432753+00:00",
+      "started_at": "2026-10-16T02:49:42.433582+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "9e871d54-b062-49c6-b04a-f8777b3bfd12",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T02:33:56.216638+00:00",
+      "started_at": "2026-10-16T02:33:56.217489+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "63615982-b658-46c2-9df2-6deedd93ff9a",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T02:20:26.749493+00:00",
+      "started_at": "2026-10-16T02:20:26.750830+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "a902b377-70d5-4389-b55f-56d5afee1cf2",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T02:00:00.090035+00:00",
+      "started_at": "2026-10-16T02:00:00.091195+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "9bb08165-eb62-43cc-8212-18ef11a1a85d",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T01:00:00.045830+00:00",
+      "started_at": "2026-10-16T01:00:00.047761+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "c0d67a1d-757e-4116-9f45-1139493d2ac5",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-16T00:00:02.743971+00:00",
+      "started_at": "2026-10-16T00:00:02.744766+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "e7173271-ded8-4e67-86ab-8d4aa2ecff72",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T23:06:51.973018+00:00",
+      "started_at": "2026-10-15T23:06:51.973804+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "8107eb0a-5c3a-432f-9ad7-872a65ae155a",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T23:00:00.023411+00:00",
+      "started_at": "2026-10-15T23:00:00.024091+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "72b4642a-2528-481f-85fc-97a70b455389",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T22:52:09.908025+00:00",
+      "started_at": "2026-10-15T22:52:09.908862+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "95867467-52f0-4dd9-87e5-2e3241a8d03e",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T22:37:38.195992+00:00",
+      "started_at": "2026-10-15T22:37:38.196725+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "add51ceb-8779-4262-bd8f-2979d564321b",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T22:23:02.356569+00:00",
+      "started_at": "2026-10-15T22:23:02.357496+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "df1c9ff7-96e1-46ef-a76d-d989926db738",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T22:08:34.103697+00:00",
+      "started_at": "2026-10-15T22:08:34.104535+00:00",
+      "triggered_by": "system"
+    },
+    {
+      "recordId": "d60de6f1-e75b-4869-893e-805645aa077b",
+      "task_type": "STANDARD",
+      "status": "SUCCESS",
+      "loops_total": "1030",
+      "loops_done": "1030",
+      "created_at": "2026-10-15T22:00:00.036247+00:00",
+      "started_at": "2026-10-15T22:00:00.037206+00:00",
+      "triggered_by": "system"
+    }
+  ],
+  "processes": [
+    "40677 57326          59:20 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "52896 57326          49:20 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "54701 57326          47:20 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "57294 57292       07:48:38 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 17101",
+    "57324 57294       07:48:36 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule",
+    "57326 57294       07:48:36 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "64137 57326          37:19 /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+  ]
+}

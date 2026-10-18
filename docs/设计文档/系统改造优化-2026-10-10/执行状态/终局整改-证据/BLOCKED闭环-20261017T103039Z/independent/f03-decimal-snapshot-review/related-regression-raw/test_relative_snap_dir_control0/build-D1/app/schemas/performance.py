@@ -1,0 +1,599 @@
+"""Performance evaluation schemas (IDS v3.2 §2.3 — S3-METRIC-001~006)."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+from typing import Any
+
+from pydantic import AliasChoices, Field
+
+from app.schemas.base import CamelModel
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-001: 指标配置
+# ---------------------------------------------------------------------------
+
+
+class MetricThreshold(CamelModel):
+    """指标阈值配置。"""
+
+    min: float | None = None
+    max: float | None = None
+    alert: float | None = None
+
+
+class MetricConfigItem(CamelModel):
+    """指标配置项（响应）。"""
+
+    metricId: str
+    metricCode: str
+    metricName: str
+    formula: str | None = None
+    weight: Decimal | None = None
+    threshold: dict[str, Any] | None = None
+    controlType: str | None = None
+    isEnabled: bool = True
+    updatedBy: str | None = None
+    updatedAt: str | None = None
+    version: int = 1
+
+
+class MetricConfigUpdate(CamelModel):
+    """PUT /performance/metrics/{metricId} 请求体。"""
+
+    metricName: str | None = Field(None, max_length=100)
+    # v5.3 P3-T9：formula 参数废弃（接收但忽略写入，算法已固化在代码中）
+    formula: str | None = Field(
+        None,
+        max_length=2000,
+        deprecated=True,
+        description="（已废弃）计算公式——算法已固化在 metric_calculator 代码中，接收但忽略写入",
+    )
+    weight: Decimal | None = Field(None, ge=0, le=100)
+    threshold: dict[str, Any] | None = None
+    # v5.3 P3-T9：controlType 参数废弃（控制类型由回路配置决定，不在指标配置中修改）
+    controlType: str | None = Field(
+        None,
+        pattern="^(STABLE|SLOW|FAST|LOGIC)$",
+        deprecated=True,
+        description="（已废弃）控制类型——由回路配置决定，不在指标配置中修改",
+    )
+    isEnabled: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-002: 引擎规则配置
+# ---------------------------------------------------------------------------
+
+
+class EngineRuleItem(CamelModel):
+    """引擎规则项（响应）。"""
+
+    ruleId: str
+    ruleCode: str
+    ruleName: str
+    ruleType: str
+    params: dict[str, Any] | None = None
+    isEnabled: bool = True
+    updatedBy: str | None = None
+    updatedAt: str | None = None
+    # EVAL_CALC_CYCLE 变更后已通过 Redis Pub/Sub 即时通知 Beat 重载，保留字段以兼容旧前端
+    warning: str | None = None
+
+
+class EngineRuleUpdate(CamelModel):
+    """PUT /performance/rules/{ruleId} 请求体。"""
+
+    ruleName: str | None = Field(None, max_length=100)
+    params: dict[str, Any] | None = None
+    isEnabled: bool | None = None
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-004: 全局看板
+# ---------------------------------------------------------------------------
+
+
+class BoardFilterScope(CamelModel):
+    """看板筛选范围。"""
+
+    plantNodeId: str | None = None
+    plantNodeName: str | None = None
+    timeWindow: str = "today"
+
+
+class KpiCard(CamelModel):
+    """看板 KPI 卡片。"""
+
+    metricKey: str
+    metricName: str
+    value: float | None = None
+    unit: str = "%"
+    status: str = "INCONCLUSIVE"
+    algorithmVersion: str = "KPI_CALC_v1.0"
+
+
+class KpiSummary(CamelModel):
+    """看板 KPI 汇总。"""
+
+    good_value_rate: float | None = None
+    auto_mode_rate: float | None = None
+    effective_auto_rate: float | None = None
+    steady_rate: float | None = None
+    accuracy_rate: float | None = None
+    fast_rate: float | None = None
+    oscillation_rate: float | None = None
+    saturation_rate: float | None = None
+    instrument_fault_rate: float | None = None
+    composite_score: float | None = None
+    status: str = "INCONCLUSIVE"
+    algorithm_version: str = "KPI_CALC_v1.0"
+
+
+class TrendSeries(CamelModel):
+    """趋势数据。"""
+
+    timestamps: list[str] = Field(default_factory=list)
+    values: list[float | None] = Field(default_factory=list)
+
+
+class PartialWarning(CamelModel):
+    """部分数据警告。"""
+
+    active: bool = False
+    inconclusiveCount: int = 0
+    partialCount: int = 0
+    message: str | None = None
+
+
+class BoardData(CamelModel):
+    """看板响应 data 块。"""
+
+    filterScope: BoardFilterScope
+    kpiCards: list[KpiCard]
+    kpiSummary: KpiSummary
+    steadyRateTrend: TrendSeries
+    partialWarning: PartialWarning
+    # P2 IA优化：L0~L4 适用性分布（键为 L0/L1/L2/L3/L4，值为计数）
+    fitnessDistribution: dict[str, int] | None = None
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-005: 低效回路排行
+# ---------------------------------------------------------------------------
+
+
+class RankingItem(CamelModel):
+    """低效回路排行项。"""
+
+    rank: int
+    loopId: str
+    tagName: str
+    loopName: str | None = None
+    unitName: str | None = None
+    # v5.3 对齐 FDS v5.1 / DDS v4.1：compositeScore → score
+    score: float | None = None
+    goodValueRate: float | None = None
+    autoModeRate: float | None = None
+    effectiveAutoRate: float | None = None
+    steadyRate: float | None = None
+    accuracyRate: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
+    oscillationRate: float | None = None
+    saturationRate: float | None = None
+    instrumentFaultRate: float | None = None
+    status: str = "INCONCLUSIVE"
+    algorithmVersion: str = "KPI_CALC_v1.0"
+    preDiagnosis: str | None = None
+    actionStatus: str | None = None
+    # v5.3 新增：是否参与评估（FDS §5.2.3）
+    includeInEvaluation: bool | None = None
+    # v4.0 数据血缘字段（Phase 5 Track A — IDS §2.7.1）
+    confidenceLevel: str | None = None
+    validRate: float | None = None
+    samplingFreq: str | None = None
+    qualityPolicy: str | None = None
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
+
+
+# ---------------------------------------------------------------------------
+# S3-METRIC-006: 统计报表
+# ---------------------------------------------------------------------------
+
+
+class AnalyticsFilterScope(CamelModel):
+    """报表筛选范围。"""
+
+    startTime: str
+    endTime: str
+    plantNodeId: str | None = None
+    metricKey: str = "score"
+    granularity: str = "day"
+
+
+class KpiTrendSeries(CamelModel):
+    """报表 KPI 趋势单条序列。"""
+
+    metricKey: str
+    metricName: str
+    values: list[float | None] = Field(default_factory=list)
+
+
+class KpiTrend(CamelModel):
+    """报表 KPI 趋势。"""
+
+    timestamps: list[str] = Field(default_factory=list)
+    series: list[KpiTrendSeries] = Field(default_factory=list)
+
+
+class UnitRankingItem(CamelModel):
+    """单元排名项。"""
+
+    unitId: str
+    unitName: str | None = None
+    score: float | None = None
+    loopCount: int = 0
+
+
+class BadActorItem(CamelModel):
+    """坏演员分布项。"""
+
+    label: str
+    count: int = 0
+
+
+class AnalyticsData(CamelModel):
+    """报表响应 data 块。"""
+
+    filterScope: AnalyticsFilterScope
+    kpiTrend: KpiTrend
+    unitRanking: list[UnitRankingItem] = Field(default_factory=list)
+    badActorDistribution: list[BadActorItem] = Field(default_factory=list)
+
+
+class ExportRequest(CamelModel):
+    """POST /performance/analytics/export 请求体。"""
+
+    startTime: str
+    endTime: str
+    plantNodeId: str | None = None
+    metricKey: str = "score"
+    granularity: str = "day"
+    format: str = Field("csv", pattern="^(csv)$")
+
+
+# ---------------------------------------------------------------------------
+# 校验工具
+# ---------------------------------------------------------------------------
+
+
+class WeightSumValidator:
+    """权重总和校验工具。
+
+    6 大 KPI 权重总和必须为 100，否则抛出 ERR_METRIC_WEIGHT_SUM。
+    """
+
+    @staticmethod
+    def validate(weights: list[Decimal]) -> None:
+        """校验权重总和是否为 100。
+
+        Raises:
+            BizError: ERR_METRIC_WEIGHT_SUM
+        """
+        from app.core.exceptions import BizError
+
+        total = sum(weights)
+        if total != 100:
+            raise BizError(
+                code="ERR_METRIC_WEIGHT_SUM",
+                message=f"指标权重总和必须为 100，当前为 {total}",
+                status_code=400,
+            )
+
+
+# ---------------------------------------------------------------------------
+# v4.0 数据血缘与 KPI 快照 schema（Phase 5 Track A — IDS §2.7.1）
+# 设计依据：算法说明 §3.7.1（数据血缘）/§3.7.2（可信度），DDS §2.8
+# ---------------------------------------------------------------------------
+
+
+class DataLineageSchema(CamelModel):
+    """数据血缘信息（8 字段，算法说明 §3.7.1）.
+
+    随指标结果一起存储于 ``kpi_snapshot_hourly.data_lineage`` (JSONB)，
+    支持审计追溯。由 ``DataLineage.to_dict()`` 序列化生成。
+
+    Attributes:
+        samplingFreq: 实际采样频率（如 ``1s`` / ``5s``）
+        aggregationPolicy: 聚合策略（LAST / MEAN / MAX）
+        qualityPolicy: 质量策略（KEEP_ALL_WITH_VALIDITY / KEEP_ALL）
+        tagGroup: 数据来源 tagGroup（BASE/OP_HF/PVOP_HF/MODE_HF/QUALITY_HF）
+        dataBlockIds: 使用的 DataBlock ID 列表
+        validRate: 有效数据率（0~1）
+        dataPolicyVersion: 预处理版本（如 ``pre_v1``）
+        algorithmVersion: 算法版本（如 ``KPI_CALC_v2.0``）
+    注意：DB JSONB 中存储的是 snake_case 键（DataLineage 数据类序列化），
+    因此每个字段通过 ``validation_alias=AliasChoices(camelCase, snake_case)``
+    同时接受两种输入；序列化输出仍为 camelCase。
+    """
+
+    samplingFreq: str = Field(
+        default="", validation_alias=AliasChoices("samplingFreq", "sampling_freq")
+    )
+    aggregationPolicy: str = Field(
+        default="",
+        validation_alias=AliasChoices("aggregationPolicy", "aggregation_policy"),
+    )
+    qualityPolicy: str = Field(
+        default="", validation_alias=AliasChoices("qualityPolicy", "quality_policy")
+    )
+    tagGroup: str = Field(default="", validation_alias=AliasChoices("tagGroup", "tag_group"))
+    dataBlockIds: list[str] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("dataBlockIds", "data_block_ids"),
+    )
+    validRate: float = Field(default=0.0, validation_alias=AliasChoices("validRate", "valid_rate"))
+    dataPolicyVersion: str = Field(
+        default="pre_v1",
+        validation_alias=AliasChoices("dataPolicyVersion", "data_policy_version"),
+    )
+    algorithmVersion: str = Field(
+        default="KPI_CALC_v2.0",
+        validation_alias=AliasChoices("algorithmVersion", "algorithm_version"),
+    )
+
+
+class KpiSnapshotSchema(CamelModel):
+    """KPI 快照返回 schema（含 7 个数据血缘字段）.
+
+    设计依据：IDS §2.7.1, DDS §2.8, 算法说明 §3.7
+
+    7 个数据血缘字段（Phase 0 ORM 已实现，Phase 4 _save_snapshot 已写入）：
+        1. idealSettlingTime — 理想稳态时间（秒）
+        2. algorithmVersion — 算法版本（如 ``KPI_CALC_v2.0``）
+        3. samplingFreq — 采样频率（如 ``1s`` / ``5s``）
+        4. qualityPolicy — 质量策略（``KEEP_ALL_WITH_VALIDITY``）
+        5. validRate — 有效数据率（0~1）
+        6. confidenceLevel — 可信度等级（A/B/C/D/E）
+        7. dataLineage — 完整血缘 JSONB
+
+    所有新增字段均有默认值 None，保持向后兼容。
+
+    Attributes:
+        loopId: 回路 ID
+        tsStart: 快照开始时间
+        tsEnd: 快照结束时间
+        score: 综合评分
+        goodValueRate: 好值率
+        autoModeRate: 自控率
+        effectiveAutoRate: 有效自控率
+        steadyRate: 稳定率
+        accuracyRate: 准确率
+        oscillationRate: 振荡率
+        saturationRate: 饱和率
+        fastRate: 快速率
+        stictionIndex: 粘滞指数
+        settlingTime: 稳态时间（秒）
+        outputTravelIndex: 输出值行程指数
+        status: 快照状态（SUCCESS/INCONCLUSIVE/PARTIAL）
+        idealSettlingTime: 理想稳态时间（秒）
+        algorithmVersion: 算法版本
+        samplingFreq: 采样频率
+        qualityPolicy: 质量策略
+        validRate: 有效数据率
+        confidenceLevel: 可信度等级（A/B/C/D/E）
+        dataLineage: 完整数据血缘信息
+    """
+
+    loopId: str | None = None
+    tsStart: str | None = None
+    tsEnd: str | None = None
+    score: float | None = None
+    goodValueRate: float | None = None
+    autoModeRate: float | None = None
+    effectiveAutoRate: float | None = None
+    steadyRate: float | None = None
+    accuracyRate: float | None = None
+    oscillationRate: float | None = None
+    saturationRate: float | None = None
+    instrumentFaultRate: float | None = None
+    # v5.3 对齐 DDS v4.1：fastResponseRate → fastRate
+    fastRate: float | None = None
+    # v5.3 对齐 DDS v4.1：stictionCoeff → stictionIndex
+    stictionIndex: float | None = None
+    # v5.3 对齐 DDS v4.1：steadyStateTime → settlingTime
+    settlingTime: float | None = None
+    outputTravelIndex: float | None = None
+    status: str = "INCONCLUSIVE"
+    # v4.0 数据血缘字段（7 个）
+    idealSettlingTime: float | None = None
+    algorithmVersion: str | None = None
+    samplingFreq: str | None = None
+    qualityPolicy: str | None = None
+    validRate: float | None = None
+    confidenceLevel: str | None = None  # A/B/C/D/E
+    dataLineage: DataLineageSchema | None = None
+    # --- Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）---
+    # 统计指标
+    pvMean: float | None = None
+    pvStd: float | None = None
+    spMean: float | None = None
+    spStd: float | None = None
+    opMean: float | None = None
+    opStd: float | None = None
+    # 阀门诊断指标
+    valveLinearity: float | None = None
+    valveNonlinearity: float | None = None
+    valveOpMin: float | None = None
+    valveOpMax: float | None = None
+    # 振荡/穿越指标
+    oscillationAmplitude: float | None = None
+    setpointCrossingCount: int | None = None
+    # F5：时间常数（秒，L1 DISPLAY_ONLY，激励不足窗口为 None）
+    timeConstant: float | None = None
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
+
+
+class KpiSnapshotListItem(CamelModel):
+    """KPI 快照列表项（KpiSnapshotSchema + 回路名）.
+
+    在 KpiSnapshotSchema 基础上附加 loopTagName，便于前端展示。
+    """
+
+    loopId: str | None = None
+    loopTagName: str | None = None
+    # 来源标注（2026-10-03 整合方案 B3）：SCHEDULED/MANUAL_STANDARD/MANUAL_CUSTOM/BACKFILL
+    source: str | None = None
+    sourceTaskId: str | None = None
+    tsStart: str | None = None
+    tsEnd: str | None = None
+    score: float | None = None
+    goodValueRate: float | None = None
+    autoModeRate: float | None = None
+    effectiveAutoRate: float | None = None
+    steadyRate: float | None = None
+    accuracyRate: float | None = None
+    oscillationRate: float | None = None
+    saturationRate: float | None = None
+    instrumentFaultRate: float | None = None
+    fastRate: float | None = None
+    stictionIndex: float | None = None
+    settlingTime: float | None = None
+    outputTravelIndex: float | None = None
+    status: str = "INCONCLUSIVE"
+    idealSettlingTime: float | None = None
+    algorithmVersion: str | None = None
+    samplingFreq: str | None = None
+    qualityPolicy: str | None = None
+    validRate: float | None = None
+    confidenceLevel: str | None = None
+    dataLineage: DataLineageSchema | None = None
+    # --- Phase 1 新增指标 ---
+    pvMean: float | None = None
+    pvStd: float | None = None
+    spMean: float | None = None
+    spStd: float | None = None
+    opMean: float | None = None
+    opStd: float | None = None
+    valveLinearity: float | None = None
+    valveNonlinearity: float | None = None
+    valveOpMin: float | None = None
+    valveOpMax: float | None = None
+    # 振荡/穿越指标
+    oscillationAmplitude: float | None = None
+    setpointCrossingCount: int | None = None
+    # F5：时间常数（秒，L1 DISPLAY_ONLY）
+    timeConstant: float | None = None
+    # P2 IA优化：适用性评估
+    fitnessLevel: str | None = Field(None, description="适用性等级：L0/L1/L2/L3/L4")
+    fitnessTags: list[str] | None = Field(None, description="适用性原因标签")
+    # --- G3-R01（14 号文 §2）：该行语义从其 result_record 原样透出 ---
+    resultRecordId: str | None = Field(
+        None,
+        description="本行对应的不可变结果账本 record（calculation_result_record.id）",
+    )
+    metricsSemantic: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "该 record 自己的完整语义明细（record payload.metricsSemantic 原样，"
+            "键=指标 DB 列名 + __composite__ 综合评分条目；含正式/参考 F、"
+            "P 完整性、原因/分母/覆盖等）。__composite__ 与账本 payload 顶层 "
+            "composite 键为同一对象（写入时 _composite_semantic_entry 抽取），"
+            "读端统一走 __composite__，双方不各猜键名。"
+            "legacy 记录无该键（历史不可追溯，见 semanticLinkStatus）"
+        ),
+    )
+    semanticLinkStatus: str | None = Field(
+        None,
+        description=(
+            "语义链路状态：AVAILABLE=record 携带完整语义；"
+            "NOT_TRACEABLE=legacy 记录无语义（显式历史不可追溯）；"
+            "BROKEN=profile 为新档位但语义缺失/损坏（断链暴露，不静默回退 legacy）；"
+            "UNLINKED=快照行无账本 record 链接（P1-05 前历史行或账本写入失败）"
+        ),
+    )
+
+
+class KpiSnapshotListData(CamelModel):
+    """回路小时指标快照列表响应 data 块."""
+
+    items: list[KpiSnapshotListItem]
+    total: int
+    page: int
+    pageSize: int
+
+
+class MetricSeriesPoint(CamelModel):
+    """批量指标序列数据点（指标矩阵页列头趋势对比）."""
+
+    ts: str | None = None
+    value: float | None = None
+
+
+class MetricSeriesItem(CamelModel):
+    """单回路的指标时间序列."""
+
+    loopId: str | None = None
+    loopTagName: str | None = None
+    points: list[MetricSeriesPoint] = Field(default_factory=list)
+
+
+class MetricSeriesData(CamelModel):
+    """批量回路指标序列响应 data 块."""
+
+    metricKey: str
+    series: list[MetricSeriesItem] = Field(default_factory=list)
+
+
+class SnapshotBatchDeleteRequest(CamelModel):
+    """历史快照批量删除请求（2026-10-10：与列表筛选同口径，dry-run 预览先行）.
+
+    安全约束：loopIds / plantNodeId / （startTime 且 endTime）至少提供一项，
+    防止无约束全表删除；dryRun=True 仅返回将删除的计数。
+    """
+
+    loopIds: list[str] | None = Field(None, description="回路 ID 列表")
+    plantNodeId: str | None = Field(None, description="装置节点 ID（含子树）")
+    startTime: str | None = Field(None, description="起始时间（ISO 8601）")
+    endTime: str | None = Field(None, description="结束时间（ISO 8601）")
+    status: str | None = Field(None, description="快照状态（逗号分隔多值）")
+    confidenceLevel: str | None = Field(None, description="可信度等级（A~E）")
+    source: str | None = Field(None, description="评估来源（逗号分隔多值）")
+    dryRun: bool = Field(True, description="True=仅返回将删除计数，不执行")
+
+
+__all__ = [
+    "AnalyticsData",
+    "AnalyticsFilterScope",
+    "BadActorItem",
+    "BoardData",
+    "BoardFilterScope",
+    "DataLineageSchema",
+    "EngineRuleItem",
+    "EngineRuleUpdate",
+    "ExportRequest",
+    "KpiCard",
+    "KpiSnapshotListData",
+    "KpiSnapshotListItem",
+    "KpiSnapshotSchema",
+    "KpiSummary",
+    "KpiTrend",
+    "KpiTrendSeries",
+    "MetricConfigItem",
+    "MetricConfigUpdate",
+    "MetricSeriesData",
+    "MetricSeriesItem",
+    "MetricSeriesPoint",
+    "MetricThreshold",
+    "PartialWarning",
+    "RankingItem",
+    "SnapshotBatchDeleteRequest",
+    "TrendSeries",
+    "UnitRankingItem",
+    "WeightSumValidator",
+]

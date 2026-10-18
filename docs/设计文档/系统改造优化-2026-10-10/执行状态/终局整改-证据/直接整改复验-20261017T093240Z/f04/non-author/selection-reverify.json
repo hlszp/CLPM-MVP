@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.bin/vitest",
+    "run",
+    "apps/web-antd/src/__tests__/f04-independent-selection-093240.test.ts",
+    "--dom",
+    "--no-cache"
+  ],
+  "rc": 0,
+  "elapsed": 0.7588772773742676,
+  "testSha256": "8a43b64c157364d9fb36a6c87a7007e58e52d0199937f3a921a5c09b1b973088",
+  "componentSha256": "3ca987b49a0c98dd5cca7f5d411d9848d40d9ce0cdf70dc8b87a4b84073791e4",
+  "ownedTemporaryTestRemoved": true
+}

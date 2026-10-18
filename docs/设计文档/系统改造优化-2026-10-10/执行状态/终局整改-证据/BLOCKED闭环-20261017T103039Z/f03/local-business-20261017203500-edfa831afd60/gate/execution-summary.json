@@ -1,0 +1,176 @@
+{
+  "mode": "run",
+  "passed": false,
+  "exitCode": 1,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T12:44:08.273Z",
+    "duration": 36898.049999999996,
+    "expected": 1,
+    "skipped": 2,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 2060,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:44:08.556Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "unexpected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "failed",
+          "duration": 33829,
+          "error": {
+            "message": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================",
+            "stack": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================\n    at login (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts:112:14)\n    at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts:216:5",
+            "location": {
+              "file": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts",
+              "column": 14,
+              "line": 112
+            },
+            "snippet": "  110 |   // The isolated admin/sponsor seeds both land at /cockpit. Hash fragments\n  111 |   // carry the actual route in the production build; arbitrary hashes cannot pass.\n> 112 |   await page.waitForURL((url) => isAuthenticatedLanding(url, origin));\n      |              ^\n  113 |   await expect(page.locator('body')).not.toContainText('访问被拒绝');\n  114 | }\n  115 |"
+          },
+          "errors": [
+            {
+              "location": {
+                "file": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts",
+                "column": 14,
+                "line": 112
+              },
+              "message": "TimeoutError: page.waitForURL: Timeout 30000ms exceeded.\n=========================== logs ===========================\nwaiting for navigation until \"load\"\n============================================================\n\n  110 |   // The isolated admin/sponsor seeds both land at /cockpit. Hash fragments\n  111 |   // carry the actual route in the production build; arbitrary hashes cannot pass.\n> 112 |   await page.waitForURL((url) => isAuthenticatedLanding(url, origin));\n      |              ^\n  113 |   await expect(page.locator('body')).not.toContainText('访问被拒绝');\n  114 | }\n  115 |\n    at login (/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts:112:14)\n    at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts:216:5"
+            }
+          ],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:44:10.837Z",
+          "annotations": [],
+          "attachments": [
+            {
+              "name": "sponsor-identity.json",
+              "contentType": "application/json",
+              "body": "eyJjb2RlIjoiMCIsIm1lc3NhZ2UiOiJzdWNjZXNzIiwiZGF0YSI6eyJpZCI6IjAwMDAwMDAwLTAwMDAtMDAwMC0wMDAwLTAwMDAwMDAwMDAwNCIsInVzZXJuYW1lIjoic3BvbnNvciIsImRpc3BsYXlOYW1lIjoi6aG555uu5Y+R6LW35Lq6IiwiZW1haWwiOiJzcG9uc29yQGNscG0ubG9jYWwiLCJyb2xlIjoiU1BPTlNPUiIsInBlcm1pc3Npb25zIjpbImFsZXJ0OnZpZXciLCJkaWFnbm9zaXM6dmlldyIsImhhbmRsaW5nOnZpZXciLCJsb29wOnZpZXciLCJtZXRyaWM6dmlldyIsInBvcnRhbDp2aWV3IiwidHVuaW5nOnZpZXciXSwicGFnZUNvZGVzIjpbInBhZ2U6YXNzZXNzLmRhc2hib2FyZCIsInBhZ2U6YXNzZXNzLmluZGljYXRvciIsInBhZ2U6YXNzZXNzLmtwaS1yZXBvcnQiLCJwYWdlOmFzc2Vzcy5sb29wLWV2YWx1YXRpb24iLCJwYWdlOmFzc2Vzcy5tYXRyaXgiLCJwYWdlOmFzc2Vzcy5wZXJmb3JtYW5jZSIsInBhZ2U6Y29ja3BpdC5kaWFnbm9zaXMiLCJwYWdlOmNvY2twaXQuaGFuZGxpbmciLCJwYWdlOmNvY2twaXQubG9vcHMiLCJwYWdlOmNvY2twaXQub3ZlcnZpZXciLCJwYWdlOmNvY2twaXQucGVyZm9ybWFuY2UiLCJwYWdlOmNvY2twaXQudHVuaW5nIiwicGFnZTpkaWFnbm9zaXMub3ZlcnZpZXciLCJwYWdlOmRpYWdub3Npcy5yZWNvcmRzIiwicGFnZTpkaWFnbm9zaXMudGFza3MiLCJwYWdlOmhhbmRsaW5nLmFyY2hpdmUiLCJwYWdlOmhhbmRsaW5nLm9yZGVycyIsInBhZ2U6aGFuZGxpbmcuc3RhdGlzdGljcyIsInBhZ2U6aGFuZGxpbmcuc3VnZ2VzdGlvbnMiLCJwYWdlOmhhbmRsaW5nLnRhc2tzIiwicGFnZTpoYW5kbGluZy53b3JrYmVuY2giLCJwYWdlOm1vbml0b3IuYWxlcnRzIiwicGFnZTptb25pdG9yLmF0dGVudGlvbiIsInBhZ2U6bW9uaXRvci5sb29wcyIsInBhZ2U6bXktd29yay5tYWluIiwicGFnZTpyZXBvcnRzLmFsZXJ0LXN0YXRpc3RpY3MiLCJwYWdlOnJlcG9ydHMuYmVuZWZpdCIsInBhZ2U6cmVwb3J0cy5kYXRhLXF1YWxpdHkiLCJwYWdlOnJlcG9ydHMuZGlhZ25vc2lzIiwicGFnZTpyZXBvcnRzLmhhbmRsaW5nIiwicGFnZTpyZXBvcnRzLnBlcmZvcm1hbmNlIiwicGFnZTp0dW5pbmcub3ZlcnZpZXciLCJwYWdlOnR1bmluZy5yZWNvcmRzIiwicGFnZTp0dW5pbmcudmVyaWZpY2F0aW9uIl0sImRlZmF1bHRIb21lIjoiL2NvY2twaXQiLCJsYXN0TG9naW5BdCI6IjIwMjYtMTAtMTdUMTI6NDQ6MTEuMTA4MjkxIn19"
+            },
+            {
+              "name": "sponsor-write-denied.json",
+              "contentType": "application/json",
+              "body": "eyJjb2RlIjoiRVJSX1BFUk1JU1NJT05fREVOSUVEIiwibWVzc2FnZSI6IlNQT05TT1Ig5Li65Y+q6K+76KeS6Imy77yI6Zu25YaZ57qi57q/77yJ77yM5peg5p2D5omn6KGMOiBtZXRyaWM6dGFzay1ydW4iLCJkYXRhIjpudWxsfQ=="
+            },
+            {
+              "name": "screenshot",
+              "contentType": "image/png",
+              "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017203500-edfa831afd60/gate/test-results/critical-business-CRITICAL-d54f0-lculation-or-open-workbench-chromium/test-failed-1.png"
+            },
+            {
+              "name": "video",
+              "contentType": "video/webm",
+              "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017203500-edfa831afd60/gate/test-results/critical-business-CRITICAL-d54f0-lculation-or-open-workbench-chromium/video.webm"
+            },
+            {
+              "name": "screenshot",
+              "contentType": "image/png",
+              "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017203500-edfa831afd60/gate/test-results/critical-business-CRITICAL-d54f0-lculation-or-open-workbench-chromium/test-failed-2.png"
+            },
+            {
+              "name": "error-context",
+              "contentType": "text/markdown",
+              "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017203500-edfa831afd60/gate/test-results/critical-business-CRITICAL-d54f0-lculation-or-open-workbench-chromium/error-context.md"
+            },
+            {
+              "name": "trace",
+              "contentType": "application/zip",
+              "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017203500-edfa831afd60/gate/test-results/critical-business-CRITICAL-d54f0-lculation-or-open-workbench-chromium/trace.zip"
+            }
+          ],
+          "errorLocation": {
+            "file": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts",
+            "column": 14,
+            "line": 112
+          }
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": -1,
+          "parallelIndex": -1,
+          "status": "skipped",
+          "duration": 0,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:44:45.132Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": -1,
+          "parallelIndex": -1,
+          "status": "skipped",
+          "duration": 0,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T12:44:45.132Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    }
+  ],
+  "violations": [
+    "CRITICAL-PERM-001: outcome=unexpected",
+    "CRITICAL-PERM-001: status=failed",
+    "CRITICAL-CALC-001: outcome=skipped",
+    "CRITICAL-CALC-001: status=skipped",
+    "CRITICAL-EVIDENCE-001: outcome=skipped",
+    "CRITICAL-EVIDENCE-001: status=skipped",
+    "skipped=2",
+    "unexpected=1",
+    "passed=1, required=4"
+  ]
+}

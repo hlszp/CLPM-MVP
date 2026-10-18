@@ -1,0 +1,3 @@
+{"api_pid": 87714, "sha": "c452ea7fa913a7fffc721de81470ef0874b6bc46"}
+OWN_BEAT_PAUSED 87811
+{"ready": true, "api_pid": 87714, "beat_pid": 87811, "candidate_sha": "c452ea7fa913a7fffc721de81470ef0874b6bc46", "postgres_db": "clpm_capacity_20261017_s01"}

@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "adapt_capacity_artifacts.py",
+    "--plan",
+    "adapter-plan.template.json",
+    "--evidence-root",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapter-template-guard-v2-output"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+  "startedAt": "2026-10-17T12:54:18.457314+00:00",
+  "elapsedSeconds": 0.04782574999262579,
+  "rc": 2,
+  "stdoutSha256": "82ad4b3ed255470a8f8db4b7a7d6511930f3239f831adef8b990ade321bad410",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

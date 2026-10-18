@@ -1,0 +1,13 @@
+
+ RUN  v4.1.9 /Users/zhangping/DEV/CLPM-MVP/frontend
+
+ ✓ apps/web-antd/src/__tests__/loop-follow.test.ts (10 tests) 18ms
+ ✓ apps/web-antd/src/__tests__/my-work.test.ts (20 tests) 113ms
+ ✓ apps/web-antd/src/__tests__/loop-fleet-view.test.ts (6 tests) 37ms
+
+ Test Files  3 passed (3)
+      Tests  36 passed (36)
+   Start at  17:01:47
+   Duration  2.19s (transform 1.41s, setup 0ms, import 5.00s, tests 168ms, environment 484ms)
+
+JSON report written to /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/非作者复验-20261017T085542Z/f07-matching-tree-targeted.results.json

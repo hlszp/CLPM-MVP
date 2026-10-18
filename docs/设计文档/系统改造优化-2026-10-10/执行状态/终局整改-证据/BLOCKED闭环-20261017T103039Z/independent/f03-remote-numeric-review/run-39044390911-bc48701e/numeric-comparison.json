@@ -1,0 +1,35 @@
+{
+  "kind": "independent-kpi-numeric-comparison",
+  "verdict": "PASS",
+  "rows": [
+    {
+      "field": "goodValueRate",
+      "expected": 100.0,
+      "actual": 100,
+      "absoluteDifference": 0.0,
+      "tolerance": 0.005,
+      "pass": true
+    },
+    {
+      "field": "autoModeRate",
+      "expected": 100.0,
+      "actual": 100,
+      "absoluteDifference": 0.0,
+      "tolerance": 0.005,
+      "pass": true
+    },
+    {
+      "field": "steadyRate",
+      "expected": 59.86430194720249,
+      "actual": 59.86,
+      "absoluteDifference": 0.004301947202492329,
+      "tolerance": 0.005,
+      "pass": true
+    }
+  ],
+  "expectationModified": false,
+  "businessOperations": false,
+  "boundary": "Numerics only; not task, permission, lineage or remote CI acceptance",
+  "expectationSha256": "686871d4b8e81ba83889096d796fa1177a7f12fc77fdb8302f0df8ca05b0c758",
+  "actualSha256": "28b0c77875acfc1d86f0219dd337e147a23422438bdf9dc3c981d267818e3e05"
+}

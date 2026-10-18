@@ -1,0 +1,14 @@
+{
+  "testSourceSha256": "3d6c5e15d71f04a1d08812a1e0cfb3cdf5f89f28bdbb76420ee00a4c01c51eef",
+  "mainSourceSha256": "5f59552d61e4e1229d4b784471b17f3c00a42af797d810dc5194f73c6624252b",
+  "originalRealBeatPid": 70527,
+  "testError": null,
+  "unmockedByTestPgrepCalls": [],
+  "unmockedByTestTerminationCalls": [],
+  "productModulesImported": false,
+  "networkOperations": 0,
+  "actualSignalsSent": 0,
+  "allProcessSignallingBoundariesIntercepted": true,
+  "testIsolatedFromOtherProjectProcesses": true,
+  "scope": "Reachability counterexample only; historical signal sender remains unproven"
+}

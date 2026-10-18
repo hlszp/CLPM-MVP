@@ -1,0 +1,41 @@
+{
+  "frozenAt": "2026-10-17T14:52:08.216134+00:00",
+  "candidateSha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+  "runId": "20261017223757",
+  "fixture": {
+    "path": "independent/f03-local-numeric-review/run-20261017223757-c6fa2b489af6/inputs/fixture.json",
+    "size": 2295,
+    "sha256": "d99f05660451473feb3f10dc1066f4059052c6a657eb77bb7c72b6438d1859e4"
+  },
+  "rawInput": {
+    "path": "independent/f03-local-numeric-review/run-20261017223757-c6fa2b489af6/inputs/fixture.inputs.json",
+    "size": 581923,
+    "sha256": "b1c72c9748981995ae07cccb0de58e77f6f515be1a90b1a2fa99a5d5b00b2cda"
+  },
+  "datasetManifest": {
+    "path": "independent/f03-local-numeric-review/run-20261017223757-c6fa2b489af6/inputs/4a8117ad-f7f5-4615-8d6c-fa0622fa0565.manifest.json",
+    "size": 2356234,
+    "sha256": "41284dd7d029e36ad9e718f610433cf7bea9993d042bbe76b082eceeff7bbe68"
+  },
+  "datasetNpz": {
+    "path": "independent/f03-local-numeric-review/run-20261017223757-c6fa2b489af6/inputs/4a8117ad-f7f5-4615-8d6c-fa0622fa0565.npz",
+    "size": 1177584,
+    "sha256": "f214a2790f71162bf65610e7a9d71691e9936a4883161245d4548e26feb0e2fe"
+  },
+  "declaredDatasetInputHash": "d7d7c4262fc4cf069eb861afee4a94ad895f3b7d42b4fc2d98df9b8f09d1dcfd",
+  "identity": {
+    "assessmentProfile": "LEGACY_V2",
+    "algorithmVersion": "KPI_CALC_v2.0",
+    "configRevision": "rev:0:4cc7116649a473df",
+    "executableBuildDigest": "a7dbf45a406ae709"
+  },
+  "effectiveParamsSha256": "8acc78fda61240e600e5e1556706e118d805e880b346b896c41ecdd483ac709a",
+  "heldLimitsSeconds": {
+    "pv": 60,
+    "sp": 7200,
+    "mode": 7200
+  },
+  "inclusiveEndSeconds": 1,
+  "actualKpiOutputsRead": false,
+  "productCalculatorImported": false
+}

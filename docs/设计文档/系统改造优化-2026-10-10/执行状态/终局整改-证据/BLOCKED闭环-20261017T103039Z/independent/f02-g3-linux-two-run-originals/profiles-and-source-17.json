@@ -1,0 +1,567 @@
+{
+  "sources17Identical": true,
+  "source17": [
+    {
+      "file": "backend/app/services/tuning_identification/__init__.py",
+      "bytes": 1405,
+      "sha256": "06f0a4fb11102f2cc8b99a3f178625e9387b255df473cf7e9f07b97dd46e532b"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/armax.py",
+      "bytes": 5810,
+      "sha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/arx.py",
+      "bytes": 4233,
+      "sha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/discrete_to_continuous.py",
+      "bytes": 5233,
+      "sha256": "1d099ad970d35eb70c75c5f266bdd0d082446c950f1e7aff8f59bd093b97aa2c"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/excitation.py",
+      "bytes": 7729,
+      "sha256": "f5ce1ca80ccfa87e93b348df4d4619ddb67fd5eda4203ca153cbe53738527372"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/iv.py",
+      "bytes": 13292,
+      "sha256": "90f0a3321b173b84a9a0798846d4c3f539137329190c1d0c23c536fd2ef6f06d"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/nonparametric.py",
+      "bytes": 3008,
+      "sha256": "c10c063662b124bf56f87b5e0a828f6f6c78b1fbfc43f051fba32f22c23261e3"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/order_selection.py",
+      "bytes": 4866,
+      "sha256": "a6cef6a02e5f477b044e2e7a9f8e6751f5bcfaf69713664845572350996d9614"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/physical_feasibility.py",
+      "bytes": 3493,
+      "sha256": "ed29b4e64a5b3c2c6099e6a7b74fd935b2b5559ff2811aa89602f1b236d9c734"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/pipeline.py",
+      "bytes": 236858,
+      "sha256": "9c82b6966d6efab6808bb40e8d0d9b72a2410fa7b99e82dfaeda83ee71ab3e41"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/segmentation.py",
+      "bytes": 13728,
+      "sha256": "5154b9e8d6ee7d174c00912fe0443ec622f5082876c7917b0232751eb2743303"
+    },
+    {
+      "file": "backend/app/services/tuning_identification/types.py",
+      "bytes": 24040,
+      "sha256": "8d7a36e64a148686350f56531d2c38891b336cedc441f07d5ec8ffcd9fa771fa"
+    },
+    {
+      "file": "backend/scripts/profile_identification_numerics.py",
+      "bytes": 17277,
+      "sha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858"
+    },
+    {
+      "file": "backend/tests/test_g3_app_applicability.py",
+      "bytes": 19845,
+      "sha256": "c35c250a2e0b1b855d1e0f7b2352d36f8d23d7d4f7642a01a1b73daf8d8ae6a7"
+    },
+    {
+      "file": "backend/uv.lock",
+      "bytes": 160673,
+      "sha256": "990da4c2e132c245b42fa1c91dd65d20ec96666b5c0c883fc1cf76d61190e696"
+    },
+    {
+      "file": "backend/pyproject.toml",
+      "bytes": 2745,
+      "sha256": "1d0ece7a4ee0f2f2ce7b66fd1e675a30453e154259d0156cd75bc6c96dd8db67"
+    },
+    {
+      "file": "backend/tests/golden/refactor_protected_manifest.json",
+      "bytes": 4925,
+      "sha256": "c3df20baaab9473745f1a1abce2844a6f3883b5f5e35804e6daf70d558b8c8c1"
+    }
+  ],
+  "profileComparison": {
+    "platform": {
+      "green": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "red": "Linux-6.17.0-1022-azure-x86_64-with-glibc2.39",
+      "same": true
+    },
+    "python": {
+      "green": "3.12.15 (main, Oct  1 2026, 02:35:59) [GCC 13.3.0]",
+      "red": "3.12.15 (main, Oct  1 2026, 02:35:59) [GCC 13.3.0]",
+      "same": true
+    },
+    "numpy": {
+      "green": "2.5.0",
+      "red": "2.5.0",
+      "same": true
+    },
+    "scipy": {
+      "green": "1.18.0",
+      "red": "1.18.0",
+      "same": true
+    },
+    "threads": {
+      "green": {
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1"
+      },
+      "red": {
+        "OPENBLAS_NUM_THREADS": "1",
+        "OMP_NUM_THREADS": "1",
+        "MKL_NUM_THREADS": "1",
+        "NUMEXPR_NUM_THREADS": "1",
+        "VECLIB_MAXIMUM_THREADS": "1"
+      },
+      "same": true
+    },
+    "affinity": {
+      "green": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "red": [
+        0,
+        1,
+        2,
+        3
+      ],
+      "same": true
+    },
+    "cpuCount": {
+      "green": 4,
+      "red": 4,
+      "same": true
+    },
+    "numpyConfig": {
+      "green": {
+        "Compilers": {
+          "c": {
+            "name": "gcc",
+            "linker": "ld.bfd",
+            "version": "14.2.1",
+            "commands": "cc"
+          },
+          "cython": {
+            "name": "cython",
+            "linker": "cython",
+            "version": "3.2.5",
+            "commands": "cython"
+          },
+          "c++": {
+            "name": "gcc",
+            "linker": "ld.bfd",
+            "version": "14.2.1",
+            "commands": "c++"
+          }
+        },
+        "Machine Information": {
+          "host": {
+            "cpu": "x86_64",
+            "family": "x86_64",
+            "endian": "little",
+            "system": "linux"
+          },
+          "build": {
+            "cpu": "x86_64",
+            "family": "x86_64",
+            "endian": "little",
+            "system": "linux"
+          }
+        },
+        "Build Dependencies": {
+          "blas": {
+            "name": "scipy-openblas",
+            "found": true,
+            "version": "0.3.33.112.0",
+            "detection method": "pkgconfig",
+            "include directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include",
+            "lib directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib",
+            "openblas configuration": "OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64",
+            "pc file directory": "/project/.openblas"
+          },
+          "lapack": {
+            "name": "scipy-openblas",
+            "found": true,
+            "version": "0.3.33.112.0",
+            "detection method": "pkgconfig",
+            "include directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include",
+            "lib directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib",
+            "openblas configuration": "OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64",
+            "pc file directory": "/project/.openblas"
+          }
+        },
+        "Python Information": {
+          "path": "/tmp/build-env-uvemcwed/bin/python",
+          "version": "3.12"
+        },
+        "SIMD Extensions": {
+          "baseline": [
+            "X86_V2"
+          ],
+          "found": [
+            "X86_V3",
+            "X86_V4",
+            "AVX512_ICL"
+          ],
+          "not found": [
+            "AVX512_SPR"
+          ]
+        }
+      },
+      "red": {
+        "Compilers": {
+          "c": {
+            "name": "gcc",
+            "linker": "ld.bfd",
+            "version": "14.2.1",
+            "commands": "cc"
+          },
+          "cython": {
+            "name": "cython",
+            "linker": "cython",
+            "version": "3.2.5",
+            "commands": "cython"
+          },
+          "c++": {
+            "name": "gcc",
+            "linker": "ld.bfd",
+            "version": "14.2.1",
+            "commands": "c++"
+          }
+        },
+        "Machine Information": {
+          "host": {
+            "cpu": "x86_64",
+            "family": "x86_64",
+            "endian": "little",
+            "system": "linux"
+          },
+          "build": {
+            "cpu": "x86_64",
+            "family": "x86_64",
+            "endian": "little",
+            "system": "linux"
+          }
+        },
+        "Build Dependencies": {
+          "blas": {
+            "name": "scipy-openblas",
+            "found": true,
+            "version": "0.3.33.112.0",
+            "detection method": "pkgconfig",
+            "include directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include",
+            "lib directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib",
+            "openblas configuration": "OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64",
+            "pc file directory": "/project/.openblas"
+          },
+          "lapack": {
+            "name": "scipy-openblas",
+            "found": true,
+            "version": "0.3.33.112.0",
+            "detection method": "pkgconfig",
+            "include directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/include",
+            "lib directory": "/opt/_internal/cpython-3.12.13/lib/python3.12/site-packages/scipy_openblas64/lib",
+            "openblas configuration": "OpenBLAS 0.3.33.112.0  USE64BITINT DYNAMIC_ARCH NO_AFFINITY Haswell MAX_THREADS=64",
+            "pc file directory": "/project/.openblas"
+          }
+        },
+        "Python Information": {
+          "path": "/tmp/build-env-uvemcwed/bin/python",
+          "version": "3.12"
+        },
+        "SIMD Extensions": {
+          "baseline": [
+            "X86_V2"
+          ],
+          "found": [
+            "X86_V3"
+          ],
+          "not found": [
+            "X86_V4",
+            "AVX512_ICL",
+            "AVX512_SPR"
+          ]
+        }
+      },
+      "same": false
+    },
+    "numpyCpuFeatures": {
+      "green": {
+        "MMX": true,
+        "SSE": true,
+        "SSE2": true,
+        "SSE3": true,
+        "SSSE3": true,
+        "SSE41": true,
+        "POPCNT": true,
+        "SSE42": true,
+        "X86_V2": true,
+        "AVX": true,
+        "F16C": true,
+        "XOP": false,
+        "FMA4": false,
+        "FMA3": true,
+        "AVX2": true,
+        "LAHF": true,
+        "CX16": true,
+        "MOVBE": true,
+        "BMI": true,
+        "BMI2": true,
+        "LZCNT": true,
+        "GFNI": true,
+        "VPCLMULQDQ": true,
+        "VAES": true,
+        "X86_V3": true,
+        "AVX512F": true,
+        "AVX512CD": true,
+        "AVX512ER": false,
+        "AVX512PF": false,
+        "AVX5124FMAPS": false,
+        "AVX5124VNNIW": false,
+        "AVX512VPOPCNTDQ": true,
+        "AVX512VL": true,
+        "AVX512BW": true,
+        "AVX512DQ": true,
+        "AVX512VNNI": true,
+        "AVX512IFMA": true,
+        "AVX512VBMI": true,
+        "AVX512VBMI2": true,
+        "AVX512BITALG": true,
+        "AVX512FP16": false,
+        "AVX512BF16": false,
+        "AVX512_KNL": false,
+        "AVX512_KNM": false,
+        "AVX512_SKX": true,
+        "X86_V4": true,
+        "AVX512_CLX": true,
+        "AVX512_CNL": true,
+        "AVX512_ICL": true,
+        "AVX512_SPR": false,
+        "VSX": false,
+        "VSX2": false,
+        "VSX3": false,
+        "VSX4": false,
+        "VX": false,
+        "VXE": false,
+        "VXE2": false,
+        "NEON": false,
+        "NEON_FP16": false,
+        "NEON_VFPV4": false,
+        "ASIMD": false,
+        "FPHP": false,
+        "ASIMDHP": false,
+        "ASIMDDP": false,
+        "ASIMDFHM": false,
+        "SVE": false,
+        "RVV": false,
+        "LSX": false
+      },
+      "red": {
+        "MMX": true,
+        "SSE": true,
+        "SSE2": true,
+        "SSE3": true,
+        "SSSE3": true,
+        "SSE41": true,
+        "POPCNT": true,
+        "SSE42": true,
+        "X86_V2": true,
+        "AVX": true,
+        "F16C": true,
+        "XOP": false,
+        "FMA4": false,
+        "FMA3": true,
+        "AVX2": true,
+        "LAHF": true,
+        "CX16": true,
+        "MOVBE": true,
+        "BMI": true,
+        "BMI2": true,
+        "LZCNT": true,
+        "GFNI": false,
+        "VPCLMULQDQ": true,
+        "VAES": true,
+        "X86_V3": true,
+        "AVX512F": false,
+        "AVX512CD": false,
+        "AVX512ER": false,
+        "AVX512PF": false,
+        "AVX5124FMAPS": false,
+        "AVX5124VNNIW": false,
+        "AVX512VPOPCNTDQ": false,
+        "AVX512VL": false,
+        "AVX512BW": false,
+        "AVX512DQ": false,
+        "AVX512VNNI": false,
+        "AVX512IFMA": false,
+        "AVX512VBMI": false,
+        "AVX512VBMI2": false,
+        "AVX512BITALG": false,
+        "AVX512FP16": false,
+        "AVX512BF16": false,
+        "AVX512_KNL": false,
+        "AVX512_KNM": false,
+        "AVX512_SKX": false,
+        "X86_V4": false,
+        "AVX512_CLX": false,
+        "AVX512_CNL": false,
+        "AVX512_ICL": false,
+        "AVX512_SPR": false,
+        "VSX": false,
+        "VSX2": false,
+        "VSX3": false,
+        "VSX4": false,
+        "VX": false,
+        "VXE": false,
+        "VXE2": false,
+        "NEON": false,
+        "NEON_FP16": false,
+        "NEON_VFPV4": false,
+        "ASIMD": false,
+        "FPHP": false,
+        "ASIMDHP": false,
+        "ASIMDDP": false,
+        "ASIMDFHM": false,
+        "SVE": false,
+        "RVV": false,
+        "LSX": false
+      },
+      "same": false
+    }
+  },
+  "numpyConfigExceptSimdIdentical": true,
+  "actualCheckouts": {
+    "green": {
+      "head": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "rc": 0,
+        "stdout": "645241e983856d3012f9ca2310af260ab988646f",
+        "stdoutRef": {
+          "file": "git-head.stdout.log",
+          "bytes": 41,
+          "sha256": "1571de073d2835f4b154cadeedc3be374566ba72a8a295a4ab52a351d71c1d30"
+        },
+        "stderrRef": {
+          "file": "git-head.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "root": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "--show-toplevel"
+        ],
+        "rc": 0,
+        "stdout": "/home/runner/work/CLPM-MVP/CLPM-MVP",
+        "stdoutRef": {
+          "file": "git-root.stdout.log",
+          "bytes": 36,
+          "sha256": "1585bbca3061a6e181660247cb9a80492cfd32f8551f45f24b0eae7b17cbb308"
+        },
+        "stderrRef": {
+          "file": "git-root.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "backendTree": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD:backend"
+        ],
+        "rc": 0,
+        "stdout": "e6e5fd28bcba319f674281a1704e0a6c86764332",
+        "stdoutRef": {
+          "file": "git-backendTree.stdout.log",
+          "bytes": 41,
+          "sha256": "0ae382d1791ee69ab5f8ac704f57e5257e45fc7bd89adcfb55828b7b18a2bc7b"
+        },
+        "stderrRef": {
+          "file": "git-backendTree.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    },
+    "red": {
+      "head": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "rc": 0,
+        "stdout": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+        "stdoutRef": {
+          "file": "git-head.stdout.log",
+          "bytes": 41,
+          "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+        },
+        "stderrRef": {
+          "file": "git-head.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "root": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "--show-toplevel"
+        ],
+        "rc": 0,
+        "stdout": "/home/runner/work/CLPM-MVP/CLPM-MVP",
+        "stdoutRef": {
+          "file": "git-root.stdout.log",
+          "bytes": 36,
+          "sha256": "1585bbca3061a6e181660247cb9a80492cfd32f8551f45f24b0eae7b17cbb308"
+        },
+        "stderrRef": {
+          "file": "git-root.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      },
+      "backendTree": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD:backend"
+        ],
+        "rc": 0,
+        "stdout": "e6e5fd28bcba319f674281a1704e0a6c86764332",
+        "stdoutRef": {
+          "file": "git-backendTree.stdout.log",
+          "bytes": 41,
+          "sha256": "0ae382d1791ee69ab5f8ac704f57e5257e45fc7bd89adcfb55828b7b18a2bc7b"
+        },
+        "stderrRef": {
+          "file": "git-backendTree.stderr.log",
+          "bytes": 0,
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      }
+    }
+  },
+  "sourceFilesBeforeAfterUnchanged": true
+}

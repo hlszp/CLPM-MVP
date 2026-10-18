@@ -1,0 +1,27 @@
+{
+  "frozenAt": "2026-10-17T13:26:47.194755+00:00",
+  "baseHead": "edfa831afd6069963e7f6f73c2721637d6a199b5",
+  "candidateWorkingTreePatch": true,
+  "files": {
+    "e2e/scripts/prepare-critical-fixture.py": {
+      "bytes": 27852,
+      "sha256": "e39f0b972b9e636151c6389238420eee30145ab23155ba8736974269d1e0c326"
+    },
+    "e2e/scripts/test_critical_fixture.py": {
+      "bytes": 17083,
+      "sha256": "220476e68d17114581b964657ddb02c1c144571dd19ae306112c845895c520c8"
+    }
+  },
+  "criticalBusinessSpecUnchangedSha256": "d8aa48efd47f95ed1d7e1c8c895a3347b5e33f578f0f7a97eb2fca8c330b486c",
+  "unchangedCalls": {
+    "synth_series": true,
+    "_td_rows": true,
+    "execute_native_effective": true
+  },
+  "pureControlTests": 17,
+  "e2eTypecheckRc": 0,
+  "collectOnlyFourIdsRc": 0,
+  "actualDatabaseWritesByAuthor": 0,
+  "actualE2ECasesRunByAuthor": 0,
+  "intendedScope": "new guarded synthetic INPUT declaration and exact PG/TD persisted readback; no KPI/result/quality seeding"
+}

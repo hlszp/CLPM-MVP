@@ -1,0 +1,88 @@
+2026-10-18 04:30:29,447 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=QUALITY_HF, points=3601, controlType=PC
+2026-10-18 04:30:29,456 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:30:29,458 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,459 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,459 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 04:30:29,460 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_0858018a-988f-42ca-8e80-d7122baced93_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 04:30:29,476 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=229aa3dd-60bf-4438-890e-24fcda5c6b80, tagGroup=QUALITY_HF, points=3601, controlType=LC
+2026-10-18 04:30:29,477 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=BASE, points=721, controlType=TC
+2026-10-18 04:30:29,493 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=PVOP_HF, points=3601, controlType=PC
+2026-10-18 04:30:29,511 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=MODE_HF, points=3601, controlType=PC
+2026-10-18 04:30:29,589 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=BASE, points=1801, controlType=PC
+2026-10-18 04:30:29,589 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:30:29,594 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,595 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=MODE_HF, points=3601, controlType=TC
+2026-10-18 04:30:29,597 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=721, anomalous=0, reasons={}
+2026-10-18 04:30:29,599 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,599 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.545, cutoff=0.10Hz, freq=0.5Hz
+2026-10-18 04:30:29,603 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=QUALITY_HF, points=3601, controlType=TC
+2026-10-18 04:30:29,608 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,609 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=721, anomalous=0, reasons={}
+2026-10-18 04:30:29,609 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.545, cutoff=0.10Hz, freq=0.5Hz
+2026-10-18 04:30:29,609 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,610 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-18 04:30:29,618 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=721, valid=721, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,618 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=1801, anomalous=0, reasons={}
+2026-10-18 04:30:29,619 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=QUALITY_HF, points=3601, query=3.239s, preprocess=0.173s
+2026-10-18 04:30:29,619 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-18 04:30:29,619 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.501, cutoff=0.05Hz, freq=0.2Hz
+2026-10-18 04:30:29,619 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=229aa3dd-60bf-4438-890e-24fcda5c6b80, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 04:30:29,621 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,623 | DEBUG    | app.services.data_planner | 预处理完成: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=QUALITY_HF, points=3601, valid_rate=1.0000
+2026-10-18 04:30:29,626 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={2: ['JUMP', 'SPIKE', 'HF_NOISE'], 3: ['JUMP', 'SPIKE', 'HF_NOISE'], 23: ['JUMP', 'SPIKE', 'HF_NOISE'], 24: ['JUMP', 'SPIKE', 'HF_NOISE'], 27: ['JUMP', 'HF_NOISE']}
+2026-10-18 04:30:29,630 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_229aa3dd-60bf-4438-890e-24fcda5c6b80_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 04:30:29,630 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:30:29,630 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_1143c742-4c43-4049-a34d-70a59286dd2a_BASE_5s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 04:30:29,634 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=1801, anomalous=0, reasons={}
+2026-10-18 04:30:29,635 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=5, reasons={3229: ['FROZEN'], 3230: ['FROZEN'], 3231: ['FROZEN'], 3232: ['FROZEN'], 3233: ['FROZEN']}
+2026-10-18 04:30:29,637 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,643 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=1801, valid=1801, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,649 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,652 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=5, reasons={3229: ['FROZEN'], 3230: ['FROZEN'], 3231: ['FROZEN'], 3232: ['FROZEN'], 3233: ['FROZEN']}
+2026-10-18 04:30:29,653 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,653 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,655 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,659 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,672 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,673 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 04:30:29,676 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_0858018a-988f-42ca-8e80-d7122baced93_BASE_2s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 04:30:29,677 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,677 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_0858018a-988f-42ca-8e80-d7122baced93_PVOP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 04:30:29,687 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,687 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_1143c742-4c43-4049-a34d-70a59286dd2a_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 04:30:29,757 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=OP_HF, points=3601, controlType=TC
+2026-10-18 04:30:29,775 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=e8f4dfdb-85f5-4856-8f4f-e2a7ef0be14a, tagGroup=BASE, points=3601, controlType=FC
+2026-10-18 04:30:29,776 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=1a2bba2b-163e-41b9-add8-db4b2ff8a2c9, tagGroup=QUALITY_HF, points=3601, controlType=TC
+2026-10-18 04:30:29,784 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=2477, bad=1124, missing=0, valid_rate=0.6879, good_value_rate=1.0
+2026-10-18 04:30:29,785 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=229aa3dd-60bf-4438-890e-24fcda5c6b80, tagGroup=BASE, points=721, controlType=LC
+2026-10-18 04:30:29,793 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,803 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,803 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.501, cutoff=0.05Hz, freq=0.2Hz
+2026-10-18 04:30:29,813 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.6879 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,814 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_0858018a-988f-42ca-8e80-d7122baced93_MODE_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 04:30:29,819 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={2: ['JUMP', 'SPIKE', 'HF_NOISE'], 3: ['JUMP', 'SPIKE', 'HF_NOISE'], 23: ['JUMP', 'SPIKE', 'HF_NOISE'], 24: ['JUMP', 'SPIKE', 'HF_NOISE'], 27: ['JUMP', 'HF_NOISE']}
+2026-10-18 04:30:29,820 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=721, anomalous=0, reasons={}
+2026-10-18 04:30:29,820 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_1143c742-4c43-4049-a34d-70a59286dd2a_MODE_HF_1s, block_valid_rate=0.6879, loop_valid_rate=0.6879, loop_confidence=C, segments=10
+2026-10-18 04:30:29,820 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,827 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:30:29,831 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=2477, bad=1124, missing=0, valid_rate=0.6879, good_value_rate=None
+2026-10-18 04:30:29,832 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=721, anomalous=0, reasons={}
+2026-10-18 04:30:29,837 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,840 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.6879 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,841 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=229aa3dd-60bf-4438-890e-24fcda5c6b80, tagGroup=QUALITY_HF, points=3601, query=3.261s, preprocess=0.367s
+2026-10-18 04:30:29,845 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=721, valid=721, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:29,845 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,845 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=6, reasons={3243: ['FROZEN'], 3244: ['FROZEN'], 3245: ['FROZEN'], 3246: ['FROZEN'], 3247: ['FROZEN']}
+2026-10-18 04:30:29,845 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_1143c742-4c43-4049-a34d-70a59286dd2a_OP_HF_1s, block_valid_rate=0.6879, loop_valid_rate=0.6879, loop_confidence=C, segments=10
+2026-10-18 04:30:29,845 | DEBUG    | app.services.data_planner | 预处理完成: loop=229aa3dd-60bf-4438-890e-24fcda5c6b80, tagGroup=QUALITY_HF, points=3601, valid_rate=1.0000
+2026-10-18 04:30:29,846 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:29,847 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=1a2bba2b-163e-41b9-add8-db4b2ff8a2c9, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 04:30:29,848 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=BASE, points=721, query=3.274s, preprocess=0.372s
+2026-10-18 04:30:29,848 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_229aa3dd-60bf-4438-890e-24fcda5c6b80_BASE_5s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 04:30:29,850 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_1a2bba2b-163e-41b9-add8-db4b2ff8a2c9_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1
+2026-10-18 04:30:29,850 | DEBUG    | app.services.data_planner | 预处理完成: loop=1143c742-4c43-4049-a34d-70a59286dd2a, tagGroup=BASE, points=721, valid_rate=1.0000
+2026-10-18 04:30:29,854 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:30:29,868 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=bba79198-56ce-4196-be9d-2f9996bc8f22, tagGroup=MODE_HF, points=3601, controlType=PC
+2026-10-18 04:30:29,885 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=0858018a-988f-42ca-8e80-d7122baced93, tagGroup=OP_HF, points=3601, controlType=PC
+2026-10-18 04:30:29,891 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-18 04:30:29,893 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}

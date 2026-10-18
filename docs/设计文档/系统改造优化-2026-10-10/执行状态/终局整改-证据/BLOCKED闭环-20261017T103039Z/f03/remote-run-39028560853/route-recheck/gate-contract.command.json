@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "npm",
+    "run",
+    "test:gate-contract"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "rc": 0,
+  "elapsedSeconds": 6.055728912353516,
+  "stdoutSha256": "bd603dbc69d58f6c4eafc458338a1d99ac88809a14fdb2b1ae3a327720fed6de",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

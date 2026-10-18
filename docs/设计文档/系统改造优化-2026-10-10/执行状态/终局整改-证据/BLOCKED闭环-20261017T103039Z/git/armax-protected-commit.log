@@ -1,0 +1,8 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+│  ruff staged (skip) no files for inspection
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.05 seconds)
+[fix/final-audit-remediation 743a0b31] test(tuning): 登记等价ARMAX保护指纹
+ 1 file changed, 1 insertion(+), 1 deletion(-)

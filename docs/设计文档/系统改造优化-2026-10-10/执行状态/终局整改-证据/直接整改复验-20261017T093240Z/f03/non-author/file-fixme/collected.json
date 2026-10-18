@@ -1,0 +1,197 @@
+{
+  "config": {
+    "argv": [
+      "/Users/zhangping/.hermes/node/bin/node",
+      "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/node_modules/.bin/playwright",
+      "test",
+      "--config=playwright.critical.config.ts",
+      "--list",
+      "--reporter=json"
+    ],
+    "configFile": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/playwright.critical.config.ts",
+    "rootDir": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {},
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {},
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "critical-business.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "critical-business.spec.ts",
+      "file": "critical-business.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "CRITICAL-AUTH-001: independent marker negative",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "fixme",
+                  "description": "whole file disabled",
+                  "location": {
+                    "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/tests/critical-business.spec.ts",
+                    "line": 2,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-c603880c09df9002e48a",
+          "file": "critical-business.spec.ts",
+          "line": 3,
+          "column": 1
+        },
+        {
+          "title": "CRITICAL-PERM-001: independent marker negative",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "fixme",
+                  "description": "whole file disabled",
+                  "location": {
+                    "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/tests/critical-business.spec.ts",
+                    "line": 2,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-53ee1a725d66b54a1700",
+          "file": "critical-business.spec.ts",
+          "line": 4,
+          "column": 1
+        },
+        {
+          "title": "CRITICAL-CALC-001: independent marker negative",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "fixme",
+                  "description": "whole file disabled",
+                  "location": {
+                    "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/tests/critical-business.spec.ts",
+                    "line": 2,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-c96c6f49ae756f86a50a",
+          "file": "critical-business.spec.ts",
+          "line": 5,
+          "column": 1
+        },
+        {
+          "title": "CRITICAL-EVIDENCE-001: independent marker negative",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [
+                {
+                  "type": "fixme",
+                  "description": "whole file disabled",
+                  "location": {
+                    "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-f03-nonauthor-znb2ub95/e2e/tests/critical-business.spec.ts",
+                    "line": 2,
+                    "column": 6
+                  }
+                }
+              ],
+              "expectedStatus": "skipped",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [],
+              "status": "skipped"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-01d189b63b814bb195aa",
+          "file": "critical-business.spec.ts",
+          "line": 6,
+          "column": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-17T09:48:50.930Z",
+    "duration": 40.22900000000001,
+    "expected": 0,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0
+  }
+}

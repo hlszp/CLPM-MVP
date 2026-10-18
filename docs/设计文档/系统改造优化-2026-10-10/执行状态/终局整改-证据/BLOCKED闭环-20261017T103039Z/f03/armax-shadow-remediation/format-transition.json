@@ -1,0 +1,7 @@
+{
+  "profiledSourcePreserved": "profiled-source-before-repository-format.py",
+  "beforeSha256": "6e1500eb845d7b6eeb1eacd2158054081c3aacbcb1ba1e029019d84f1a207795",
+  "afterSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+  "astExactlyEqual": true,
+  "reason": "respect actual backend line-length100 before candidate freeze; timing raw refers original exact preserved bytes"
+}

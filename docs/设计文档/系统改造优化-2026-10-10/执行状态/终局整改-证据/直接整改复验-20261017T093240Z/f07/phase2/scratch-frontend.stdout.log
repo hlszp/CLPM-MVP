@@ -1,0 +1,11 @@
+
+  VITE v8.0.13  ready in 1263 ms
+
+  ➜  Local:   http://127.0.0.1:17266/
+  ➜  Vben Admin Docs: https://doc.vben.pro
+17:52:03 [vite] (client) page reload src/store/auth.ts
+17:53:15 [vite] (client) page reload src/store/auth.ts
+17:57:56 [vite] (client) hmr update /@fs/Users/zhangping/DEV/clpm-remediation-20261017/frontend/packages/@core/base/design/src/css/global.css
+18:05:16 [vite] (client) page reload src/api/personal-work.ts
+18:05:41 [vite] (client) page reload src/api/personal-work.ts
+18:14:20 [vite] (client) hmr update /src/views/config/engineering-templates/batch-restore-modal.vue, /@fs/Users/zhangping/DEV/clpm-remediation-20261017/frontend/packages/@core/base/design/src/css/global.css

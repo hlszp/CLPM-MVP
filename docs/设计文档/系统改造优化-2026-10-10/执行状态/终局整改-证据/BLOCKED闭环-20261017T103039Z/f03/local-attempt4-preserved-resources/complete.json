@@ -1,0 +1,42 @@
+{
+  "at": "2026-10-17T14:18:33.018455+00:00",
+  "oldPostgres": "clpm_critical_20261017_local_attempt4",
+  "freshPostgres": "clpm_critical_20261017_local",
+  "oldRedis": "clpm-f03-redis-20261017-local-attempt4",
+  "freshRedis": "clpm-f03-redis-20261017-local",
+  "tdInputTablesPreserved": 7,
+  "tdAllOriginalRowCounts": [
+    {
+      "table": "p_d8bcfff4b3c143339e2d62ffd1785828",
+      "rows": 1
+    },
+    {
+      "table": "p_89bdc756f2d647bb86054d4bcb496325",
+      "rows": 3600
+    },
+    {
+      "table": "p_2ab289f21daf48418164b8b722ae44fc",
+      "rows": 3
+    },
+    {
+      "table": "p_34acd6fd77ee455baf71ce0181c5aa70",
+      "rows": 3600
+    },
+    {
+      "table": "p_4978fcc543724c66ac16ec5db66441e9",
+      "rows": 1
+    },
+    {
+      "table": "p_7ccf8d01beed413bbf2f08ed2c6f08b9",
+      "rows": 1
+    },
+    {
+      "table": "p_4fc6af1b2b3d4d2f895032c60b948b52",
+      "rows": 1
+    }
+  ],
+  "sourceShaUnchanged": "9f356782ef4076dabb91a86f56e054e514e341ea",
+  "originalGatePassed": false,
+  "originalStopRc": 1,
+  "originalApiRc": -15
+}

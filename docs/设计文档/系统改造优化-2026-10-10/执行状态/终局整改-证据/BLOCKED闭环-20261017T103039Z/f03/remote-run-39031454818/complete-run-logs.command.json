@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "repos/hlszp/CLPM-MVP/actions/runs/39031454818/logs"
+  ],
+  "rc": 0,
+  "observedAt": "2026-10-17T12:35:34.825352+00:00",
+  "bytes": 594469,
+  "stdoutSha256": "24a3f737b02832f69dd05592de2b157f201a3d189418182281f8040b0c589a1f",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

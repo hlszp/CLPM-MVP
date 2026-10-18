@@ -1,0 +1,7 @@
+{
+  "initialStdlibInspectionPython": "python3",
+  "initialRc": 1,
+  "error": "ModuleNotFoundError: numpy; no source or business effects",
+  "correctedInterpreter": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+  "correctedCheckCompleted": true
+}

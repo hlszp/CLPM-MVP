@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "test_input_contract_independent.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f02-collector-review",
+  "environment": {
+    "CLPM_AUDIT_INPUT_SOURCE": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f02-collector-review/sources-v1/audit_capacity_inputs.py"
+  },
+  "startedAt": "2026-10-17T11:07:36.706371+00:00",
+  "endedAt": "2026-10-17T11:07:36.952620+00:00",
+  "rc": 1,
+  "sourceSha256": "437c96db4887e137dc4dd957e5abff4bb41f18e2391d32aafd633bdae9904357",
+  "testSourceSha256": "d937eef6e63e24e77295a300d85e73c46cd400bd38b87a2153abfd086e1395a4",
+  "scope": "Identical two independent tests; valid A/B controls then malformed-1001 and valid B with one all-GOOD insufficient PV. No network/business"
+}

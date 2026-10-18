@@ -1,0 +1,709 @@
+
+[2m[7.44ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[5.66ms][22m  [2m ↳ [22mSetup compiler
+[2m[1.32ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.62ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[1.46ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[2.26ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[2.12ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.03ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.86ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.09ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.97ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.77ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.11ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.61ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.48ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.09ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.62ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.56ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.63ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.57ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.50ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.45ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.40ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.33ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.32ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.28ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.40ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.36ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.31ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.27ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.24ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.29ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.24ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.29ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.24ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.23ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.39ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.33ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.33ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.29ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.35ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.31ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.45ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.41ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.31ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.26ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.23ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.34ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.30ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.31ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.27ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.25ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.22ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.30ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.30ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.24ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[7.08ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[6.96ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.09ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.42ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.33ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.57ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.45ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.60ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.49ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.46ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.41ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.41ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.35ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.78ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.69ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.58ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.52ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.31ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.27ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.02ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.96ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.41ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.36ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.43ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.38ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.36ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.31ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.26ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.22ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.52ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.47ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.24ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.62ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[1.54ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.30ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.44ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.39ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.34ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.29ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.36ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.31ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.66ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.60ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.30ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[3.10ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[3.02ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.54ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.43ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[485.61ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[484.49ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.21ms][22m  [2m ↳ [22mSetup scanner
+[2m[  0.88ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[676.12ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[504.62ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.20ms][22m  [2m ↳ [22mSetup scanner
+[2m[ 75.89ms][22m  [2m ↳ [22mScan for candidates
+[2m[ 31.03ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 64.28ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[672.47ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[671.99ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.21ms][22m  [2m ↳ [22mSetup scanner
+[2m[  0.24ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.70ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.54ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.10ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.63ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.57ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.36ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.32ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.32ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.28ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.44ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.36ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.42ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.36ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.47ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.39ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.62ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.55ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.65ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.59ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.59ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.48ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.09ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.48ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.41ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.99ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.87ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[220.86ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[220.14ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.18ms][22m  [2m ↳ [22mSetup scanner
+[2m[  0.47ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[226.43ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[226.09ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.19ms][22m  [2m ↳ [22mSetup scanner
+[2m[  0.10ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[295.95ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[295.59ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.19ms][22m  [2m ↳ [22mSetup scanner
+[2m[  0.11ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[311.49ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[311.13ms][22m  [2m ↳ [22mSetup compiler
+[2m[  0.18ms][22m  [2m ↳ [22mSetup scanner
+[2m[  0.15ms][22m  [2m ↳ [22mBuild CSS
+[2m[  0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.50ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.39ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.34ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.29ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.34ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.29ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.40ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.32ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.33ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.27ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.30ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.25ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[61.31ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[60.80ms][22m  [2m ↳ [22mSetup compiler
+[2m[ 0.22ms][22m  [2m ↳ [22mSetup scanner
+[2m[ 0.24ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[44.74ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[44.15ms][22m  [2m ↳ [22mSetup compiler
+[2m[ 0.22ms][22m  [2m ↳ [22mSetup scanner
+[2m[ 0.32ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[23.68ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[23.28ms][22m  [2m ↳ [22mSetup compiler
+[2m[ 0.18ms][22m  [2m ↳ [22mSetup scanner
+[2m[ 0.16ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.66ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.49ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.11ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.21ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.93ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.12ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.24ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[1.08ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.09ms][22m  [2m ↳ [22mSetup scanner
+
+17:40:01 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[0.59ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.48ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[99.07ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[81.27ms][22m  [2m ↳ [22mScan for candidates
+[2m[12.61ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 4.61ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+17:40:22 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[0.61ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.44ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.10ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.57ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.45ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+17:40:56 [vite] (client) [Unhandled error] Error: ResizeObserver loop completed with undelivered notifications.
+ > ../../../../../../../@vite/client:516:55
+
+
+[2m[41.02ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[22.49ms][22m  [2m ↳ [22mScan for candidates
+[2m[12.23ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 5.90ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.56ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.46ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+17:41:17 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[38.69ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[25.18ms][22m  [2m ↳ [22mScan for candidates
+[2m[12.04ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 1.15ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.60ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.47ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.63ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.49ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.10ms][22m  [2m ↳ [22mSetup scanner
+
+17:41:26 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[35.23ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[21.48ms][22m  [2m ↳ [22mScan for candidates
+[2m[12.49ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 0.92ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.61ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.46ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.10ms][22m  [2m ↳ [22mSetup scanner
+
+17:42:03 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[40.60ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[23.17ms][22m  [2m ↳ [22mScan for candidates
+[2m[16.04ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 0.88ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.60ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.47ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+17:43:37 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[0.71ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.57ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.71ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.59ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.37ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.31ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.93ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.79ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.79ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.69ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.76ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.68ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.81ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.74ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.92ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.85ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.88ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.79ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.75ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.67ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.65ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.59ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.71ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.62ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.65ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.56ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.05ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.69ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.62ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.83ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.76ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.59ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.45ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.09ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.36ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.31ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.32ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.27ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.03ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.87ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.73ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.54ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.44ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.06ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[1.54ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[1.35ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.38ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.30ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.04ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.31ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.26ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.28ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.24ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.02ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[0.70ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.50ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.10ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[34.53ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[22.24ms][22m  [2m ↳ [22mScan for candidates
+[2m[10.84ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 0.94ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+
+[2m[0.56ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.44ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+17:45:46 [vite] (client) [console.warn] [RealtimeWS] 已连接
+
+[2m[0.56ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[0.44ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.07ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[33.86ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[21.35ms][22m  [2m ↳ [22mScan for candidates
+[2m[10.96ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 0.90ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+17:45:57 [vite] (client) [console.warn] [RealtimeWS] 已连接
+17:47:29 [vite] (client) [console.warn] [RealtimeWS] 已连接
+17:47:54 [vite] (client) [Unhandled error] Error: ResizeObserver loop completed with undelivered notifications.
+ > ../../../../../../../@vite/client:516:55
+
+
+[2m[1.23ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[1.10ms][22m  [2m ↳ [22mSetup compiler
+[2m[0.08ms][22m  [2m ↳ [22mSetup scanner
+
+
+[2m[40.39ms][22m [@tailwindcss/vite] Generate CSS (serve)
+[2m[22.09ms][22m  [2m ↳ [22mScan for candidates
+[2m[13.62ms][22m  [2m ↳ [22mRegister dependency messages
+[2m[ 3.42ms][22m  [2m ↳ [22mBuild CSS
+[2m[ 0.00ms][22m  [2m ↳ [22mBuild Source Map
+
+17:50:47 [vite] (client) [console.warn] [RealtimeWS] 已连接

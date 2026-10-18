@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/probe_original_contracts.py",
+    "npz-produced-metadata"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly",
+  "environment": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1"
+  },
+  "startedAt": "2026-10-17T13:13:33.365606+00:00",
+  "elapsedSeconds": 0.1007206249923911,
+  "rc": 1,
+  "stdoutSha256": "f2fb7acb47a6d1b6bd6f5678969c3f8e75b59cc017c3f94d451b84957fa9d83c",
+  "stderrSha256": "00d6c379705268d1a304ed00944d3b9ef0e9970f7838ab47e7604ff9ae709cc6"
+}

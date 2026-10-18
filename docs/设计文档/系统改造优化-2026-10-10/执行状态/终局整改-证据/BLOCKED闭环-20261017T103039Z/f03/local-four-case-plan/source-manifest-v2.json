@@ -1,0 +1,20 @@
+{
+  "frozenAt": "2026-10-17T12:39:54.537770+00:00",
+  "source": [
+    {
+      "path": "keeper-local-f03-v2.py",
+      "bytes": 34449,
+      "sha256": "225372ed218fdb770ebeab0c3b6d18c0c99f4433fc4a337d37331b9f652c511a"
+    }
+  ],
+  "preservedV1Sha256": "3597c3bc3826185dfeaf1b391239c70d7c043f27fb3518ce4d5feb19b27aa084",
+  "onlyChangedFunction": "capacity_observation",
+  "otherSourceBytesIdentical": true,
+  "actualExecutionByAuthor": [
+    "plan",
+    "lint",
+    "format-check",
+    "compile-no-import"
+  ],
+  "noServiceOrDatabaseWritePhaseExecuted": true
+}

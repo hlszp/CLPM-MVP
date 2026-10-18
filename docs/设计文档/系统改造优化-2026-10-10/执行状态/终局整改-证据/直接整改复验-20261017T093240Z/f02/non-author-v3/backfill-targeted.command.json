@@ -1,0 +1,15 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_backfill_recovery_and_skip.py",
+    "-p",
+    "no:cacheprovider",
+    "--junitxml=/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u76f4\u63a5\u6574\u6539\u590d\u9a8c-20261017T093240Z/f02/non-author-v3/backfill-targeted.junit.xml"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "exitCode": 0,
+  "elapsedSeconds": 1.861323292
+}

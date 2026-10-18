@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:04:27.191668+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "run-code",
+    "async (page) => { await page.getByRole('button',{name:'完 成',exact:true}).click(); await page.getByTestId('btn-batch-apply').click(); await page.getByTestId('loop-filter-keyword').fill('AUDIT-F04-UI-'); await page.getByTestId('loop-filter-keyword').press('Enter'); await page.getByText('共 251 条',{exact:true}).waitFor(); return {note:await page.getByTestId('loops-note').innerText()}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 2.0039524169988,
+  "stdout": "### Result\n{\"note\":\"选择面为全部回路（含未关联本模板的回路）；可按装置/位号筛选并翻页，跨页勾选自动保留；执行按单批 ≤200 自动分批提交\"}\n### Ran Playwright code\n```js\nawait (async (page) => { await page.getByRole('button',{name:'完 成',exact:true}).click(); await page.getByTestId('btn-batch-apply').click(); await page.getByTestId('loop-filter-keyword').fill('AUDIT-F04-UI-'); await page.getByTestId('loop-filter-keyword').press('Enter'); await page.getByText('共 251 条',{exact:true}).waitFor(); return {note:await page.getByTestId('loops-note').innerText()}; })(page);\n```\n",
+  "stderr": ""
+}

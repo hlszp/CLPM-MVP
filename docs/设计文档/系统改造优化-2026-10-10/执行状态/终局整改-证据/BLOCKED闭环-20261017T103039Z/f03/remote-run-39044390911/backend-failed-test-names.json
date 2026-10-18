@@ -1,0 +1,19 @@
+{
+  "source": "job-logs/117430116040.log",
+  "sha256": "da42318fe1e28fc27bbd67178579a050e35baf6a6eef5e96da9eae57e00f14a0",
+  "failedTests": [
+    {
+      "line": 5049,
+      "test": "tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent"
+    },
+    {
+      "line": 5052,
+      "test": "tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute"
+    },
+    {
+      "line": 5055,
+      "test": "tests/test_g3_app_applicability.py::TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded"
+    }
+  ],
+  "criticalActualKpi": "NOT_READ"
+}

@@ -1,0 +1,9 @@
+{
+  "v4Sha256": "83462d20d8fb8cbd0224722ae269eb3f87df5eb6a41b89c653edaff53c39f622",
+  "v5bSha256": "9fdc2b0314e4c54a483c59131383945677e86920171b4e2b7cd5ef88f10af1bd",
+  "outsideStopBytesUnchanged": true,
+  "businessGateFunctionBytesUnchanged": true,
+  "nativeControlCaptureSignalsSourceExact": true,
+  "captureSignalsSha256": "e1bbcd4770d1c8877454c17466d7bb229ec2cb9776e12703830ff64fc024758f",
+  "sourceManifestSha256": "caff6958d91a36a6583d72b4222ba63848e52224c9fa4d6134d073622fa3e631"
+}

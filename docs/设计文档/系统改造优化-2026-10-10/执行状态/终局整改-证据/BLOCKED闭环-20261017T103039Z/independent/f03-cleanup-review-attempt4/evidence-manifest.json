@@ -1,0 +1,63 @@
+{
+  "schema": "clpm-independent-evidence-manifest-v1",
+  "createdAt": "2026-10-17T14:23:17.998710+00:00",
+  "originalStopVerdict": "FAIL/rc1",
+  "actualCleanupClosure": "PASS",
+  "files": [
+    {
+      "path": "absolute-path-recovery-map.json",
+      "bytes": 25983,
+      "sha256": "b83e7461a9d150a21eb8ade953d2233c78ae553393abbe4199af3eca07d7bfa8"
+    },
+    {
+      "path": "original-archive-manifest.json",
+      "bytes": 21122,
+      "sha256": "7f957498ffd37f83901e7ebc6fc32148d23d2df402baf9cf11bd39045f7cef28"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 2659,
+      "sha256": "a1206f5c2233e95bea12aeaf04a5e3f84d57e7f343a65595ef240dd904f488b6"
+    },
+    {
+      "path": "shutdown-0.raw.log",
+      "bytes": 44,
+      "sha256": "868af945b9681d6079cb2a8418c7036e76e45a98f517d4ac559e81446443156e"
+    },
+    {
+      "path": "shutdown-1.raw.log",
+      "bytes": 41,
+      "sha256": "6d11f7d1071e758329cc201575ea3b5795b6a5a6d094b19c7fbe238e6bec0592"
+    },
+    {
+      "path": "shutdown-2.raw.log",
+      "bytes": 42,
+      "sha256": "83edb4b9e6ed542d2569233df2a6445d1fc7e7f2b51a4790205f93fe04c2f486"
+    },
+    {
+      "path": "verification.command.json",
+      "bytes": 666,
+      "sha256": "72ab523fea5421cdcc5f118f86e385417d440cf6a368a99c09fd5787223044fb"
+    },
+    {
+      "path": "verification.json",
+      "bytes": 13677,
+      "sha256": "021ac891af0b95363ca5fbdf2c16d2a67622952c05e65b24448dda25b8598b95"
+    },
+    {
+      "path": "verification.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification.stdout.log",
+      "bytes": 1118,
+      "sha256": "3c4033528b852ac7eeb0722ad32011c3b893a9bae12e6a5d1f3a470b2330a84e"
+    },
+    {
+      "path": "verify_attempt4_cleanup.frozen.py",
+      "bytes": 8242,
+      "sha256": "a89fc0c89e5bc03ab76be153ea6e51b322028fd441ca3eff325432e5659b89dd"
+    }
+  ]
+}

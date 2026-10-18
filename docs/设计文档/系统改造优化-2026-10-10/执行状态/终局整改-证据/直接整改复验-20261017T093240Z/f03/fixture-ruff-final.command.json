@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "check",
+    "../e2e/scripts/prepare-critical-fixture.py",
+    "../e2e/scripts/test_critical_fixture.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "envOverrides": {},
+  "rc": 0,
+  "seconds": 0.020590834000000058,
+  "stdout": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u76f4\u63a5\u6574\u6539\u590d\u9a8c-20261017T093240Z/f03/fixture-ruff-final.stdout.log",
+  "stderr": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u76f4\u63a5\u6574\u6539\u590d\u9a8c-20261017T093240Z/f03/fixture-ruff-final.stderr.log",
+  "stdoutSha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

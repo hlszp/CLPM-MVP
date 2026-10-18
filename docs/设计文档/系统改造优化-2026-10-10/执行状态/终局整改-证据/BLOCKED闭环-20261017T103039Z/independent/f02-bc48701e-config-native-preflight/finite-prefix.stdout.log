@@ -1,0 +1,23 @@
+{
+  "verdict": "PASS_FINITE_CONFIG_AND_NATIVE_PREFLIGHT",
+  "all25TablesUnchanged": true,
+  "history7000NoFurtherChanges": true,
+  "polls": 128,
+  "from": "2026-10-17T15:29:26.422232+00:00",
+  "through": "2026-10-17T15:33:40.985598+00:00",
+  "maxGapSeconds": 2.007089666003594,
+  "allRawPsAndGitRc0": true,
+  "allSevenCwdAndMappedExeConfirmed": true,
+  "mappedExe": "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/bin/python3.12",
+  "lsofCopies": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-bc48701e-config-native-preflight/native-prefix/first-seen-lsof/0000000.json",
+      "bytes": 127134,
+      "sha256": "a8a7736cd1c28e7c62aff484c15e2619095d01a2be74897302250243bd3ede4a"
+    }
+  ],
+  "loadedAlgorithmMemoryClaim": false,
+  "newLiveDbDockerApiOrProcessCommands": 0,
+  "futureSeriesAccepted": false,
+  "formalReadyClaim": false
+}

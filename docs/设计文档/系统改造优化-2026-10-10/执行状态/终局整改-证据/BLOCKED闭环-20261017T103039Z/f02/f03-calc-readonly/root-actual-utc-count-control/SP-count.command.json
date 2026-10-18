@@ -1,0 +1,17 @@
+{
+  "role": "SP",
+  "pointId": "4431bb12-1530-423c-a3bc-1a01a8c8f27c",
+  "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='4431bb12-1530-423c-a3bc-1a01a8c8f27c' AND ts >= 1792234800000 AND ts <= 1792238400000",
+  "startedAt": "2026-10-17T13:17:01.331426+00:00",
+  "finishedAt": "2026-10-17T13:17:01.335697+00:00",
+  "httpStatus": 200,
+  "serverCode": 0,
+  "data": [
+    [
+      3
+    ]
+  ],
+  "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/SP-count.body.json",
+  "bytes": 72,
+  "sha256": "dfae4a29f7f21d8d1a8eb3a3ad75824cc1a5f43ceac2d86f0521daf71dd24aa7"
+}

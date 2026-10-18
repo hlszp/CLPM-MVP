@@ -1,0 +1,104 @@
+[
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/console-2026-10-17T09-39-34-092Z.log",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/console-2026-10-17T09-39-34-092Z.log",
+    "bytes": 1258,
+    "sha256": "f9de9a9b50353ca112e777d045294fb165dd18448aa2aac56111e71d569c57b1"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/console-2026-10-17T09-55-55-943Z.log",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/console-2026-10-17T09-55-55-943Z.log",
+    "bytes": 2965,
+    "sha256": "d63841964446c1b2144ac1f9a26d115437d7e19d8f4718dba77804fca98ae2ba"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/console-2026-10-17T10-03-16-655Z.log",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/console-2026-10-17T10-03-16-655Z.log",
+    "bytes": 1374,
+    "sha256": "7e9ce1321b9d4bd653265f3c5316d7373c36db23a11b2189ec0aecde254a2733"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-39-34-239Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-39-34-239Z.yml",
+    "bytes": 64,
+    "sha256": "75814f6296248f98b07cc98fe75ce229bff466e94ad8e79bba88d9914a6c61f7"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-40-02-487Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-40-02-487Z.yml",
+    "bytes": 4241,
+    "sha256": "ec65301eeb591be0af7908a9c9e455e2ef953d887136f8913c6adfbeebe43dc0"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-40-30-620Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-40-30-620Z.yml",
+    "bytes": 3857,
+    "sha256": "6511b9c14dd7feb19ff2b14057515752b545e8ac1b81f14d02291183cd68380c"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-40-57-008Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-40-57-008Z.yml",
+    "bytes": 26387,
+    "sha256": "85a2be7dd8ce8f40c2c1a2c19dc99b68b768edd074605641aaf06ffff6548299"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-42-02-021Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-42-02-021Z.yml",
+    "bytes": 27557,
+    "sha256": "77254ffcc6a80b0a2ce93152070d2f81c50e7c32f4fcb6018f4e7a9141fb0f5e"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-44-55-828Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-44-55-828Z.yml",
+    "bytes": 9048,
+    "sha256": "7fabadebaf9614eef43536ea9cc66d7e810037600e136abfa9ebb5a57660005a"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-45-46-488Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-45-46-488Z.yml",
+    "bytes": 64,
+    "sha256": "75814f6296248f98b07cc98fe75ce229bff466e94ad8e79bba88d9914a6c61f7"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-46-32-495Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-46-32-495Z.yml",
+    "bytes": 9709,
+    "sha256": "fd8d52ad2a62675b6a5ac88bfb731dc8554ee7b1531820b7e1cd32b811825476"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-47-02-520Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-47-02-520Z.yml",
+    "bytes": 2130,
+    "sha256": "8d53dc3b6100733987784580144839c6e0c7d2464dfc605fd2217518aa1ca31f"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-55-57-226Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-55-57-226Z.yml",
+    "bytes": 2282,
+    "sha256": "a350f5b67a783e5ef63e61efdfcb1c0424602a5304cbf13ad0558f789a93543d"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T09-59-25-950Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T09-59-25-950Z.yml",
+    "bytes": 8752,
+    "sha256": "e68c7f38607d2a216565a21aebee69a0bc801d143987f895c57e743a8988e739"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T10-02-36-962Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T10-02-36-962Z.yml",
+    "bytes": 64,
+    "sha256": "75814f6296248f98b07cc98fe75ce229bff466e94ad8e79bba88d9914a6c61f7"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T10-03-16-700Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T10-03-16-700Z.yml",
+    "bytes": 64,
+    "sha256": "75814f6296248f98b07cc98fe75ce229bff466e94ad8e79bba88d9914a6c61f7"
+  },
+  {
+    "source": "/Users/zhangping/DEV/clpm-remediation-20261017/.playwright-cli/page-2026-10-17T10-10-16-662Z.yml",
+    "copy": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/browser-artifacts/page-2026-10-17T10-10-16-662Z.yml",
+    "bytes": 14701,
+    "sha256": "20f3b3135d7d283a06236c8170278dc4ac7ec8646309054644e3e96fbd3c9c81"
+  }
+]

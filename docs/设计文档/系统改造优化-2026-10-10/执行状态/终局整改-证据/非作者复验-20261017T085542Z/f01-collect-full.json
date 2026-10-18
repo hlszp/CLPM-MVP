@@ -1,0 +1,29 @@
+{
+  "name": "f01-collect-full",
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "--collect-only",
+    "-q",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/candidate/backend",
+  "environment": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/candidate/backend",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "1",
+    "REDIS_HOST": "127.0.0.1",
+    "REDIS_PORT": "1"
+  },
+  "started_at": "2026-10-17T08:56:41.146422+00:00",
+  "elapsed_seconds": 13.27883366702008,
+  "exit_code": 0,
+  "stdout_sha256": "6e06ad176c7a2cf26394ed45ade16ac13c5b301c5e2d38fbd1c9116603ba04fb",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

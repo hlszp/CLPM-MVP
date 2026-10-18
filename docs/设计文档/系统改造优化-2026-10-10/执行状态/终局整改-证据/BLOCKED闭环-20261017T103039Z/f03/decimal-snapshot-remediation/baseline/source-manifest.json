@@ -1,0 +1,32 @@
+[
+  {
+    "path": "backend/app/services/calc_snapshot.py",
+    "bytes": 82854,
+    "sha256": "ed09e17551c299c2c257c1e4bfaee780f1a185f07e2026f4a20f29a0fd6df028"
+  },
+  {
+    "path": "backend/tests/test_calc_snapshot.py",
+    "bytes": 45621,
+    "sha256": "d6fe4f4ae515c8bda08664b6d237449d74c232b8bdae3cecb5fadf2ca7a3a225"
+  },
+  {
+    "path": "backend/app/services/loop_config.py",
+    "bytes": 16235,
+    "sha256": "45e76c25ca59945265cdf15942f27604c37f12e0d983148e48f9a6b7eb69e5b8"
+  },
+  {
+    "path": "backend/app/models/loop_config.py",
+    "bytes": 5708,
+    "sha256": "439723b9928a576aa89ece74430347b920aa40a567a4395e75a938180d065b73"
+  },
+  {
+    "path": "backend/app/services/result_ledger.py",
+    "bytes": 20968,
+    "sha256": "bebc1ab26b063d05ea0c6f75b991793f77811d335cece892a6eaa3f8e5b8c269"
+  },
+  {
+    "path": "backend/app/tasks/kpi_calc.py",
+    "bytes": 255572,
+    "sha256": "116d5db6f073bc9ec352a6348b6eda943f5e385df3736874b5acb88097d58172"
+  }
+]

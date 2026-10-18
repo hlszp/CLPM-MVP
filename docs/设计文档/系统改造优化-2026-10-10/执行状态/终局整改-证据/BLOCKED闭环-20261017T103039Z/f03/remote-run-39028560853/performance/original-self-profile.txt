@@ -1,0 +1,48 @@
+         2949925 function calls (2767926 primitive calls) in 14.180 seconds
+
+   Ordered by: internal time
+   List reduced from 664 to 40 due to restriction <40>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+    18967    7.720    0.000    8.787    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/arx.py:58(identify_arx)
+       27    3.463    0.128    3.654    0.135 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py:35(identify_armax)
+     2459    0.883    0.000    0.884    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4532(_residual_var_on_common_window)
+    24018    0.611    0.000    0.804    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:2417(lstsq)
+    19558    0.136    0.000    0.222    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:148(_var)
+      142    0.132    0.001    0.138    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:228(_simulate_disturbance_free)
+       38    0.099    0.003    0.271    0.007 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:136(identify_clivc4)
+   110459    0.091    0.000    0.091    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+    43060    0.043    0.000    0.048    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:73(_count_reduce_items)
+       21    0.042    0.002    7.783    0.371 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:3974(_reselect_uncertainty)
+    23502    0.036    0.000    0.086    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:115(_mean)
+       49    0.033    0.001    0.054    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:2706(_compute_parameter_uncertainty)
+    53350    0.032    0.000    0.032    0.000 {built-in method numpy.zeros}
+       22    0.031    0.001   14.096    0.641 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:1405(identify_from_history)
+    40185    0.031    0.000    0.060    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:66(_wrapreduction)
+    25548    0.029    0.000    0.057    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:201(_commonType)
+      136    0.027    0.000    0.028    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4565(_free_run_simulation)
+       38    0.026    0.001    0.029    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:50(identify_clivc)
+    39706    0.025    0.000    0.088    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:2342(sum)
+    75848    0.025    0.000    0.025    0.000 {method 'astype' of 'numpy.ndarray' objects}
+103525/22    0.024    0.000    0.044    0.002 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/dataclasses.py:1332(_asdict_inner)
+    19450    0.024    0.000    0.244    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:4075(var)
+   132817    0.022    0.000    0.024    0.000 {built-in method builtins.max}
+    14263    0.020    0.000    6.626    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4017(_bic_at)
+    49746    0.018    0.000    0.027    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:163(_makearray)
+   218709    0.018    0.000    0.018    0.000 {built-in method builtins.issubclass}
+     1174    0.015    0.000    0.069    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/lib/_polynomial_impl.py:168(roots)
+       22    0.015    0.001    0.058    0.003 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py:205(iterencode)
+       44    0.015    0.000    0.015    0.000 {built-in method numpy._core._multiarray_umath.correlate2}
+       44    0.015    0.000    0.019    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/excitation.py:31(check_excitation)
+    23392    0.015    0.000    0.100    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:3737(mean)
+   132249    0.014    0.000    0.014    0.000 {built-in method builtins.isinstance}
+    41160    0.014    0.000    0.021    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:509(_mean)
+    50581    0.013    0.000    0.013    0.000 {built-in method builtins.round}
+    75039    0.013    0.000    0.020    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:182(_realType)
+    25667    0.013    0.000    0.028    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_ufunc_config.py:472(__enter__)
+     1174    0.012    0.000    0.021    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:1181(eigvals)
+       13    0.012    0.001    0.012    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_annotated_loops_evaluation.py:91(_sim_fopdt_closed)
+   104967    0.011    0.000    0.011    0.000 {method 'get' of 'dict' objects}
+94325/20923    0.011    0.000    0.037    0.000 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/dataclasses.py:1373(<genexpr>)
+
+

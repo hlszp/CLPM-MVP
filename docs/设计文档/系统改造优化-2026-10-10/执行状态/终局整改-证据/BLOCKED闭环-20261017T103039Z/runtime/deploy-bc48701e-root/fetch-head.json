@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "git",
+    "rev-parse",
+    "FETCH_HEAD"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+  "startedAtUtc": "2026-10-17T15:18:55.372150+00:00",
+  "finishedAtUtc": "2026-10-17T15:18:55.383132+00:00",
+  "rc": 0,
+  "durationSeconds": 0.010996875003911555,
+  "stdoutSha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

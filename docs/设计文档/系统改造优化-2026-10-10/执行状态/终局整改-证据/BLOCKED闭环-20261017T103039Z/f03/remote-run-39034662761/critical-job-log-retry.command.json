@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "repos/hlszp/CLPM-MVP/actions/jobs/117401964559/logs"
+  ],
+  "startedAt": "2026-10-17T13:06:10.987394+00:00",
+  "finishedAt": "2026-10-17T13:06:16.154277+00:00",
+  "rc": 0,
+  "timedOut": false,
+  "stdoutSha256": "2a5adfda3871295714de24c0522db44af4ed599c3f09c6eedd0676d6f3f98fb2",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

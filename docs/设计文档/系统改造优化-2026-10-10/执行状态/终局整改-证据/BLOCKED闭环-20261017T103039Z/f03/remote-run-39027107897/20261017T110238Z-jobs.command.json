@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "repos/hlszp/CLPM-MVP/actions/runs/39027107897/jobs?per_page=100"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "rc": 0,
+  "observedAt": "2026-10-17T11:02:40.064226+00:00",
+  "stdout_sha256": "821569ed0e616422871d1b863e2b30d76b26f7725fd823fc89e96229e71f0a49",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

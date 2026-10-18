@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/probe_config_after_archive.py",
+    "--source",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/freeze_capacity_configuration_v2.py",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/fixed-green"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2",
+  "startedAt": "2026-10-17T14:00:51.298225+00:00",
+  "finishedAt": "2026-10-17T14:00:54.216826+00:00",
+  "rc": 0,
+  "probeSha256": "8b146b3ef75504632e093d7fe049445ca888dd39ab9b3225172b526c9b3b06e6",
+  "sourceSha256": "2688732523d3f9300c9d11e2dbf9194248a7be195c18cbfa313f5bbf020e66e5",
+  "stdoutSha256": "c591c370473e477e8925dd85de188cb8697e4ec55fcaa2f153c1250f8d7df496",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

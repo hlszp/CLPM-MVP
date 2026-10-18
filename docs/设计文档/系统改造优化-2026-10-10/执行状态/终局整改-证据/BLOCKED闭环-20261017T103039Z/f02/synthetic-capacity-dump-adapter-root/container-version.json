@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "docker",
+    "exec",
+    "clpm-mvp-postgres",
+    "pg_dump",
+    "--version"
+  ],
+  "startedAt": "2026-10-17T14:59:37.062516+00:00",
+  "finishedAt": "2026-10-17T14:59:37.144455+00:00",
+  "rc": 0,
+  "stdoutSha256": "9c2e57c048e0f1c8f478e223ffcb137d62893b98957db6b639863486cc4ef12c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

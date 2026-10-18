@@ -1,0 +1,636 @@
+"""8 步预处理 Pipeline.
+
+将原始时序数据（来自 TDengine）预处理为标准化 DataBlock，包含：
+质量码识别 → 有效性标记 → 量程归一化 → 异常值检测 → 缺失率统计 →
+连续性检查 → Metric Mask → QualitySummary。
+
+核心原则（KEEP_ALL_WITH_VALIDITY, 算法说明 §3.4.1）：
+    - 不删除任何数据点
+    - 通过 valid 标记区分有效/无效
+    - 不同指标通过 Metric Validity Mask 决定哪些点参与计算
+
+设计依据：算法说明 §3.4.2, PRD §5.5, FDS §5.3.1.2
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+from app.contracts.data_types import (
+    DataBlock,
+    LoopPreprocessConfig,
+    OutlierReason,
+    QualityStatus,
+    RawTimeSeries,
+    TagGroup,
+)
+from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.metric_calculator.time_axis import to_half_open, utc
+from app.services.preprocessing.data_quality_assessor import CORE_TAGS, DataQualityAssessor
+from app.services.preprocessing.outlier_detection import OutlierDetector
+from app.services.preprocessing.quality_code import (
+    is_nan_or_inf,
+    map_quality_code,
+)
+from app.services.preprocessing.quality_summary import (
+    compute_consecutive_segments,
+    compute_median_interval,
+    compute_quality_summary,
+    compute_time_coverage,
+    split_segments_at_boundaries,
+)
+from app.services.preprocessing.thresholds import get_threshold
+from app.services.preprocessing.validity_mask import apply_mask
+
+logger = logging.getLogger(__name__)
+
+# 需要量程归一化的信号（连续模拟量）
+_NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
+
+# 跳过冻结值检测的信号（稳态时变化小或常态为常量，冻结检测易误报）
+# SP: 操作员设定的设定值，长时间不变是正常的
+# MODE: 控制模式（AUTO/MANUAL），离散值
+# PID_P/PID_I/PID_D: PID 整定参数，工程师设定后保持不变
+# OP: 稳态时 OP 变化幅度小（std < frozen_std_pct×range），FROZEN 检测会误报；
+#     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
+_SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
+
+# G5：UNKNOWN 覆盖不计核心有效率、上下文使用真实网格周期；换键禁止复用旧块。
+PREPROCESS_VERSION = "pre_v2"
+
+# R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
+# 日志用于定位"数据窗口缺口"型低可信度的根因）
+_LOW_COVERAGE_WARN_THRESHOLD = 0.9
+
+
+class PreprocessingPipeline:
+    """8 步预处理 Pipeline 编排器.
+
+    将 RawTimeSeries 预处理为 DataBlock，执行以下 8 步
+    （算法说明 §3.4.2）：
+
+    ① 质量码识别 → ② 有效性标记 → ③ 量程归一化 → ④ 异常值识别 →
+    ⑤ 缺失率统计 → ⑥ 连续性检查 → ⑦ Metric Mask → ⑧ QualitySummary
+
+    执行顺序说明：步骤②依赖④的异常值检测结果，因此实际执行顺序为
+    ①→③→④→②→⑤→⑥→⑧，⑦在 DataPlanner 组装 MetricDataBundle 时调用。
+
+    设计依据：算法说明 §3.4.2, PRD §5.5
+    """
+
+    def __init__(self, config: LoopPreprocessConfig) -> None:
+        self.config = config
+        self.threshold = get_threshold(config.control_type)
+        self.detector = OutlierDetector(self.threshold)
+
+    def process(
+        self,
+        raw: RawTimeSeries,
+        tag_group: TagGroup,
+        window: tuple[Any, Any] | None = None,
+    ) -> DataBlock:
+        """执行 8 步预处理 Pipeline，生成 DataBlock.
+
+        Args:
+            raw: 原始时序数据（来自 TDengine）
+            tag_group: 数据所属的 tagGroup
+            window: 查询窗口 ``(start, end)``，用于 R14 时间覆盖率计算
+                （可感知窗口头尾整段缺失）；None 时退化为数据首尾跨度
+
+        Returns:
+            预处理后的 DataBlock（含 valid 标记 + 异常原因码 + 质量摘要）
+
+        设计依据：算法说明 §3.4.2；R14（2026-09-06）：sampling_freq 反映
+        实际中位间隔、时间覆盖率折入可信度判定
+        """
+        n = len(raw.timestamps)
+        loop_id = self.config.loop_id
+
+        # R14-1：sampling_freq 反映**实际**采样（相邻 ts 中位间隔），
+        # 不得沿用控制类型名义标签——稀疏 COV 数据（如 30s 间隔）标签为
+        # "1s" 会让 ARMA 类算法按错误时间尺度计算。中位间隔不可得
+        # （点数 < 2 / 不可比较）时回落名义标签。
+        median_interval = compute_median_interval(raw.timestamps)
+        if median_interval is not None and median_interval > 0:
+            freq_label = f"{max(1, round(median_interval))}s"
+        else:
+            freq_label = self.threshold.sampling_freq_label
+        data_block_id = f"db_{loop_id}_{tag_group.value}_{freq_label}"
+
+        logger.debug(
+            "Pipeline.process: loop=%s, tagGroup=%s, points=%d, controlType=%s",
+            loop_id,
+            tag_group.value,
+            n,
+            self.config.control_type.value,
+        )
+
+        # 初始化信号和有效性
+        signals: dict[str, list[Any]] = {}
+        validity: dict[str, list[bool]] = {}
+        outlier_reasons: dict[str, list[list[str]]] = {}
+
+        for tag_name, values in raw.signals.items():
+            signals[tag_name] = list(values)
+            validity[f"{tag_name}_valid"] = [True] * n
+            outlier_reasons[tag_name] = [[] for _ in range(n)]
+
+        # Step ① 质量码识别（算法说明 §3.4.2 步骤①）
+        quality_status_map = self._step1_identify_quality(raw)
+
+        # Step ③ 量程归一化（算法说明 §3.4.2 步骤③）
+        signals = self._step3_normalize(signals)
+
+        # Step ④ 异常值识别（算法说明 §3.4.2 步骤④, §3.4.3）
+        all_outlier_reasons = self._step4_detect_outliers(raw, signals, tag_group)
+
+        # Step ② 有效性标记（算法说明 §3.4.2 步骤②）
+        # 基于质量码 + 异常值检测结果，设置 valid=True/False
+        validity, outlier_reasons = self._step2_mark_validity(
+            n, quality_status_map, all_outlier_reasons, raw.signals
+        )
+
+        # 计算 all_valid（所有信号 valid 的交集）
+        all_valid = self._compute_all_valid(validity, n)
+
+        # Step ⑤ 缺失率统计（算法说明 §3.4.2 步骤⑤）
+        # 在 QualitySummary 中计算（步骤⑧）
+
+        # Step ⑥ 连续性检查（算法说明 §3.4.2 步骤⑥）+ P3-08b 跨 gap 禁拼接：
+        # 缺口/改绑/量程单位解释切换是动态片段边界，不得删除后拼成连续信号
+        # （契约 §2.3）。切割规则（管道层强制）：
+        #   a) all_valid=False 槽切断（既有口径）；
+        #   b) 覆盖 UNKNOWN 槽（含 gap 内保留 COV 值但无依据的槽——P0 修复
+        #      后值仍在、valid 仍真，正是曾经的跨 gap 拼接漏洞）切断；
+        #   c) series_context.segment_boundaries 边界把段一分为二（两侧保留）。
+        # legacy（无上下文）行为完全不变。
+        consecutive_segments = self._step6_continuity_check(raw, all_valid)
+
+        # Step ⑧ QualitySummary 生成（算法说明 §3.4.2 步骤⑧）
+        # 窗口边界提前解析（R14 覆盖率与 P3-08b 查询窗/时间摘要共用）
+        window_start = window[0] if window else None
+        window_end = window[1] if window else None
+        pv_quality_codes = raw.quality_codes.get("pv_quality")
+        # AD03/I05：point 上下文的 PV 未知槽数（覆盖依据）传给缺失统计；
+        # legacy（无上下文）传 None 保持原行数差口径
+        _ctx = getattr(raw, "series_context", None)
+        # P3-08b：时间口径摘要（window/unknown 秒数，与 R/Auto/Sat 分母可对账；
+        # 窗口不可得（无查询窗且无上下文）→ 两字段 None=未记录）
+        _window_seconds, _unknown_seconds = self._time_quality_seconds(raw, window)
+        quality_summary = compute_quality_summary(
+            validity=validity,
+            timestamps=raw.timestamps,
+            point_count=n,
+            quality_codes=pv_quality_codes,
+            expected_interval_s=float(self.threshold.base_sampling_freq),
+            unknown_slot_count=(
+                _ctx.unknown_slots("pv") if _ctx is not None and _ctx.is_point else None
+            ),
+            window_seconds=_window_seconds,
+            unknown_seconds=_unknown_seconds,
+        )
+
+        # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
+        # loop_valid_rate = 核心 tag（pv/sp/op/mode）交集 / point_count，
+        # 由共享内核 compute_loop_valid_rate 统一计算（缺失 tag 跳过）。
+        # loop_confidence_level 一次算出，所有指标经 _make_result 直接读取。
+        #
+        # R14-2（2026-09-06）：时间覆盖率（去重点数 / 窗口期望点数，期望按
+        # 契约采样间隔 threshold.base_sampling_freq 计）折入可信度判定：
+        # 有效可信度 = 回路级 valid_rate × 时间覆盖率（语义 = 有效点数/期望点数）。
+        # 120 个 Good 点 / 30s 间隔 / 跨 1 小时（coverage≈3.3%）不再获得
+        # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
+        # （INCONCLUSIVE 兼容口径）处理。
+        # point/mixed 的 UNKNOWN 槽可能保留 Good 原值，数值 validity 不能
+        # 代替覆盖依据。复用连续性逐槽 known 判定，但不以最短连续段门禁
+        # 过滤有效点；只扣核心角色，PID 等非评估信号不拉低回路有效率。
+        # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
+        confidence_validity = validity
+        if _ctx is not None and _ctx.role_coverage:
+            known_mask = self._stitchable_mask(raw, [True] * n, roles=CORE_TAGS)
+            confidence_validity = {
+                key: [valid and known_mask[i] for i, valid in enumerate(validity[key])]
+                for tag in CORE_TAGS
+                if (key := f"{tag}_valid") in validity
+            }
+        raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(confidence_validity, n)
+        time_coverage = compute_time_coverage(
+            raw.timestamps,
+            expected_interval_s=float(self.threshold.base_sampling_freq),
+            window_start=window_start,
+            window_end=window_end,
+        )
+        loop_valid_rate = raw_loop_valid_rate * time_coverage
+        loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
+
+        if time_coverage < _LOW_COVERAGE_WARN_THRESHOLD:
+            logger.warning(
+                "[Pipeline] 时间覆盖率低（已折入可信度）: loop=%s, tagGroup=%s, "
+                "points=%d, coverage=%.4f, contract_interval_s=%s, "
+                "raw_loop_valid_rate=%.4f → effective=%.4f（level=%s）",
+                loop_id,
+                tag_group.value,
+                n,
+                time_coverage,
+                self.threshold.base_sampling_freq,
+                raw_loop_valid_rate,
+                loop_valid_rate,
+                loop_confidence_level,
+            )
+
+        # 诊断日志：loop_confidence 为 E 时打印 validity 详情（定位全回路 E 不足根因）
+        if loop_confidence_level == "E":
+            core_tag_stats: dict[str, str] = {}
+            for tag in ("pv", "sp", "op", "mode"):
+                key = f"{tag}_valid"
+                arr = validity.get(key)
+                if arr is None:
+                    core_tag_stats[tag] = "MISSING"
+                else:
+                    tcount = sum(1 for x in arr if x)
+                    core_tag_stats[tag] = f"{tcount}/{len(arr)}"
+
+            # 对 valid_count=0 的核心 tag，统计异常原因分布
+            reason_stats: dict[str, dict[str, int]] = {}
+            for tag in ("pv", "sp", "op", "mode"):
+                arr = validity.get(f"{tag}_valid")
+                if arr is not None and sum(1 for x in arr if x) == 0:
+                    reasons = outlier_reasons.get(tag, [])
+                    counter: dict[str, int] = {}
+                    for r_list in reasons:
+                        for r in r_list:
+                            counter[r] = counter.get(r, 0) + 1
+                    reason_stats[tag] = counter
+
+            logger.warning(
+                "[Pipeline] loop_confidence=E: loop=%s, tagGroup=%s, points=%d, "
+                "loop_valid_rate=%.4f, core_tag_valid={%s}, "
+                "validity_keys=%s, signals_keys=%s, "
+                "zero_valid_reasons=%s",
+                loop_id,
+                tag_group.value,
+                n,
+                loop_valid_rate,
+                ", ".join(f"{k}={v}" for k, v in core_tag_stats.items()),
+                list(validity.keys()),
+                list(signals.keys()),
+                reason_stats,
+            )
+
+        # 组装 DataBlock
+        data_block = DataBlock(
+            data_block_id=data_block_id,
+            loop_id=loop_id,
+            tag_group=tag_group.value,
+            sampling_freq=freq_label,
+            timestamps=list(raw.timestamps),
+            signals=signals,
+            validity=validity,
+            outlier_reasons=outlier_reasons,
+            quality_summary=quality_summary,
+            consecutive_segments=consecutive_segments,
+            config_version=self.config.config_version,
+            preprocess_version=PREPROCESS_VERSION,
+            point_count=n,
+            # P0-B: 注入响应类别（STABLE/SLOW/FAST/LOGIC），供指标计算器读取算法参数
+            control_type=self.config.response_category,
+            # P2-1: 回路级可信度（所有指标共享）
+            loop_confidence_level=loop_confidence_level,
+            # AD02：数据上下文透传（point 路径的网格/覆盖/分段边界随块传递；
+            # legacy 输入 series_context=None，行为不变）
+            series_context=getattr(raw, "series_context", None),
+            loop_valid_rate=loop_valid_rate,
+            # P3-08b（O-2）：查询窗口（含尾口径随块传递；半开换算只在
+            # time_axis 一处）。窗口不可得 → None（时间视图回落网格/legacy）
+            query_window_start=window_start,
+            query_window_end=window_end,
+        )
+
+        logger.debug(
+            "Pipeline.process done: %s, block_valid_rate=%.4f, "
+            "loop_valid_rate=%.4f, loop_confidence=%s, segments=%d",
+            data_block_id,
+            quality_summary.valid_rate,
+            loop_valid_rate,
+            loop_confidence_level,
+            len(consecutive_segments),
+        )
+        return data_block
+
+    # -------------------------------------------------------------------
+    # Step ① 质量码识别
+    # -------------------------------------------------------------------
+
+    def _step1_identify_quality(self, raw: RawTimeSeries) -> dict[str, list[QualityStatus]]:
+        """步骤①：将原始质量码映射为 Good/Bad/Unknown 三态.
+
+        设计依据：算法说明 §3.4.2 步骤①, §4.1.2
+        """
+        result: dict[str, list[QualityStatus]] = {}
+        for tag_name, codes in raw.quality_codes.items():
+            # pv_quality → pv 的质量码
+            base_tag = tag_name.replace("_quality", "")
+            result[base_tag] = [map_quality_code(c) for c in codes]
+        return result
+
+    # -------------------------------------------------------------------
+    # Step ② 有效性标记
+    # -------------------------------------------------------------------
+
+    def _step2_mark_validity(
+        self,
+        n: int,
+        quality_status_map: dict[str, list[QualityStatus]],
+        all_outlier_reasons: dict[str, dict[int, list[OutlierReason]]],
+        raw_signals: dict[str, list[Any]],
+    ) -> tuple[dict[str, list[bool]], dict[str, list[list[str]]]]:
+        """步骤②：基于质量码 + 异常值检测结果设置 valid 标记.
+
+        规则（算法说明 §3.4.1, §3.4.3）：
+            - 质量码为 Bad/Unknown → valid=False（QC_BAD）
+            - 非 MARK_ONLY 异常原因 → valid=False
+            - TS_ANOMALY / HF_NOISE / FROZEN → 仅标记，valid 保持 True
+              （FROZEN 仅标记：平稳良好回路 PV 低方差不判无效，
+              真仪表卡死由 instrument_fault_rate 复合判据识别）
+
+        Returns:
+            (validity_dict, outlier_reasons_dict)
+        """
+        validity: dict[str, list[bool]] = {}
+        outlier_reasons: dict[str, list[list[str]]] = {}
+
+        for tag_name in raw_signals:
+            valid_arr = [True] * n
+            reasons_arr: list[list[str]] = [[] for _ in range(n)]
+
+            # 质量码判定
+            if tag_name in quality_status_map:
+                statuses = quality_status_map[tag_name]
+                for i, status in enumerate(statuses):
+                    if i < n and status != QualityStatus.GOOD:
+                        valid_arr[i] = False
+                        reasons_arr[i].append(OutlierReason.QC_BAD.value)
+
+            # 异常值检测结果
+            tag_outliers = all_outlier_reasons.get(tag_name, {})
+            for idx, reasons in tag_outliers.items():
+                if idx >= n:
+                    continue
+                for reason in reasons:
+                    reasons_arr[idx].append(reason.value)
+                    # 非 MARK_ONLY 原因置 valid=False
+                    if OutlierDetector.should_invalidate([reason]):
+                        valid_arr[idx] = False
+
+            validity[f"{tag_name}_valid"] = valid_arr
+            outlier_reasons[tag_name] = reasons_arr
+
+        return validity, outlier_reasons
+
+    # -------------------------------------------------------------------
+    # Step ③ 量程归一化
+    # -------------------------------------------------------------------
+
+    def _step3_normalize(self, signals: dict[str, list[Any]]) -> dict[str, list[Any]]:
+        """步骤③：PV/SP/OP 按各自量程归一化为百分比（0~100）.
+
+        归一化公式：normalized = (value - range_min) / (range_max - range_min) × 100
+        - PV/SP 用 PV tag 量程（``config.range_min/range_max``）
+        - OP 用 OP tag 量程（``config.op_range_min/op_range_max``），因为 OP 是百分比
+          输出（0-100%），物理量程与 PV 不同，共用 PV 量程会导致归一化越界
+        MODE 和 PV_QUALITY 不归一化（离散值/质量码）。
+
+        设计依据：算法说明 §3.4.2 步骤③
+        """
+        pv_span = self.config.range_max - self.config.range_min
+        op_span = self.config.op_range_max - self.config.op_range_min
+        if abs(pv_span) < 1e-9:
+            logger.warning(
+                "PV range span is zero (min=%s, max=%s), skip PV/SP normalization",
+                self.config.range_min,
+                self.config.range_max,
+            )
+        if abs(op_span) < 1e-9:
+            logger.warning(
+                "OP range span is zero (min=%s, max=%s), skip OP normalization",
+                self.config.op_range_min,
+                self.config.op_range_max,
+            )
+
+        normalized: dict[str, list[Any]] = {}
+        for tag_name, values in signals.items():
+            if tag_name == "op":
+                r_min, r_span = self.config.op_range_min, op_span
+            elif tag_name in ("pv", "sp"):
+                r_min, r_span = self.config.range_min, pv_span
+            else:
+                normalized[tag_name] = list(values)
+                continue
+            if abs(r_span) < 1e-9:
+                normalized[tag_name] = list(values)
+                continue
+            norm_vals: list[Any] = []
+            for v in values:
+                if is_nan_or_inf(v):
+                    norm_vals.append(v)  # NaN 保持原样
+                else:
+                    try:
+                        norm_vals.append((float(v) - r_min) / r_span * 100.0)
+                    except (ValueError, TypeError):
+                        norm_vals.append(v)
+            normalized[tag_name] = norm_vals
+        return normalized
+
+    # -------------------------------------------------------------------
+    # Step ④ 异常值识别
+    # -------------------------------------------------------------------
+
+    def _step4_detect_outliers(
+        self,
+        raw: RawTimeSeries,
+        normalized_signals: dict[str, list[Any]],
+        tag_group: TagGroup,
+    ) -> dict[str, dict[int, list[OutlierReason]]]:
+        """步骤④：对每个信号执行 8 类异常值检测.
+
+        在归一化后的数据上检测（阈值转为绝对值）。
+        返回每个信号每个异常点的异常原因码列表。
+
+        设计依据：算法说明 §3.4.2 步骤④, §3.4.3-3.4.4
+        """
+        result: dict[str, dict[int, list[OutlierReason]]] = {}
+        for tag_name, values in normalized_signals.items():
+            # 质量码仅 PV 有
+            qc_key = f"{tag_name}_quality"
+            quality_codes = raw.quality_codes.get(qc_key)
+
+            is_norm = tag_name in _NORMALIZABLE_SIGNALS
+            skip_frozen = tag_name in _SKIP_FROZEN_SIGNALS
+            reasons = self.detector.detect_all(
+                tag_name=tag_name,
+                values=values,
+                timestamps=raw.timestamps,
+                range_min=self.config.range_min,
+                range_max=self.config.range_max,
+                quality_codes=quality_codes,
+                is_normalized=is_norm,
+                skip_frozen=skip_frozen,
+            )
+            result[tag_name] = reasons
+        return result
+
+    # -------------------------------------------------------------------
+    # Step ⑥ 连续性检查
+    # -------------------------------------------------------------------
+
+    def _step6_continuity_check(
+        self,
+        raw: RawTimeSeries,
+        all_valid: list[bool],
+    ) -> list[tuple[int, int]]:
+        """步骤⑥：标记连续有效段（缺口/未知/边界切断，P3-08b 无拼接口径）.
+
+        连续 valid=True 且（point 路径下）逐槽覆盖已知、且不跨分段边界的段
+        为动态算子可运行的公共连续段；长度不足 min_consecutive_points 丢弃。
+        """
+        segments = compute_consecutive_segments(
+            self._stitchable_mask(raw, all_valid), self.threshold.min_consecutive_points
+        )
+        ctx = getattr(raw, "series_context", None)
+        if ctx is not None and getattr(ctx, "segment_boundaries", None):
+            boundaries = [b.at for b in ctx.segment_boundaries]
+            segments = split_segments_at_boundaries(segments, raw.timestamps, boundaries)
+        return segments
+
+    def _time_quality_seconds(
+        self,
+        raw: RawTimeSeries,
+        window: tuple[Any, Any] | None,
+    ) -> tuple[float | None, float | None]:
+        """时间口径摘要秒数（P3-08b 契约 §2.1，与 R/Auto/Sat 分母可对账）.
+
+        Returns:
+            ``(window_seconds, unknown_seconds)``；窗口不可得（无查询窗且无
+            point 上下文网格）→ ``(None, None)``=未记录（legacy 口径不变）。
+
+            - window_seconds = 半开窗口时长（含尾窗口 +1s，唯一适配在
+              time_axis.to_half_open）；
+            - unknown_seconds = 窗口内"任一本块角色覆盖 UNKNOWN"的秒数
+              （角色覆盖游程并集∩窗口）+ 窗口内数据未覆盖秒数——不补时、
+              不缩分母（消费端只单列展示）。
+        """
+        ctx = getattr(raw, "series_context", None)
+        w_start = w_end = None
+        if window is not None and window[0] is not None and window[1] is not None:
+            w_start, w_end = to_half_open(window[0], window[1])
+        elif ctx is not None and getattr(ctx, "grid_start", None) is not None:
+            from app.services.metric_calculator.time_axis import utc as _ta_utc
+
+            period = float(getattr(ctx, "grid_period_s", 0) or 1.0)
+            w_start = _ta_utc(ctx.grid_start)
+            w_end = _ta_utc(ctx.grid_end) + timedelta(seconds=period)
+        if w_start is None or w_end is None or w_end <= w_start:
+            return None, None
+
+        window_seconds = (w_end - w_start).total_seconds()
+        # 窗口内数据未覆盖秒数
+        ts = list(raw.timestamps)
+        if ts:
+            covered = (min(w_end, utc(ts[-1]) + timedelta(seconds=1)) - w_start).total_seconds()
+            covered -= max(0.0, (w_start - utc(ts[0])).total_seconds())
+            uncovered = max(0.0, window_seconds - covered)
+        else:
+            uncovered = window_seconds
+
+        # 逐角色 UNKNOWN 游程并集 ∩ 窗口（仅本块信号中带覆盖的角色）
+        merged: list[list[datetime]] = []
+        if ctx is not None and getattr(ctx, "role_coverage", None):
+            for role, cov in ctx.role_coverage.items():
+                if role.lower() not in raw.signals:
+                    continue
+                for run in cov.unknown:
+                    s = max(utc(run.start), w_start)
+                    e = min(utc(run.end), w_end)
+                    if e > s:
+                        merged.append([s, e])
+        merged.sort(key=lambda x: x[0])
+        union = 0.0
+        cur_s: datetime | None = None
+        cur_e: datetime | None = None
+        for s, e in merged:
+            if cur_e is None or s > cur_e:
+                if cur_e is not None:
+                    union += (cur_e - (cur_s or s)).total_seconds()
+                cur_s, cur_e = s, e
+            else:
+                cur_e = max(cur_e, e)
+        if cur_e is not None and cur_s is not None:
+            union += (cur_e - cur_s).total_seconds()
+
+        unknown_seconds = min(window_seconds, union + uncovered)
+        return window_seconds, round(unknown_seconds, 3)
+
+    def _stitchable_mask(
+        self, raw: RawTimeSeries, all_valid: list[bool], roles: tuple[str, ...] | None = None
+    ) -> list[bool]:
+        """可拼接掩码：all_valid 且（有覆盖上下文时）本块任一角色 UNKNOWN 的
+        槽不可拼接（gap 槽保留 COV 值但无依据——不删除也不能拼）。"""
+        ctx = getattr(raw, "series_context", None)
+        if ctx is None or not getattr(ctx, "role_coverage", None):
+            return all_valid
+        from app.services.metric_calculator.time_axis import classify_coverage, utc
+
+        cov_roles = [
+            (role.lower(), cov)
+            for role, cov in ctx.role_coverage.items()
+            if role.lower() in raw.signals and (roles is None or role.lower() in roles)
+        ]
+        if not cov_roles:
+            return all_valid
+        stitchable = list(all_valid)
+        for i, raw_ts in enumerate(raw.timestamps):
+            if not stitchable[i]:
+                continue
+            ts = utc(raw_ts)
+            for _, cov in cov_roles:
+                known, _, _ = classify_coverage(cov, ts)
+                if not known:
+                    stitchable[i] = False
+                    break
+        return stitchable
+
+    # -------------------------------------------------------------------
+    # 辅助方法
+    # -------------------------------------------------------------------
+
+    @staticmethod
+    def _compute_all_valid(validity: dict[str, list[bool]], n: int) -> list[bool]:
+        """计算所有信号 valid 的交集（该时间戳是否全有效）."""
+        all_valid = [True] * n
+        for arr in validity.values():
+            for i in range(min(n, len(arr))):
+                all_valid[i] = all_valid[i] and arr[i]
+        return all_valid
+
+    def generate_metric_mask(
+        self,
+        data_block: DataBlock,
+        mask_expression: str | None,
+    ) -> list[int]:
+        """步骤⑦：生成 Metric Validity Mask，返回有效索引列表.
+
+        根据指标数据需求契约的 mask_expression 筛选有效点。
+        DataPlanner 在组装 MetricDataBundle 时调用此方法。
+
+        Args:
+            data_block: 预处理后的数据块
+            mask_expression: 掩码表达式，如 ``"pv_valid && sp_valid"``
+
+        Returns:
+            有效索引列表
+
+        设计依据：算法说明 §3.4.2 步骤⑦, PRD §5.5.4
+        """
+        return apply_mask(data_block, mask_expression)

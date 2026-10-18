@@ -1,0 +1,28 @@
+{
+  "frozenAt": "2026-10-17T11:55:58.697163+00:00",
+  "head": "930ae4878c5bda3069e513f1eb226ad45854b2df",
+  "sourceFrozen": true,
+  "testsComplete": true,
+  "files": [
+    {
+      "path": "e2e/tests/critical-business.spec.ts",
+      "bytes": 11061,
+      "sha256": "c492347c387fcba3d954450f99bba41fe25a7c73f9988b03dcdded5ffb7c553f"
+    },
+    {
+      "path": "e2e/critical-cases.json",
+      "bytes": 359,
+      "sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c"
+    },
+    {
+      "path": "e2e/playwright.critical.config.ts",
+      "bytes": 351,
+      "sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4"
+    },
+    {
+      "path": "scripts/run-critical-e2e.sh",
+      "bytes": 2895,
+      "sha256": "7bbd52348ef46c0d312aaf03190c1d93438292a98e71bbad2a0211c43f369fe3"
+    }
+  ]
+}

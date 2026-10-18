@@ -1,0 +1,43 @@
+         3073265 function calls (2891029 primitive calls) in 4.738 seconds
+
+   Ordered by: internal time
+   List reduced from 637 to 35 due to restriction <35>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       27    1.807    0.067    2.020    0.075 /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/armax-shadow-remediation/armax.prototype.py:35(identify_armax)
+     2459    0.862    0.000    0.862    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4532(_residual_var_on_common_window)
+    24018    0.486    0.000    0.639    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:2417(lstsq)
+    18967    0.225    0.000    1.090    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/arx.py:58(identify_arx)
+      142    0.130    0.001    0.136    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:228(_simulate_disturbance_free)
+    19558    0.110    0.000    0.176    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:148(_var)
+       38    0.097    0.003    0.265    0.007 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:136(identify_clivc4)
+   110459    0.076    0.000    0.076    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     9428    0.042    0.000    0.042    0.000 {built-in method _hashlib.openssl_sha256}
+    23502    0.033    0.000    0.078    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:115(_mean)
+    43060    0.033    0.000    0.037    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:73(_count_reduce_items)
+       49    0.031    0.001    0.050    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:2706(_compute_parameter_uncertainty)
+       22    0.029    0.001    4.658    0.212 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:1405(identify_from_history)
+    40185    0.026    0.000    0.053    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:66(_wrapreduction)
+       38    0.026    0.001    0.028    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:50(identify_clivc)
+      136    0.025    0.000    0.026    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4565(_free_run_simulation)
+    53350    0.024    0.000    0.024    0.000 {built-in method numpy.zeros}
+103855/49    0.023    0.000    0.042    0.001 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/dataclasses.py:1332(_asdict_inner)
+    25548    0.023    0.000    0.048    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:201(_commonType)
+       21    0.022    0.001    1.033    0.049 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:3974(_reselect_uncertainty)
+    39706    0.022    0.000    0.078    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:2342(sum)
+    75848    0.018    0.000    0.018    0.000 {method 'astype' of 'numpy.ndarray' objects}
+    19450    0.018    0.000    0.192    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:4075(var)
+   132817    0.017    0.000    0.019    0.000 {built-in method builtins.max}
+   218709    0.017    0.000    0.017    0.000 {built-in method builtins.issubclass}
+    14263    0.015    0.000    0.835    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4017(_bic_at)
+       44    0.015    0.000    0.015    0.000 {built-in method numpy._core._multiarray_umath.correlate2}
+       44    0.014    0.000    0.018    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/excitation.py:31(check_excitation)
+       22    0.014    0.001    0.056    0.003 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py:205(iterencode)
+    49746    0.014    0.000    0.022    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:163(_makearray)
+    41160    0.014    0.000    0.020    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:509(_mean)
+    25667    0.013    0.000    0.023    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_ufunc_config.py:472(__enter__)
+   132406    0.013    0.000    0.013    0.000 {built-in method builtins.isinstance}
+    23392    0.013    0.000    0.090    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:3737(mean)
+    50581    0.011    0.000    0.011    0.000 {built-in method builtins.round}
+
+

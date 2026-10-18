@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "pnpm",
+    "exec",
+    "eslint",
+    "apps/web-antd",
+    "--cache"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "rc": 0,
+  "startedAt": "2026-10-17T10:06:49.364542+00:00",
+  "finishedAt": "2026-10-17T10:06:51.512753+00:00"
+}

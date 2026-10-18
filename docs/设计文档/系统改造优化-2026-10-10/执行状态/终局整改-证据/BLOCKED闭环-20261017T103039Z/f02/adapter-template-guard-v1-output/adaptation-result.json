@@ -1,0 +1,18 @@
+{
+  "status": "BLOCKED",
+  "issues": [
+    {
+      "level": "BLOCKED",
+      "detail": "Final candidate full40 SHA missing"
+    }
+  ],
+  "readSet": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapter-plan.template.json",
+      "sha256": "3bfdc33b27098111131b0ec2d16360298de25fbdf47a4f88118a47e26fa443e3",
+      "size": 48113
+    }
+  ],
+  "networkOrBusinessOperations": false,
+  "finalAcceptance": "PENDING_NONAUTHOR_RECONCILIATION_AND_RECEIPT"
+}

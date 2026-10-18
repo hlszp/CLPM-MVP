@@ -1,0 +1,56 @@
+{
+  "checks": [
+    {
+      "name": "components-final",
+      "command": [
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--dom",
+        "--no-cache",
+        "apps/web-antd/src/__tests__/p6-eng-templates.test.ts"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 3.991691625
+    },
+    {
+      "name": "eslint-final",
+      "command": [
+        "pnpm",
+        "exec",
+        "eslint",
+        "apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+        "apps/web-antd/src/__tests__/p6-eng-templates.test.ts"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 2.057636625
+    },
+    {
+      "name": "format-final",
+      "command": [
+        "pnpm",
+        "exec",
+        "oxfmt",
+        "--check",
+        "apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+        "apps/web-antd/src/__tests__/p6-eng-templates.test.ts"
+      ],
+      "exitCode": 0,
+      "elapsedSeconds": 1.2283172919999998
+    },
+    {
+      "name": "types-final",
+      "command": [
+        "pnpm",
+        "run",
+        "check:type"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+      "exitCode": 0,
+      "elapsedSeconds": 1.13955375
+    }
+  ],
+  "allPassed": true,
+  "sourceFilesUnchanged": true
+}

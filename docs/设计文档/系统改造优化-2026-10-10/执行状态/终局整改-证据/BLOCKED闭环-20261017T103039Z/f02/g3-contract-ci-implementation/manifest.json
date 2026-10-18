@@ -1,0 +1,510 @@
+{
+  "schema": "clpm-g3-diagnostic-implementation-evidence-v2",
+  "createdAt": "2026-10-17T14:39:03.797108+00:00",
+  "scope": "AUTHOR_IMPLEMENTATION_AND_LOCAL_TOOL_CONTROLS_ONLY_WITH_EXPLICIT_INDEPENDENT_RAW_REFS",
+  "formalAlgorithmAcceptance": "NOT_PERFORMED",
+  "fileCount": 100,
+  "totalBytes": 562867,
+  "files": [
+    {
+      "path": "ci-original-9f.yml",
+      "bytes": 15028,
+      "sha256": "3e9feb08402a778051ce620d6c49f6da3aa7814f753f0346f35a5ac851134c11"
+    },
+    {
+      "path": "contract-originals/01-P3-06-07-oracle冻结草案-20261011.md",
+      "bytes": 45708,
+      "sha256": "8841b12ec938d8955f826a9750d522c0bd9cabdf02e308a71e189c5a1b657f8f"
+    },
+    {
+      "path": "contract-originals/02-03-阶段任务计划.md",
+      "bytes": 52411,
+      "sha256": "020443d160efb398e4075894b8c5b57d65e193135fd58095c4f93f9389a1b4a5"
+    },
+    {
+      "path": "contract-originals/03-14-G3纠偏任务与执行提示词-2026-10-12.md",
+      "bytes": 17748,
+      "sha256": "78a380bafca14f0b50db9241d79252280d50bbebacac337e64ca46d0282c71f4"
+    },
+    {
+      "path": "contract-originals/04-G3-APP-交接.md",
+      "bytes": 28164,
+      "sha256": "fb306cc3b511dba4e8e893641f4432c11a3bee5107f3e52e4c8b35c9d3e3983e"
+    },
+    {
+      "path": "contract-originals/05-armax.py",
+      "bytes": 5810,
+      "sha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d"
+    },
+    {
+      "path": "contract-originals/06-test_tuning_identification.py",
+      "bytes": 90101,
+      "sha256": "43f4c752c4bfe4112688784ec6dd81fc5b3bf57f0bad07fe483236f909523c1c"
+    },
+    {
+      "path": "contract-originals/07-test_armax_vectorized_equivalence.py",
+      "bytes": 4202,
+      "sha256": "e200f79b09a7074ceb2102957bd2d502a67112e2cc7345426fe2bca7f4f36eb6"
+    },
+    {
+      "path": "contract-originals/08-protected_manifest.py",
+      "bytes": 3243,
+      "sha256": "35f829084d16bfd73dbbf1e7fbb47c08e22fde043eb8f9e50628af0ff87cca65"
+    },
+    {
+      "path": "contract-reference-excerpts.json",
+      "bytes": 33025,
+      "sha256": "d03003fc20d114cc963486c95d9d7be3d1cc62cdaec290b15ca9da79df2a9318"
+    },
+    {
+      "path": "diagnostic-step.sh",
+      "bytes": 758,
+      "sha256": "6290addd58689ccf0d085e6b674e02d031cacaeca2f4c6dbf7ddcd221bcf79cd"
+    },
+    {
+      "path": "format.command.json",
+      "bytes": 2020,
+      "sha256": "a8f80ade875e52621d4ef9e96aba890b20ad6d2848fdaed9255e3f5a10498b6d"
+    },
+    {
+      "path": "format.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "format.stdout.log",
+      "bytes": 25,
+      "sha256": "fd2299c9f1c6dc869070883e281051bfe93aacf66c1a3b0069f45b4aa410ca50"
+    },
+    {
+      "path": "handoff.md",
+      "bytes": 3171,
+      "sha256": "baf45059775f6faf58b801b2d9f1ce6f752c8bc93d477f3fb8f892238dabfb29"
+    },
+    {
+      "path": "network-guard-v2/.ruff_cache/.gitignore",
+      "bytes": 35,
+      "sha256": "9e3a60f1e6ec4ae60215c11d54b171392745ec25e9dded433d5bd921363af316"
+    },
+    {
+      "path": "network-guard-v2/.ruff_cache/0.15.18/9907626878700593940",
+      "bytes": 249,
+      "sha256": "e571f5d4cc873afd5661c1319da34dec4e42984f324281688372600e55590a16"
+    },
+    {
+      "path": "network-guard-v2/.ruff_cache/CACHEDIR.TAG",
+      "bytes": 43,
+      "sha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
+    },
+    {
+      "path": "network-guard-v2/additional-reverse-dns-control.json",
+      "bytes": 153,
+      "sha256": "e45ca4df59b3c314f923ec7647b0f49478e0c1303dc19ca1c4327c53bc0f15b1"
+    },
+    {
+      "path": "network-guard-v2/candidate-landing.json",
+      "bytes": 2281,
+      "sha256": "c8262e9a7bcd75d4ebec7367a8f08de5c42bb41156763b2c8c7ca76b0cd5da06"
+    },
+    {
+      "path": "network-guard-v2/config100-additional-reverse-dns-control.json",
+      "bytes": 554,
+      "sha256": "2952b012545df733f55e25bdad80057de18edef3b8e91e42344a2c6f498000bd"
+    },
+    {
+      "path": "network-guard-v2/config100-format-check.command.json",
+      "bytes": 1456,
+      "sha256": "d48f6e7d60ab74cb5f038f509598c848d918b2a70a18c78930c9c795daf201da"
+    },
+    {
+      "path": "network-guard-v2/config100-format-check.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/config100-format-check.stdout.log",
+      "bytes": 25,
+      "sha256": "fd2299c9f1c6dc869070883e281051bfe93aacf66c1a3b0069f45b4aa410ca50"
+    },
+    {
+      "path": "network-guard-v2/config100-format.command.json",
+      "bytes": 1441,
+      "sha256": "a8f96a2fca7adb4ddf448427176a2a8b1a6262d4b3c8f0b0c87258910d13366a"
+    },
+    {
+      "path": "network-guard-v2/config100-format.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/config100-format.stdout.log",
+      "bytes": 22,
+      "sha256": "d807f3580f2470a7fe15ad89e1a6c08e4166ffe1e33d94152d605f0c46d21bfa"
+    },
+    {
+      "path": "network-guard-v2/config100-minimal-change.diff",
+      "bytes": 664,
+      "sha256": "4c5b75d46d615941714204a95c25ce763a43d8a3cc79f86fd7125a7ce1895296"
+    },
+    {
+      "path": "network-guard-v2/config100-ruff.command.json",
+      "bytes": 1440,
+      "sha256": "56d4db226cadf1844b14f94c837f41ea155fa7c68abd43b942fcf23dc7a934f8"
+    },
+    {
+      "path": "network-guard-v2/config100-ruff.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/config100-ruff.stdout.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-green.command.json",
+      "bytes": 1809,
+      "sha256": "378a330eaf0117a92fec1aa4368221e8184f02782e0d670cd5ac660d2f1a0691"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-green.json",
+      "bytes": 968,
+      "sha256": "c36905f80a08a6d9405dd4960f48559af5cd14fc6bc2f65a600faacc4d48f8a9"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-green.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-green.stdout.log",
+      "bytes": 764,
+      "sha256": "708aeb8530ce037efbd6e4a71a9c822ddbebfb050bafaf12d93e6e8ec11f0947"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-red.command.json",
+      "bytes": 1791,
+      "sha256": "b7a17a8afae91d5ba317caebebbeccbaa75d34432a178a6f46702cb6c5ec82a7"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-red.json",
+      "bytes": 901,
+      "sha256": "9ae3e7e3bb6023031d5dcbf3a7de9a6e6274fc7cc682ffa16079d505aea64cbd"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-red.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/config100-same-original-red.stdout.log",
+      "bytes": 709,
+      "sha256": "ad9c7e2dc6ec9e5453ed929340adc5d8eeeef0c652159990052ef5d7979d7395"
+    },
+    {
+      "path": "network-guard-v2/format-default88-intermediate.py",
+      "bytes": 18135,
+      "sha256": "42438afd3f85c03682e3758b5be9fa767a2075b020857ca741d18b1602d004ea"
+    },
+    {
+      "path": "network-guard-v2/format.command.json",
+      "bytes": 1753,
+      "sha256": "60affb7ae0bad01af88d3c0a8d30434c8da523bd6777e1d749e4baf4215a26d3"
+    },
+    {
+      "path": "network-guard-v2/format.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/format.stdout.log",
+      "bytes": 19,
+      "sha256": "413a709001976657cb743636fd34e48fc41d8d302d665460d3f874b3313da127"
+    },
+    {
+      "path": "network-guard-v2/landing-after-names.command.json",
+      "bytes": 234,
+      "sha256": "fd582a003c35fea1d97d6165e40f1f015e8085a4ecde279d180ba4011daf679c"
+    },
+    {
+      "path": "network-guard-v2/landing-after-names.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/landing-after-names.stdout.log",
+      "bytes": 51,
+      "sha256": "e49e6b563b5d08d0c9ca26cd9bc55d77d2ee61df7e6414d79d37527de4c56156"
+    },
+    {
+      "path": "network-guard-v2/landing-before-head.command.json",
+      "bytes": 232,
+      "sha256": "78f9eb6198fcc347484d4d394b6983bdd74b0250c78455d187de2ce044788afe"
+    },
+    {
+      "path": "network-guard-v2/landing-before-head.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/landing-before-head.stdout.log",
+      "bytes": 41,
+      "sha256": "d2f59db794400a005963c3ff5bb5b0825587a942f4f4b4904838c92af73ff1ac"
+    },
+    {
+      "path": "network-guard-v2/landing-before-status.command.json",
+      "bytes": 236,
+      "sha256": "b503ba6ace877ae40f9ce1221b309dcda387518ad6ac3ca658a58d0585713b49"
+    },
+    {
+      "path": "network-guard-v2/landing-before-status.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/landing-before-status.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/landing-final-patch.command.json",
+      "bytes": 283,
+      "sha256": "7ae974dc17679cae0b7101dfee399edeab36d2179442b023ce4116395cd86ec9"
+    },
+    {
+      "path": "network-guard-v2/landing-final-patch.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/landing-final-patch.stdout.log",
+      "bytes": 877,
+      "sha256": "e53c41a74a0ebd1c86f1c26452fd83861b73df709c40f646e6ce5f680b6ba9c3"
+    },
+    {
+      "path": "network-guard-v2/minimal-change-default88-intermediate.diff",
+      "bytes": 9864,
+      "sha256": "c95a51e2ff458d24cb6df1b54a2e79eb36780874c5f1b42059da76563a2ea2d7"
+    },
+    {
+      "path": "network-guard-v2/minimal-change.diff",
+      "bytes": 9864,
+      "sha256": "c95a51e2ff458d24cb6df1b54a2e79eb36780874c5f1b42059da76563a2ea2d7"
+    },
+    {
+      "path": "network-guard-v2/original-6d9ffd.py",
+      "bytes": 17101,
+      "sha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf"
+    },
+    {
+      "path": "network-guard-v2/profile_identification_numerics.py",
+      "bytes": 17277,
+      "sha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858"
+    },
+    {
+      "path": "network-guard-v2/recheck_config100.py",
+      "bytes": 6279,
+      "sha256": "dc4dfa8b188c7a36237b1f70e481e4150619011ea296e86fa96e840f5271af25"
+    },
+    {
+      "path": "network-guard-v2/ruff.command.json",
+      "bytes": 1748,
+      "sha256": "4e559c30c205e4a4b4937bf852bd4dc3fedabd0397c2e9e66e8420f774793e27"
+    },
+    {
+      "path": "network-guard-v2/ruff.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/ruff.stdout.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "network-guard-v2/same-original-green.command.json",
+      "bytes": 2550,
+      "sha256": "29c95cbd6661327fd63b9749cc6232f0e9d7428d489501724be56bf2763851d9"
+    },
+    {
+      "path": "network-guard-v2/same-original-green.json",
+      "bytes": 968,
+      "sha256": "b1147f8402560b9a749e396efe418b65c91bba1268387b9669ec23aad5382033"
+    },
+    {
+      "path": "network-guard-v2/same-original-green.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/same-original-green.stdout.log",
+      "bytes": 764,
+      "sha256": "b7f65b4a02dd437e702c9c5ecce004e3563df5b2ae85eb0e50ff06717c0517d5"
+    },
+    {
+      "path": "network-guard-v2/same-original-red.command.json",
+      "bytes": 2527,
+      "sha256": "d6b84475c7b4a2bd63e0e05f4235d8631502b891e903cb0a081f698a7d3132a4"
+    },
+    {
+      "path": "network-guard-v2/same-original-red.json",
+      "bytes": 901,
+      "sha256": "9ae3e7e3bb6023031d5dcbf3a7de9a6e6274fc7cc682ffa16079d505aea64cbd"
+    },
+    {
+      "path": "network-guard-v2/same-original-red.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "network-guard-v2/same-original-red.stdout.log",
+      "bytes": 709,
+      "sha256": "ad9c7e2dc6ec9e5453ed929340adc5d8eeeef0c652159990052ef5d7979d7395"
+    },
+    {
+      "path": "network-guard-v2/source-identity-config100-final.json",
+      "bytes": 2273,
+      "sha256": "12da798934385237e880a3d503e75dcb6a078991bf912bd27411ff11e49b7d3e"
+    },
+    {
+      "path": "network-guard-v2/source-identity-default88-intermediate.json",
+      "bytes": 1516,
+      "sha256": "9bb92963be46ee9b7055946ff93c8ef691afbea3e57375ff633e05ca5b4d3b7e"
+    },
+    {
+      "path": "network-guard-v2/source-identity.json",
+      "bytes": 1516,
+      "sha256": "9bb92963be46ee9b7055946ff93c8ef691afbea3e57375ff633e05ca5b4d3b7e"
+    },
+    {
+      "path": "review-v2.command.json",
+      "bytes": 363,
+      "sha256": "651cac6263f54ceb4d9effa528d1be0818c0b8c9ddf2cb06396b151b8300a2b4"
+    },
+    {
+      "path": "review-v2.patch",
+      "bytes": 20886,
+      "sha256": "18c2db89c19eb634368f467e5f08de43fd2b372e102d8a3de9871b08810a674b"
+    },
+    {
+      "path": "review-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "review.patch",
+      "bytes": 20647,
+      "sha256": "b551b1ab495c92ab2031fb6cb8db74aa64d59c8d48d7d7467e06ff46ba6c2f4d"
+    },
+    {
+      "path": "ruff.command.json",
+      "bytes": 2001,
+      "sha256": "707548614497af5cec954bc239c13a43158c0c05ea540c8655e5671744d085ad"
+    },
+    {
+      "path": "ruff.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ruff.stdout.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "seal-setup-note.json",
+      "bytes": 414,
+      "sha256": "bacb58924b53765e521b0c7d43fe1c26fbbdb9f985c1568e7f029e29ef8978db"
+    },
+    {
+      "path": "source-final/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    },
+    {
+      "path": "source-final/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17101,
+      "sha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf"
+    },
+    {
+      "path": "source-final-v2/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    },
+    {
+      "path": "source-final-v2/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17277,
+      "sha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858"
+    },
+    {
+      "path": "source-identity-final.json",
+      "bytes": 1304,
+      "sha256": "aa889e1e92ccf1d1daebcd8b851c1cf8bf6ed671f726547fa6a236ecea369695"
+    },
+    {
+      "path": "source-identity-v2-final.json",
+      "bytes": 2845,
+      "sha256": "6e788fbe3873e4a59a49f4ca07fe696a6d362a28d1f9fa9be06d0a5b5d2ed1e7"
+    },
+    {
+      "path": "structure-fixed-base.command.json",
+      "bytes": 2215,
+      "sha256": "0d3764b1a5dcf35d60d35847cae3516dd945e6fe046d776eb59089fc02aeacff"
+    },
+    {
+      "path": "structure-fixed-base.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "structure-fixed-base.stdout.log",
+      "bytes": 39,
+      "sha256": "c21500fc7399dc9ecd72b54da8616c8a007ff971dd1c4ad92bca363416244dc9"
+    },
+    {
+      "path": "structure-results.json",
+      "bytes": 1369,
+      "sha256": "3952e1f1cdae824df75b77d8c04516824e2a7ed48790522f6d2e57489b38975b"
+    },
+    {
+      "path": "structure.command.json",
+      "bytes": 2232,
+      "sha256": "29a8155e33b9e9ff5d8021e5481015de1aded54ab92a324353533ad167a3bd21"
+    },
+    {
+      "path": "structure.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "structure.stdout.log",
+      "bytes": 39,
+      "sha256": "c21500fc7399dc9ecd72b54da8616c8a007ff971dd1c4ad92bca363416244dc9"
+    },
+    {
+      "path": "verify_ci_diagnostic_structure.before-base-freeze.py",
+      "bytes": 5385,
+      "sha256": "ce8a1dfca7d97e2b6e7d7fe3a73a4310b09a1a9679a485a65bd97a953842fbb0"
+    },
+    {
+      "path": "verify_ci_diagnostic_structure.py",
+      "bytes": 5421,
+      "sha256": "1192c901792a994c87dac188d23bf77ec0ebb5e4061c763fdcefc3d59dc1cd5e"
+    },
+    {
+      "path": "workflow-numstat.stdout.log",
+      "bytes": 30,
+      "sha256": "bc64359ab167a1fafa4950540b0552d071e49d092e5875bfc0597dba502b05ba"
+    },
+    {
+      "path": "workflow.diff",
+      "bytes": 2825,
+      "sha256": "665d8dd14fcf28c6ac6920afa1e7428b7e86923b9735bd750f57b05f8c3a1c31"
+    },
+    {
+      "path": "算法契约与Linux同Job诊断移交.md",
+      "bytes": 11926,
+      "sha256": "a545e91197afc82be748ea72bd9c0509e1dd7a4f85a3475cd94b9919ec5a904e"
+    }
+  ]
+}

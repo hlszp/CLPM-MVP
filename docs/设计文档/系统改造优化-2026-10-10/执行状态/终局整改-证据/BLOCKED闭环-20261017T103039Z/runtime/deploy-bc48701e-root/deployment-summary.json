@@ -1,0 +1,12 @@
+{
+  "finishedAtUtc": "2026-10-17T15:19:38.569789+00:00",
+  "runtime": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+  "head": "8fc850802612b6077f3b07c08324e3694945aa0d",
+  "actualRuntimeSha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+  "prBase": "86301e5e3083db0feb5f2d9db8fb9eacc8d3165d",
+  "prMetadataMergeVerifiedParents": true,
+  "actualCiJobCheckoutProofStillPending": true,
+  "productProcessesStarted": false,
+  "productionTouched": false,
+  "formalCapacityExecuted": 0
+}

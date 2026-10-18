@@ -1,0 +1,27 @@
+INFO:     Started server process [91036]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-10-17T13:59:27.412203+00:00", "level": "INFO", "logger": "app.main", "message": "Starting CLPM v7.1.0"}
+{"timestamp": "2026-10-17T13:59:27.412254+00:00", "level": "INFO", "logger": "app.main", "message": "数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用"}
+{"timestamp": "2026-10-17T13:59:27.454944+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Beat 调度进程已启动 (PID=91077)，定时任务将自动执行，日志: logs/celery-beat.log"}
+{"timestamp": "2026-10-17T13:59:27.495947+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Worker 进程已启动 (PID=91079)，任务队列开始消费，日志: logs/celery-worker.log"}
+{"timestamp": "2026-10-17T13:59:27.527960+00:00", "level": "INFO", "logger": "app.main", "message": "数据源配置已从 sys_config 预载（network_mode=lan, signalr_enabled=False, history_api_url=已配置, signalr_hub_url=已配置）"}
+{"timestamp": "2026-10-17T13:59:27.544212+00:00", "level": "INFO", "logger": "app.main", "message": "模块启用状态已预载: assess, config, diagnosis, handling, monitor, reports, system, tuning"}
+{"timestamp": "2026-10-17T13:59:27.558853+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T13:59:27.558950+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T13:59:27.558989+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T13:59:27.577170+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T13:59:27.603389+00:00", "level": "INFO", "logger": "app.services.alert_rule_engine.service", "message": "预制预警规则已补建 ALL 订阅 12 条"}
+{"timestamp": "2026-10-17T13:59:27.603945+00:00", "level": "INFO", "logger": "app.services.alert_rule_engine.service", "message": "预制预警规则已创建 12 条"}
+{"timestamp": "2026-10-17T13:59:27.614268+00:00", "level": "INFO", "logger": "app.main", "message": "预警预制规则已初始化（新建 12 条）"}
+{"timestamp": "2026-10-17T13:59:27.629107+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91036] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:27.629200+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91036] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:27.629236+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91036] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T13:59:27.631741+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91036] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T13:59:27.633995+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91036] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T13:59:27.648616+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T13:59:27.650507+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91036] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T13:59:27.650826+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91036] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T13:59:27.652674+00:00", "level": "INFO", "logger": "app.services.data_source.realtime_subscriber", "message": "实时数据订阅已禁用（SIGNALR_ENABLED=False）"}
+INFO:     Application startup complete.
+{"timestamp": "2026-10-17T13:59:27.653091+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91036] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+INFO:     Uvicorn running on http://127.0.0.1:17261 (Press CTRL+C to quit)

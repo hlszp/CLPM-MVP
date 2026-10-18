@@ -1,0 +1,100 @@
+2026-10-16 07:08:39,335 | WARNING  | app.tasks.kpi_calc | DataPlanner 取数失败（回路 PERF-T0127）: [0x073a]: Query memory exhausted
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/tasks/kpi_calc.py", line 2497, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 387, in request_bundles
+    data_blocks = await self._execute_query_plan(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 659, in _execute_query_plan
+    results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 638, in _process_non_reuse
+    data_block = await self._query_and_preprocess(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 722, in _query_and_preprocess
+    raw = await self._query_fn(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 128, in _query_fn_point
+    return await _point_or_mixed_query(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 202, in _point_or_mixed_query
+    raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/logical_wide_builder.py", line 337, in build_logical_wide
+    states = await g5_trace.awaited(
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 117, in awaited
+    return await operation
+           ^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/point_history_repository.py", line 318, in read_last_states_before
+    rows = await execute_native(sql)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 182, in execute_native
+    return await asyncio.wait_for(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 143, in threaded
+    return await asyncio.get_running_loop().run_in_executor(executor, fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 166, in _execute
+    cursor.execute(sql)
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/cursor.py", line 55, in execute
+    self._response = self._c.sql(operation, req_id=req_id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/restclient.py", line 129, in sql
+    raise ConnectError(resp["desc"], resp["code"])
+taosrest.errors.ConnectError: [0x073a]: Query memory exhausted
+2026-10-16 07:08:39,339 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=5, reasons={2267: ['FROZEN'], 2268: ['FROZEN'], 2269: ['FROZEN'], 2270: ['FROZEN'], 2271: ['FROZEN']}
+2026-10-16 07:08:39,356 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=bc7c7d2d-b067-4379-95ef-30cb40cd48e6, tagGroup=MODE_HF, points=3601, controlType=TC
+2026-10-16 07:08:39,363 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=d4b5e82b-44f8-4146-a1f0-024f9fc578df, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-16T03:00:00~2026-10-16T04:00:00, control=LC
+2026-10-16 07:08:39,363 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=bc7c7d2d-b067-4379-95ef-30cb40cd48e6, tagGroup=OP_HF, points=3601, controlType=TC
+2026-10-16 07:08:39,372 | INFO     | app.services.cache.l1_datablock | L1 cache Pipeline 批量写入: total=5, written=5, skipped=0
+2026-10-16 07:08:39,372 | INFO     | app.services.data_planner | DataPlanner 缓存写入: loop=6af3ea10-2957-4e84-98a2-4b4024c3c87d, blocks=5, written=5
+2026-10-16 07:08:39,374 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,374 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=accuracy_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,376 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,376 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=fast_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,378 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,378 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=steady_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,386 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=2465 (68.5%)
+2026-10-16 07:08:39,386 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=effective_auto_rate, tagGroup=MODE_HF, total=3601, masked=2465 (68.5%), valid_rate=0.6845
+2026-10-16 07:08:39,386 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=good_value_rate, tagGroup=QUALITY_HF, total=3601, masked=3601 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,388 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,388 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=oscillation_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,396 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid && op_valid', total=3601, masked=2465 (68.5%)
+2026-10-16 07:08:39,396 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=saturation_rate, tagGroup=MODE_HF, total=3601, masked=2465 (68.5%), valid_rate=0.6845
+2026-10-16 07:08:39,403 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && op_valid', total=3601, masked=2465 (68.5%)
+2026-10-16 07:08:39,409 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=stiction_index, tagGroup=PVOP_HF, total=3601, masked=2465 (68.5%), valid_rate=0.6845
+2026-10-16 07:08:39,425 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='op_valid && consecutive_valid', total=3601, masked=286 (7.9%)
+2026-10-16 07:08:39,426 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=output_trip_index, tagGroup=OP_HF, total=3601, masked=286 (7.9%), valid_rate=0.6845
+2026-10-16 07:08:39,436 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='mode_valid', total=3601, masked=3601 (100.0%)
+2026-10-16 07:08:39,442 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=auto_mode_rate, tagGroup=MODE_HF, total=3601, masked=3601 (100.0%), valid_rate=0.6845
+2026-10-16 07:08:39,443 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid && sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,445 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=settling_time, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,371 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-16 07:08:39,446 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,446 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=instrument_fault_rate, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,447 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,447 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,448 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='pv_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,448 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=pv_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,449 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,449 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_mean, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,450 | DEBUG    | app.services.preprocessing.validity_mask | apply_mask: expr='sp_valid', total=721, masked=721 (100.0%)
+2026-10-16 07:08:39,450 | DEBUG    | app.services.metric_data_bundle | Bundle assembled: metric=sp_std, tagGroup=BASE, total=721, masked=721 (100.0%), valid_rate=1.0000
+2026-10-16 07:08:39,453 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}

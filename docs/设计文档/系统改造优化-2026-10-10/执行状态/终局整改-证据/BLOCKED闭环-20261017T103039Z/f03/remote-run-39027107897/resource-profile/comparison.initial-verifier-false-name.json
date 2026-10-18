@@ -1,0 +1,27 @@
+{
+  "checks": {
+    "threeIndependentJobs": true,
+    "allJobsBlocking": true,
+    "criticalAllStepsBlocking": true,
+    "frontendAllStepsBlocking": true,
+    "bothNumericProfilesOne": true,
+    "timeout30Unchanged": true,
+    "coverage60Unchanged": true,
+    "fourBusinessCasesUnchanged": true,
+    "sourceNumericsUnchanged": true,
+    "backendOnlyMypyNonblocking": false,
+    "diagnostic-backend-ci": true,
+    "diagnostic-critical-e2e": true,
+    "numericArtifactWritten": true,
+    "actionlintPass": true,
+    "same22NumericalRows": true
+  },
+  "allPass": false,
+  "timing": {
+    "defaultSeconds": 28.75,
+    "oneThreadSeconds": 28.47
+  },
+  "scope": "macOS Apple Accelerate; no meaningful speedup; does not establish Linux OpenBLAS cause or full CI PASS",
+  "stdoutRowCount": 22,
+  "resourceProfile": "same algorithms, coverage, original 30s threshold; constrain 5 numeric thread environments to 1 in Backend and critical CI"
+}

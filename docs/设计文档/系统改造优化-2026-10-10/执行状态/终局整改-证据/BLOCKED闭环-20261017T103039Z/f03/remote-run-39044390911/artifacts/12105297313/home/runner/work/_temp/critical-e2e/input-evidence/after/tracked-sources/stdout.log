@@ -1,0 +1,15 @@
+.github/workflows/ci.yml
+backend/app/services/algorithm_config.py
+backend/app/services/assessment_profile.py
+backend/app/services/calc_snapshot.py
+backend/app/services/data_planner.py
+backend/app/services/data_source/logical_wide_builder.py
+backend/app/services/metric_calculator/time_axis.py
+backend/app/tasks/kpi_calc.py
+backend/uv.lock
+e2e/scripts/capture-critical-input-evidence.py
+e2e/scripts/critical-input-dataset-row.sql
+e2e/scripts/critical-input-policy.sql
+e2e/scripts/prepare-critical-fixture.py
+e2e/tests/critical-business.spec.ts
+scripts/run-critical-e2e.sh

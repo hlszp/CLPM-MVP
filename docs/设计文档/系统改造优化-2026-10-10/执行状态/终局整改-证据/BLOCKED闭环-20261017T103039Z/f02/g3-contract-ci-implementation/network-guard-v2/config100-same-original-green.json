@@ -1,0 +1,46 @@
+{
+  "sourceSha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858",
+  "probeSha256": "6216987ff881779ce800fbd37595cb9d09c665fe6f4064cc4b4e9f47f26bceb1",
+  "events": [
+    {
+      "event": "socket.connect",
+      "refused": true
+    },
+    {
+      "event": "socket.getaddrinfo",
+      "refused": true
+    },
+    {
+      "event": "socket.gethostbyname",
+      "refused": true
+    },
+    {
+      "event": "socket.gethostbyaddr",
+      "refused": true
+    },
+    {
+      "event": "socket.sendto",
+      "refused": true
+    },
+    {
+      "event": "socket.sendmsg",
+      "refused": true
+    },
+    {
+      "event": "import",
+      "refused": true
+    }
+  ],
+  "networkAttemptsRecorded": [
+    "socket.connect",
+    "socket.getaddrinfo",
+    "socket.gethostbyname",
+    "socket.gethostbyaddr",
+    "socket.sendto",
+    "socket.sendmsg"
+  ],
+  "actualSocketCalls": 0,
+  "productImports": 0,
+  "algorithmsInvoked": 0,
+  "allRequiredEventsRefused": true
+}

@@ -1,0 +1,16 @@
+{
+  "frozenAt": "2026-10-17T11:18:25.925260+00:00",
+  "files": [
+    {
+      "file": "controlled_td_rest_proxy.py",
+      "sha256": "b36666a90663499339625f01d0179d32340d5dfcf03a82eb6b80b834cec042d0",
+      "bytes": 18173
+    },
+    {
+      "file": "test_controlled_td_rest_proxy.py",
+      "sha256": "159fdb71c815c585f4a4da7ff85831bbe0831820053eb40c632af36e122e70a5",
+      "bytes": 14254
+    }
+  ],
+  "scope": "Evidence-only tool; actual proxy/environment only Keeper may run; temp stub selftest only"
+}

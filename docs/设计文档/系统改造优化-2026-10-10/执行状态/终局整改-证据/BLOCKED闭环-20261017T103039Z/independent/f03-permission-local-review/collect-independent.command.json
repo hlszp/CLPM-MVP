@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "npx",
+    "--no-install",
+    "playwright",
+    "test",
+    "--config=playwright.critical.config.ts",
+    "--list",
+    "--reporter=json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "startedAt": "2026-10-17T12:25:22.635895+00:00",
+  "endedAt": "2026-10-17T12:25:23.246243+00:00",
+  "rc": 0
+}

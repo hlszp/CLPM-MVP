@@ -1,0 +1,8 @@
+{
+  "phase": "before",
+  "unitRc": 0,
+  "captureRc": 3,
+  "rc": 3,
+  "expected": 3,
+  "scope": "real Bash control using own fake python executable; no product/services/DB"
+}

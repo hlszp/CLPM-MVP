@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-17T08:19:43.446362+00:00",
+  "generated_at": "2026-10-17T09:47:45.464018+00:00",
   "generated_by": "F08 evidence preservation (final audit remediation)",
   "note": "selectedLinesSha256 is NOT full-file hash. Large files indexed here are local-only unless a persistent copy path is listed.",
   "entries": [
@@ -265,10 +265,15 @@
       "hash_match": "YES",
       "source": "G5 capacity evidence",
       "owner": "G5 Keeper",
-      "persistence": "LOCAL ONLY — not backed up to persistent storage",
+      "persistence": "LOCAL_PERSISTENT_ARCHIVE_VERIFIED",
       "related_findings": [
         "F08"
-      ]
+      ],
+      "persistent_archive": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/large-original-evidence.tar.gz",
+      "archive_member": "G5-D01-04-实证-20261015/log-audit-a1pp.json",
+      "persistent_archive_sha256": "241e671130b9aad1d3f0b1bb3b19befcac185411620f4c711ecf8e315fe2bbf1",
+      "restored_sha256": "57ca05fb88a40a951136405c5616d1f200731d7b3d18d621a65768fa76c5a8e3",
+      "restoration_evidence": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f08/restore-from-persistent-archive.json"
     },
     {
       "file": "G5-D01-04-实证-20261015/trace-a1-raw.log",
@@ -279,10 +284,15 @@
       "hash_match": "YES",
       "source": "G5 capacity evidence",
       "owner": "G5 Keeper",
-      "persistence": "LOCAL ONLY — not backed up to persistent storage",
+      "persistence": "LOCAL_PERSISTENT_ARCHIVE_VERIFIED",
       "related_findings": [
         "F08"
-      ]
+      ],
+      "persistent_archive": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/large-original-evidence.tar.gz",
+      "archive_member": "G5-D01-04-实证-20261015/trace-a1-raw.log",
+      "persistent_archive_sha256": "241e671130b9aad1d3f0b1bb3b19befcac185411620f4c711ecf8e315fe2bbf1",
+      "restored_sha256": "4eb2d0e4f02303d756a69131cc501ff3f364fd040e313665ce0b45d02d776c88",
+      "restoration_evidence": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f08/restore-from-persistent-archive.json"
     },
     {
       "file": "G5接管-20261014/b1000-real/observed.json",
@@ -293,10 +303,15 @@
       "hash_match": "YES",
       "source": "G5 capacity evidence",
       "owner": "G5 Keeper",
-      "persistence": "LOCAL ONLY — not backed up to persistent storage",
+      "persistence": "LOCAL_PERSISTENT_ARCHIVE_VERIFIED",
       "related_findings": [
         "F08"
-      ]
+      ],
+      "persistent_archive": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/large-original-evidence.tar.gz",
+      "archive_member": "G5接管-20261014/b1000-real/observed.json",
+      "persistent_archive_sha256": "241e671130b9aad1d3f0b1bb3b19befcac185411620f4c711ecf8e315fe2bbf1",
+      "restored_sha256": "ba97ba29da5c97b7fcfb8df93d68b980ed6835280724816e59f060f9244b23e5",
+      "restoration_evidence": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f08/restore-from-persistent-archive.json"
     },
     {
       "file": "full-pytest-f01-candidate.log",
@@ -315,5 +330,18 @@
     }
   ],
   "total_entries": 24,
-  "large_file_persistence_status": "UNRESOLVED — large files remain local-only; persistent backup pending"
+  "large_file_persistence_status": "LOCAL_PERSISTENT_ARCHIVE_VERIFIED — 3/3 restored from archive outside project and temporary trees; same-host archive, no offsite copy claimed",
+  "previous_manifest": {
+    "sha256": "4030065cb8e06474f3a970c866c9d2609cf8e926fff227844c2777a98bf64e3d",
+    "preserved_at": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f08/evidence-manifest-before.json"
+  },
+  "large_file_persistent_archive": {
+    "archive": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/large-original-evidence.tar.gz",
+    "archive_bytes": 27474475,
+    "archive_sha256": "241e671130b9aad1d3f0b1bb3b19befcac185411620f4c711ecf8e315fe2bbf1",
+    "owner_role": "CLPM 项目证据保管负责人",
+    "filesystem_owner": "zhangping",
+    "retention": "无自动过期或清理任务；后续按项目负责人指定规则维护",
+    "storage_scope": "本机持久目录；未配置异机或云副本"
+  }
 }

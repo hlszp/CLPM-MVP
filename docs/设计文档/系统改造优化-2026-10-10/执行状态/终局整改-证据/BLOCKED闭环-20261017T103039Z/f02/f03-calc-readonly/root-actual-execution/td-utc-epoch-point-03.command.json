@@ -1,0 +1,8 @@
+{
+  "sql": "SELECT COUNT(*),MIN(ts),MAX(ts) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='82f3ed25-172b-4c0e-8708-3b8741e757a0' AND ts >= 1792234800000 AND ts <= 1792238400000",
+  "startedAt": "2026-10-17T13:15:18.867191+00:00",
+  "finishedAt": "2026-10-17T13:15:18.868608+00:00",
+  "httpStatus": 200,
+  "serverCode": 10242,
+  "bodySha256": "09f335d6b7c5481530a65bebc576a4c84141245958f852c632e5d8e02d644044"
+}

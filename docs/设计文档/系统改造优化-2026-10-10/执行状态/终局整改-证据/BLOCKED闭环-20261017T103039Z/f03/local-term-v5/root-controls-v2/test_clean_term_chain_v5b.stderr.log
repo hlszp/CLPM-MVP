@@ -1,0 +1,12 @@
+test_actual_native_minus15_has_complete_ordered_chain (__main__.CleanTerm.test_actual_native_minus15_has_complete_ordered_chain) ... ok
+test_actual_v4_clpm_minus15_has_same_clean_chain (__main__.CleanTerm.test_actual_v4_clpm_minus15_has_same_clean_chain) ... ok
+test_complete_before_signal_offset_is_rejected (__main__.CleanTerm.test_complete_before_signal_offset_is_rejected) ... ok
+test_missing_application_shutdown_complete_is_rejected (__main__.CleanTerm.test_missing_application_shutdown_complete_is_rejected) ... ok
+test_missing_waiting_is_rejected (__main__.CleanTerm.test_missing_waiting_is_rejected) ... ok
+test_reordered_finished_before_complete_is_rejected (__main__.CleanTerm.test_reordered_finished_before_complete_is_rejected) ... ok
+test_wrong_finished_pid_is_rejected (__main__.CleanTerm.test_wrong_finished_pid_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.036s
+
+OK

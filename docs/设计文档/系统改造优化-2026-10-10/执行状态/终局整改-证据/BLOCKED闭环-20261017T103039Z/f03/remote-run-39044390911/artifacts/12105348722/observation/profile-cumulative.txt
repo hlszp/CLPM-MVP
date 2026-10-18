@@ -1,0 +1,68 @@
+         568452 function calls (568439 primitive calls) in 6.231 seconds
+
+   Ordered by: cumulative time
+   List reduced from 529 to 60 due to restriction <60>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+      3/1    0.413    0.138    6.232    6.232 pipeline.py:1405(identify_from_history)
+       32    0.000    0.000    4.752    0.149 pipeline.py:2249(_fit_one)
+       16    4.193    0.262    4.748    0.297 armax.py:35(identify_armax)
+     8529    0.444    0.000    0.657    0.000 _linalg.py:2417(lstsq)
+        4    0.008    0.002    0.589    0.147 pipeline.py:4385(_search_delay)
+     1654    0.098    0.000    0.349    0.000 arx.py:58(identify_arx)
+      788    0.003    0.000    0.345    0.000 pipeline.py:4438(_bic_on_window)
+      788    0.339    0.000    0.340    0.000 pipeline.py:4532(_residual_var_on_common_window)
+        1    0.000    0.000    0.195    0.195 pipeline.py:4244(_apply_closed_loop_finalization)
+        1    0.006    0.006    0.195    0.195 pipeline.py:3974(_reselect_uncertainty)
+      788    0.003    0.000    0.173    0.000 pipeline.py:4431(_fit)
+      738    0.003    0.000    0.156    0.000 pipeline.py:4017(_bic_at)
+        1    0.004    0.004    0.119    0.119 pipeline.py:3364(_identify_joint_windows)
+        2    0.014    0.007    0.112    0.056 pipeline.py:4712(_identify_ipdt_candidate)
+       80    0.004    0.000    0.111    0.001 pipeline.py:3254(_joint_fit)
+     8860    0.088    0.000    0.111    0.000 _linalg.py:201(_commonType)
+       78    0.000    0.000    0.110    0.001 pipeline.py:3293(_joint_bic)
+      395    0.023    0.000    0.095    0.000 pipeline.py:4620(_ipdt_regress)
+       80    0.092    0.001    0.094    0.001 pipeline.py:3178(_stacked_regression)
+     2146    0.017    0.000    0.080    0.000 fromnumeric.py:4075(var)
+      589    0.007    0.000    0.064    0.000 pipeline.py:4361(_arx_delay_candidate_convertible)
+     2146    0.041    0.000    0.063    0.000 _methods.py:148(_var)
+      317    0.014    0.000    0.053    0.000 _polynomial_impl.py:168(roots)
+    24695    0.043    0.000    0.051    0.000 {built-in method builtins.max}
+     2374    0.009    0.000    0.036    0.000 fromnumeric.py:3737(mean)
+     4370    0.015    0.000    0.033    0.000 fromnumeric.py:2342(sum)
+     2384    0.015    0.000    0.028    0.000 _methods.py:115(_mean)
+    12560    0.021    0.000    0.021    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+     8871    0.011    0.000    0.020    0.000 _ufunc_config.py:472(__enter__)
+    17389    0.014    0.000    0.020    0.000 _linalg.py:163(_makearray)
+       10    0.002    0.000    0.019    0.002 _spectral_py.py:690(csd)
+      317    0.010    0.000    0.018    0.000 _linalg.py:1181(eigvals)
+     4408    0.011    0.000    0.018    0.000 fromnumeric.py:66(_wrapreduction)
+    26247    0.011    0.000    0.018    0.000 _linalg.py:182(_realType)
+    20342    0.017    0.000    0.017    0.000 {built-in method numpy.zeros}
+    26312    0.016    0.000    0.016    0.000 {method 'astype' of 'numpy.ndarray' objects}
+     4530    0.015    0.000    0.016    0.000 _methods.py:73(_count_reduce_items)
+        8    0.000    0.000    0.014    0.002 _spectral_py.py:515(welch)
+       10    0.000    0.000    0.012    0.001 _short_time_fft.py:1261(spectrogram)
+       12    0.001    0.000    0.012    0.001 _short_time_fft.py:1173(stft_detrend)
+    26566    0.008    0.000    0.012    0.000 _linalg.py:168(isComplexType)
+        2    0.000    0.000    0.011    0.005 nonparametric.py:77(welch_spectral_analysis)
+     8871    0.005    0.000    0.011    0.000 _ufunc_config.py:488(__exit__)
+        3    0.004    0.001    0.010    0.003 pipeline.py:2706(_compute_parameter_uncertainty)
+    35416    0.009    0.000    0.009    0.000 {method 'get' of 'dict' objects}
+    53640    0.008    0.000    0.008    0.000 {built-in method builtins.issubclass}
+     7022    0.007    0.000    0.008    0.000 {built-in method builtins.min}
+     8529    0.005    0.000    0.007    0.000 getlimits.py:175(__new__)
+      317    0.004    0.000    0.007    0.000 _linalg.py:189(_to_real_if_imag_zero)
+       35    0.000    0.000    0.007    0.000 __init__.py:1517(debug)
+       16    0.006    0.000    0.007    0.000 pipeline.py:4565(_free_run_simulation)
+       35    0.000    0.000    0.007    0.000 __init__.py:1660(_log)
+      958    0.003    0.000    0.006    0.000 fromnumeric.py:2586(all)
+     8529    0.006    0.000    0.006    0.000 {method 'squeeze' of 'numpy.ndarray' objects}
+        8    0.004    0.000    0.006    0.001 excitation.py:31(check_excitation)
+        2    0.000    0.000    0.006    0.003 pipeline.py:2894(_estimate_snr_db)
+        2    0.000    0.000    0.006    0.003 pipeline.py:2868(_estimate_snr_powers)
+    17064    0.006    0.000    0.006    0.000 {method '__array_wrap__' of 'numpy.ndarray' objects}
+     9200    0.004    0.000    0.006    0.000 armax.py:139(<genexpr>)
+     8529    0.005    0.000    0.005    0.000 _linalg.py:238(_assert_2d)
+
+

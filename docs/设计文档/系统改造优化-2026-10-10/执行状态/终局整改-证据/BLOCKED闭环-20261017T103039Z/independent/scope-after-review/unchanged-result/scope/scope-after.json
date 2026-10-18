@@ -1,0 +1,75 @@
+{
+  "startedAt": "2026-10-17T12:11:29.587927+00:00",
+  "finishedAt": "2026-10-17T12:11:29.590623+00:00",
+  "candidateSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "configFreeze": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/scope-after-review/unchanged-positive-fixture/freeze/config-freeze.json",
+    "sha256": "0a3139560354399e88ad1408de8db195251d655b4621a9f0e8b0945c4fc578aa"
+  },
+  "configFreezeManifest": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/scope-after-review/unchanged-positive-fixture/freeze/sha256-manifest.json",
+    "sha256": "c51945901716f426d4e6df66de8e595f589bcf93ebb8e3b0ca38a875983b81a7",
+    "bytes": 392
+  },
+  "sql": {
+    "plant_node": "SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY id),'[]'::jsonb)::text FROM (SELECT id,parent_id,is_kpi_enabled FROM plant_node) s",
+    "loop_ledger": "SELECT COALESCE(jsonb_agg(to_jsonb(s) ORDER BY id),'[]'::jsonb)::text FROM (SELECT id,tag_name,unit_id,complex_loop_group_id FROM loop_ledger) s"
+  },
+  "transaction": {
+    "readonly": "on",
+    "isolation": "repeatable read",
+    "database": "clpm_capacity_20261017_s01",
+    "snapshot": "fake-original-snapshot",
+    "clock": "2026-10-17T12:00:00Z",
+    "readCompleteAt": "2026-10-17T12:11:29.588693+00:00",
+    "transactionEndedAt": "2026-10-17T12:11:29.588696+00:00"
+  },
+  "checks": {
+    "plant_node": {
+      "equalFrozenColumns": true,
+      "rows": 1,
+      "frozenRows": 1,
+      "columns": [
+        "id",
+        "parent_id",
+        "is_kpi_enabled"
+      ]
+    },
+    "loop_ledger": {
+      "equalFrozenColumns": true,
+      "rows": 1000,
+      "frozenRows": 1000,
+      "columns": [
+        "id",
+        "tag_name",
+        "unit_id",
+        "complex_loop_group_id"
+      ]
+    }
+  },
+  "rawRefs": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/scope-after-review/unchanged-result/scope/plant_node.raw.json",
+      "sha256": "a2d148a163759d2c2205e6b0dcb226ea355da1d3ffd684c5344ba072e5c4bef4",
+      "bytes": 91
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/scope-after-review/unchanged-positive-fixture/freeze/pg-canonical/plant_node.json.gz",
+      "sha256": "6e356e932b15aa65bef611310ca703df2a60dc1ac741f449d413094aa0b803b1",
+      "bytes": 80
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/scope-after-review/unchanged-result/scope/loop_ledger.raw.json",
+      "sha256": "dea182bfd18c9b59f9b5dfa514b4117ebfec9c5717d7370f005ff8cee47b9107",
+      "bytes": 156000
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/scope-after-review/unchanged-positive-fixture/freeze/pg-canonical/loop_ledger.json.gz",
+      "sha256": "8736fc5286c02cf158232094a10e026ab0e65f9300b49988092db414f7d18282",
+      "bytes": 5694
+    }
+  ],
+  "noBusinessOrConfigurationWrites": true,
+  "scope": "Post-series persisted scope equality only; combine with frozen query source, exclusive Keeper operation record and actual task/event/output scope chain",
+  "status": "SCOPE_UNCHANGED"
+}

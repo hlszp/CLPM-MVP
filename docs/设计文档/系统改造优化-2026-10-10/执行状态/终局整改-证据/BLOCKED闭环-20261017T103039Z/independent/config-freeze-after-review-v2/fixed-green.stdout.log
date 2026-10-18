@@ -1,0 +1,7 @@
+{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
+{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
+{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
+{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
+{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
+{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
+{"sourcePath": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/freeze_capacity_configuration_v2.py", "sourceSha256": "2688732523d3f9300c9d11e2dbf9194248a7be195c18cbfa313f5bbf020e66e5", "counterexampleSha256": "8b146b3ef75504632e093d7fe049445ca888dd39ab9b3225172b526c9b3b06e6", "productImports": 0, "networkCalls": 0, "signals": 0, "allPassed": true}

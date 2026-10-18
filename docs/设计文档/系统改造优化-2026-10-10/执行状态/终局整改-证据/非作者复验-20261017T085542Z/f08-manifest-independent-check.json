@@ -1,0 +1,273 @@
+{
+  "checked_at": "2026-10-17T08:58:17.824652+00:00",
+  "manifest_sha256": "4030065cb8e06474f3a970c866c9d2609cf8e926fff227844c2777a98bf64e3d",
+  "declared_total": 24,
+  "actual_total": 24,
+  "match_count": 24,
+  "rows": [
+    {
+      "file": "original-logs/docpush2.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/docpush2.log",
+      "exists": true,
+      "expected_sha256": "4e5eb7175e59ca87fa2a18fb54770f4e8b70034cf4d75e793bb1802ff66bf3ad",
+      "expected_bytes": 100819,
+      "actual_sha256": "4e5eb7175e59ca87fa2a18fb54770f4e8b70034cf4d75e793bb1802ff66bf3ad",
+      "actual_bytes": 100819,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p604fix-pytest-summary.txt",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p604fix-pytest-summary.txt",
+      "exists": true,
+      "expected_sha256": "f169d260fc1073f38672b699bfd9dc8ec2bb79cc509bdd03f9dbba3b6118565e",
+      "expected_bytes": 128,
+      "actual_sha256": "f169d260fc1073f38672b699bfd9dc8ec2bb79cc509bdd03f9dbba3b6118565e",
+      "actual_bytes": 128,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p605-full-test.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p605-full-test.log",
+      "exists": true,
+      "expected_sha256": "5c1f2c1cf0d15a885834faed81814ec6a874060ba10ac1341ed93c773a73bdbc",
+      "expected_bytes": 127093,
+      "actual_sha256": "5c1f2c1cf0d15a885834faed81814ec6a874060ba10ac1341ed93c773a73bdbc",
+      "actual_bytes": 127093,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p605push2.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p605push2.log",
+      "exists": true,
+      "expected_sha256": "e8e00bba17463edb07f0467fc01ecec2016f4ecc591d62412347de18fc2b265a",
+      "expected_bytes": 100912,
+      "actual_sha256": "e8e00bba17463edb07f0467fc01ecec2016f4ecc591d62412347de18fc2b265a",
+      "actual_bytes": 100912,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p605push3.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p605push3.log",
+      "exists": true,
+      "expected_sha256": "7ef0115c9efcbbfc83c493fe2cfe34d3cf53daf19b4f4ae02228906701a59171",
+      "expected_bytes": 105050,
+      "actual_sha256": "7ef0115c9efcbbfc83c493fe2cfe34d3cf53daf19b4f4ae02228906701a59171",
+      "actual_bytes": 105050,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p702fix_pytest_final.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p702fix_pytest_final.log",
+      "exists": true,
+      "expected_sha256": "5b5c7d99616beba1ed2e2cb7887833240681edcf5d41531c124e7061ae70e004",
+      "expected_bytes": 59555,
+      "actual_sha256": "5b5c7d99616beba1ed2e2cb7887833240681edcf5d41531c124e7061ae70e004",
+      "actual_bytes": 59555,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p703_drill_output.txt",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p703_drill_output.txt",
+      "exists": true,
+      "expected_sha256": "01182d610abc0c2f3cc91aa0ae5d05315270fcf44392aa925b525b480117344d",
+      "expected_bytes": 3049,
+      "actual_sha256": "01182d610abc0c2f3cc91aa0ae5d05315270fcf44392aa925b525b480117344d",
+      "actual_bytes": 3049,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "original-logs/p703_full_pytest.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p703_full_pytest.log",
+      "exists": true,
+      "expected_sha256": "371113688fc0a4459166a3e98265bb8a5f7b59f69e6d4dcce7ed2ac4cae87092",
+      "expected_bytes": 59338,
+      "actual_sha256": "371113688fc0a4459166a3e98265bb8a5f7b59f69e6d4dcce7ed2ac4cae87092",
+      "actual_bytes": 59338,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "G5-D01-04-实证-20261015/D02-batches/batch4-report.json",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch4-report.json",
+      "exists": true,
+      "expected_sha256": "4f0c9be8971b9fa8b8308e7471aeb898bd4ed603cec2d5542ee8d0d44e3d493b",
+      "expected_bytes": 3457,
+      "actual_sha256": "4f0c9be8971b9fa8b8308e7471aeb898bd4ed603cec2d5542ee8d0d44e3d493b",
+      "actual_bytes": 3457,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "G5-D01-04-实证-20261015/D02-batches/batch5-report.json",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch5-report.json",
+      "exists": true,
+      "expected_sha256": "bdbe302a69372390758ad2f380d2686f36056a9cef26cc484f399ad6498500e8",
+      "expected_bytes": 12885,
+      "actual_sha256": "bdbe302a69372390758ad2f380d2686f36056a9cef26cc484f399ad6498500e8",
+      "actual_bytes": 12885,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "G5-D01-04-实证-20261015/D02-batches/batch7-report.json",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch7-report.json",
+      "exists": true,
+      "expected_sha256": "97b0ec60e15864088db95b9d53be00692bbe92feaee17561bd86c8ff70d4853b",
+      "expected_bytes": 2678,
+      "actual_sha256": "97b0ec60e15864088db95b9d53be00692bbe92feaee17561bd86c8ff70d4853b",
+      "actual_bytes": 2678,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f01/candidate-commits.txt",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f01/candidate-commits.txt",
+      "exists": true,
+      "expected_sha256": "ddc36ef36dbfe15a47eace00e13f34b426b528748d7b1a076b2d814876f5b1b2",
+      "expected_bytes": 136,
+      "actual_sha256": "ddc36ef36dbfe15a47eace00e13f34b426b528748d7b1a076b2d814876f5b1b2",
+      "actual_bytes": 136,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f01/candidate-diff-stat.txt",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f01/candidate-diff-stat.txt",
+      "exists": true,
+      "expected_sha256": "c21c22a582a262bfdb1bb7d3fd3a890f00a4b471ba66c9fc8e671ab337d15b59",
+      "expected_bytes": 585,
+      "actual_sha256": "c21c22a582a262bfdb1bb7d3fd3a890f00a4b471ba66c9fc8e671ab337d15b59",
+      "actual_bytes": 585,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f01/forward-verify-with-fix.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f01/forward-verify-with-fix.log",
+      "exists": true,
+      "expected_sha256": "fe56f03fc543a1c3d02dafac806bec81d518e98f28e7385a0529d1ad779697c2",
+      "expected_bytes": 627,
+      "actual_sha256": "fe56f03fc543a1c3d02dafac806bec81d518e98f28e7385a0529d1ad779697c2",
+      "actual_bytes": 627,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f01/restored-tests-full.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f01/restored-tests-full.log",
+      "exists": true,
+      "expected_sha256": "a250dbab7693ca6d6fe041a016c07212cd7b46aed7451b6a4eba00971d0280d4",
+      "expected_bytes": 3585,
+      "actual_sha256": "a250dbab7693ca6d6fe041a016c07212cd7b46aed7451b6a4eba00971d0280d4",
+      "actual_bytes": 3585,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f01/reverse-verify-no-fix.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f01/reverse-verify-no-fix.log",
+      "exists": true,
+      "expected_sha256": "2aca4240b6c183244f8e449b2e8cc3e64342209814d8eadccf289175fd25cf21",
+      "expected_bytes": 2371,
+      "actual_sha256": "2aca4240b6c183244f8e449b2e8cc3e64342209814d8eadccf289175fd25cf21",
+      "actual_bytes": 2371,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f03/ci-workflow.diff",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f03/ci-workflow.diff",
+      "exists": true,
+      "expected_sha256": "6c6c4af98e4c75951e151ce253e5680f653098a1ea034ff9dd1bf1ee1dfab751",
+      "expected_bytes": 5007,
+      "actual_sha256": "6c6c4af98e4c75951e151ce253e5680f653098a1ea034ff9dd1bf1ee1dfab751",
+      "actual_bytes": 5007,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f03/controlled-fail-env-down.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f03/controlled-fail-env-down.log",
+      "exists": true,
+      "expected_sha256": "87f0b45b4ddb2a611121f07d0f640f970333c99ee28fc013c4a61b2c04598a27",
+      "expected_bytes": 268,
+      "actual_sha256": "87f0b45b4ddb2a611121f07d0f640f970333c99ee28fc013c4a61b2c04598a27",
+      "actual_bytes": 268,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f03/controlled-fail-test-fail.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f03/controlled-fail-test-fail.log",
+      "exists": true,
+      "expected_sha256": "6e8f450470a3c060253dfbcf5823b09bb18ce88037bc0d99d535b89b3cc7c910",
+      "expected_bytes": 65075,
+      "actual_sha256": "6e8f450470a3c060253dfbcf5823b09bb18ce88037bc0d99d535b89b3cc7c910",
+      "actual_bytes": 65075,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "f03/run-critical-e2e.sh",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f03/run-critical-e2e.sh",
+      "exists": true,
+      "expected_sha256": "ea99dd609f6fab3435d8a4bc2c0fe32ec7f610027dbccdda24e8d9f1386406dd",
+      "expected_bytes": 2835,
+      "actual_sha256": "ea99dd609f6fab3435d8a4bc2c0fe32ec7f610027dbccdda24e8d9f1386406dd",
+      "actual_bytes": 2835,
+      "matches": true,
+      "tracked": true
+    },
+    {
+      "file": "G5-D01-04-实证-20261015/log-audit-a1pp.json",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/log-audit-a1pp.json",
+      "exists": true,
+      "expected_sha256": "57ca05fb88a40a951136405c5616d1f200731d7b3d18d621a65768fa76c5a8e3",
+      "expected_bytes": 130871639,
+      "actual_sha256": "57ca05fb88a40a951136405c5616d1f200731d7b3d18d621a65768fa76c5a8e3",
+      "actual_bytes": 130871639,
+      "matches": true,
+      "tracked": false
+    },
+    {
+      "file": "G5-D01-04-实证-20261015/trace-a1-raw.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/trace-a1-raw.log",
+      "exists": true,
+      "expected_sha256": "4eb2d0e4f02303d756a69131cc501ff3f364fd040e313665ce0b45d02d776c88",
+      "expected_bytes": 87273096,
+      "actual_sha256": "4eb2d0e4f02303d756a69131cc501ff3f364fd040e313665ce0b45d02d776c88",
+      "actual_bytes": 87273096,
+      "matches": true,
+      "tracked": false
+    },
+    {
+      "file": "G5接管-20261014/b1000-real/observed.json",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/observed.json",
+      "exists": true,
+      "expected_sha256": "ba97ba29da5c97b7fcfb8df93d68b980ed6835280724816e59f060f9244b23e5",
+      "expected_bytes": 44268996,
+      "actual_sha256": "ba97ba29da5c97b7fcfb8df93d68b980ed6835280724816e59f060f9244b23e5",
+      "actual_bytes": 44268996,
+      "matches": true,
+      "tracked": false
+    },
+    {
+      "file": "full-pytest-f01-candidate.log",
+      "resolved_path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/full-pytest-f01-candidate.log",
+      "exists": true,
+      "expected_sha256": "ffcfded6f3228eac14c37230a04b0126796b7bd936e3ed7f1f363d55f87fad84",
+      "expected_bytes": 60791,
+      "actual_sha256": "ffcfded6f3228eac14c37230a04b0126796b7bd936e3ed7f1f363d55f87fad84",
+      "actual_bytes": 60791,
+      "matches": true,
+      "tracked": true
+    }
+  ]
+}

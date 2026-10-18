@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "check",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/capture_closed_window_endpoints.py",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_capture_closed_window_endpoints.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "startedAt": "2026-10-17T11:43:36.081107+00:00",
+  "elapsedSeconds": 0.013807500014081597,
+  "rc": 0,
+  "stdoutSha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

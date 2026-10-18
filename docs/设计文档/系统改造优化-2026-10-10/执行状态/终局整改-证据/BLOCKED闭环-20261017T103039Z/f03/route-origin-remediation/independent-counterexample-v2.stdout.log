@@ -1,0 +1,2 @@
+### Error
+Error: False authenticated landing: {"outer":"http://127.0.0.1:60134/auth/login#//foreign.invalid/cockpit","outerOrigin":"http://127.0.0.1:60134","logicalOrigin":"http://foreign.invalid","path":"/cockpit","accepted":true}

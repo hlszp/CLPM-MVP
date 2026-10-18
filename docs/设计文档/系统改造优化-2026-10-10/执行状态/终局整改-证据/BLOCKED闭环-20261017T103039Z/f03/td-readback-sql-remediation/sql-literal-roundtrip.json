@@ -1,0 +1,242 @@
+{
+  "scope": "Pure actual synth_series -> original _td_rows -> Python IEEE754 parse of SQL literals; no DB, API, Worker or SQL execution",
+  "generatorSha256": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+  "roles": {
+    "PV": {
+      "samples": 3600,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            55.0,
+            1,
+            1
+          ],
+          "valueLiteral": "55.0",
+          "originalHex": "0x1.b800000000000p+5",
+          "parsedHex": "0x1.b800000000000p+5"
+        },
+        {
+          "sample": [
+            1,
+            55.8216,
+            1,
+            1
+          ],
+          "valueLiteral": "55.8216",
+          "originalHex": "0x1.be92a30553261p+5",
+          "parsedHex": "0x1.be92a30553261p+5"
+        },
+        {
+          "sample": [
+            2,
+            56.0863,
+            1,
+            1
+          ],
+          "valueLiteral": "56.0863",
+          "originalHex": "0x1.c0b0be0ded289p+5",
+          "parsedHex": "0x1.c0b0be0ded289p+5"
+        },
+        {
+          "sample": [
+            3,
+            54.6963,
+            1,
+            1
+          ],
+          "valueLiteral": "54.6963",
+          "originalHex": "0x1.b59205bc01a37p+5",
+          "parsedHex": "0x1.b59205bc01a37p+5"
+        },
+        {
+          "sample": [
+            4,
+            55.6259,
+            1,
+            1
+          ],
+          "valueLiteral": "55.6259",
+          "originalHex": "0x1.bd01d7dbf4880p+5",
+          "parsedHex": "0x1.bd01d7dbf4880p+5"
+        }
+      ]
+    },
+    "SP": {
+      "samples": 3,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            55.0,
+            1,
+            1
+          ],
+          "valueLiteral": "55.0",
+          "originalHex": "0x1.b800000000000p+5",
+          "parsedHex": "0x1.b800000000000p+5"
+        },
+        {
+          "sample": [
+            900,
+            60.0,
+            1,
+            1
+          ],
+          "valueLiteral": "60.0",
+          "originalHex": "0x1.e000000000000p+5",
+          "parsedHex": "0x1.e000000000000p+5"
+        },
+        {
+          "sample": [
+            2400,
+            65.0,
+            1,
+            1
+          ],
+          "valueLiteral": "65.0",
+          "originalHex": "0x1.0400000000000p+6",
+          "parsedHex": "0x1.0400000000000p+6"
+        }
+      ]
+    },
+    "OP": {
+      "samples": 3600,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            49.6505,
+            1,
+            1
+          ],
+          "valueLiteral": "49.6505",
+          "originalHex": "0x1.8d34395810625p+5",
+          "parsedHex": "0x1.8d34395810625p+5"
+        },
+        {
+          "sample": [
+            1,
+            47.9852,
+            1,
+            1
+          ],
+          "valueLiteral": "47.9852",
+          "originalHex": "0x1.7fe1b089a0275p+5",
+          "parsedHex": "0x1.7fe1b089a0275p+5"
+        },
+        {
+          "sample": [
+            2,
+            47.817,
+            1,
+            1
+          ],
+          "valueLiteral": "47.817",
+          "originalHex": "0x1.7e89374bc6a7fp+5",
+          "parsedHex": "0x1.7e89374bc6a7fp+5"
+        },
+        {
+          "sample": [
+            3,
+            49.9888,
+            1,
+            1
+          ],
+          "valueLiteral": "49.9888",
+          "originalHex": "0x1.8fe90ff972474p+5",
+          "parsedHex": "0x1.8fe90ff972474p+5"
+        },
+        {
+          "sample": [
+            4,
+            48.2393,
+            1,
+            1
+          ],
+          "valueLiteral": "48.2393",
+          "originalHex": "0x1.81ea161e4f766p+5",
+          "parsedHex": "0x1.81ea161e4f766p+5"
+        }
+      ]
+    },
+    "MODE": {
+      "samples": 1,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            1.0,
+            1,
+            1
+          ],
+          "valueLiteral": "1.0",
+          "originalHex": "0x1.0000000000000p+0",
+          "parsedHex": "0x1.0000000000000p+0"
+        }
+      ]
+    },
+    "PID_P": {
+      "samples": 1,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            1.2,
+            1,
+            1
+          ],
+          "valueLiteral": "1.2",
+          "originalHex": "0x1.3333333333333p+0",
+          "parsedHex": "0x1.3333333333333p+0"
+        }
+      ]
+    },
+    "PID_I": {
+      "samples": 1,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            60.0,
+            1,
+            1
+          ],
+          "valueLiteral": "60.0",
+          "originalHex": "0x1.e000000000000p+5",
+          "parsedHex": "0x1.e000000000000p+5"
+        }
+      ]
+    },
+    "PID_D": {
+      "samples": 1,
+      "mismatchCount": 0,
+      "mismatches": [],
+      "examples": [
+        {
+          "sample": [
+            0,
+            0.0,
+            1,
+            1
+          ],
+          "valueLiteral": "0.0",
+          "originalHex": "0x0.0p+0",
+          "parsedHex": "0x0.0p+0"
+        }
+      ]
+    }
+  }
+}

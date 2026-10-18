@@ -1,0 +1,10 @@
+{
+  "sql": "SELECT * FROM `clpm_critical_20261017_local_ts`.`p_e2d42b19be3a44e498fdbc82a00b8a81` ORDER BY ts",
+  "startedAt": "2026-10-17T12:51:45.809788+00:00",
+  "finishedAt": "2026-10-17T12:51:45.815228+00:00",
+  "httpStatus": 200,
+  "code": 0,
+  "rows": 3600,
+  "bytes": 500277,
+  "sha256": "0a6d5baa8a39f52ce14f60a60fd27955a2a458ec023f083774ecca9b0ce9bfe2"
+}

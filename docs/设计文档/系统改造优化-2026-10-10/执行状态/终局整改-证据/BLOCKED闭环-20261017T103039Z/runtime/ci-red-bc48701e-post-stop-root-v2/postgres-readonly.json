@@ -1,0 +1,71 @@
+{
+  "startedAtUtc": "2026-10-17T15:41:32.315634+00:00",
+  "finishedAtUtc": "2026-10-17T15:41:32.351461+00:00",
+  "rows": [
+    {
+      "atUtc": "2026-10-17T15:41:32.336088+00:00",
+      "database": "clpm_capacity_20261017_s01",
+      "readOnly": "on",
+      "snapshot": "1051340:1051340:",
+      "timezone": "UTC",
+      "isolation": "repeatable read"
+    },
+    {
+      "loops": 1000,
+      "schema": [
+        "p702perm01"
+      ],
+      "histories": 7000,
+      "loopTagMappings": 7000,
+      "declaredSyntheticHistories": 7000
+    },
+    {
+      "rows": 0,
+      "table": "kpi_snapshot_hourly"
+    },
+    {
+      "rows": 0,
+      "table": "kpi_snapshot_custom"
+    },
+    {
+      "rows": 0,
+      "table": "loop_confidence_latest"
+    },
+    {
+      "rows": 0,
+      "table": "kpi_node_snapshot_hourly"
+    },
+    {
+      "rows": 0,
+      "table": "kpi_node_snapshot_daily"
+    },
+    {
+      "rows": 0,
+      "table": "kpi_node_snapshot_monthly"
+    },
+    {
+      "rows": 0,
+      "table": "calculation_result_record"
+    },
+    {
+      "rows": 0,
+      "table": "calculation_result_attempt"
+    },
+    {
+      "rows": 0,
+      "table": "calculation_result_legacy_map"
+    },
+    {
+      "rows": 0,
+      "table": "calculation_dataset_snapshot"
+    },
+    {
+      "rows": 0,
+      "table": "workbench_loop_latest"
+    },
+    {
+      "rows": 0,
+      "table": "unit_kpi_summary"
+    }
+  ]
+}

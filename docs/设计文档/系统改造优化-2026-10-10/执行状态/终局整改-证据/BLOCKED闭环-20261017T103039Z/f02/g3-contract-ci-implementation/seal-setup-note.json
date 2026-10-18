@@ -1,0 +1,7 @@
+{
+  "role": "EVIDENCE_BASELINE_SELECTION_ERROR_NOT_PRODUCT_FAILURE",
+  "error": "ValueError: not enough values to unpack (expected 2, got 0)",
+  "cause": "Root independently committed CI source as e2711c38 between author checks and sealing; git diff HEAD became empty",
+  "sourcesUnchanged": true,
+  "resolution": "Fixed baseline9f for diff and structure replay; kept pre-fix control source, no product changes"
+}

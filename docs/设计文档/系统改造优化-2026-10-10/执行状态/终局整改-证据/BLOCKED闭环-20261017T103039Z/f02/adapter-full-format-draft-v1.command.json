@@ -1,0 +1,13 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "format",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_full_shape.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "startedAt": "2026-10-17T12:11:38.346399+00:00",
+  "elapsedSeconds": 0.012575166998431087,
+  "rc": 0,
+  "stdoutSha256": "413a709001976657cb743636fd34e48fc41d8d302d665460d3f874b3313da127",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

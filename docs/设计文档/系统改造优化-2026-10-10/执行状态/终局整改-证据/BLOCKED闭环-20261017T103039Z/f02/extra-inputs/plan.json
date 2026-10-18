@@ -1,0 +1,33 @@
+{
+  "inputs": [
+    {
+      "purpose": "fault-recovery",
+      "scenario": "a",
+      "ts_start": "2026-10-16T08:00:00",
+      "ts_end": "2026-10-16T09:00:00",
+      "formal20Denominator": false
+    },
+    {
+      "purpose": "fault-persistent",
+      "scenario": "a",
+      "ts_start": "2026-10-16T09:00:00",
+      "ts_end": "2026-10-16T10:00:00",
+      "formal20Denominator": false
+    },
+    {
+      "purpose": "independent-cold",
+      "scenario": "b",
+      "ts_start": "2026-10-16T10:00:00",
+      "ts_end": "2026-10-16T11:00:00",
+      "formal20Denominator": false
+    },
+    {
+      "purpose": "independent-hot",
+      "scenario": "b",
+      "ts_start": "2026-10-16T11:00:00",
+      "ts_end": "2026-10-16T12:00:00",
+      "formal20Denominator": false
+    }
+  ],
+  "boundary": "Additional recovery/persistence/independent cases, never part of required normal20 success denominator"
+}

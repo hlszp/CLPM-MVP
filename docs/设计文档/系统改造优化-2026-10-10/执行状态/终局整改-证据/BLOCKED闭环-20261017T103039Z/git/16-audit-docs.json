@@ -1,0 +1,17 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "docs(audit): separate waiver and execution states",
+    "-m",
+    "Preserve original audit findings and dated receipts. Keep live F02/F03 acceptance blocked until real evidence and independent verification exist."
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 0.1823570728302002,
+  "changed_lines": 133,
+  "numstat": "6\t0\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/P6-\u4efb\u52a1\u72b6\u6001/STATE.md\n29\t49\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/P7\u6c47\u603b\u4e0eG7\u7ed3\u8bba.md\n22\t25\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u4efb\u52a1\u770b\u677f.md\n2\t0\tdocs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u72ec\u7acb\u590d\u9a8c\u62a5\u544a.md\n",
+  "stdout_sha256": "11b308c9acd3f8f1a77b50dad8c2dc9ec09a27fe661e49361dbf28d248178520",
+  "stderr_sha256": "21d4813392f45fce6ef5a668763996a9d35c0884f7c9fd2556d8ad1041c3dba1",
+  "commit": "5abdc71e71d3febcfa02591dd4306e3180d091b8"
+}

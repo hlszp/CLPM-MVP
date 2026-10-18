@@ -1,0 +1,13 @@
+{
+  "target": "/Users/zhangping/DEV/CLPM-MVP/deploy/docker/tdengine/taos.cfg",
+  "temporary_uncommitted_runtime_profile": true,
+  "original_sha256": "76a9f08028a6d7f6aaff94b7fcde09d96c00b329284fb887d2340f10c0486419",
+  "new_sha256": "5cab803bb45b170692fd8c8ac498b367a6a3f771352179ebfe6ebec67304faec",
+  "backup": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/taos-config-original.cfg",
+  "queryUseMemoryPool": 0,
+  "minReservedMemorySize_MB": 1024,
+  "forceReadConfig": 1,
+  "queryBufferSize_MB": 4096,
+  "production_touched": false,
+  "rollback": "restore exact original bytes then controlled restart and verify variables"
+}

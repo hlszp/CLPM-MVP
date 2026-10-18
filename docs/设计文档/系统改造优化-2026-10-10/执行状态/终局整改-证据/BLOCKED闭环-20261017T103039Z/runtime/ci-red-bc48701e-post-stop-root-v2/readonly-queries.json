@@ -1,0 +1,19 @@
+{
+  "transaction": "REPEATABLE READ READ ONLY; SET LOCAL TIME ZONE UTC",
+  "sql": [
+    "SELECT jsonb_build_object('database',current_database(),'readOnly',current_setting('transaction_read_only'),'isolation',current_setting('transaction_isolation'),'timezone',current_setting('TimeZone'),'snapshot',txid_current_snapshot()::text,'atUtc',clock_timestamp())::text",
+    "SELECT jsonb_build_object('loops',(SELECT count(*) FROM loop_ledger),'loopTagMappings',(SELECT count(*) FROM loop_tag_mapping),'histories',(SELECT count(*) FROM loop_tag_binding_history),'declaredSyntheticHistories',(SELECT count(*) FROM loop_tag_binding_history WHERE basis='SYNTHETIC_FIXTURE' AND valid_from='2026-10-15T12:00:00Z'::timestamptz AND mapping_version=1 AND valid_to IS NULL),'schema',(SELECT jsonb_agg(version_num ORDER BY version_num) FROM alembic_version))::text",
+    "SELECT jsonb_build_object('table','kpi_snapshot_hourly','rows',count(*))::text FROM kpi_snapshot_hourly",
+    "SELECT jsonb_build_object('table','kpi_snapshot_custom','rows',count(*))::text FROM kpi_snapshot_custom",
+    "SELECT jsonb_build_object('table','loop_confidence_latest','rows',count(*))::text FROM loop_confidence_latest",
+    "SELECT jsonb_build_object('table','kpi_node_snapshot_hourly','rows',count(*))::text FROM kpi_node_snapshot_hourly",
+    "SELECT jsonb_build_object('table','kpi_node_snapshot_daily','rows',count(*))::text FROM kpi_node_snapshot_daily",
+    "SELECT jsonb_build_object('table','kpi_node_snapshot_monthly','rows',count(*))::text FROM kpi_node_snapshot_monthly",
+    "SELECT jsonb_build_object('table','calculation_result_record','rows',count(*))::text FROM calculation_result_record",
+    "SELECT jsonb_build_object('table','calculation_result_attempt','rows',count(*))::text FROM calculation_result_attempt",
+    "SELECT jsonb_build_object('table','calculation_result_legacy_map','rows',count(*))::text FROM calculation_result_legacy_map",
+    "SELECT jsonb_build_object('table','calculation_dataset_snapshot','rows',count(*))::text FROM calculation_dataset_snapshot",
+    "SELECT jsonb_build_object('table','workbench_loop_latest','rows',count(*))::text FROM workbench_loop_latest",
+    "SELECT jsonb_build_object('table','unit_kpi_summary','rows',count(*))::text FROM unit_kpi_summary"
+  ]
+}

@@ -1,0 +1,38 @@
+[
+  {
+    "name": "isolation",
+    "rc": 0,
+    "stdoutTail": "",
+    "stderrTail": "tside_ci) ... ok\ntest_config_closes_external_services_without_touching_product_defaults (__main__.IsolationProtectionTests.test_config_closes_external_services_without_touching_product_defaults) ... ok\ntest_every_service_identity_guard_is_required (__main__.IsolationProtectionTests.test_every_service_identity_guard_is_required) ... ok\ntest_only_disposable_ci_identity_is_accepted (__main__.IsolationProtectionTests.test_only_disposable_ci_identity_is_accepted) ... ok\ntest_remote_api_is_rejected (__main__.IsolationProtectionTests.test_remote_api_is_rejected) ... ok\ntest_each_local_identity_guard_is_required (__main__.LocalIsolationProtectionTests.test_each_local_identity_guard_is_required) ... ok\ntest_explicit_local_profile_uses_its_true_identity (__main__.LocalIsolationProtectionTests.test_explicit_local_profile_uses_its_true_identity) ... ok\ntest_invalid_local_attempt_is_rejected (__main__.LocalIsolationProtectionTests.test_invalid_local_attempt_is_rejected) ... ok\ntest_plan_is_read_only_and_both_writers_refuse_wrong_api_before_imports (__main__.LocalIsolationProtectionTests.test_plan_is_read_only_and_both_writers_refuse_wrong_api_before_imports) ... ok\ntest_shared_capacity_and_production_database_names_are_rejected (__main__.LocalIsolationProtectionTests.test_shared_capacity_and_production_database_names_are_rejected) ... ok\ntest_well_formed_but_incorrect_source_sha_is_rejected (__main__.LocalIsolationProtectionTests.test_well_formed_but_incorrect_source_sha_is_rejected) ... ok\ntest_wrong_api_ui_ports_remote_hosts_and_github_impersonation_are_rejected (__main__.LocalIsolationProtectionTests.test_wrong_api_ui_ports_remote_hosts_and_github_impersonation_are_rejected) ... ok\n\n----------------------------------------------------------------------\nRan 12 tests in 0.810s\n\nOK\n"
+  },
+  {
+    "name": "type",
+    "rc": 0,
+    "stdoutTail": "\n> clpm-e2e@1.0.0 typecheck\n> tsc --noEmit\n\n",
+    "stderrTail": ""
+  },
+  {
+    "name": "gate-contract",
+    "rc": 0,
+    "stdoutTail": "TAP version 13\n# Subtest: real Playwright gate: passed -> rc=0\nok 1 - real Playwright gate: passed -> rc=0\n  ---\n  duration_ms: 957.465708\n  type: 'test'\n  ...\n# Subtest: real Playwright gate: unreachable -> rc=2\nok 2 - real Playwright gate: unreachable -> rc=2\n  ---\n  duration_ms: 19.877959\n  type: 'test'\n  ...\n# Subtest: real Playwright gate: failed -> rc=1\nok 3 - real Playwright gate: failed -> rc=1\n  ---\n  duration_ms: 1167.088084\n  type: 'test'\n  ...\n# Subtest: real Playwright gate: all-skipped -> rc=3\nok 4 - real Playwright gate: all-skipped -> rc=3\n  ---\n  duration_ms: 921.871917\n  type: 'test'\n  ...\n# Subtest: real Playwright gate: part-skipped -> rc=3\nok 5 - real Playwright gate: part-skipped -> rc=3\n  ---\n  duration_ms: 918.446125\n  type: 'test'\n  ...\n# Subtest: real Playwright gate: missing -> rc=3\nok 6 - real Playwright gate: missing -> rc=3\n  ---\n  duration_ms: 368.325333\n  type: 'test'\n  ...\n# Subtest: real Playwright gate: wrong-id -> rc=3\nok 7 - real Playwright gate: wrong-id -> rc=3\n  ---\n  duration_ms: 382.295583\n  type: 'test'\n  ...\n# Subtest: real Playwright flaky retry is rejected even when Playwright exits zero\nok 8 - real Playwright flaky retry is rejected even when Playwright exits zero\n  ---\n  duration_ms: 774.217417\n  type: 'test'\n  ...\n1..8\n# tests 8\n# suites 0\n# pass 8\n# fail 0\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 5579.18075\n",
+    "stderrTail": ""
+  },
+  {
+    "name": "collect",
+    "rc": 0,
+    "stdoutTail": "one successful synthetic-input result\",\n          \"ok\": true,\n          \"tags\": [],\n          \"tests\": [\n            {\n              \"timeout\": 60000,\n              \"annotations\": [],\n              \"expectedStatus\": \"passed\",\n              \"projectId\": \"chromium\",\n              \"projectName\": \"chromium\",\n              \"results\": [],\n              \"status\": \"skipped\"\n            }\n          ],\n          \"id\": \"c76cc3e783108c4fcaec-04a2ff19cc47de49442a\",\n          \"file\": \"critical-business.spec.ts\",\n          \"line\": 230,\n          \"column\": 1\n        },\n        {\n          \"title\": \"CRITICAL-EVIDENCE-001: task projection links immutable result and real history UI\",\n          \"ok\": true,\n          \"tags\": [],\n          \"tests\": [\n            {\n              \"timeout\": 60000,\n              \"annotations\": [],\n              \"expectedStatus\": \"passed\",\n              \"projectId\": \"chromium\",\n              \"projectName\": \"chromium\",\n              \"results\": [],\n              \"status\": \"skipped\"\n            }\n          ],\n          \"id\": \"c76cc3e783108c4fcaec-a9bf689d24c73da39239\",\n          \"file\": \"critical-business.spec.ts\",\n          \"line\": 289,\n          \"column\": 1\n        }\n      ]\n    }\n  ],\n  \"errors\": [],\n  \"stats\": {\n    \"startTime\": \"2026-10-17T12:20:23.509Z\",\n    \"duration\": 81.58699999999999,\n    \"expected\": 0,\n    \"skipped\": 4,\n    \"unexpected\": 0,\n    \"flaky\": 0\n  }\n}\n",
+    "stderrTail": ""
+  },
+  {
+    "name": "ruff",
+    "rc": 0,
+    "stdoutTail": "All checks passed!\n",
+    "stderrTail": ""
+  },
+  {
+    "name": "format-check",
+    "rc": 0,
+    "stdoutTail": "2 files already formatted\n",
+    "stderrTail": ""
+  }
+]

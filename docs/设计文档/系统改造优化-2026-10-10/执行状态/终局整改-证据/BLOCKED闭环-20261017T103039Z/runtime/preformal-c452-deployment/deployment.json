@@ -1,0 +1,126 @@
+{
+  "startedAt": "2026-10-17T12:11:33.422602+00:00",
+  "targetCandidate": "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+  "prHead": "8a00175339228a7dd710751d59d626ee97fe2233",
+  "purpose": "Test preparation only; no capacity task dispatch, no production/main merge",
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "fetch",
+        "github",
+        "refs/pull/1/merge:refs/remotes/github/pr1-merge-head8a"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+      "startedAt": "2026-10-17T12:11:33.553802+00:00",
+      "finishedAt": "2026-10-17T12:11:34.678040+00:00",
+      "rc": 0,
+      "stdout": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/fetch.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/fetch.stderr.log",
+        "bytes": 109,
+        "sha256": "71bf763bebf345f1119e3cc998164da0d2cbf7ab295335f2cf13cd0e473aa687"
+      }
+    },
+    {
+      "argv": [
+        "git",
+        "checkout",
+        "--detach",
+        "c452ea7fa913a7fffc721de81470ef0874b6bc46"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+      "startedAt": "2026-10-17T12:11:34.718757+00:00",
+      "finishedAt": "2026-10-17T12:11:34.749402+00:00",
+      "rc": 0,
+      "stdout": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/checkout.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/checkout.stderr.log",
+        "bytes": 202,
+        "sha256": "fa8bfc48697fc40eba563088c9f47152192fa1af809bf63db31efbb6dbe42ff1"
+      }
+    },
+    {
+      "argv": [
+        "uv",
+        "sync",
+        "--frozen"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend",
+      "startedAt": "2026-10-17T12:11:34.749867+00:00",
+      "finishedAt": "2026-10-17T12:11:34.792939+00:00",
+      "rc": 0,
+      "stdout": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/uv-sync.stdout.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "stderr": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/uv-sync.stderr.log",
+        "bytes": 28,
+        "sha256": "7ed6714ac6139f5e584616578c1c0379727112dc9626e7dc8793d4fd8a6cef90"
+      }
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/capture_candidate_source_catalog.py",
+        "--candidate-sha",
+        "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+        "--out",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/tracked-source-catalog.json"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z",
+      "startedAt": "2026-10-17T12:11:34.793490+00:00",
+      "finishedAt": "2026-10-17T12:12:25.960893+00:00",
+      "rc": 0,
+      "stdout": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/source-catalog.stdout.log",
+        "bytes": 442,
+        "sha256": "168e67ec9c3057b30233fdaf0f3161e3d11f08d705ca97d62e6579e5549b120d"
+      },
+      "stderr": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/source-catalog.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/start_capacity_api_formal.py",
+        "preformal-c452-ready"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z",
+      "startedAt": "2026-10-17T12:12:25.961597+00:00",
+      "finishedAt": "2026-10-17T12:12:29.771972+00:00",
+      "rc": 0,
+      "stdout": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/start-test-api.stdout.log",
+        "bytes": 251,
+        "sha256": "dc18b6644c18245fd405a25b2b77c0d52a25d43bb9e13cd67ab3824ec9b6d3f0"
+      },
+      "stderr": {
+        "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/start-test-api.stderr.log",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    }
+  ],
+  "statusBefore": "?? backend/capacity_dataset/manifest_a_2026101512.json\n?? backend/capacity_dataset/manifest_a_2026101513.json\n?? backend/capacity_dataset/manifest_a_2026101514.json\n?? backend/capacity_dataset/manifest_a_2026101515.json\n?? backend/capacity_dataset/manifest_a_2026101516.json\n?? backend/capacity_dataset/manifest_a_2026101517.json\n?? backend/capacity_dataset/manifest_a_2026101518.json\n?? backend/capacity_dataset/manifest_a_2026101519.json\n?? backend/capacity_dataset/manifest_a_2026101520.json\n?? backend/capacity_dataset/manifest_a_2026101521.json\n?? backend/capacity_dataset/manifest_a_2026101600.json\n?? backend/capacity_dataset/manifest_a_2026101601.json\n?? backend/capacity_dataset/manifest_a_2026101602.json\n?? backend/capacity_dataset/manifest_a_2026101603.json\n?? backend/capacity_dataset/manifest_a_2026101604.json\n?? backend/capacity_dataset/manifest_a_2026101605.json\n?? backend/capacity_dataset/manifest_a_2026101606.json\n?? backend/capacity_dataset/manifest_a_2026101607.json\n?? backend/capacity_dataset/manifest_a_2026101608.json\n?? backend/capacity_dataset/manifest_a_2026101609.json\n?? backend/capacity_dataset/manifest_a_2026101610.json\n?? backend/capacity_dataset/manifest_a_2026101611.json\n?? backend/capacity_dataset/manifest_b_2026101405.json\n?? backend/capacity_dataset/manifest_b_2026101514.json\n?? backend/capacity_dataset/manifest_b_2026101515.json\n?? backend/capacity_dataset/manifest_b_2026101516.json\n?? backend/capacity_dataset/manifest_b_2026101522.json\n?? backend/capacity_dataset/manifest_b_2026101523.json\n?? backend/capacity_dataset/manifest_b_2026101600.json\n?? backend/capacity_dataset/manifest_b_2026101601.json\n?? backend/capacity_dataset/manifest_b_2026101602.json\n?? backend/capacity_dataset/manifest_b_2026101603.json\n?? backend/capacity_dataset/manifest_b_2026101604.json\n?? backend/capacity_dataset/manifest_b_2026101605.json\n?? backend/capacity_dataset/manifest_b_2026101606.json\n?? backend/capacity_dataset/manifest_b_2026101607.json\n?? backend/capacity_dataset/manifest_b_2026101610.json\n?? backend/capacity_dataset/manifest_b_2026101611.json\n?? backend/capacity_dataset/run_freezes/\n?? backend/resource-a2p.jsonl\n",
+  "mergeParents": [
+    "86301e5e3083db0feb5f2d9db8fb9eacc8d3165d",
+    "8a00175339228a7dd710751d59d626ee97fe2233"
+  ],
+  "finishedAt": "2026-10-17T12:12:29.772657+00:00",
+  "status": "PREPARATION_READY_NOT_FORMAL",
+  "mainShaUnchanged": "b676ea59158aa4d1e106579017a85860add60293"
+}

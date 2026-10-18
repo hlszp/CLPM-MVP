@@ -1,0 +1,21 @@
+{
+  "at": "2026-10-17T15:02:26.605517+00:00",
+  "rc": 0,
+  "sourceSha256": "e213f27d9abc631ad3cb11233366e6f631a9fb4d88bcbf3b81cdf0d60464650b",
+  "actualKeeperArgvLoadPlanGatePassedWithoutDbImport": true,
+  "planSha256": "bb0a2d9f2b787d8e21ecd9baabe3410e15e58b4aa5bf499ba08337ecf3334e52",
+  "tableCount": 25,
+  "resultTableCount": 12,
+  "normalExtra": [
+    20,
+    4
+  ],
+  "originalRows7000Validated": 7000,
+  "referenceSha256": "7f4f1bd130d8143806e73f3e3d02a8802477bab7ab0fccbb0cd5caa2a63bad2a",
+  "effectiveStartUtc": "2026-10-15T12:00:00+00:00",
+  "latestEndUtc": "2026-10-16T12:00:00+00:00",
+  "twoUrlGuardExpressionsOnlyTextChange": true,
+  "allOtherFunctionsExactAstSame": true,
+  "sysConfigWhitelistBoundaryNotExpanded": true,
+  "databaseNetworkOrServiceOperations": false
+}

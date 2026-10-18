@@ -1,0 +1,10 @@
+{
+  "evidenceRole": "PURE_ALGORITHM_NUMERICAL_DIAGNOSIS_NOT_FORMAL_TEST_OR_ACCEPTANCE",
+  "elapsedSeconds": 4.968239021000045,
+  "identificationSuccess": true,
+  "jointSelected": true,
+  "selectionObservations": 1,
+  "armaxObservations": 16,
+  "networkAttempts": [],
+  "appMainImported": false
+}

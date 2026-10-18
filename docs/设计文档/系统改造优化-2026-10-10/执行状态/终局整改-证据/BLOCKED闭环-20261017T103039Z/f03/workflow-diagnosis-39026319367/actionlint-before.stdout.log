@@ -1,0 +1,12 @@
+.github/workflows/ci.yml:204:33: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+    |
+204 |       E2E_CRITICAL_FIXTURE: ${{ runner.temp }}/critical-e2e/fixture.json
+    |                                 ^~~~~~~~~~~
+.github/workflows/ci.yml:205:29: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+    |
+205 |       E2E_ARTIFACT_DIR: ${{ runner.temp }}/critical-e2e/gate
+    |                             ^~~~~~~~~~~
+.github/workflows/ci.yml:206:35: context "runner" is not allowed here. available contexts are "github", "inputs", "matrix", "needs", "secrets", "strategy", "vars". see https://docs.github.com/en/actions/learn-github-actions/contexts#context-availability for more details [expression]
+    |
+206 |       CLPM_CALC_SNAPSHOT_DIR: ${{ runner.temp }}/critical-e2e/calc-snapshots
+    |                                   ^~~~~~~~~~~

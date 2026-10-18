@@ -1,0 +1,72 @@
+test_app_shutting_down_alone_does_not_replace_uvicorn_entry (__main__.Barrier.test_app_shutting_down_alone_does_not_replace_uvicorn_entry) ... FAIL
+test_lifespan_then_stop_accepts_and_preserves_both_originals (__main__.Barrier.test_lifespan_then_stop_accepts_and_preserves_both_originals) ... ok
+test_poll_boundary_preserves_waiting_for_same_signal (__main__.Barrier.test_poll_boundary_preserves_waiting_for_same_signal) ... ok
+test_prior_signal_waiting_is_not_reused (__main__.Barrier.test_prior_signal_waiting_is_not_reused) ... FAIL
+test_real_prior_atexit_stop_is_not_lifespan (__main__.Barrier.test_real_prior_atexit_stop_is_not_lifespan) ... FAIL
+test_stop_before_entry_cannot_be_used_retroactively (__main__.Barrier.test_stop_before_entry_cannot_be_used_retroactively) ... FAIL
+test_truncated_waiting_line_cannot_qualify (__main__.Barrier.test_truncated_waiting_line_cannot_qualify) ... ok
+test_uvicorn_before_signal_offset_is_not_current_entry (__main__.Barrier.test_uvicorn_before_signal_offset_is_not_current_entry) ... FAIL
+test_wrong_uvicorn_raw_line_rejected (__main__.Barrier.test_wrong_uvicorn_raw_line_rejected) ... FAIL
+
+======================================================================
+FAIL: test_app_shutting_down_alone_does_not_replace_uvicorn_entry (__main__.Barrier.test_app_shutting_down_alone_does_not_replace_uvicorn_entry)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/test_barrier_delta.py", line 97, in test_app_shutting_down_alone_does_not_replace_uvicorn_entry
+    self.assertIsNone(self.reader(0, AT)[1])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'offsetStart': 102, 'offsetEnd': 212, 'rawSha256': '281f376e84c417204b960cf9de5ec3c10dd485df06068b2a5f6ebe928ecd889e', 'record': {'timestamp': '2026-10-17T12:00:01+00:00', 'logger': 'app.main', 'message': '停止 Celery Worker 进程...'}, 'observedAt': '2026-10-17T12:00:00+00:00'} is not None
+
+======================================================================
+FAIL: test_prior_signal_waiting_is_not_reused (__main__.Barrier.test_prior_signal_waiting_is_not_reused)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/test_barrier_delta.py", line 124, in test_prior_signal_waiting_is_not_reused
+    self.assertIsNone(
+    ~~~~~~~~~~~~~~~~~^
+        self.reader(offset, AT + datetime.timedelta(microseconds=1))[1]
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+AssertionError: {'offsetStart': 44, 'offsetEnd': 154, 'rawSha256': '281f376e84c417204b960cf9de5ec3c10dd485df06068b2a5f6ebe928ecd889e', 'record': {'timestamp': '2026-10-17T12:00:01+00:00', 'logger': 'app.main', 'message': '停止 Celery Worker 进程...'}, 'observedAt': '2026-10-17T12:00:00+00:00'} is not None
+
+======================================================================
+FAIL: test_real_prior_atexit_stop_is_not_lifespan (__main__.Barrier.test_real_prior_atexit_stop_is_not_lifespan)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/test_barrier_delta.py", line 77, in test_real_prior_atexit_stop_is_not_lifespan
+    self.assertIsNone(self.reader(offset, AT)[1])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'offsetStart': 15000, 'offsetEnd': 15134, 'rawSha256': 'b868e0ec1d3c60b366b2d9bd05a856b554c50e02e1f77bd38acb5523f5940931', 'record': {'timestamp': '2026-10-17T12:46:58.311126+00:00', 'level': 'INFO', 'logger': 'app.main', 'message': '停止 Celery Worker 进程...'}, 'observedAt': '2026-10-17T12:00:00+00:00'} is not None
+
+======================================================================
+FAIL: test_stop_before_entry_cannot_be_used_retroactively (__main__.Barrier.test_stop_before_entry_cannot_be_used_retroactively)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/test_barrier_delta.py", line 105, in test_stop_before_entry_cannot_be_used_retroactively
+    self.assertIsNone(self.reader(0, AT)[1])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'offsetStart': 0, 'offsetEnd': 110, 'rawSha256': '281f376e84c417204b960cf9de5ec3c10dd485df06068b2a5f6ebe928ecd889e', 'record': {'timestamp': '2026-10-17T12:00:01+00:00', 'logger': 'app.main', 'message': '停止 Celery Worker 进程...'}, 'observedAt': '2026-10-17T12:00:00+00:00'} is not None
+
+======================================================================
+FAIL: test_uvicorn_before_signal_offset_is_not_current_entry (__main__.Barrier.test_uvicorn_before_signal_offset_is_not_current_entry)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/test_barrier_delta.py", line 101, in test_uvicorn_before_signal_offset_is_not_current_entry
+    self.assertIsNone(self.reader(len(WAITING), AT)[1])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'offsetStart': 44, 'offsetEnd': 154, 'rawSha256': '281f376e84c417204b960cf9de5ec3c10dd485df06068b2a5f6ebe928ecd889e', 'record': {'timestamp': '2026-10-17T12:00:01+00:00', 'logger': 'app.main', 'message': '停止 Celery Worker 进程...'}, 'observedAt': '2026-10-17T12:00:00+00:00'} is not None
+
+======================================================================
+FAIL: test_wrong_uvicorn_raw_line_rejected (__main__.Barrier.test_wrong_uvicorn_raw_line_rejected)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/test_barrier_delta.py", line 109, in test_wrong_uvicorn_raw_line_rejected
+    self.assertIsNone(self.reader(0, AT)[1])
+    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: {'offsetStart': 41, 'offsetEnd': 151, 'rawSha256': '281f376e84c417204b960cf9de5ec3c10dd485df06068b2a5f6ebe928ecd889e', 'record': {'timestamp': '2026-10-17T12:00:01+00:00', 'logger': 'app.main', 'message': '停止 Celery Worker 进程...'}, 'observedAt': '2026-10-17T12:00:00+00:00'} is not None
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.040s
+
+FAILED (failures=6)

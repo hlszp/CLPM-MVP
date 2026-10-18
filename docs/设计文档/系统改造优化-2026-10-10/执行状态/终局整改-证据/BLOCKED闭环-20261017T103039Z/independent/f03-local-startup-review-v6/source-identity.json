@@ -1,0 +1,9 @@
+{
+  "sourcePath": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-startup-v6/keeper-local-f03-v6.py",
+  "sha256": "87c985f311f804c80a3beb84d78e342143e277fe18d8f5041c5fcb54c81e405f",
+  "bytes": 49015,
+  "actualOldThreeProcessState": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017213911-8a438372d213/current-f03-local-api.json",
+    "sha256": "2d683067f4ccde20a504ccabe7c429d1aee0440769489fbb584f117412793b5b"
+  }
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/composables/use-loop-follow.ts",
+    "bytes": 11134,
+    "sha256": "dc345fa9bb3d01ab8551dd7afbf325af36f245da064328a0128e1abf54e29650"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/store/auth.ts",
+    "bytes": 11038,
+    "sha256": "56b1eac2bdcc2801f23e742f7b9c525f8e254c0663870ee07e33f215d024ec81"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/loop-follow.test.ts",
+    "bytes": 19801,
+    "sha256": "bfd0547edfa7063d14e4c3ae4c8c13201a76a7a789babf731141396a2ef2c2af"
+  },
+  {
+    "path": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/store.test.ts",
+    "bytes": 16004,
+    "sha256": "d34b143109ce576308662657cca48b271696d5eb92ee8f4db80913c3386a6263"
+  }
+]

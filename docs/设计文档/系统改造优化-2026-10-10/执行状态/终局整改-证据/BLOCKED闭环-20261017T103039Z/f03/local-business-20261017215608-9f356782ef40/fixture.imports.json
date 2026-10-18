@@ -1,0 +1,58 @@
+{
+  "FACTORY": {
+    "code": "0",
+    "message": "\u521b\u5efa\u6210\u529f",
+    "data": {
+      "id": "4e729c8d-8793-46dd-b605-5ea7fdc8ec1a",
+      "name": "CRITICAL-LOCAL-20261017215608-1-FACTORY",
+      "type": "FACTORY",
+      "parentId": null,
+      "isKpiEnabled": null
+    }
+  },
+  "AREA": {
+    "code": "0",
+    "message": "\u521b\u5efa\u6210\u529f",
+    "data": {
+      "id": "990f0d84-6528-4a4d-91fa-870247acfe5d",
+      "name": "CRITICAL-LOCAL-20261017215608-1-AREA",
+      "type": "AREA",
+      "parentId": "4e729c8d-8793-46dd-b605-5ea7fdc8ec1a",
+      "isKpiEnabled": null
+    }
+  },
+  "UNIT": {
+    "code": "0",
+    "message": "\u521b\u5efa\u6210\u529f",
+    "data": {
+      "id": "31e7ee01-a518-4445-9987-3c8aa0ceca95",
+      "name": "CRITICAL-LOCAL-20261017215608-1-UNIT",
+      "type": "UNIT",
+      "parentId": "990f0d84-6528-4a4d-91fa-870247acfe5d",
+      "isKpiEnabled": null
+    }
+  },
+  "tags": {
+    "code": "0",
+    "message": "\u5bfc\u5165\u5b8c\u6210",
+    "data": {
+      "total": 7,
+      "inserted": 7,
+      "updated": 0,
+      "failed": 0,
+      "errors": []
+    }
+  },
+  "loops": {
+    "code": "0",
+    "message": "\u5bfc\u5165\u5b8c\u6210",
+    "data": {
+      "total": 1,
+      "inserted": 1,
+      "updated": 0,
+      "failed": 0,
+      "errors": [],
+      "warnings": []
+    }
+  }
+}

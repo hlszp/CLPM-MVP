@@ -1,0 +1,155 @@
+{
+  "progress": {
+    "observedAt": "2026-10-17T15:31:15.249802+00:00",
+    "run": {
+      "id": 39044390911,
+      "head_sha": "8fc850802612b6077f3b07c08324e3694945aa0d",
+      "run_attempt": 1,
+      "status": "in_progress",
+      "conclusion": null,
+      "event": "pull_request"
+    },
+    "jobs": [
+      {
+        "id": 117430115805,
+        "name": "Critical E2E Gate (blocking)",
+        "status": "completed",
+        "conclusion": "success",
+        "activeSteps": []
+      },
+      {
+        "id": 117430115908,
+        "name": "Frontend CI",
+        "status": "completed",
+        "conclusion": "success",
+        "activeSteps": []
+      },
+      {
+        "id": 117430116040,
+        "name": "Backend CI",
+        "status": "in_progress",
+        "conclusion": null,
+        "activeSteps": [
+          {
+            "number": 13,
+            "name": "Pytest with coverage",
+            "status": "in_progress",
+            "conclusion": null
+          }
+        ]
+      }
+    ],
+    "availableArtifacts": [
+      {
+        "id": 12105297313,
+        "name": "critical-e2e-bc48701efe90e2a27555a4f8794f0965e82b0902",
+        "digest": "sha256:8dfdc0cbae83cc7910a6298d7465ad30be071a38997c5a81f86d0132b96f3aac"
+      }
+    ],
+    "rawSnapshotRefs": {
+      "run": {
+        "path": "requests/20261017T153114401022Z-run.json",
+        "bytes": 11964,
+        "sha256": "e75abe85547954895f62e493933e5ce176b776ff89cfdb613c911ddc165b9da1"
+      },
+      "jobs": {
+        "path": "requests/20261017T153114401139Z-jobs.json",
+        "bytes": 13453,
+        "sha256": "d89291a9d88cc7a9d02e2ba1bdcd0f7ee53851393fa986bdcc5960cefa342845"
+      },
+      "artifacts": {
+        "path": "requests/20261017T153114401325Z-artifacts.json",
+        "bytes": 765,
+        "sha256": "3cde876ee8a4b5715966cadbe6fba369c44809be4df309119af9a2352333ef69"
+      }
+    }
+  },
+  "logs": {
+    "117430115908": {
+      "job": "Frontend CI",
+      "raw": {
+        "path": "job-logs/117430115908.log",
+        "bytes": 377387,
+        "sha256": "78fba8dc118d089dbc9aff450ea14ca5ee1784ace285e134ff6538833ec19c0f"
+      },
+      "checkouts": [
+        {
+          "sha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+          "commandLine": 124,
+          "outputLine": 125,
+          "rawCommand": "2026-10-17T15:17:40.7394093Z [command]/usr/bin/git log -1 --format=%H",
+          "rawOutput": "2026-10-17T15:17:40.7413527Z bc48701efe90e2a27555a4f8794f0965e82b0902",
+          "source": {
+            "path": "job-logs/117430115908.log",
+            "bytes": 377387,
+            "sha256": "78fba8dc118d089dbc9aff450ea14ca5ee1784ace285e134ff6538833ec19c0f"
+          }
+        }
+      ],
+      "request": {
+        "path": "requests/20261017T152254654579Z-job-117430115908.command.json",
+        "bytes": 745,
+        "sha256": "a5ff8b8a52e5af893bd312da2635188f20dbd19e041f8e0de2ae55ae404ca59f"
+      }
+    },
+    "117430115805": {
+      "job": "Critical E2E Gate (blocking)",
+      "raw": {
+        "path": "job-logs/117430115805.log",
+        "bytes": 900368,
+        "sha256": "e255454d2a06959a4112201b188127cfd512b01ce8b5ae66cd1f001cc2722094"
+      },
+      "checkouts": [
+        {
+          "sha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+          "commandLine": 362,
+          "outputLine": 363,
+          "rawCommand": "2026-10-17T15:18:16.8211186Z [command]/usr/bin/git log -1 --format=%H",
+          "rawOutput": "2026-10-17T15:18:16.8235997Z bc48701efe90e2a27555a4f8794f0965e82b0902",
+          "source": {
+            "path": "job-logs/117430115805.log",
+            "bytes": 900368,
+            "sha256": "e255454d2a06959a4112201b188127cfd512b01ce8b5ae66cd1f001cc2722094"
+          }
+        }
+      ],
+      "request": {
+        "path": "requests/20261017T152607224166Z-job-117430115805.command.json",
+        "bytes": 745,
+        "sha256": "0f04b15759e5cae7d03a009092f1446d0dd6a3864741f149b62998611bc5892b"
+      }
+    }
+  },
+  "artifacts": [
+    "12105297313"
+  ],
+  "actualCheckouts": {
+    "bc48701efe90e2a27555a4f8794f0965e82b0902": {
+      "actualCheckoutEvidence": {
+        "sha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+        "commandLine": 124,
+        "outputLine": 125,
+        "rawCommand": "2026-10-17T15:17:40.7394093Z [command]/usr/bin/git log -1 --format=%H",
+        "rawOutput": "2026-10-17T15:17:40.7413527Z bc48701efe90e2a27555a4f8794f0965e82b0902",
+        "source": {
+          "path": "job-logs/117430115908.log",
+          "bytes": 377387,
+          "sha256": "78fba8dc118d089dbc9aff450ea14ca5ee1784ace285e134ff6538833ec19c0f"
+        }
+      },
+      "gitCommit": {
+        "path": "requests/20261017T152303123573Z-actual-checkout-bc48701efe90e2a27555a4f8794f0965e82b0902.json",
+        "bytes": 2611,
+        "sha256": "48b57bd90851489ba48e3b4a43ccca3efe009bde1c84f15aade1b4ccf01c6d75"
+      },
+      "gitRootTree": {
+        "path": "requests/20261017T152303845333Z-actual-root-tree-78e991ea35d769a67a48350faa24e6b920c1a926.json",
+        "bytes": 7361,
+        "sha256": "98035c01e66e6301f8b923b22d0987b9044256de06dd767f948815637fae0c00"
+      },
+      "rootTreeSha": "78e991ea35d769a67a48350faa24e6b920c1a926",
+      "backendTreeSha": "e6e5fd28bcba319f674281a1704e0a6c86764332"
+    }
+  },
+  "captureComplete": false
+}

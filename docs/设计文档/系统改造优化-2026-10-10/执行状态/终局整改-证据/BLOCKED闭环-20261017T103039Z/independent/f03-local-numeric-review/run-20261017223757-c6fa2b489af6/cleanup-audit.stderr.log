@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/verify_f03_cleanup_c6.py", line 146, in <module>
+    run()
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/verify_f03_cleanup_c6.py", line 42, in run
+    assert entry["offsetStart"] >= cursor and log[entry["offsetStart"]:entry["offsetEnd"]] == segment == expected
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

@@ -1,0 +1,161 @@
+{
+  "mode": "run",
+  "passed": false,
+  "exitCode": 3,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T13:00:32.079Z",
+    "duration": 593.6370000000001,
+    "expected": 0,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "skipped",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "skipped",
+          "duration": 4,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T13:00:32.550Z",
+          "annotations": [
+            {
+              "type": "skip",
+              "description": "controlled runtime skip",
+              "location": {
+                "file": "/tmp/clpm-gate-contract-tmi58V/fixture/e2e/tests/critical-business.spec.ts",
+                "line": 4,
+                "column": 12
+              }
+            }
+          ],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "skipped",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "skipped",
+          "duration": 2,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T13:00:32.599Z",
+          "annotations": [
+            {
+              "type": "skip",
+              "description": "controlled runtime skip",
+              "location": {
+                "file": "/tmp/clpm-gate-contract-tmi58V/fixture/e2e/tests/critical-business.spec.ts",
+                "line": 10,
+                "column": 12
+              }
+            }
+          ],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "skipped",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "skipped",
+          "duration": 1,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T13:00:32.623Z",
+          "annotations": [
+            {
+              "type": "skip",
+              "description": "controlled runtime skip",
+              "location": {
+                "file": "/tmp/clpm-gate-contract-tmi58V/fixture/e2e/tests/critical-business.spec.ts",
+                "line": 16,
+                "column": 12
+              }
+            }
+          ],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "skipped",
+      "status": "skipped",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "skipped",
+          "duration": 1,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T13:00:32.636Z",
+          "annotations": [
+            {
+              "type": "skip",
+              "description": "controlled runtime skip",
+              "location": {
+                "file": "/tmp/clpm-gate-contract-tmi58V/fixture/e2e/tests/critical-business.spec.ts",
+                "line": 22,
+                "column": 12
+              }
+            }
+          ],
+          "attachments": []
+        }
+      ]
+    }
+  ],
+  "violations": [
+    "CRITICAL-AUTH-001: expectedStatus=skipped",
+    "CRITICAL-AUTH-001: outcome=skipped",
+    "CRITICAL-AUTH-001: status=skipped",
+    "CRITICAL-PERM-001: expectedStatus=skipped",
+    "CRITICAL-PERM-001: outcome=skipped",
+    "CRITICAL-PERM-001: status=skipped",
+    "CRITICAL-CALC-001: expectedStatus=skipped",
+    "CRITICAL-CALC-001: outcome=skipped",
+    "CRITICAL-CALC-001: status=skipped",
+    "CRITICAL-EVIDENCE-001: expectedStatus=skipped",
+    "CRITICAL-EVIDENCE-001: outcome=skipped",
+    "CRITICAL-EVIDENCE-001: status=skipped",
+    "skipped=4",
+    "passed=0, required=4"
+  ]
+}

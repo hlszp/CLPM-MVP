@@ -1,0 +1,40 @@
+INFO:     Started server process [70494]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-10-17T13:40:54.949849+00:00", "level": "INFO", "logger": "app.main", "message": "Starting CLPM v7.1.0"}
+{"timestamp": "2026-10-17T13:40:54.949899+00:00", "level": "INFO", "logger": "app.main", "message": "数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用"}
+{"timestamp": "2026-10-17T13:40:54.991802+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Beat 调度进程已启动 (PID=70527)，定时任务将自动执行，日志: logs/celery-beat.log"}
+{"timestamp": "2026-10-17T13:40:55.029658+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Worker 进程已启动 (PID=70529)，任务队列开始消费，日志: logs/celery-worker.log"}
+{"timestamp": "2026-10-17T13:40:55.069871+00:00", "level": "INFO", "logger": "app.main", "message": "数据源配置已从 sys_config 预载（network_mode=lan, signalr_enabled=False, history_api_url=已配置, signalr_hub_url=已配置）"}
+{"timestamp": "2026-10-17T13:40:55.085680+00:00", "level": "INFO", "logger": "app.main", "message": "模块启用状态已预载: assess, config, diagnosis, handling, monitor, reports, system, tuning"}
+{"timestamp": "2026-10-17T13:40:55.100322+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T13:40:55.100405+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T13:40:55.100440+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T13:40:55.118592+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T13:40:55.145018+00:00", "level": "INFO", "logger": "app.services.alert_rule_engine.service", "message": "预制预警规则已补建 ALL 订阅 12 条"}
+{"timestamp": "2026-10-17T13:40:55.145595+00:00", "level": "INFO", "logger": "app.services.alert_rule_engine.service", "message": "预制预警规则已创建 12 条"}
+{"timestamp": "2026-10-17T13:40:55.156004+00:00", "level": "INFO", "logger": "app.main", "message": "预警预制规则已初始化（新建 12 条）"}
+{"timestamp": "2026-10-17T13:40:55.170645+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=70494] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:40:55.170742+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=70494] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:40:55.170778+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=70494] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T13:40:55.173234+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=70494] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T13:40:55.175237+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=70494] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T13:40:55.189337+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T13:40:55.190989+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=70494] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T13:40:55.191304+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=70494] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T13:40:55.193053+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=70494] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+{"timestamp": "2026-10-17T13:40:55.193150+00:00", "level": "INFO", "logger": "app.services.data_source.realtime_subscriber", "message": "实时数据订阅已禁用（SIGNALR_ENABLED=False）"}
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:17261 (Press CTRL+C to quit)
+{"timestamp": "2026-10-17T13:41:48.616924+00:00", "level": "INFO", "logger": "app.services.authz_runtime", "message": "授权矩阵缓存已重载: revision=4 roles=5", "request_id": "c82800d6-6adb-4caf-b953-dde41324748b"}
+{"timestamp": "2026-10-17T13:42:55.151386+00:00", "level": "WARNING", "logger": "app.main", "message": "看门狗：未检测到 Celery Beat，自动补拉起"}
+{"timestamp": "2026-10-17T13:42:55.200180+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Beat 调度进程已启动 (PID=72277)，定时任务将自动执行，日志: logs/celery-beat.log"}
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-10-17T13:46:23.537728+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down CLPM"}
+{"timestamp": "2026-10-17T13:46:23.537883+00:00", "level": "INFO", "logger": "app.main", "message": "停止 Celery Worker 进程..."}
+{"timestamp": "2026-10-17T13:46:38.759839+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Worker 已停止（进程组=70529，PID=70529）"}
+{"timestamp": "2026-10-17T13:46:38.759986+00:00", "level": "INFO", "logger": "app.main", "message": "停止 Celery Beat 调度进程..."}
+{"timestamp": "2026-10-17T13:46:53.992200+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Beat 已停止（进程组=72277，PID=72277）"}
+{"timestamp": "2026-10-17T13:46:53.993091+00:00", "level": "INFO", "logger": "app.services.data_source.realtime_subscriber", "message": "实时数据订阅已停止"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [70494]

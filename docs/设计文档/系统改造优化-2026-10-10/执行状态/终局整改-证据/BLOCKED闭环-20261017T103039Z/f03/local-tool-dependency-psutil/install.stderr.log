@@ -1,0 +1,4 @@
+Using Python 3.12.13 environment at: /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv
+Resolved 1 package in 14ms
+Installed 1 package in 4ms
+ + psutil==7.2.2

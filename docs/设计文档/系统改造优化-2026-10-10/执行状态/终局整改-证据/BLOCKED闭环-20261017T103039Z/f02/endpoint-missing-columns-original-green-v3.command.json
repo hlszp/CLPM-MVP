@@ -1,0 +1,19 @@
+{
+  "command": [
+    "env",
+    "CLPM_TEST_MODE=1",
+    "CLPM_SKIP_EXIT_HOOKS=1",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHONPATH=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/endpoint_missing_columns_original_counterexample.py",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/capture_closed_window_endpoints.py",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-closed-end-review/missing-raw-values-counterexample.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "startedAt": "2026-10-17T11:52:23.458314+00:00",
+  "elapsedSeconds": 0.16447004198562354,
+  "rc": 0,
+  "stdoutSha256": "d3ce3029c4b06fa6022cfa39bf4d07e48d3b43313e6c570cf2c0d753f160ffb5",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

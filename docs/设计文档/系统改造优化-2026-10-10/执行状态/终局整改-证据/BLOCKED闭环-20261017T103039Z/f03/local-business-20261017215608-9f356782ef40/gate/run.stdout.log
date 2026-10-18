@@ -1,0 +1,48 @@
+
+Running 4 tests using 1 worker
+
+
+
+[1/4] [chromium] › tests/critical-business.spec.ts:151:1 › CRITICAL-AUTH-001: real login and authenticated identity
+[2/4] [chromium] › tests/critical-business.spec.ts:163:1 › CRITICAL-PERM-001: sponsor cannot run calculation or open workbench
+[3/4] [chromium] › tests/critical-business.spec.ts:230:1 › CRITICAL-CALC-001: real task produces one successful synthetic-input result
+[4/4] [chromium] › tests/critical-business.spec.ts:289:1 › CRITICAL-EVIDENCE-001: task projection links immutable result and real history UI
+  1) [chromium] › tests/critical-business.spec.ts:289:1 › CRITICAL-EVIDENCE-001: task projection links immutable result and real history UI 
+
+    TypeError: expect(received).toMatch(expected)
+
+    Matcher error: received value must be a string
+
+    Received has value: null
+
+      306 |   expect(record.payload.customTaskId).toBe(taskId);
+      307 |   expect(record.payload.snapshotStatus).toBe('SUCCESS');
+    > 308 |   expect(record.datasetSnapshotId).toMatch(/^[\da-f-]{36}$/);
+          |                                    ^
+      309 |   expect(record.configRevision).toMatch(/^(digest:[\da-f]{16}|rev:[^:]+:[\da-f]{16})$/);
+      310 |   await login(page, 'admin');
+      311 |   const historyResponse = page.waitForResponse((response) => {
+        at /Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts:308:36
+
+    attachment #2: screenshot (image/png) ──────────────────────────────────────────────────────────
+    ../../CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/gate/test-results/critical-business-CRITICAL-31117--result-and-real-history-UI-chromium/test-failed-1.png
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    attachment #3: video (video/webm) ──────────────────────────────────────────────────────────────
+    ../../CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/gate/test-results/critical-business-CRITICAL-31117--result-and-real-history-UI-chromium/video.webm
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    Error Context: ../../CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/gate/test-results/critical-business-CRITICAL-31117--result-and-real-history-UI-chromium/error-context.md
+
+    attachment #5: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/gate/test-results/critical-business-CRITICAL-31117--result-and-real-history-UI-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/gate/test-results/critical-business-CRITICAL-31117--result-and-real-history-UI-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+
+  1 failed
+    [chromium] › tests/critical-business.spec.ts:289:1 › CRITICAL-EVIDENCE-001: task projection links immutable result and real history UI 
+  3 passed (9.5s)

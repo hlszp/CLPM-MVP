@@ -1,0 +1,19 @@
+{
+  "offsetStart": 38945,
+  "offsetEnd": 39079,
+  "rawSha256": "54d425897f97cf145bc4afcaa7173336b0b1a282811c89192baa0a438df545c7",
+  "record": {
+    "timestamp": "2026-10-17T14:50:42.996234+00:00",
+    "level": "INFO",
+    "logger": "app.main",
+    "message": "停止 Celery Worker 进程..."
+  },
+  "uvicornWaitingForApplicationShutdown": {
+    "offsetStart": 14338,
+    "offsetEnd": 14382,
+    "rawSha256": "868af945b9681d6079cb2a8418c7036e76e45a98f517d4ac559e81446443156e",
+    "signalAt": "2026-10-17T14:50:27.835242+00:00",
+    "observedAt": "2026-10-17T14:50:43.020913+00:00"
+  },
+  "observedAt": "2026-10-17T14:50:43.021710+00:00"
+}

@@ -1,0 +1,6 @@
+Listing tests:
+  [chromium] › critical-business.spec.ts:3:5 › CRITICAL-AUTH-001: gate-contract fixture
+  [chromium] › critical-business.spec.ts:9:5 › CRITICAL-PERM-001: gate-contract fixture
+  [chromium] › critical-business.spec.ts:15:5 › CRITICAL-CALC-001: gate-contract fixture
+  [chromium] › critical-business.spec.ts:21:5 › CRITICAL-EVIDENCE-001: gate-contract fixture
+Total: 4 tests in 1 file

@@ -1,0 +1,18 @@
+{
+  "scope": "Root explicit main-reviewer approval for necessary ARX performance source fingerprint registration; not unchanged protected source",
+  "beforeArx": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0",
+  "afterArx": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011",
+  "checks": {
+    "exactOnlyHashTextReplacement": true,
+    "onlyArxEntryChanged": true,
+    "same41Keys": true,
+    "baselineHeadUnchanged": true,
+    "allOther40HashesUnchanged": true,
+    "all41ActualSourcesMatch": true,
+    "testBytesUnchanged": true,
+    "collectorBytesUnchanged": true,
+    "newGoldenFrozen": true,
+    "arxIsIndependentTestedSource": true
+  },
+  "at": "2026-10-17T12:06:15.131949+00:00"
+}

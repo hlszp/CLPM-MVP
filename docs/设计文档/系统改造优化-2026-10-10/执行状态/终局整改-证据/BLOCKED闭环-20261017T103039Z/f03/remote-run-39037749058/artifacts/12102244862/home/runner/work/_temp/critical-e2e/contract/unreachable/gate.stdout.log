@@ -1,0 +1,3 @@
+base_url=http://127.0.0.1:1
+api_url=http://127.0.0.1:35745/api/v1
+artifacts=/home/runner/work/_temp/critical-e2e/contract/unreachable

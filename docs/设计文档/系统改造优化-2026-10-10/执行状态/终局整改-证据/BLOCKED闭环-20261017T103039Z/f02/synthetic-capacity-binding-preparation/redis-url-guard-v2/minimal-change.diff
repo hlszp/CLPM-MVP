@@ -1,0 +1,11 @@
+--- e70-original/prepare_bindings.py
++++ v2/prepare_bindings.py
+@@ -87,6 +87,8 @@
+         redis_url = urlsplit(cfg["REDIS_URL"])
+         valid = (
+             redis_url.scheme == "redis"
++            and not redis_url.query
++            and not redis_url.fragment
+             and redis_url.hostname in ("127.0.0.1", "localhost")
+             and redis_url.port == 17123
+             and redis_url.path in ("", "/0")

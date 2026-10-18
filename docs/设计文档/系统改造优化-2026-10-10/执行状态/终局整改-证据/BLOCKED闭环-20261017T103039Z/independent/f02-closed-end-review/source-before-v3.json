@@ -1,0 +1,27 @@
+[
+  {
+    "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/capture_closed_window_endpoints.py",
+    "sha256": "d518fccb36b4e0f841fc920632f173c81b5d9422dcf81aa9ce319d6dbec3bcfe",
+    "bytes": 24424
+  },
+  {
+    "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/test_capture_closed_window_endpoints.py",
+    "sha256": "15d7173c53ac3cbbe906d78773405231b72a2bcc766a5b5a1bbb98a2d8cda871",
+    "bytes": 14466
+  },
+  {
+    "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/audit_capacity_inputs.py",
+    "sha256": "8bd8cb604032d85948cc6bc1f429974b93424e3ab1f7648af62cebcc2e1a3b6d",
+    "bytes": 14805
+  },
+  {
+    "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/freeze_capacity_configuration.py",
+    "sha256": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e",
+    "bytes": 29547
+  },
+  {
+    "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f02-closed-end-review/missing-raw-values-counterexample.json",
+    "sha256": "1640702835b6aae1144778007304a4da6901233f38d19299677f188cb24a7312",
+    "bytes": 686
+  }
+]

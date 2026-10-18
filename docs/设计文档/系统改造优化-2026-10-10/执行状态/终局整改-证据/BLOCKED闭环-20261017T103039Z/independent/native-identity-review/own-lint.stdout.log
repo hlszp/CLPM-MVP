@@ -1,0 +1,12 @@
+E741 Ambiguous variable name: `l`
+   --> test_independent_native_sampler.py:149:43
+    |
+147 |     else:
+148 |         assert rc == 0 and summary["pollCount"] == 2
+149 |         observations = [json.loads(l) for l in data.splitlines()]
+    |                                           ^
+150 |         assert len(observations[0]["members"]) == 7
+151 |         assert observations[0]["selectedRawPsLines"] == raw.splitlines()
+    |
+
+Found 1 error.

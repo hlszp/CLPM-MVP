@@ -1,0 +1,177 @@
+{
+  "observedAt": "2026-10-17T10:24:45.248414+00:00",
+  "files": {
+    "f02/non-author/receipt.md": {
+      "bytes": 8519,
+      "sha256": "41cb89a5267cbcb39576f20ddad9376efff25fb082879f3032a2c2e5737a521d"
+    },
+    "f02/non-author-v3/receipt.md": {
+      "bytes": 2453,
+      "sha256": "72047e99b943cb309764cdbaa21efba562fa8c7e9df67b65396fbc4c4cabbb26"
+    },
+    "f03/non-author/receipt.md": {
+      "bytes": 5894,
+      "sha256": "8e31a67b821606e5130024e5a5eebf486d30c366deb950d2cacbd7729260dfb1"
+    },
+    "f04/non-author/receipt.md": {
+      "bytes": 10220,
+      "sha256": "7b053dfaeffb270110f53ebac2386f611c612726a9f3a500d3f01fe75ba5a461"
+    },
+    "docs-non-author/receipt.md": {
+      "bytes": 8368,
+      "sha256": "89cd84ace003a74d98e2b1a5bd5686974a9e701c86dfc447b35f3655734d8ff7"
+    },
+    "f07/phase2/scratch-cleanup.json": {
+      "bytes": 361,
+      "sha256": "f0f3a5494a86e4abef8dd54886ecdf2122223426a1e4044b359c7051791216a2"
+    },
+    "f01/f01-run-results.json": {
+      "bytes": 4326,
+      "sha256": "cc1396bc7ac2e379e8ed992ee012f6fd9d4b4560ffe33f65837cf393df68def0"
+    },
+    "f01/f01-targeted-19.stdout.log": {
+      "bytes": 669,
+      "sha256": "79238047acf58d9bf7d7df582ed98bf46b77c13de8a687b96440d3f87c89e88c"
+    },
+    "f01/f01-targeted-19.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "f01/f01-reverse-symbol-removed.stdout.log": {
+      "bytes": 1734,
+      "sha256": "195bcc581707ef43ef3c987e4ec1001e46eee30ed404df758aebfbefdefd01b5"
+    },
+    "f01/f01-reverse-symbol-removed.stderr.log": {
+      "bytes": 200,
+      "sha256": "f5bc0f4cdabe78ea6b65a62be7cf3f681821784ba6c8a76430b1e00ea598e901"
+    },
+    "f01/f01-forward-restored.stdout.log": {
+      "bytes": 668,
+      "sha256": "3c3e30164cbb9be31da7cebbbaa21465c74d616e7706897e684b0d60b5bbddc3"
+    },
+    "f01/f01-forward-restored.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "f01/f01-reverse-old-behavior.stdout.log": {
+      "bytes": 2001,
+      "sha256": "e6a74d966971a180aa696cb0c4ab52c5f2b67e83f96141f3b68b3d6037b0f150"
+    },
+    "f01/f01-reverse-old-behavior.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "f01/f01-mutation-restoration.json": {
+      "bytes": 315,
+      "sha256": "3e090087ef66b53ccf65c6e565f0844d4605e22adb8ac810f101229342723c81"
+    },
+    "f02/non-author/historical-independent-check.json": {
+      "bytes": 37777,
+      "sha256": "cf82b59213ca645bcca36823b36da57e8247b01bd781e8496ae296cd86a2fd60"
+    },
+    "f03/non-author/contract.command.json": {
+      "bytes": 234,
+      "sha256": "30be81f55678e36500e3c03202b5e802de08cdbfc91b1cc2febb6587923eaeb2"
+    },
+    "f03/non-author/contract.stdout.log": {
+      "bytes": 1471,
+      "sha256": "d4d333343263bdf35d2530efd8f4fdfabbbccf8efb5915948298eb2480f18e52"
+    },
+    "f03/non-author/contract-independent/unreachable/command.json": {
+      "bytes": 180,
+      "sha256": "b40f69df5d73356a2dfc2421f1411e38c860f99fb3d2e363fa61fe98619583bc"
+    },
+    "f03/non-author/contract-independent/unreachable/gate.stdout.log": {
+      "bytes": 271,
+      "sha256": "d6a0aa2ae901af521ab3eeeceea639c3d8d9c17190132b2bf4b601c2c5eece16"
+    },
+    "f03/non-author/contract-independent/unreachable/gate.stderr.log": {
+      "bytes": 48,
+      "sha256": "5f59f49dc43cde55b89debbd596f024d661f76cb70459cfec19999cf663742a7"
+    },
+    "f03/non-author/contract-independent/failed/command.json": {
+      "bytes": 180,
+      "sha256": "15ea178966cddd98a23e122365e4d1f5f20162462295d2cdb33d32c043637321"
+    },
+    "f03/non-author/contract-independent/failed/gate.stdout.log": {
+      "bytes": 6837,
+      "sha256": "59e63247e4ac6583a062889912cd978027418ef7e5c8b7bdc90f8c3d460d48da"
+    },
+    "f03/non-author/contract-independent/failed/gate.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "f03/non-author/contract-independent/all-skipped/command.json": {
+      "bytes": 180,
+      "sha256": "f4403d5e3eae70fff7afeb767a7d6798c4f3521d3b28435c64eddd5e7f310956"
+    },
+    "f03/non-author/contract-independent/all-skipped/gate.stdout.log": {
+      "bytes": 6029,
+      "sha256": "2e29a9d69a69b413d69db4e768d3d99f8ddffb5ca4c1c54af094cd6eeb510b6a"
+    },
+    "f03/non-author/contract-independent/all-skipped/gate.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "f03/non-author/contract-independent/part-skipped/command.json": {
+      "bytes": 180,
+      "sha256": "f4403d5e3eae70fff7afeb767a7d6798c4f3521d3b28435c64eddd5e7f310956"
+    },
+    "f03/non-author/contract-independent/part-skipped/gate.stdout.log": {
+      "bytes": 4480,
+      "sha256": "4cc8d568c02e29e8a13266c5f467fc64768954491e60a3ce56e8d6d8d8282ef7"
+    },
+    "f03/non-author/contract-independent/part-skipped/gate.stderr.log": {
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "f03/non-author/structured-reports-results.json": {
+      "bytes": 30411,
+      "sha256": "0ae386d86002c3a29ace523a797b85255f152c701d06bde420bc36a58a61161f"
+    },
+    "f04/non-author/api-pg-results.json": {
+      "bytes": 9685854,
+      "sha256": "b9fbfe2fee4b089f14ed780f0ff4c4da8dbac22592bcccd60b8fb0cbc7b05984"
+    },
+    "f04/non-author/explicit-template-api-results.json": {
+      "bytes": 22545,
+      "sha256": "74ff4be3efd2ccafcf8fba5a7ab25b09389cd39c06e701f72b1a03ca8cc5211a"
+    }
+  },
+  "F01": {
+    "recordedRCs": [
+      0,
+      4,
+      0,
+      1
+    ],
+    "forward19": true,
+    "restored3": true,
+    "oldBehaviorFails": true
+  },
+  "F02": {
+    "historicalSelected": {
+      "BARRIER_PASSED": 6,
+      "TERMINAL_MISMATCH": 3
+    },
+    "rootCauseCount": 24,
+    "capacityUnverified": true,
+    "evidenceScope": "Cross-check of prior independent receipt and recorded result, not new capacity execution."
+  },
+  "F03": {
+    "recordedNegativeRCs": {
+      "unreachable": 2,
+      "failed": 1,
+      "all-skipped": 3,
+      "part-skipped": 3
+    },
+    "structuredCases": 11,
+    "scope": "Checks independently recorded gate-contract results; reviewer authored F03 and does not re-sign independent code acceptance. Business and remote CI remain BLOCKED."
+  },
+  "F04PriorReceipt": {
+    "requests": 73,
+    "checks": 49,
+    "allChecksPassed": true
+  },
+  "firstReviewedInputsStillStable": true
+}

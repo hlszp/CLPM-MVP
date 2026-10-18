@@ -1,0 +1,12 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/read_runtime_database.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:36:37.624195+00:00",
+  "elapsedSeconds": 0.8596970420000001,
+  "rc": 0,
+  "stdoutSha256": "d35dd7d4b6bfda0e0786b0a3542b28a09877c43c1355e4eeb9edbf32b876f643",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/run_author_controls_against_new.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2",
+  "startedAt": "2026-10-17T14:01:43.759934+00:00",
+  "finishedAt": "2026-10-17T14:01:47.821069+00:00",
+  "rc": 0,
+  "runnerSha256": "bc30031041e1f48885996a4e1df210ae2de4caaba1a9e63f83f6100742ee69b2",
+  "stdoutSha256": "b19a5da3d42a5b3eb84507956c55a7b78619022dd02acf112d0cc82cf3a0851c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,93 @@
+9:   1h@1s 网格，复用 data_import._write_points_bulk 同款批量直拼 SQL
+12:   synthetic=true、构成、窗口、seed、manifest 路径）+ 每回路 remark 标注；
+13:   数据 manifest（P0-03 §1.2 字段）落 backend/capacity_dataset/。
+16:- scenario b（本批执行）：800 正常 + 100 数据不足(PV 大比例 BAD→INCONCLUSIVE)
+19:- scenario a（备选）：1000 全部正常输入（另一冻结窗口，可后补）。
+27:    uv run python scripts/generate_capacity_dataset.py --plan                # 零写入
+28:    uv run python scripts/generate_capacity_dataset.py --execute --scenario b
+29:    uv run python scripts/generate_capacity_dataset.py --self-check --scenario b
+40:import time
+41:from datetime import UTC, datetime, timedelta
+53:# v2r1 仅更正 manifest 源点数；合成值、seed、质量与 expected 状态沿用 v2。
+59:#: 场景 B 构成（冻结：800+100+50+50；scenario a 为 1000 全正常）
+64:#: 回路类型轮转（LOOP_TYPE 字典 seed 值）
+77:#: TD 批量 INSERT 行数/条（与 data_import._write_points_bulk 一致）
+81:#: 合成标记（manifest/声明/remark 共用）
+97:def _loop_composition(scenario: str, i: int) -> str:
+98:    """回路 i（1-based）的场景归属（确定性分配，manifest 与时序同源）."""
+99:    comp = SCENARIO_B if scenario == "b" else SCENARIO_A
+110:    """响应特征类别（确定性轮转；配比登记 manifest——正式配比待 P0-02 profile）."""
+122:# 时序合成（纯函数，seed 确定）
+129:    """合成单回路 1h@1s 序列（seed=loop 序号，可再生）.
+135:    rng = np.random.default_rng(seed=i)
+177:            # BASE 采样下产生失效尖峰（固定 seed=949），违反全组 EVALUATED
+223:        self.client = httpx.Client(timeout=120.0)
+396:# 时序直写 TDengine（st_point_data_v1 点子表；镜像 data_import._write_points_bulk）
+400:async def load_role_points(prefix: str) -> dict[str, dict[str, tuple[str, str]]]:
+410:            (await db.execute(select(LoopLedger).where(LoopLedger.tag_name.like(f"{prefix}%"))))
+447:    point_id: str, series: list[tuple[int, float, int, int]], ts_start: datetime
+449:    """序列 → TD VALUES 行（列序/公式与 data_import._write_points_bulk 一致）。"""
+455:    recv = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
+458:        ts = ts_start + timedelta(seconds=t_off)
+459:        ts_ms = int(ts.replace(tzinfo=UTC).timestamp() * 1000)
+470:async def write_timeseries(
+473:    ts_start: datetime,
+482:    total_rows = 0
+483:    t0 = time.perf_counter()
+507:            total_rows += len(rows)
+509:            elapsed = time.perf_counter() - t0
+510:            print(f"  [td] {idx}/{len(loop_items)} 回路完成，累计 {total_rows} 行，{elapsed:.0f}s")
+511:    written["__total__"] = total_rows
+516:# manifest + 合成声明
+520:def build_manifest_rows(units: dict[str, str], scenario: str, ts_start: datetime) -> list[dict]:
+521:    """P0-03 §1.2 manifest 行（每回路一条，字段全量）。"""
+535:        composition = _loop_composition(scenario, i)
+548:                "windowEnd": (ts_start + timedelta(hours=1)).isoformat(),
+555:                "scenario": scenario,
+567:def save_manifest(scenario: str, ts_start: datetime, rows: list[dict], extras: dict) -> Path:
+569:    path = MANIFEST_DIR / f"manifest_{scenario}_{ts_start.strftime('%Y%m%d%H')}.json"
+573:        "scenario": scenario,
+574:        "totalLoops": TOTAL_LOOPS,
+576:        "seed": "numpy default_rng(seed=loop_index)",
+581:            "timeseries": "TDengine直写(st_point_data_v1, source_kind=4)",
+586:    path.write_text(json.dumps(payload, ensure_ascii=False, indent=1))
+590:async def write_declaration(scenario: str, ts_start: datetime, manifest_path: Path) -> None:
+601:            "prefix": PREFIX,
+602:            "totalLoops": TOTAL_LOOPS,
+603:            "scenario": scenario,
+604:            "composition": SCENARIO_B if scenario == "b" else SCENARIO_A,
+606:            "seed": "numpy default_rng(seed=loop_index)",
+608:            "manifestPath": str(manifest_path),
+609:            "manifestSha256": hashlib.sha256(manifest_path.read_bytes()).hexdigest(),
+610:            "generatedAt": datetime.now(UTC).isoformat(),
+612:            "generatedBy": "backend/scripts/generate_capacity_dataset.py",
+635:    p.add_argument("--plan", action="store_true", help="只打印计划，零写入")
+636:    p.add_argument(
+639:    p.add_argument("--self-check", action="store_true", help="准备就绪自检（只读）")
+640:    p.add_argument("--scenario", choices=("a", "b"), default="b")
+641:    p.add_argument(
+646:    p.add_argument("--base-url", default=DEFAULT_BASE_URL)
+647:    p.add_argument("--username", default="admin")
+648:    p.add_argument("--password", default="admin123")
+652:def _window(ts_start_arg: str | None) -> datetime:
+654:        dt = datetime.fromisoformat(ts_start_arg.replace("Z", "+00:00"))
+656:            dt = dt.astimezone(UTC).replace(tzinfo=None)
+658:        now = datetime.now(UTC).replace(tzinfo=None)
+659:        dt = (now - timedelta(hours=2)).replace(minute=0, second=0, microsecond=0)
+665:async def _load_loop_meta(scenario: str) -> dict[str, tuple[str, str, str]]:
+680:        meta[str(lp.id)] = (lp.tag_name, _loop_composition(scenario, i), _response_category(i))
+686:    comp = SCENARIO_B if args.scenario == "b" else SCENARIO_A
+688:        f"[execute] 场景 {args.scenario}（构成 {comp}），冻结窗口 {ts_start.isoformat()} naive UTC"
+714:    loop_meta = await _load_loop_meta(args.scenario)
+717:    written = await write_timeseries(role_points, loop_meta, ts_start)
+720:    print("[manifest] 数据 manifest + 合成声明入库")
+721:    mrows = build_manifest_rows(units, args.scenario, ts_start)
+722:    path = save_manifest(args.scenario, ts_start, mrows, {"tdWritten": dict(written)})
+723:    await write_declaration(args.scenario, ts_start, path)
+724:    print(f"  manifest={path}")
+793:        i for i in range(1, TOTAL_LOOPS + 1) if _loop_composition(args.scenario, i) == "manual"
+815:        composition = _loop_composition(args.scenario, i)
+853:    expected_manual = SCENARIO_B["manual"] if args.scenario == "b" else 0
+872:        comp = SCENARIO_B if args.scenario == "b" else SCENARIO_A
+879:        print(f"  场景: {args.scenario} 构成 {comp}；窗口 {ts_start.isoformat()} naive UTC")
+885:        print(f"  合成声明: sys_config:{DECLARATION_KEY} + manifest → {MANIFEST_DIR}")

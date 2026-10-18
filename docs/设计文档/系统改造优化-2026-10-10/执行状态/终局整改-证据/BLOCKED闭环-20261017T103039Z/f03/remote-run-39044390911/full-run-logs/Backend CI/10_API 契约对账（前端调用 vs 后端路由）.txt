@@ -1,0 +1,24 @@
+﻿2026-10-17T15:18:08.1812698Z ##[group]Run uv run python ../scripts/check_api_contract.py
+2026-10-17T15:18:08.1813176Z [36;1muv run python ../scripts/check_api_contract.py[0m
+2026-10-17T15:18:08.1875488Z shell: /usr/bin/bash -e {0}
+2026-10-17T15:18:08.1875742Z env:
+2026-10-17T15:18:08.1875923Z   CI: true
+2026-10-17T15:18:08.1876122Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:18:08.1876361Z   OMP_NUM_THREADS: 1
+2026-10-17T15:18:08.1876569Z   MKL_NUM_THREADS: 1
+2026-10-17T15:18:08.1876776Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:18:08.1877000Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:18:08.1877308Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:08.1877757Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:18:08.1878191Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:08.1878847Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:08.1879451Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:08.1879920Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:18:08.1880339Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:18:08.1880655Z ##[endgroup]
+2026-10-17T15:18:17.2958802Z 同步加载 enabled_modules 失败，回退默认全开: Multiple exceptions: [Errno 111] Connect call failed ('::1', 7102, 0, 0), [Errno 111] Connect call failed ('127.0.0.1', 7102)
+2026-10-17T15:18:21.1251760Z 后端已注册路由 365 条；前端调用路径 276 条
+2026-10-17T15:18:21.1252305Z [OK] 前端调用全部有后端实现
+2026-10-17T15:18:21.1252713Z [WARN] 已知缺口（白名单内，前端调用但后端未实现）：1 条
+2026-10-17T15:18:21.1253074Z     - /menu/all
+2026-10-17T15:18:21.1253425Z [OK] 无未登记的死端点

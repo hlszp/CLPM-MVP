@@ -1,0 +1,3 @@
+{"source": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py", "sourceSha256": "39e67b9af522ccf694513bac11307d7002f6acb7d0092d34b3016e4dbe2a9850", "functions": {"_ns_int": [782, 789], "serialize_signal": [798, 809], "serialize_data_blocks": [812, 879]}}
+{"source": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/data_planner.py", "sourceSha256": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6", "functions": {"_fill_limit_metadata": [946, 956]}}
+{"metadataProduced": true, "signals": {"pv": [55.0, null, 55.5], "op_limits_source": ["LOOP_FIELD"], "op_limits_provenance": ["ACTUAL"]}}

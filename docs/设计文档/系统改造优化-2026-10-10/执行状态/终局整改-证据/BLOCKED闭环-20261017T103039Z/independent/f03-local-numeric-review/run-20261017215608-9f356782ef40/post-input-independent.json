@@ -1,0 +1,97 @@
+{
+  "checkedAt": "2026-10-17T14:16:30.087886+00:00",
+  "numericVerdict": "BLOCKED",
+  "reason": "Manifest write failed on actual Decimal; isolated NPZ is not a dataset or expectation",
+  "candidateSha": "9f356782ef4076dabb91a86f56e054e514e341ea",
+  "policyCompleteInputContentBeforeAfterEqual": true,
+  "beforeMvcc": "1051214:1051214:",
+  "afterMvcc": "1051222:1051222:",
+  "eachTransactionRepeatableReadReadOnlyUtc": true,
+  "oldMissingEnvironmentReferenceRemainsInvalid": true,
+  "environmentSupplementV2AccuratelyLabelsPostGateObservation": true,
+  "postGateEnvironmentCopyEqualsIndependentObservedGatePhaseBytes": true,
+  "isolatedNpzSha256": "f214a2790f71162bf65610e7a9d71691e9936a4883161245d4548e26feb0e2fe",
+  "matchingSnapshotDatabaseRows": 0,
+  "decimalOriginalError": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/runtime/clpm-remediation-20261017/backend/logs/celery-worker.log",
+      "line": 137,
+      "offsetStart": 21517,
+      "bytes": 2074,
+      "sha256": "050c057ab447b885e85215816dde7ab51faff556d645897167a5966cc93d8faa",
+      "errorType": "TypeError: Object of type Decimal is not JSON serializable",
+      "rawCopy": "decimal-error-original.raw.log"
+    }
+  ],
+  "readActualMetrics": false,
+  "expectedGenerated": false,
+  "gateOrResultAttachmentsOpened": false,
+  "refs": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-policy-before/command.json",
+      "copy": "post-input-raw/input-policy-before/command.json",
+      "bytes": 912,
+      "sha256": "ef506d574364c170e7209d1b59017d5acf2ba9d7ad64918faf6c22ed4797a247"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-policy-before/stdout.log",
+      "copy": "post-input-raw/input-policy-before/stdout.log",
+      "bytes": 7967,
+      "sha256": "4c81ac56721d74b070374c497a6215e8c42b4b0d073bfac23f24c34cbbb8b287"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-policy-before/executed.sql",
+      "copy": "post-input-raw/input-policy-before/executed.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-policy-after/command.json",
+      "copy": "post-input-raw/input-policy-after/command.json",
+      "bytes": 912,
+      "sha256": "b086d52596a7898dd7d450e8bc012e1d9237a138b5a1e6ebfeca689d99419cb4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-policy-after/stdout.log",
+      "copy": "post-input-raw/input-policy-after/stdout.log",
+      "bytes": 7967,
+      "sha256": "f580a7d4736a2b3b1634481854fa487d86576281a8305a006138238a900c3bb7"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-policy-after/executed.sql",
+      "copy": "post-input-raw/input-policy-after/executed.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-only-environment-supplement-v2/supplement.json",
+      "copy": "post-input-raw/input-only-environment-supplement-v2/supplement.json",
+      "bytes": 1665,
+      "sha256": "3aef498b9e89fcc036de1e2c3ccda4ecd9c35a0274bd714849891bbfb305deb9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/calc-snapshots/202610/1f2f2a4e-0674-4667-8041-d9db96b1250d.npz",
+      "copy": "post-input-raw/calc-snapshots/202610/1f2f2a4e-0674-4667-8041-d9db96b1250d.npz",
+      "bytes": 1177584,
+      "sha256": "f214a2790f71162bf65610e7a9d71691e9936a4883161245d4548e26feb0e2fe"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-package-row/command.json",
+      "copy": "post-input-raw/input-package-row/command.json",
+      "bytes": 1066,
+      "sha256": "dfc035e97a5cd9bcfb3ec57ef4c9d4451365b66b89ef3889c0b551bc16cf02b9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-package-row/stdout.log",
+      "copy": "post-input-raw/input-package-row/stdout.log",
+      "bytes": 474,
+      "sha256": "afe25b2909b66fe04818704a56c0e432f76781ee68d33ecdb8a47fb1585d3575"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/input-package-row/executed.sql",
+      "copy": "post-input-raw/input-package-row/executed.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    }
+  ]
+}

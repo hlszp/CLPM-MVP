@@ -1,0 +1,102 @@
+{
+  "capturedAt": "2026-10-17T10:06:46.815125+00:00",
+  "authorIdentitySha256": "bd5ecfdcca1aa68dfb2b57ecb1a114821ab640e49024df12af8c996e6e65b585",
+  "all11SourceFilesMatch": true,
+  "source": [
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/loop_batch_restore.py",
+      "sha256": "cafbce4b51318de377ab4fa9c12a71cefba4227632704bb8128fe34dc7e9c477",
+      "size": 17260,
+      "actualSha256": "cafbce4b51318de377ab4fa9c12a71cefba4227632704bb8128fe34dc7e9c477",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/loop_batch.py",
+      "sha256": "3c07ff56a3c3104d0011ad7540e184a15e333f9121a7eca96e00b2c8d5da0577",
+      "size": 22533,
+      "actualSha256": "3c07ff56a3c3104d0011ad7540e184a15e333f9121a7eca96e00b2c8d5da0577",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/schemas/loop_batch.py",
+      "sha256": "fbf365118679303222d955f57003169c0cc935eb05ecdbe3e57cdfa1290f3674",
+      "size": 9508,
+      "actualSha256": "fbf365118679303222d955f57003169c0cc935eb05ecdbe3e57cdfa1290f3674",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/api/v1/endpoints/loops.py",
+      "sha256": "ba9c7b20cece0302b99e476d6c7b9797be95b2448284a19778c6045d8ecda6c5",
+      "size": 37754,
+      "actualSha256": "ba9c7b20cece0302b99e476d6c7b9797be95b2448284a19778c6045d8ecda6c5",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_loop_batch_restore.py",
+      "sha256": "623f110defe47368e3c1c787ad3da3eec55d23e9ffa5ea18ba85f03c51c7a72f",
+      "size": 16633,
+      "actualSha256": "623f110defe47368e3c1c787ad3da3eec55d23e9ffa5ea18ba85f03c51c7a72f",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/api/engineering-template.ts",
+      "sha256": "f9b1831bed2c3044f2b4aff1402ddc0a6efb5b57ca131a8e08a0ad1124e81086",
+      "size": 13465,
+      "actualSha256": "f9b1831bed2c3044f2b4aff1402ddc0a6efb5b57ca131a8e08a0ad1124e81086",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue",
+      "sha256": "a8b2e47679c0d3d2c2bfccd6cce857d1aba68420ea75da2caeeff2519fc1e72e",
+      "size": 21785,
+      "actualSha256": "a8b2e47679c0d3d2c2bfccd6cce857d1aba68420ea75da2caeeff2519fc1e72e",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+      "sha256": "3ca987b49a0c98dd5cca7f5d411d9848d40d9ce0cdf70dc8b87a4b84073791e4",
+      "size": 9632,
+      "actualSha256": "3ca987b49a0c98dd5cca7f5d411d9848d40d9ce0cdf70dc8b87a4b84073791e4",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/index.vue",
+      "sha256": "71c92c6b2eb388c3d0e84f7f7c67d5d5137cc20d58207335dd4ad80290470e02",
+      "size": 15805,
+      "actualSha256": "71c92c6b2eb388c3d0e84f7f7c67d5d5137cc20d58207335dd4ad80290470e02",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts",
+      "sha256": "421ac25e536fd565fbfd97f468353bc75c8c704b652d920b62b7e65ea000cc3a",
+      "size": 8629,
+      "actualSha256": "421ac25e536fd565fbfd97f468353bc75c8c704b652d920b62b7e65ea000cc3a",
+      "matches": true
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts",
+      "sha256": "dc1107fc69a23b03a37d75d96f30f6805729b303fbe4101bd8426e221d40c93c",
+      "size": 46813,
+      "actualSha256": "dc1107fc69a23b03a37d75d96f30f6805729b303fbe4101bd8426e221d40c93c",
+      "matches": true
+    }
+  ],
+  "apiListener": {
+    "command": [
+      "lsof",
+      "-nP",
+      "-iTCP:17261",
+      "-sTCP:LISTEN",
+      "-Fpcn"
+    ],
+    "rc": 0,
+    "stdout": "p54398\ncPython\nf6\nn127.0.0.1:17261\n"
+  },
+  "process": [
+    {
+      "pid": 54398,
+      "ps": "54398 54302 六 10月/17 17:51:47 2026   /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/Resources/Python.app/Contents/MacOS/Python -B -m uvicorn isolated_app:app --host 127.0.0.1 --port 17261\n",
+      "cwd": "p54398\nfcwd\nn/Users/zhangping/DEV/clpm-remediation-20261017/backend\n"
+    }
+  ]
+}

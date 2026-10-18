@@ -1,0 +1,64 @@
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -69,7 +69,8 @@
+   backend-ci:
+     name: Backend CI
+     runs-on: ubuntu-latest
+-    timeout-minutes: 15
++    # Two extra minutes cover the post-pytest diagnosis and artifact upload only.
++    timeout-minutes: 17
+     env:
+       OPENBLAS_NUM_THREADS: "1"
+       OMP_NUM_THREADS: "1"
+@@ -183,6 +184,7 @@
+       # 实测（本地带该 env 跑全量）：4848 passed 无回归，G15 的 DISTINCT ON 去重
+       # 断言由 skip 转为实跑。
+       - name: Pytest with coverage
++        id: backend_pytest
+         env:
+           POSTGRES_HOST: localhost
+           POSTGRES_PORT: "5432"
+@@ -190,6 +192,43 @@
+           POSTGRES_PASSWORD: clpm_ci_only_2026
+           POSTGRES_DB: clpm
+         run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=60
++
++      # Read-only post-test diagnosis. A diagnostic error remains a failed step;
++      # the original pytest command, environment, exit code and outcome are kept.
++      - name: Capture G3 numerical originals after pytest
++        id: g3_numeric_diagnosis
++        if: ${{ always() && !cancelled() && (steps.backend_pytest.outcome == 'success' || steps.backend_pytest.outcome == 'failure') }}
++        env:
++          CLPM_TEST_MODE: "1"
++          CLPM_SKIP_EXIT_HOOKS: "1"
++          PYTHONDONTWRITEBYTECODE: "1"
++          G3_PYTEST_OUTCOME: ${{ steps.backend_pytest.outcome }}
++        run: |
++          g3_out="$RUNNER_TEMP/g3-numerical-originals"
++          mkdir "$g3_out"
++          cp "$GITHUB_WORKSPACE/.github/workflows/ci.yml" "$g3_out/workflow.yml"
++          date -u +%Y-%m-%dT%H:%M:%SZ > "$g3_out/ci-started-at.txt"
++          g3_rc=0
++          timeout --signal=TERM 60s "$GITHUB_WORKSPACE/backend/.venv/bin/python" \
++            "$GITHUB_WORKSPACE/backend/scripts/profile_identification_numerics.py" \
++            "$g3_out/observation" "$GITHUB_WORKSPACE" \
++            > "$g3_out/ci-stdout.log" 2> "$g3_out/ci-stderr.log" || g3_rc=$?
++          printf '%s\n' "$g3_rc" > "$g3_out/ci-exit-code.txt"
++          date -u +%Y-%m-%dT%H:%M:%SZ > "$g3_out/ci-finished-at.txt"
++          find "$g3_out" -type f ! -name ci-sha256.txt -print0 | sort -z | \
++            xargs -0 sha256sum > "$g3_out/ci-sha256.txt"
++          cat "$g3_out/ci-stdout.log"
++          cat "$g3_out/ci-stderr.log" >&2
++          exit "$g3_rc"
++
++      - name: Upload G3 numerical originals
++        if: ${{ always() && steps.g3_numeric_diagnosis.outcome != 'skipped' }}
++        uses: actions/upload-artifact@v4
++        with:
++          name: backend-g3-numerics-${{ github.run_id }}-${{ github.run_attempt }}
++          path: ${{ runner.temp }}/g3-numerical-originals
++          if-no-files-found: error
++          retention-days: 7
+ 
+   critical-e2e:
+     name: Critical E2E Gate (blocking)

@@ -1,0 +1,10 @@
+{
+  "sql": "SHOW CREATE STABLE clpm_critical_20261017_local_ts.st_point_data_v1;",
+  "startedAt": "2026-10-17T13:13:53.246171+00:00",
+  "finishedAt": "2026-10-17T13:13:53.256382+00:00",
+  "httpStatus": 200,
+  "serverCode": 0,
+  "rows": 1,
+  "bodyBytes": 778,
+  "bodySha256": "5cfaa87b43775747163a440267d607f7eb1bd32021e6bc323b589eedc8560545"
+}

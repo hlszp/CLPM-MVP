@@ -1,0 +1,640 @@
+[
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-01-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-01-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 1,
+    "nb": 1,
+    "nc": 1,
+    "d": 5,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.2839519477665569,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -1.6635243582880026
+    ],
+    "b": [
+      0.051545135938719344
+    ],
+    "c": [
+      -0.10734388231330794
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-02-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-02-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 5,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.5110743603524872,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.010357256663901167,
+      -0.351538932377902
+    ],
+    "b": [
+      0.05488874912822222
+    ],
+    "c": [
+      -0.5564479588039175
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-03-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-03-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 6,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.057378355398477,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.2560586031539681,
+      -0.45197282135872796
+    ],
+    "b": [
+      0.0573426345380168
+    ],
+    "c": [
+      -0.4503358196586241
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-04-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-04-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 4,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.8865764338923938,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.050187881257608875,
+      -0.37851799853482904
+    ],
+    "b": [
+      0.03680996744851648
+    ],
+    "c": [
+      -0.2698256015260919
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-05-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-05-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 7,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.0373294864118314,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.31499382454800573,
+      -0.5008323806624692
+    ],
+    "b": [
+      0.011033981760998294
+    ],
+    "c": [
+      -0.3779118401267469
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-06-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-06-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 3,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.47124143420650205,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.8810350205849099,
+      -0.006373711290900512
+    ],
+    "b": [
+      0.004328630124165476
+    ],
+    "c": [
+      -0.22997685844557977
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-07-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-07-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 8,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.320698349805919,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.06902998012995883,
+      -0.40220600448438
+    ],
+    "b": [
+      0.02422699832461228
+    ],
+    "c": [
+      -0.6109696180998277
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-08-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "arrayBytesSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-08-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "arrayBytesSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 2,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.9102713626841838,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.2169520873738098,
+      0.3553538008574552
+    ],
+    "b": [
+      -0.004701175249783545
+    ],
+    "c": [
+      0.10459532307008303
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-09-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-09-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 1,
+    "nb": 1,
+    "nc": 1,
+    "d": 6,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.27798105664170525,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.46258724037786203
+    ],
+    "b": [
+      0.058373882390484924
+    ],
+    "c": [
+      -0.3783672145660027
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-10-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-10-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 6,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.5980926691517324,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.6170637303001817,
+      0.2404856686524919
+    ],
+    "b": [
+      0.06082844273604351
+    ],
+    "c": [
+      -0.23464581377578395
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-11-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-11-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 7,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.1822321366328277,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.4380468883638186,
+      -0.6002127011777093
+    ],
+    "b": [
+      0.02975288348461628
+    ],
+    "c": [
+      -0.5266884236440509
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-12-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-12-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 5,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.7176498166081086,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.833053844950849,
+      -0.2275476964035946
+    ],
+    "b": [
+      0.031241157809468127
+    ],
+    "c": [
+      0.020522831662395883
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-13-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-13-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 8,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.44393490116662554,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.2385894763190516,
+      -0.23714401733430754
+    ],
+    "b": [
+      0.015890660373964416
+    ],
+    "c": [
+      -4.1839493711714915e-07
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-14-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-14-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 4,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.5840448020504672,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.6251565175143302,
+      0.2417440236220469
+    ],
+    "b": [
+      0.05014452100762985
+    ],
+    "c": [
+      -0.25497787942563116
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-15-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-15-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 9,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.5155529453605256,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -1.1460599560888902,
+      -1.078461430611987
+    ],
+    "b": [
+      0.022753784839713794
+    ],
+    "c": [
+      0.1394981213655792
+    ],
+    "returnedResultType": "ARMAXResult"
+  },
+  {
+    "sourceFilename": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py",
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "uYInputs": [
+      {
+        "role": "u",
+        "file": "armax-fit-16-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "arrayBytesSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-fit-16-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "arrayBytesSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 3,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.2595899900250038,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.6887203442851543,
+      0.026710016296784635
+    ],
+    "b": [
+      0.002841775361954557
+    ],
+    "c": [
+      -0.37249816859762863
+    ],
+    "returnedResultType": "ARMAXResult"
+  }
+]

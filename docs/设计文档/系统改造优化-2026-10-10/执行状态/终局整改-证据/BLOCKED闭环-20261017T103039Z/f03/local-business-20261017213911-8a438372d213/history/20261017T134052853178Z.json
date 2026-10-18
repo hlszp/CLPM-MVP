@@ -1,0 +1,27 @@
+{
+  "bootstrapped": true,
+  "at": "2026-10-17T13:40:52.853156+00:00",
+  "checkout": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "sourceSha": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+  "localRunId": "20261017213911",
+  "apiPid": 70494,
+  "apiCreated": 1792244452.679029,
+  "apiArgv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "17261",
+    "--timeout-graceful-shutdown",
+    "15",
+    "--no-access-log"
+  ],
+  "apiCwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017213911-8a438372d213/runtime/clpm-remediation-20261017/backend",
+  "supervisorPid": 70490,
+  "redisPort": 17124,
+  "nativeDotenvSha256": "27d6fc10cc68376b056d1c7803f1b6361e48c11bc3de46c4e8a46cc4b2abe04b"
+}

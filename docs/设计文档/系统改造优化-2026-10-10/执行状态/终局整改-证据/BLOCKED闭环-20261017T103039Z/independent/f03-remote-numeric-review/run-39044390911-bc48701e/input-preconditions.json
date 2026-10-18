@@ -1,0 +1,635 @@
+{
+  "status": "PASS",
+  "mergeSha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+  "archiveDigest": "8dfdc0cbae83cc7910a6298d7465ad30be071a38997c5a81f86d0132b96f3aac",
+  "actualRemoteInputHeadersAndGitHead": true,
+  "roleChecks": [
+    {
+      "role": "MODE",
+      "count": 1,
+      "allFloatHexTimestampQualityAndPointExact": true
+    },
+    {
+      "role": "OP",
+      "count": 3600,
+      "allFloatHexTimestampQualityAndPointExact": true
+    },
+    {
+      "role": "PID_D",
+      "count": 1,
+      "allFloatHexTimestampQualityAndPointExact": true
+    },
+    {
+      "role": "PID_I",
+      "count": 1,
+      "allFloatHexTimestampQualityAndPointExact": true
+    },
+    {
+      "role": "PID_P",
+      "count": 1,
+      "allFloatHexTimestampQualityAndPointExact": true
+    },
+    {
+      "role": "PV",
+      "count": 3600,
+      "allFloatHexTimestampQualityAndPointExact": true
+    },
+    {
+      "role": "SP",
+      "count": 3,
+      "allFloatHexTimestampQualityAndPointExact": true
+    }
+  ],
+  "policySnapshots": [
+    "779:779:",
+    "789:789:"
+  ],
+  "exactPgPoliciesBeforeAfterEqual": true,
+  "heldBothExplicitlyAbsent": true,
+  "all36ParamsRebuiltFromSourceDefaultsAndActualPgNoOverrides": true,
+  "fourTypeWeightsMatchActualPg": true,
+  "independentBuildDigest": "7dd8a6a4c0427bbd",
+  "independentConfigRevision": "rev:0:4cc7116649a473df",
+  "datasetInputRow": {
+    "id": "416c9576-d929-4afb-a404-24d0d5b83474",
+    "kind": "KPI_GRID",
+    "ts_end": "2026-10-17T14:00:00",
+    "loop_id": "f352b903-a2a0-4cb9-a57b-fb5a139294d8",
+    "ts_start": "2026-10-17T13:00:00",
+    "cleaned_at": null,
+    "created_at": "2026-10-17T15:20:04.208998",
+    "expires_at": "2027-01-15T15:20:03.080635",
+    "input_hash": "b7627b87f2997fbb0c31756a7c42a89b16a4e7b7e33546d5eeec43c6b577f634",
+    "size_bytes": 3533838,
+    "dataset_ref": "40ea69c190317632",
+    "frozen_reason": null,
+    "schema_version": "1.3",
+    "retention_class": "NORMAL",
+    "created_by_record_id": null,
+    "frozen_by_record_ids": []
+  },
+  "sourceCatalog": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/runtime/deploy-bc48701e-root/source-tracked-catalog.json",
+    "sha256": "be8cad9a52879bb11f7bb490276a0452882de1a20bef3931e973b53962907464",
+    "gitTree": "78e991ea35d769a67a48350faa24e6b920c1a926",
+    "files": 4050,
+    "totalBytes": 166649746,
+    "allImmutableGitBlobsRehashed": true
+  },
+  "runtime4050FilesRehashed": true,
+  "actualKpiResultsOrScreenshotsOrGateRead": false,
+  "noNetworkDatabaseOrServiceOperations": true,
+  "overallCiOrLoadedWorkerIdentityNotSignedByThisPreparation": true,
+  "readSet": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313.zip",
+      "bytes": 1496173,
+      "sha256": "8dfdc0cbae83cc7910a6298d7465ad30be071a38997c5a81f86d0132b96f3aac"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.json",
+      "bytes": 2296,
+      "sha256": "9d150c116632f843bbbd9edeab9d7208d096fb8809f274a934f7c39d832a0fff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.inputs.json",
+      "bytes": 581923,
+      "sha256": "8f524a3ad1e9b2a4ae65aa1d51093a4957f911f5331016bf241c76ea65edc15b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.td-readback.json",
+      "bytes": 1436060,
+      "sha256": "7155b130fccd527d34bdd6e417d323ec306b383d3b37e474ade9137e587cb91b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.bindings.json",
+      "bytes": 24393,
+      "sha256": "68a5099606e7a33eaf16fddcab45c69f67952d6bd6c1ab552f54931430769f1f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.inputs.json",
+      "bytes": 581923,
+      "sha256": "8f524a3ad1e9b2a4ae65aa1d51093a4957f911f5331016bf241c76ea65edc15b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.td-readback.json",
+      "bytes": 1436060,
+      "sha256": "7155b130fccd527d34bdd6e417d323ec306b383d3b37e474ade9137e587cb91b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.bindings.json",
+      "bytes": 24393,
+      "sha256": "68a5099606e7a33eaf16fddcab45c69f67952d6bd6c1ab552f54931430769f1f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/runtime/deploy-bc48701e-root/source-tracked-catalog.json",
+      "bytes": 1908381,
+      "sha256": "be8cad9a52879bb11f7bb490276a0452882de1a20bef3931e973b53962907464"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/header.json",
+      "bytes": 2364,
+      "sha256": "182818b10d7834c15141a8782201b6d88c118b97f4d46c261425da6b50927095"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/critical-input-policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/critical-input-dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/clean-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/clean-sources/stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/clean-sources/command.json",
+      "bytes": 361,
+      "sha256": "2fbf5209e687c93fd0c175c8e78a24a4332464f219807229e606d400d2ad4e85"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/tracked-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/tracked-sources/stdout.log",
+      "bytes": 571,
+      "sha256": "7425d3e63e4573545a028e9afa1b1b4c66809fef214d67c9b2416ee015598cc5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/tracked-sources/command.json",
+      "bytes": 1047,
+      "sha256": "36edd79567e91a5b663be4919a7b313bad96d03bf2d941c644d4d39d2b0f2b7f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/command.json",
+      "bytes": 351,
+      "sha256": "7560a91b42aba1e800f0de6a662395fe809e02fafc84775e9fedd455a60424ef"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/psql-version/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/psql-version/stdout.log",
+      "bytes": 53,
+      "sha256": "4f23a24c04e495ea42ba6e2f21615862eb1aeaaa5f7e88fd859831403fd9663d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/psql-version/command.json",
+      "bytes": 349,
+      "sha256": "561c98003e37c1ae7562f85c01a77649f7411cfa6cb6687bf2a4f6142a3a3043"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/stdout.log",
+      "bytes": 7921,
+      "sha256": "47f44f11d42668a7a28429c367ae8d2c461e652d62d478ee4f9c1da7b94ec34d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/command.json",
+      "bytes": 819,
+      "sha256": "6d82125636f79cfd7ca7a3c52c93e01eb8dd70499b8d0d96e5ad978a254b8292"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/header.json",
+      "bytes": 2364,
+      "sha256": "182818b10d7834c15141a8782201b6d88c118b97f4d46c261425da6b50927095"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.json",
+      "bytes": 2296,
+      "sha256": "9d150c116632f843bbbd9edeab9d7208d096fb8809f274a934f7c39d832a0fff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/command.json",
+      "bytes": 351,
+      "sha256": "7560a91b42aba1e800f0de6a662395fe809e02fafc84775e9fedd455a60424ef"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/tracked-sources/command.json",
+      "bytes": 1047,
+      "sha256": "36edd79567e91a5b663be4919a7b313bad96d03bf2d941c644d4d39d2b0f2b7f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/tracked-sources/stdout.log",
+      "bytes": 571,
+      "sha256": "7425d3e63e4573545a028e9afa1b1b4c66809fef214d67c9b2416ee015598cc5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/tracked-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/clean-sources/command.json",
+      "bytes": 361,
+      "sha256": "2fbf5209e687c93fd0c175c8e78a24a4332464f219807229e606d400d2ad4e85"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/clean-sources/stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/clean-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/psql-version/command.json",
+      "bytes": 349,
+      "sha256": "561c98003e37c1ae7562f85c01a77649f7411cfa6cb6687bf2a4f6142a3a3043"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/psql-version/stdout.log",
+      "bytes": 53,
+      "sha256": "4f23a24c04e495ea42ba6e2f21615862eb1aeaaa5f7e88fd859831403fd9663d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/psql-version/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/command.json",
+      "bytes": 819,
+      "sha256": "6d82125636f79cfd7ca7a3c52c93e01eb8dd70499b8d0d96e5ad978a254b8292"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/stdout.log",
+      "bytes": 7921,
+      "sha256": "47f44f11d42668a7a28429c367ae8d2c461e652d62d478ee4f9c1da7b94ec34d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/git-head/stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/command.json",
+      "bytes": 819,
+      "sha256": "6d82125636f79cfd7ca7a3c52c93e01eb8dd70499b8d0d96e5ad978a254b8292"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/stdout.log",
+      "bytes": 7921,
+      "sha256": "47f44f11d42668a7a28429c367ae8d2c461e652d62d478ee4f9c1da7b94ec34d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/header.json",
+      "bytes": 3010,
+      "sha256": "5996e9e8f71f8b757623a7c28423adfc3eff9f5cd406510ff1526271338d0064"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/critical-input-policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery.sql",
+      "bytes": 636,
+      "sha256": "509fe715a9e3faea66267d0ec5a9edf21542345d7813017c914a8a4dfb734e91"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/critical-input-dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/stdout.log",
+      "bytes": 1024,
+      "sha256": "a1789b3ecb01688c29e50dd26877fceeb23ee86dcd84482f84a4a1b3f2ecde7e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/command.json",
+      "bytes": 889,
+      "sha256": "f83476e03fb32edc9518e161bf48ee559366e9f82c5b89299557aa5f4854744d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/clean-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/clean-sources/stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/clean-sources/command.json",
+      "bytes": 361,
+      "sha256": "1b4742cbf92b6120e82e1a337832eeac1064159c0945ee24da31e5c2742a4678"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery/stdout.log",
+      "bytes": 770,
+      "sha256": "17071f94cffba71e61a0d7b2fbb23b111c63871e8b4dedf568cd3c3836986446"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery/command.json",
+      "bytes": 829,
+      "sha256": "8d879d38fbd08c1a1fac50e98e3be6a81a0fd73c304aef831f607097e20e8634"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/tracked-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/tracked-sources/stdout.log",
+      "bytes": 571,
+      "sha256": "7425d3e63e4573545a028e9afa1b1b4c66809fef214d67c9b2416ee015598cc5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/tracked-sources/command.json",
+      "bytes": 1047,
+      "sha256": "8056ac08c7e56673711624af56a70acb15dcae768733a069d18eb8d233a4bd40"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/command.json",
+      "bytes": 351,
+      "sha256": "c6722bca0ceaa51f2acc09424d9182ea4d9db794d051b850eea28ef80a1e0d5e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/psql-version/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/psql-version/stdout.log",
+      "bytes": 53,
+      "sha256": "4f23a24c04e495ea42ba6e2f21615862eb1aeaaa5f7e88fd859831403fd9663d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/psql-version/command.json",
+      "bytes": 349,
+      "sha256": "5aeed37260cc4089f3091f71dce5aea1df568aad023616a3789dbcf13c542bc9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/stdout.log",
+      "bytes": 7920,
+      "sha256": "9e174ad3d6a45a32f18b7cadc4607437250d4ee0a8e2041598d2476f76609849"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/command.json",
+      "bytes": 818,
+      "sha256": "c9d38a6a6aab1d909ddcab48be6208151064c5e5cbd49cc552b10bf9ea68989d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/header.json",
+      "bytes": 3010,
+      "sha256": "5996e9e8f71f8b757623a7c28423adfc3eff9f5cd406510ff1526271338d0064"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.json",
+      "bytes": 2296,
+      "sha256": "9d150c116632f843bbbd9edeab9d7208d096fb8809f274a934f7c39d832a0fff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/command.json",
+      "bytes": 351,
+      "sha256": "c6722bca0ceaa51f2acc09424d9182ea4d9db794d051b850eea28ef80a1e0d5e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/tracked-sources/command.json",
+      "bytes": 1047,
+      "sha256": "8056ac08c7e56673711624af56a70acb15dcae768733a069d18eb8d233a4bd40"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/tracked-sources/stdout.log",
+      "bytes": 571,
+      "sha256": "7425d3e63e4573545a028e9afa1b1b4c66809fef214d67c9b2416ee015598cc5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/tracked-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/clean-sources/command.json",
+      "bytes": 361,
+      "sha256": "1b4742cbf92b6120e82e1a337832eeac1064159c0945ee24da31e5c2742a4678"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/clean-sources/stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/clean-sources/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/psql-version/command.json",
+      "bytes": 349,
+      "sha256": "5aeed37260cc4089f3091f71dce5aea1df568aad023616a3789dbcf13c542bc9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/psql-version/stdout.log",
+      "bytes": 53,
+      "sha256": "4f23a24c04e495ea42ba6e2f21615862eb1aeaaa5f7e88fd859831403fd9663d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/psql-version/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/command.json",
+      "bytes": 818,
+      "sha256": "c9d38a6a6aab1d909ddcab48be6208151064c5e5cbd49cc552b10bf9ea68989d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/stdout.log",
+      "bytes": 7920,
+      "sha256": "9e174ad3d6a45a32f18b7cadc4607437250d4ee0a8e2041598d2476f76609849"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/git-head/stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/command.json",
+      "bytes": 818,
+      "sha256": "c9d38a6a6aab1d909ddcab48be6208151064c5e5cbd49cc552b10bf9ea68989d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/stdout.log",
+      "bytes": 7920,
+      "sha256": "9e174ad3d6a45a32f18b7cadc4607437250d4ee0a8e2041598d2476f76609849"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.npz",
+      "bytes": 1177609,
+      "sha256": "0bed77880aa58fdcd6257fafa9fafea527ff07e00298706f9ba9c2c253229f1f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.npz",
+      "bytes": 1177609,
+      "sha256": "0bed77880aa58fdcd6257fafa9fafea527ff07e00298706f9ba9c2c253229f1f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.manifest.json",
+      "bytes": 2356229,
+      "sha256": "6a9d8b6161a3e6e2ba50c4e612244a586a40043fa92bd9235ef47b6be64a3bf1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.manifest.json",
+      "bytes": 2356229,
+      "sha256": "6a9d8b6161a3e6e2ba50c4e612244a586a40043fa92bd9235ef47b6be64a3bf1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.manifest.json",
+      "bytes": 2356229,
+      "sha256": "6a9d8b6161a3e6e2ba50c4e612244a586a40043fa92bd9235ef47b6be64a3bf1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/command.json",
+      "bytes": 889,
+      "sha256": "f83476e03fb32edc9518e161bf48ee559366e9f82c5b89299557aa5f4854744d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/stdout.log",
+      "bytes": 1024,
+      "sha256": "a1789b3ecb01688c29e50dd26877fceeb23ee86dcd84482f84a4a1b3f2ecde7e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/stdout.log",
+      "bytes": 1024,
+      "sha256": "a1789b3ecb01688c29e50dd26877fceeb23ee86dcd84482f84a4a1b3f2ecde7e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.json",
+      "bytes": 2296,
+      "sha256": "9d150c116632f843bbbd9edeab9d7208d096fb8809f274a934f7c39d832a0fff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.inputs.json",
+      "bytes": 581923,
+      "sha256": "8f524a3ad1e9b2a4ae65aa1d51093a4957f911f5331016bf241c76ea65edc15b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.manifest.json",
+      "bytes": 2356229,
+      "sha256": "6a9d8b6161a3e6e2ba50c4e612244a586a40043fa92bd9235ef47b6be64a3bf1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.npz",
+      "bytes": 1177609,
+      "sha256": "0bed77880aa58fdcd6257fafa9fafea527ff07e00298706f9ba9c2c253229f1f"
+    }
+  ]
+}

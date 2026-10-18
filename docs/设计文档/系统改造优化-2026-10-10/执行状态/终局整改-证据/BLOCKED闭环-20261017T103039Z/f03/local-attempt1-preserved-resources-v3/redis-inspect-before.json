@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "docker",
+    "inspect",
+    "clpm-f03-redis-20261017-local"
+  ],
+  "startedAt": "2026-10-17T12:51:45.620197+00:00",
+  "finishedAt": "2026-10-17T12:51:45.772436+00:00",
+  "rc": 0,
+  "stdoutSha256": "397749d57108828f91250560b30fa2d2c01f52e6a9746164430ed03efbf38895",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

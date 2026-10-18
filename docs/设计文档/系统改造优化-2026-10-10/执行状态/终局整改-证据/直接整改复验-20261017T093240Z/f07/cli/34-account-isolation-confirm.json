@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T09:48:28.968243+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "run-code",
+    "async (page) => { const label=await page.getByTestId('follow-star-a0d17000-0000-4000-8000-000000000001').getAttribute('aria-label'); if(label !== '关注') throw new Error('F07 account isolation: expected audit_peer zero-follow label=关注, actual='+label); }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 1,
+  "elapsed_seconds": 0.489300417015329,
+  "stdout": "### Error\nError: F07 account isolation: expected audit_peer zero-follow label=关注, actual=取消关注\n",
+  "stderr": ""
+}

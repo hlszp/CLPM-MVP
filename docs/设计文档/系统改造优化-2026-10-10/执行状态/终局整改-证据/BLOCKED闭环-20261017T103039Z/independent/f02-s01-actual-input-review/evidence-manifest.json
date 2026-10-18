@@ -1,0 +1,91 @@
+{
+  "schema": "clpm-non-author-s01-input-originals-v1",
+  "createdAtUtc": "2026-10-17T15:28:03.602836+00:00",
+  "verdict": "PASS_INPUT_PREPARATION_ONLY",
+  "newLiveDbDockerServiceCalls": 0,
+  "formalCapacity": "0/20",
+  "fileCount": 16,
+  "totalBytes": 104537,
+  "files": [
+    {
+      "path": "initial-result.json",
+      "bytes": 918,
+      "sha256": "4b7551822b09c5999efcadb1f274422ba34b25020805acc6f14df4d3068f67db"
+    },
+    {
+      "path": "initial-verification.command.json",
+      "bytes": 735,
+      "sha256": "3d552b09758c6b25573762d87f939729eb781820937c03ee55002c96c45faff9"
+    },
+    {
+      "path": "initial-verification.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "initial-verification.stdout.log",
+      "bytes": 918,
+      "sha256": "4b7551822b09c5999efcadb1f274422ba34b25020805acc6f14df4d3068f67db"
+    },
+    {
+      "path": "initial-verify_originals.py",
+      "bytes": 10912,
+      "sha256": "39c31ac2984cf8d04ce28d99cbf8025ca47e3b52849a0765b6a01f22a57a72e7"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 6270,
+      "sha256": "2b2a6d3b25c00066fbe6b7224773b75101093011c3b96dc866b9641b698c1d5b"
+    },
+    {
+      "path": "result.json",
+      "bytes": 53602,
+      "sha256": "cb96c550de75d12aa554d95a2bcdf5f8e455c48b094c12579adb2c3a4ef54d4a"
+    },
+    {
+      "path": "timezone-only-result.json",
+      "bytes": 914,
+      "sha256": "5011ed77883ab7443fe1ba199f995c5ae92642c5469e96b884e086e5cd10ca33"
+    },
+    {
+      "path": "timezone-only-verification.command.json",
+      "bytes": 735,
+      "sha256": "cbaa5e92dab229eb674551951b14e58c53f60e32c337c5b6567fc1385d4e5e0c"
+    },
+    {
+      "path": "timezone-only-verification.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "timezone-only-verification.stdout.log",
+      "bytes": 914,
+      "sha256": "5011ed77883ab7443fe1ba199f995c5ae92642c5469e96b884e086e5cd10ca33"
+    },
+    {
+      "path": "timezone-only-verify_originals.py",
+      "bytes": 11422,
+      "sha256": "a440e2a961f524772d9aaa8c9b0f0cedb23d999d5ffa6286720e1e188a713c3c"
+    },
+    {
+      "path": "verification.command.json",
+      "bytes": 735,
+      "sha256": "e13b5a446b240acca6c035886a76ccabf1d09e6d36432827d827ae60cdb4036c"
+    },
+    {
+      "path": "verification.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification.stdout.log",
+      "bytes": 4791,
+      "sha256": "eb0f8ef81c832fc27f40747d05ae42850e880ebc2b6cf4348cd5ef7ef68f1584"
+    },
+    {
+      "path": "verify_originals.py",
+      "bytes": 11671,
+      "sha256": "cfb84704d0e8265a17b0ec6291a7095224ef481c794fc491fe2ff708fc69d05d"
+    }
+  ]
+}

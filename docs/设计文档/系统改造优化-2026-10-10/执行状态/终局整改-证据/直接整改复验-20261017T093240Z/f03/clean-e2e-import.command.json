@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "node",
+    "--input-type=module",
+    "-e",
+    "import('@playwright/test').then(() => console.log('standalone @playwright/test resolution OK'))"
+  ],
+  "cwd": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-e2e-clean-lock-b6_suowt",
+  "rc": 0,
+  "seconds": 0.714567625
+}

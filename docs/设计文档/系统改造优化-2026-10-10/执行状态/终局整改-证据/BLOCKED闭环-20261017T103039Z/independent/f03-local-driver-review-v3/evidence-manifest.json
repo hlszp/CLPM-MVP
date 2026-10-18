@@ -1,0 +1,35 @@
+{
+  "files": [
+    {
+      "file": "barrier-original-red.command.json",
+      "bytes": 577,
+      "sha256": "e9f2b3d34c2d0fabb4accd077f7a65bcb4037709f496f911428953a02c73f95d"
+    },
+    {
+      "file": "barrier-original-red.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "barrier-original-red.stdout.log",
+      "bytes": 1658,
+      "sha256": "cc018745100887aa2dc9cc659c62e849ac9b3687da4032c760197b7c3bc46a97"
+    },
+    {
+      "file": "driver.v3.py",
+      "bytes": 41410,
+      "sha256": "de1a8981f8beb491265cbda24c3619a83b63c4cb3a80c5795b0c9f592df26801"
+    },
+    {
+      "file": "receipt.md",
+      "bytes": 1030,
+      "sha256": "1071c02c1eda512d0c2056c16a23c9e506bf0d259fd2677b6fd046b75ca96d83"
+    },
+    {
+      "file": "test_independent_shutdown_barrier.py",
+      "bytes": 1549,
+      "sha256": "0f3b9b84650e0a1dd54619fffe3001974fe6d82cb78ad07d5a43fd8cd5ac3a00"
+    }
+  ],
+  "status": "REWORK_WITH_FIXED_RAW_COUNTEREXAMPLE"
+}

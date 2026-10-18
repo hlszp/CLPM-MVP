@@ -1,0 +1,12 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+┃  ruff staged ❯ 
+All checks passed!
+
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.17 seconds)
+✓ ruff staged (0.14 seconds)
+[fix/final-audit-remediation ae81422b] fix(kpi): 保留快照来源与真实进度
+ 6 files changed, 338 insertions(+), 13 deletions(-)
+ create mode 100644 backend/tests/test_custom_evaluation_completion.py

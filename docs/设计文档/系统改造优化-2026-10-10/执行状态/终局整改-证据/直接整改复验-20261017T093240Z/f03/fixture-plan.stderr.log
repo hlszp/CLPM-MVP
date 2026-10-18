@@ -1,0 +1,4 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py", line 18, in <module>
+    from datetime import UTC, datetime, timedelta
+ImportError: cannot import name 'UTC' from 'datetime' (/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/datetime.py)

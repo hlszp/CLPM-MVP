@@ -1,0 +1,11 @@
+{
+  "at": "2026-10-17T14:44:51.438982+00:00",
+  "rc": 0,
+  "allFrozenRefsRehashed": true,
+  "onlyTwoAuditorStatementsChanged": true,
+  "booleanTrueOnlyAdmitted": true,
+  "manifestFlagNegativeCases": 4,
+  "manifestFlagPositiveCases": 1,
+  "dbNetworkOrServiceOperations": false,
+  "readActualKpiOutputs": false
+}

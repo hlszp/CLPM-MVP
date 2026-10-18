@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-o",
+    "addopts=",
+    "-p",
+    "no:cacheprovider",
+    "--confcutdir=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent",
+    "--basetemp=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-decimal-snapshot-review/own-fixed-raw",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/test_independent_decimal_snapshot.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-decimal-snapshot-review",
+  "startedAt": "2026-10-17T14:28:42.339565+00:00",
+  "finishedAt": "2026-10-17T14:28:43.314852+00:00",
+  "rc": 0,
+  "sourcePath": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py",
+  "sourceSha256": "e64653a2bc83143378e3dbbcc73141d409b846e4a5f168d22f4c02e18cf7e8a9",
+  "probeSha256": "3710be283f37973afc50bd8aac6b24e8bce5884e18ec3f6d2e51281205d0351a",
+  "stdoutSha256": "a03a6db607233997f0b613d9b46ce81455839c5f03372e7632cf879eafebbc36",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

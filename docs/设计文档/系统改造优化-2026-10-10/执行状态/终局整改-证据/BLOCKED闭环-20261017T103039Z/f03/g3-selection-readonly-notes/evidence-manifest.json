@@ -1,0 +1,40 @@
+{
+  "files": [
+    {
+      "path": "analysis.md",
+      "bytes": 2311,
+      "sha256": "38fce8113e19faf643a1faf6470eee9a26f3d05670ced90a1ea1dd7e3202f204"
+    },
+    {
+      "path": "joint-evidence-train-count.txt",
+      "bytes": 354,
+      "sha256": "a58cdcdef44baf5f6d98bd8f38d109f44e7255c4965fbd2096ca75c176043283"
+    },
+    {
+      "path": "joint-low-snr-conditional.txt",
+      "bytes": 3240,
+      "sha256": "c75883f7ffc23b248247983edf136270848dc20efda38c8dc95149cd24c8b708"
+    },
+    {
+      "path": "joint-winner-conditional.txt",
+      "bytes": 3988,
+      "sha256": "28e3d15c45101da27469874bf01352708266e30843745ad79e616d87ccfc48ba"
+    },
+    {
+      "path": "no-wall-budget-note.txt",
+      "bytes": 579,
+      "sha256": "c3bb7fd1af234355d25a0c0648f75f64aff580ba8fb90c388a172cff7f07b017"
+    },
+    {
+      "path": "sort-key.txt",
+      "bytes": 550,
+      "sha256": "34af6fc86b7becf7a9c2726ef3c6dacf54e1e33851e54d5868ec6dd58db38b04"
+    },
+    {
+      "path": "source-manifest.json",
+      "bytes": 1335,
+      "sha256": "8793aa3aa95e7596f97c57373302b03f73cb8ac3816a830cf70909ef0ec08cc8"
+    }
+  ],
+  "scope": "Static source/branch analysis, not independent numerical acceptance"
+}

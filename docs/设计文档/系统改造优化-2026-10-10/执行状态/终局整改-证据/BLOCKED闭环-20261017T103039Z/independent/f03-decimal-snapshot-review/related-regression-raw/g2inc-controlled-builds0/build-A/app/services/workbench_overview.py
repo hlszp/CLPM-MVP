@@ -1,0 +1,936 @@
+"""A-01 工作台总览聚合 service（M2 批次 G-总览 · F-OV-01~05）.
+
+组装 Tab1「系统总览」六块数据：
+- windows   三窗口 KPI（24h/7d/30d，读 workbench_window_summary 预计算表 M-02）
+- plants    装置排名（FACTORY 行 + sparkline + lose_factors + alarm + overdue）
+- units     单元 ×6 指标热力（UNIT 行，缺数据 → None，前端 CSS 斜纹）
+- pareto    异常类型分布（MV-02 mv_diagnosis_pareto）
+- roots     根因 Top N（diagnosis_run symptom_tags 标签聚合，14 号方案 A3 迁 v2）
+- funnel    处置漏斗（MV-03 mv_handling_funnel，4 泳道计数 + 超期）
+
+数据架构：本 service **不直接查 TDengine**；计算类历史数据由 workbench_precalc
+任务预计算写入 workbench_window_summary，本 service 只读预计算表/MV。
+（docs/过程文档/data-architecture-decision-local-first-2026-07-20.md）
+
+scope_id 约定（G-总览定义，precalc 任务须遵守）：
+- GLOBAL → scope_id=0
+- FACTORY/AREA/UNIT → scope_id = PlantNode.source_node_id（AAS 整数 ID）
+  （PlantNode.id 为 UUID，source_node_id 为 int，与 workbench_window_summary.scope_id 对齐）
+
+部分失败容错：每块独立 try/except，失败返回空/None 并 log.warning，不阻断其余块。
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
+from typing import Any
+
+from sqlalchemy import func, select, text
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.alert import AlertEvent
+from app.models.handling_order import HandlingOrder
+from app.models.plant_node import PlantNode
+from app.models.sys_config import SysConfig
+from app.models.workbench_summary import WorkbenchWindowSummary
+from app.services.diagnosis_v2_compat import symptom_label
+from app.services.workbench_scope import node_scope_id
+
+logger = logging.getLogger(__name__)
+
+# 6 项 KPI（"越高越好"）— MiniKpiStrip(6×3)、HeatMatrix(6 列)、lose_factors 判定统一口径
+# 取 workbench_window_summary 中 6 个正向率；oscillation/saturation/instrument_fault 为反向率不计
+# 标签与 app/services/performance.py KPI_NAME_MAP 对齐
+KPI_METRICS: tuple[tuple[str, str], ...] = (
+    ("good_value_rate", "好值率"),
+    ("auto_mode_rate", "自控率"),
+    ("effective_auto_rate", "有效自控率"),
+    ("steady_rate", "平稳率"),
+    ("accuracy_rate", "准确率"),
+    ("fast_rate", "快速率"),
+)
+
+# lose_factors 判定阈值：6 指标率低于此值计入损失因子列表（运行时经 sys_config 可调）
+DEFAULT_LOSE_FACTOR_THRESHOLD = 0.90
+LOSE_FACTOR_CONFIG_KEY = "workbench.lose_factor_threshold"
+
+ROOTS_TOP_N = 10  # 根因 Top N（用户决策：10 条）
+
+# 预警卡排序兜底（triggered_at 理论非空；naive 最小值避免与 aware 比较）
+_NAIVE_MIN = datetime.min.replace(tzinfo=None)
+
+WINDOWS_ALL = ("24h", "7d", "30d")
+
+
+# ---------------------------------------------------------------------------
+# 纯工具
+# ---------------------------------------------------------------------------
+
+
+def _to_float(val: Any) -> float | None:
+    """Decimal/数值 → float，None 透传。"""
+    if val is None:
+        return None
+    try:
+        return float(val)
+    except (TypeError, ValueError):
+        return None
+
+
+def _iso(val: Any) -> str | None:
+    """datetime → ISO 字符串，None 透传。"""
+    if val is None:
+        return None
+    try:
+        return val.isoformat()
+    except (AttributeError, ValueError):
+        return None
+
+
+# ---------------------------------------------------------------------------
+# 纯 shaper（无 DB，单测友好）
+# ---------------------------------------------------------------------------
+
+
+def _loops_per_hour(loop_count: int | None, window_w: str | None) -> int:
+    """loop_count（窗口内参评回路·小时累计）→ 平均每小时参评回路数。
+
+    0930 口径修正：预计算的 loop_count 是按小时累加的评估次数，
+    前端“回路采集/性能评估”卡片需要的是数量概念，直接显示累计值
+    会比真实回路数大一个数量级（如 24h×700 回路 ≈ 16853）。
+    """
+    hours = {"24h": 24, "7d": 168, "30d": 720}.get(window_w or "", 24)
+    if not loop_count or hours <= 0:
+        return 0
+    return max(1, round(loop_count / hours))
+
+
+def _shape_window_row(row: Any) -> dict[str, Any]:
+    """单行 workbench_window_summary → window 块字典。
+
+    0930 伪 0 修复：窗口内无任何回路评估（loop_count=0）时 score 置 None，
+    前端显示 '—' 而非误导性的 0 分（预计算写入侧对空聚合落 0.0）。
+    """
+    metrics = {key: _to_float(getattr(row, key, None)) for key, _ in KPI_METRICS}
+    raw_loops = getattr(row, "loop_count", 0) or 0
+    loop_count = _loops_per_hour(raw_loops, getattr(row, "window_w", None))
+    score = _to_float(getattr(row, "score", None))
+    if raw_loops == 0:
+        score = None
+    return {
+        "score": score,
+        "status": getattr(row, "status", None),
+        "loop_count": loop_count,
+        "metrics": metrics,
+        "score_trend": getattr(row, "score_trend", None) or [],
+        "flags": getattr(row, "flags", None) or [],
+        "snapshot_at": _iso(getattr(row, "snapshot_at", None)),
+    }
+
+
+def shape_windows(rows: list[Any]) -> dict[str, Any]:
+    """三窗口 KPI：rows 为 scope 行（最多 3 条 24h/7d/30d）→ {window: block|None}。"""
+    out: dict[str, Any] = {}
+    for row in rows:
+        win = getattr(row, "window_w", None) or getattr(row, "window", None)
+        if win:
+            out[win] = _shape_window_row(row)
+    for w in WINDOWS_ALL:
+        out.setdefault(w, None)
+    return out
+
+
+def _lose_factors(row: Any, threshold: float) -> list[str]:
+    """6 指标率低于阈值 → 返回损失因子中文标签列表。"""
+    factors: list[str] = []
+    for key, label in KPI_METRICS:
+        v = _to_float(getattr(row, key, None))
+        if v is not None and v < threshold:
+            factors.append(label)
+    return factors
+
+
+def _plants_empty_reason(hierarchy: dict[str, Any], plants: list[Any] | None) -> str | None:
+    """装置/单元排名为空的**可判定原因**（C，2026-09-28）。
+
+    - None：有排名行，无需提示；
+    - NO_ORG_NODES：组织树里没有 FACTORY/AREA 节点（未配置组织）；
+    - NO_PRECALC_ROWS：组织节点存在但预计算表无对应行（预计算任务未跑/缓存空）。
+    """
+    if plants:
+        return None
+    factories = hierarchy.get("factories") or []
+    if not factories:
+        return "NO_ORG_NODES"
+    return "NO_PRECALC_ROWS"
+
+
+def shape_plants(
+    kpi_rows: list[Any],
+    hierarchy: dict[str, Any],
+    alarm_per_unit: dict[str, int],
+    overdue_per_unit: dict[str, int],
+    threshold: float,
+) -> list[dict[str, Any]]:
+    """装置排名：AREA（装置级）预计算行 + 层级映射 → 排名列表（按 score 降序）。
+
+    2026-10-03 用户裁决修正：GLOBAL 视图原取 FACTORY（工厂）行，语义错位
+    （工厂通常仅 1 家，排名无意义）；改取 AREA（装置）行——预计算表已覆盖。
+    alarm/overdue 按 unit→area 映射聚合到装置。
+    """
+    unit_to_area: dict[str, str] = hierarchy["unit_to_area"]
+    name_by_source_id: dict[int, str] = hierarchy["name_by_source_id"]
+    # source_node_id → area_id（UUID）映射
+    areas = hierarchy["areas"]
+    area_id_by_source = {node_scope_id(a.source_node_id, a.id): a.id for a in areas}
+    # 倒置：area_id → [unit_id]
+    units_per_area: dict[str, list[str]] = {}
+    for unit_id, area_id in unit_to_area.items():
+        units_per_area.setdefault(area_id, []).append(unit_id)
+
+    plants: list[dict[str, Any]] = []
+    for row in kpi_rows:
+        src_id = getattr(row, "scope_id", None)
+        name = name_by_source_id.get(src_id) or f"装置#{src_id}"
+        area_id = area_id_by_source.get(src_id)
+        unit_ids = units_per_area.get(area_id, []) if area_id else []
+        alarm_count = sum(alarm_per_unit.get(uid, 0) for uid in unit_ids)
+        overdue = sum(overdue_per_unit.get(uid, 0) for uid in unit_ids)
+        plants.append(
+            {
+                "id": src_id,
+                "name": name,
+                "score": _to_float(getattr(row, "score", None)),
+                "status": getattr(row, "status", None),
+                # 0930：窗口累计 → 平均每小时参评回路数（口径见 _loops_per_hour）
+                "loop_count": _loops_per_hour(
+                    getattr(row, "loop_count", 0) or 0,
+                    getattr(row, "window_w", None),
+                ),
+                "sparkline": getattr(row, "score_trend", None) or [],
+                "lose_factors": _lose_factors(row, threshold),
+                "alarm_count": alarm_count,
+                "overdue_tasks": overdue,
+            }
+        )
+    # 得分降序排名；None 得分排末尾
+    plants.sort(key=lambda p: (p["score"] is None, -(p["score"] or 0)))
+    for idx, p in enumerate(plants, 1):
+        p["rank"] = idx
+    return plants
+
+
+def shape_units(kpi_rows: list[Any], hierarchy: dict[str, Any]) -> list[dict[str, Any]]:
+    """单元热力：UNIT 预计算行 → {id,name,score,status,metrics{6|None}}。"""
+    name_by_source_id: dict[int, str] = hierarchy["name_by_source_id"]
+    units: list[dict[str, Any]] = []
+    for row in kpi_rows:
+        src_id = getattr(row, "scope_id", None)
+        units.append(
+            {
+                "id": src_id,
+                "name": name_by_source_id.get(src_id) or f"单元#{src_id}",
+                "score": _to_float(getattr(row, "score", None)),
+                "status": getattr(row, "status", None),
+                "metrics": {key: _to_float(getattr(row, key, None)) for key, _ in KPI_METRICS},
+            }
+        )
+    return units
+
+
+def shape_pareto(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """MV-02 行 → Pareto 列表（root_cause/tag_count/converted/ignored/sla_warned）。"""
+    return [
+        {
+            "root_cause": r.get("root_cause"),
+            "tag_count": r.get("tag_count", 0) or 0,
+            "converted_count": r.get("converted_count", 0) or 0,
+            "ignored_count": r.get("ignored_count", 0) or 0,
+            "sla_warned_count": r.get("sla_warned_count", 0) or 0,
+        }
+        for r in rows
+    ]
+
+
+_SEVERITY_RANK_TO_LABEL = {4: "CRITICAL", 3: "ERROR", 2: "WARN", 1: "INFO"}
+
+
+def shape_roots(rows: list[Any], top_n: int = ROOTS_TOP_N) -> list[dict[str, Any]]:
+    """diagnosis_run 症状标签聚合行 → 根因 Top N（tag_code/count/active/severity）。
+
+    口径（14 号方案阶段 A3）：tag_code = 症状标签英文域（如 OSCILLATION）、
+    tag_name = symptom_label 中文标签；severity 取该标签所在 run 的最高
+    severity 经 severity_to_legacy 四档（CRITICAL/WARN/INFO，SQL MAX(rank) 映射，
+    v2 无 ERROR 档）。
+    """
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        rank = getattr(r, "severity_rank", None)
+        if isinstance(r, dict):
+            rank = r.get("severity_rank")
+        severity = _SEVERITY_RANK_TO_LABEL.get(int(rank)) if rank is not None else None
+        tag_code = getattr(r, "tag_code", None) or (
+            r.get("tag_code") if isinstance(r, dict) else None
+        )
+        items.append(
+            {
+                "tag_code": tag_code,
+                "tag_name": symptom_label(tag_code),
+                "count": getattr(r, "count", None)
+                or (r.get("count") if isinstance(r, dict) else 0)
+                or 0,
+                "active_count": getattr(r, "active_count", None)
+                or (r.get("active_count") if isinstance(r, dict) else 0)
+                or 0,
+                "severity": severity,
+                # 0930：最近检出时间（此前时间线卡片用前端伪造时间）
+                "last_seen_at": _iso(r.get("last_seen_at")) if isinstance(r, dict) else None,
+            }
+        )
+    # active 优先，再按总数降序
+    items.sort(key=lambda x: (-(x["active_count"] or 0), -(x["count"] or 0)))
+    return items[:top_n]
+
+
+def shape_funnel(row: dict[str, Any] | None) -> dict[str, Any] | None:
+    """MV-03 GLOBAL 行 → 漏斗（4 泳道计数 + 超期 + 平均周期）。"""
+    if not row:
+        return None
+    return {
+        "pending": row.get("pending_count", 0) or 0,
+        "executing": row.get("executing_count", 0) or 0,
+        "verifying": row.get("verifying_count", 0) or 0,
+        "closed": row.get("closed_count", 0) or 0,
+        "reopened": row.get("reopened_count", 0) or 0,
+        "breached": row.get("breached_count", 0) or 0,
+        "avg_cycle_hours": _to_float(row.get("avg_cycle_hours")),
+    }
+
+
+# ---------------------------------------------------------------------------
+# async 查询 helper
+# ---------------------------------------------------------------------------
+
+
+async def _get_lose_threshold(db: AsyncSession) -> float:
+    """读 sys_config lose_factor 阈值，缺失/非法回退默认 0.90。"""
+    try:
+        result = await db.execute(select(SysConfig).where(SysConfig.key == LOSE_FACTOR_CONFIG_KEY))
+        row = result.scalar_one_or_none()
+        if row and row.value:
+            try:
+                return float(row.value)
+            except ValueError:
+                logger.warning(
+                    "sys_config %s 值非法：%r，回退默认", LOSE_FACTOR_CONFIG_KEY, row.value
+                )
+    except Exception:  # noqa: BLE001 — sys_config 读失败不应阻断总览
+        logger.warning(
+            "读取 sys_config %s 失败，回退默认阈值", LOSE_FACTOR_CONFIG_KEY, exc_info=True
+        )
+    return DEFAULT_LOSE_FACTOR_THRESHOLD
+
+
+async def _load_plant_hierarchy(db: AsyncSession) -> dict[str, Any]:
+    """加载 PlantNode 三层，构建 unit→factory / unit→area / source_id→name 映射。"""
+    result = await db.execute(select(PlantNode))
+    nodes = result.scalars().all()
+    by_id = {n.id: n for n in nodes}
+    unit_to_area: dict[str, str] = {}
+    unit_to_factory: dict[str, str] = {}
+    for n in nodes:
+        if n.type == "UNIT":
+            aid = _resolve_ancestor_type_id(n, by_id, "AREA")
+            if aid:
+                unit_to_area[n.id] = aid
+            fid = _resolve_ancestor_type_id(n, by_id, "FACTORY")
+            if fid:
+                unit_to_factory[n.id] = fid
+    name_by_source_id = {node_scope_id(n.source_node_id, n.id): n.name for n in nodes}
+    return {
+        "areas": [n for n in nodes if n.type == "AREA"],
+        "by_id": by_id,
+        "factories": [n for n in nodes if n.type == "FACTORY"],
+        "name_by_source_id": name_by_source_id,
+        "unit_to_area": unit_to_area,
+        "unit_to_factory": unit_to_factory,
+    }
+
+
+def _resolve_ancestor_type_id(node: Any, by_id: dict[str, Any], node_type: str) -> str | None:
+    """沿 parent_id 上溯到指定类型（FACTORY/AREA）的祖先节点 id。"""
+    current = node
+    seen: set[str] = set()
+    while current and current.id not in seen:
+        seen.add(current.id)
+        if current.type == node_type:
+            return current.id
+        parent_id = current.parent_id
+        current = by_id.get(parent_id) if parent_id else None
+    return None
+
+
+async def _query_windows(db: AsyncSession, scope_type: str, scope_id: int) -> list[Any]:
+    """查三窗口 KPI 行（GLOBAL 取 scope_id=0），每个窗口只取最新一行。
+
+    整改 G15：workbench_precalc 每个 (scope, window) 主动保留 _RETAIN_ROWS=64 行
+    历史（供 sparkline 用），而此前读侧无 ORDER BY / LIMIT —— 于是连续运行
+    >5.3h（5min × 64）后：装置排名出现最多 64 份同名重复项，头部 KPI 卡片
+    取到 64 行中任意一行（可能是 5 小时前的旧快照），同页自相矛盾且不可复现。
+    P5-03 ②：收口到 query_latest_window_rows 单一实现。
+    """
+    return await query_latest_window_rows(db, scope_type, scope_id)
+
+
+async def query_latest_window_rows(db: AsyncSession, scope_type: str, scope_id: int) -> list[Any]:
+    """单一 scope 的三窗口行（每窗口各取最新 window_end 一行）。
+
+    P5-03 ②"最新 scope 行查询统一"的单一实现之一（真 PG 语义由
+    DISTINCT ON 保证；mock 只能看 SQL 形状——见
+    tests/test_workbench_latest_row_real_pg_g15.py 与 P5-03 测试）。
+    """
+    result = await db.execute(
+        select(WorkbenchWindowSummary)
+        .where(WorkbenchWindowSummary.scope_type == scope_type)
+        .where(WorkbenchWindowSummary.scope_id == scope_id)
+        .distinct(WorkbenchWindowSummary.window_w)
+        .order_by(
+            WorkbenchWindowSummary.window_w,
+            WorkbenchWindowSummary.window_end.desc(),
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def query_latest_scope_rows(
+    db: AsyncSession,
+    scope_type: str,
+    window: str,
+    scope_ids: list[int] | None = None,
+) -> list[Any]:
+    """最新 scope 行查询统一实现（P5-03 ②）——全部层级/范围消费方收口于此。
+
+    语义契约（R02"最新代表后置筛选"的 scope 级对应，不回退）：
+    - 每个分组键（scope_id；scope_ids=None 时该层级全部）取
+      ``window_end`` **最新**一行（DISTINCT ON + 组内 window_end DESC）；
+    - **不预筛 score/status**：最新行是 NULL/INCONCLUSIVE 就返回它，
+      不被同 scope 更旧的 SUCCESS 行顶替（"最新代表"先选定，筛选/空态
+      判断一律由读方 shaper 后置处理——_row_score/shape_* 家族）；
+    - ids 为空列表 → 空结果（调用方显式传空集语义）。
+
+    消费方：workbench_overview（plants/units，含 .in_() 分支——G15 漏改
+    重复项的收口）、workbench_assessment（ranking/heatmap）。
+    """
+    stmt = (
+        select(WorkbenchWindowSummary)
+        .where(WorkbenchWindowSummary.scope_type == scope_type)
+        .where(WorkbenchWindowSummary.window_w == window)
+    )
+    if scope_ids is not None:
+        if not scope_ids:
+            return []
+        stmt = stmt.where(WorkbenchWindowSummary.scope_id.in_(scope_ids))
+    stmt = stmt.distinct(WorkbenchWindowSummary.scope_id).order_by(
+        WorkbenchWindowSummary.scope_id,
+        WorkbenchWindowSummary.window_end.desc(),
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def query_latest_scope_row(
+    db: AsyncSession, scope_type: str, scope_id: int, window: str
+) -> Any | None:
+    """单 scope × 单窗口的最新一行（P5-03 ② 收口；cockpit 全厂行同源）。"""
+    rows = await query_latest_scope_rows(db, scope_type, window, [scope_id])
+    return rows[0] if rows else None
+
+
+async def _query_scope_rows(db: AsyncSession, scope_type: str, window: str) -> list[Any]:
+    """查指定层级 + 窗口的预计算行（用于 plants=FACTORY / units=UNIT）。
+
+    整改 G15：同 _query_windows —— 每个 scope_id 只取最新 window_end 的一行，
+    否则排名/热力图会把 64 份历史快照全部渲染成重复条目。
+    P5-03 ②：收口到 query_latest_scope_rows 单一实现。
+    """
+    return await query_latest_scope_rows(db, scope_type, window, None)
+
+
+async def _get_child_ids_for_plants(
+    db: AsyncSession, scope_type: str, scope_id: int
+) -> tuple[None | str, list[int]]:
+    """查 plants 排名所需的下一层 scope_type + source_node_id 列表。
+
+    - GLOBAL → ("AREA", [])  意为查全部 AREA（装置级）行——2026-10-03 修正：
+      装置排名取装置级节点（原取 FACTORY 工厂行）
+    - FACTORY → ("AREA", [子 area source_node_id, …])
+    - AREA → ("UNIT", [子 unit source_node_id, …])
+    """
+    if scope_type == "GLOBAL":
+        return "AREA", []
+
+    # 递归查直接子节点（下一层）
+    child_type = "AREA" if scope_type == "FACTORY" else "UNIT"
+    result = await db.execute(
+        text(
+            """
+            WITH RECURSIVE node_tree AS (
+                SELECT id, source_node_id, type, parent_id
+                FROM plant_node WHERE source_node_id = :sid
+                UNION ALL
+                SELECT c.id, c.source_node_id, c.type, c.parent_id
+                FROM plant_node c JOIN node_tree t ON c.parent_id = t.id
+            )
+            SELECT source_node_id FROM node_tree
+            WHERE type = :child_type AND source_node_id IS NOT NULL
+              AND source_node_id != :sid
+            """
+        ),
+        {"sid": scope_id, "child_type": child_type},
+    )
+    ids = [int(row[0]) for row in result.all() if row[0] is not None]
+    return child_type, ids
+
+
+async def _get_descendant_unit_ids(db: AsyncSession, scope_type: str, scope_id: int) -> list[int]:
+    """递归查所有 UNIT 后代的 source_node_id（用于 units 热力图过滤）。
+
+    - GLOBAL → []  意为查全部 UNIT 行
+    - FACTORY/AREA → 递归子树中所有 type=UNIT 的 source_node_id
+    """
+    if scope_type == "GLOBAL":
+        return []
+
+    result = await db.execute(
+        text(
+            """
+            WITH RECURSIVE node_tree AS (
+                SELECT id, source_node_id, type, parent_id
+                FROM plant_node WHERE source_node_id = :sid
+                UNION ALL
+                SELECT c.id, c.source_node_id, c.type, c.parent_id
+                FROM plant_node c JOIN node_tree t ON c.parent_id = t.id
+            )
+            SELECT source_node_id FROM node_tree
+            WHERE type = 'UNIT' AND source_node_id IS NOT NULL
+              AND source_node_id != :sid
+            """
+        ),
+        {"sid": scope_id},
+    )
+    return [int(row[0]) for row in result.all() if row[0] is not None]
+
+
+async def _query_alarm_per_unit(db: AsyncSession) -> dict[str, int]:
+    """近 24h 诊断检出异常回路数按 loop.unit_id 聚合（→ 再映射到 factory）。
+
+    口径（14 号方案阶段 A3 · D3=a 流量态）：diagnosis_run 近 24h 窗口内
+    primary_category 非 NULL 的**去重回路数**（一个回路 24h 内多次 run 计 1）；
+    此前为存量 ACTIVE diagnosis_tag 态。窗口起点用参数化 naive UTC
+    （PG 会话时区 +8，勿裸用 now()）。
+    """
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
+    result = await db.execute(
+        text(
+            """
+            SELECT l.unit_id::text, count(DISTINCT r.loop_id)
+            FROM diagnosis_run r
+            JOIN loop_ledger l ON l.id = r.loop_id
+            WHERE r.status = 'SUCCESS'
+              AND r.primary_category IS NOT NULL
+              AND r.created_at >= :since
+              AND l.is_active = TRUE
+            GROUP BY l.unit_id
+            """
+        ),
+        {"since": since},
+    )
+    return {row[0]: int(row[1]) for row in result.all() if row[0]}
+
+
+async def _query_overdue_per_unit(db: AsyncSession) -> dict[str, int]:
+    """BREACH handling_order 按 loop.unit_id 聚合计数（未闭合工单）。"""
+    from app.models.loop import LoopLedger
+
+    result = await db.execute(
+        select(LoopLedger.unit_id, func.count(HandlingOrder.id))
+        .join(HandlingOrder, HandlingOrder.loop_id == LoopLedger.id)
+        .where(HandlingOrder.sla_stage == "BREACH")
+        .where(HandlingOrder.status.notin_(["CLOSED", "CANCELLED"]))
+        .where(LoopLedger.is_active.is_(True))
+        .group_by(LoopLedger.unit_id)
+    )
+    return {row[0]: int(row[1]) for row in result.all() if row[0]}
+
+
+async def _query_pareto(db: AsyncSession) -> list[dict[str, Any]]:
+    """MV-02 mv_diagnosis_pareto 全量（按 tag_count 降序）。"""
+    result = await db.execute(
+        text(
+            "SELECT root_cause, tag_count, converted_count, ignored_count, sla_warned_count "
+            "FROM mv_diagnosis_pareto ORDER BY tag_count DESC"
+        )
+    )
+    return [dict(r._mapping) for r in result.all()]
+
+
+async def _query_roots(
+    db: AsyncSession, top_n: int = ROOTS_TOP_N, unit_ids: list[str] | None = None
+) -> list[Any]:
+    """diagnosis_run symptom_tags 标签聚合 Top N（近 30d 检出 + PENDING 子计数）。
+
+    口径（14 号方案阶段 A3）：旧 diagnosis_tag 按 tag_code 聚合迁 v2 引擎——
+    count = 检出次数（symptom_tags 中 detected=true 的 run 数）、
+    active_count = 其中 review_status='PENDING' 的 run 数、
+    severity_rank = 该标签所在 run 的最高 severity（HIGH→4 / MEDIUM→2 / LOW→1，
+    即 severity_to_legacy 四档色域 CRITICAL/WARN/INFO）。
+    窗口起点用参数化 naive UTC（PG 会话时区 +8，勿裸用 now()）。
+    """
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=30)
+    # P4-03：数据范围过滤（unit_ids=None=ALL 全厂；NODE_SUBTREE=范围内回路）
+    _scope_cond = ""
+    _params: dict[str, Any] = {"since": since, "top_n": top_n}
+    if unit_ids:
+        _scope_cond = (
+            "AND r.loop_id IN "
+            "(SELECT id FROM loop_ledger WHERE unit_id = ANY(CAST(:unit_ids AS uuid[])))"
+        )
+        _params["unit_ids"] = list(unit_ids)
+    result = await db.execute(
+        text(
+            f"""
+            SELECT kv.key AS tag_code,
+                   count(*) AS count,
+                   count(*) FILTER (WHERE r.review_status = 'PENDING') AS active_count,
+                   MAX(r.created_at) AS last_seen_at
+            FROM diagnosis_run r
+            CROSS JOIN LATERAL jsonb_each(r.symptom_tags) kv
+            WHERE r.status = 'SUCCESS'
+              AND r.created_at >= :since
+              AND kv.value->>'detected' = 'true'
+              {_scope_cond}
+            GROUP BY kv.key
+            ORDER BY count DESC
+            LIMIT :top_n
+            """
+        ),
+        _params,
+    )
+    return [dict(r._mapping) for r in result.all()]
+
+
+async def _query_alert_events(db: AsyncSession, limit: int = 8) -> list[dict[str, Any]]:
+    """预警规则引擎真实事件（alert_event）近 24h 未决优先，最新在前。
+
+    0930 新增：工作台总览"预警事件"卡片此前数据源是 diagnosis_run 检出标签
+    （诊断链），与预警规则引擎（alert_event）是两条链——用户在有预警事件的
+    前提下看到空白，属设计位错接。
+
+    2026-10-09 提速：原单条查询 ORDER BY (status='ACTIVE'), (status='ACKNOWLEDGED'),
+    triggered_at DESC 是表达式排序，索引不可用，24h 窗口数万行全取回排序（秒级）。
+    改两段式各走 (status, triggered_at DESC) 复合索引（每段索引点查 limit 条），
+    应用层按原语义合并：ACTIVE 在前 → ACKNOWLEDGED 次之 → 其余，段内时间倒序。
+    """
+    since = datetime.now(UTC).replace(tzinfo=None) - timedelta(hours=24)
+    _order_rank = {"ACTIVE": 0, "ACKNOWLEDGED": 1}
+
+    async def _fetch(status_value: str | None) -> list[Any]:
+        stmt = select(
+            AlertEvent.id,
+            AlertEvent.rule_code,
+            AlertEvent.loop_id,
+            AlertEvent.severity,
+            AlertEvent.status,
+            AlertEvent.triggered_value,
+            AlertEvent.triggered_at,
+        ).where(AlertEvent.triggered_at >= since)
+        if status_value is None:
+            stmt = stmt.where(AlertEvent.status.notin_(["ACTIVE", "ACKNOWLEDGED"]))
+        else:
+            stmt = stmt.where(AlertEvent.status == status_value)
+        stmt = stmt.order_by(AlertEvent.triggered_at.desc()).limit(limit)
+        return (await db.execute(stmt)).all()
+
+    rows = [*await _fetch("ACTIVE"), *await _fetch("ACKNOWLEDGED"), *await _fetch(None)]
+    # 双趟稳定排序（时间倒序 → 状态优先级），避免 naive datetime 逐点 .timestamp()
+    rows.sort(key=lambda r: r.triggered_at or _NAIVE_MIN, reverse=True)
+    rows.sort(key=lambda r: _order_rank.get(r.status, 2))
+    rows = rows[:limit]
+    return [
+        {
+            "id": str(r.id),
+            "rule_code": r.rule_code,
+            "loop_id": str(r.loop_id) if r.loop_id else None,
+            "severity": r.severity,
+            "status": r.status,
+            "triggered_value": float(r.triggered_value) if r.triggered_value is not None else None,
+            "triggered_at": _iso(r.triggered_at),
+        }
+        for r in rows
+    ]
+
+
+async def _query_funnel(db: AsyncSession, scope_type: str, scope_id: int) -> dict[str, Any] | None:
+    """MV-03 mv_handling_funnel 指定 scope 行（GLOBAL: scope_type='GLOBAL', scope_id=0）。"""
+    result = await db.execute(
+        text(
+            "SELECT pending_count, executing_count, verifying_count, closed_count, "
+            "reopened_count, breached_count, avg_cycle_hours "
+            "FROM mv_handling_funnel WHERE scope_type = :st AND scope_id = :sid"
+        ),
+        {"st": scope_type, "sid": scope_id},
+    )
+    row = result.one_or_none()
+    return dict(row._mapping) if row else None
+
+
+# ---------------------------------------------------------------------------
+# 主入口
+# ---------------------------------------------------------------------------
+
+
+def _scope_id_int(scope_type: str, scope_id: int | None) -> int:
+    """scope_id 归一：GLOBAL → 0，其余透传。"""
+    if scope_type == "GLOBAL" or scope_id is None:
+        return 0
+    return int(scope_id)
+
+
+def _unit_ids_hash(unit_ids: list[str] | None) -> str:
+    """P4-03：授权节点集合 hash（缓存 key 隔离——不同范围不共用聚合缓存）。"""
+    import hashlib
+
+    if not unit_ids:
+        return "all"
+    return hashlib.sha1("\n".join(sorted(unit_ids)).encode()).hexdigest()[:12]
+
+
+async def build_overview(
+    db: AsyncSession,
+    scope_type: str = "GLOBAL",
+    scope_id: int | None = None,
+    window: str = "24h",
+    unit_ids: list[str] | None = None,
+) -> dict[str, Any]:
+    """组装 A-01 总览六块。部分失败容错：单块异常不阻断其余块。
+
+    2026-10-03：60s TTL 短缓存（agg_cache），同参聚合 60s 内直接复用。
+    P4-03：unit_ids=数据范围节点集（None=ALL）；缓存 key 含授权节点集合
+    hash + policyRevision——跨范围不共用全厂缓存，策略/拓扑变更自然换 key。
+    P5-03 ⑥：**块级缓存**替代整响应缓存——每统计块独立 key（块级命中/
+    失败不缓存 → 重试只重失败块），响应附 ``block_states``（OK |
+    UNAVAILABLE）供前端分块降级展示；P5-03 ⑤：key 三源代数
+    （policyRevision + 数据新窗 + sys_config 更新）任一推进即整体换 key。
+    """
+    from app.services.agg_cache import generation_suffix
+
+    gen = await generation_suffix(db)
+    key_base = (
+        f"workbench-overview:{scope_type}:{_scope_id_int(scope_type, scope_id)}:"
+        f"{window}:{_unit_ids_hash(unit_ids)}:{gen}"
+    )
+    return await _build_overview_impl(
+        db, scope_type, scope_id, window, unit_ids=unit_ids, key_base=key_base, gen=gen
+    )
+
+
+async def _cached_block(
+    key: str,
+    builder: Callable[[], Any],
+    ttl: float = 60.0,
+    fallback: Any = None,
+) -> tuple[Any, str]:
+    """块级缓存包装（P5-03 ⑥）：失败 → UNAVAILABLE + 兜底值，不缓存失败.
+
+    cached_agg 的"失败不缓存"保证失败块下一次请求自然重建（局部重试），
+    成功块继续命中（重试不重算）。
+    """
+    from app.services.agg_cache import cached_agg
+
+    try:
+        return await cached_agg(key, builder, ttl=ttl), "OK"
+    except Exception:  # noqa: BLE001 — 单块失败不阻断其余块
+        logger.warning("总览块构建失败 key=%s", key, exc_info=True)
+        return fallback, "UNAVAILABLE"
+
+
+def roots_cache_key(unit_ids: list[str] | None, gen: str) -> str:
+    """roots 块缓存 key（P5-03：读方与 Beat 预热共用同一构造——修复此前
+    Beat 预热写 ``workbench-roots:30d`` 而读方带 hash/代数后缀导致预热
+    永不命中的键错位）。"""
+    return f"workbench-roots:30d:{_unit_ids_hash(unit_ids)}:{gen}"
+
+
+async def _build_overview_impl(
+    db: AsyncSession,
+    scope_type: str = "GLOBAL",
+    scope_id: int | None = None,
+    window: str = "24h",
+    unit_ids: list[str] | None = None,
+    key_base: str = "",
+    gen: str = "",
+) -> dict[str, Any]:
+    """实际聚合（由 build_overview 计算块级 key 后调用）；unit_ids=范围节点集。"""
+
+    sid = _scope_id_int(scope_type, scope_id)
+    overview: dict[str, Any] = {
+        "scope": {"type": scope_type, "id": scope_id},
+        "window": window,
+        "windows": dict.fromkeys(WINDOWS_ALL),
+        "plants": [],
+        # C（2026-09-28）：排名为空时给出**可判定的原因**，前端据此显示明确空态，
+        # 而不是静默空白。
+        "plantsEmptyReason": None,
+        "units": [],
+        "pareto": [],
+        "roots": [],
+        "alert_events": [],
+        "funnel": None,
+        # P5-03 ⑥：块状态账（OK | UNAVAILABLE）——失败块显式可见，
+        # 不以空数据伪装可用
+        "block_states": {},
+    }
+
+    def _bk(block: str) -> str:
+        return f"{key_base}:{block}"
+
+    # --- windows：三窗口 KPI（选中 scope）---
+    data, state = await _cached_block(
+        _bk("windows"),
+        lambda: _windows_block(db, scope_type, sid),
+        fallback=dict.fromkeys(WINDOWS_ALL),
+    )
+    overview["windows"] = data
+    overview["block_states"]["windows"] = state
+
+    # --- lose_factor 阈值（sys_config 可调）---
+    threshold = await _get_lose_threshold(db)
+
+    # --- plants：下一层排名（GLOBAL→工厂 / FACTORY→装置 / AREA→单元）+ alarm/overdue 聚合 ---
+    # 0930：默认空层级，防 _load_plant_hierarchy 异常被吞后下方引用触发 NameError
+    hierarchy: dict[str, Any] = {
+        "factories": [],
+        "by_id": {},
+        "unit_to_factory": {},
+        "name_by_source_id": {},
+    }
+    try:
+        hierarchy = await _load_plant_hierarchy(db)
+    except Exception:  # noqa: BLE001
+        logger.warning("总览 hierarchy 装载失败", exc_info=True)
+
+    data, state = await _cached_block(
+        _bk("plants"),
+        lambda: _plants_block(db, scope_type, sid, window, hierarchy, threshold, unit_ids),
+        fallback=[],
+    )
+    overview["plants"] = data
+    overview["block_states"]["plants"] = state
+
+    # --- units：单元 ×6 指标热力（按 scope 递归过滤 UNIT 行）---
+    data, state = await _cached_block(
+        _bk("units"),
+        lambda: _units_block(db, scope_type, sid, window, hierarchy, unit_ids),
+        fallback=[],
+    )
+    overview["units"] = data
+    overview["block_states"]["units"] = state
+
+    # --- pareto：异常类型分布（MV-02）---
+    data, state = await _cached_block(_bk("pareto"), lambda: _pareto_block(db), fallback=[])
+    overview["pareto"] = data
+    overview["block_states"]["pareto"] = state
+
+    # --- roots：根因 Top N（diagnosis_run symptom_tags 标签聚合，A3 迁 v2）---
+    # 2026-10-09 提速：30d JSONB 展开聚合是冷算大头（秒级）——独立 330s 缓存
+    # 长于总览 60s 缓存，且由 refresh-workbench-mv Beat（5min）预热写 Redis，
+    # API 路径常态命中、不再实时展开。P5-03：key 与 Beat 预热共用
+    # roots_cache_key（修复键错位）。
+    data, state = await _cached_block(
+        roots_cache_key(unit_ids, gen),
+        lambda: _query_roots(db, ROOTS_TOP_N, unit_ids=unit_ids),
+        ttl=330,
+        fallback=[],
+    )
+    overview["roots"] = shape_roots(data, ROOTS_TOP_N)
+    overview["block_states"]["roots"] = state
+
+    # --- alert_events：预警规则引擎真实事件（0930：用户预期"有预警事件"的本源）---
+    data, state = await _cached_block(_bk("alerts"), lambda: _query_alert_events(db), fallback=[])
+    overview["alert_events"] = data
+    overview["block_states"]["alert_events"] = state
+
+    # --- funnel：处置漏斗（MV-03，scope 行）---
+    data, state = await _cached_block(
+        _bk("funnel"),
+        lambda: _funnel_block(db, scope_type, sid),
+        fallback=None,
+    )
+    overview["funnel"] = data
+    overview["block_states"]["funnel"] = state
+
+    overview.setdefault(
+        "plantsEmptyReason",
+        _plants_empty_reason(hierarchy, overview.get("plants")),
+    )
+    return overview
+
+
+async def _windows_block(db: AsyncSession, scope_type: str, sid: int) -> dict[str, Any]:
+    win_rows = await _query_windows(db, scope_type, sid)
+    return shape_windows(win_rows)
+
+
+async def _pareto_block(db: AsyncSession) -> list[dict[str, Any]]:
+    return shape_pareto(await _query_pareto(db))
+
+
+async def _plants_block(
+    db: AsyncSession,
+    scope_type: str,
+    sid: int,
+    window: str,
+    hierarchy: dict[str, Any],
+    threshold: float,
+    unit_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    """plants 块主体（P5-03 ⑥ 从 _build_overview_impl 抽出，供块级缓存）。"""
+    child_type, child_ids = await _get_child_ids_for_plants(db, scope_type, sid)
+    if scope_type == "GLOBAL" or not child_ids:
+        # GLOBAL → 全部 AREA（装置级）行（0930 按当前树过滤 + 1003 装置级修正）
+        plant_rows = await _query_scope_rows(db, child_type, window)
+        current_scope_ids = set(hierarchy["name_by_source_id"].keys())
+        plant_rows = [r for r in plant_rows if getattr(r, "scope_id", None) in current_scope_ids]
+    else:
+        # FACTORY/AREA → 限定子节点 ID（P5-03 ②：统一走 latest 收口——原裸
+        # select 无 DISTINCT ON，>5.3h 后渲染 64 份历史重复项，G15 漏改分支）
+        plant_rows = await query_latest_scope_rows(db, child_type, window, child_ids)
+    alarm_per_unit = await _query_alarm_per_unit(db)
+    overdue_per_unit = await _query_overdue_per_unit(db)
+    return shape_plants(plant_rows, hierarchy, alarm_per_unit, overdue_per_unit, threshold)
+
+
+async def _units_block(
+    db: AsyncSession,
+    scope_type: str,
+    sid: int,
+    window: str,
+    hierarchy: dict[str, Any],
+    unit_ids: list[str] | None,
+) -> list[dict[str, Any]]:
+    """units 块主体（P5-03 ⑥ 抽出；.in_() 分支同步收口 latest 查询）。"""
+    desc_unit_ids = await _get_descendant_unit_ids(db, scope_type, sid)
+    if not desc_unit_ids:
+        # GLOBAL → 全部 UNIT 行
+        unit_rows = await _query_scope_rows(db, "UNIT", window)
+    else:
+        # P5-03 ②：统一 latest 收口（原裸 select 无 DISTINCT ON）
+        unit_rows = await query_latest_scope_rows(db, "UNIT", window, desc_unit_ids)
+    return shape_units(unit_rows, hierarchy)
+
+
+async def _funnel_block(db: AsyncSession, scope_type: str, sid: int) -> dict[str, Any] | None:
+    ft = scope_type if scope_type != "GLOBAL" else "GLOBAL"
+    return shape_funnel(await _query_funnel(db, ft, sid))

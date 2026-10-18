@@ -1,0 +1,333 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="6" time="0.195" timestamp="2026-10-17T17:56:43.559553+08:00" hostname="zhangpingdeMacBook-Pro"><testcase classname="tests.test_g5_data_acquisition_failure" name="test_one_resource_failure_in_thousand_cannot_be_success[[0x073a]: Query memory exhausted]" time="0.006"><failure message="Failed: DID NOT RAISE BatchResourceFailure">message = '[0x073a]: Query memory exhausted'
+
+    @pytest.mark.parametrize(
+        "message", ["[0x073a]: Query memory exhausted", "too many clients already"]
+    )
+    def test_one_resource_failure_in_thousand_cannot_be_success(message):
+        error = RuntimeError(message)
+        results = [{"status": "SUCCESS"}] * 999 + [error]
+&gt;       with pytest.raises(kpi_calc.BatchResourceFailure, match="1/1000") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE BatchResourceFailure
+
+tests/test_g5_data_acquisition_failure.py:385: Failed</failure></testcase><testcase classname="tests.test_g5_data_acquisition_failure" name="test_one_resource_failure_in_thousand_cannot_be_success[too many clients already]" time="0.001"><failure message="Failed: DID NOT RAISE BatchResourceFailure">message = 'too many clients already'
+
+    @pytest.mark.parametrize(
+        "message", ["[0x073a]: Query memory exhausted", "too many clients already"]
+    )
+    def test_one_resource_failure_in_thousand_cannot_be_success(message):
+        error = RuntimeError(message)
+        results = [{"status": "SUCCESS"}] * 999 + [error]
+&gt;       with pytest.raises(kpi_calc.BatchResourceFailure, match="1/1000") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE BatchResourceFailure
+
+tests/test_g5_data_acquisition_failure.py:385: Failed</failure></testcase><testcase classname="tests.test_g5_data_acquisition_failure" name="test_minority_resource_failure_propagates_to_parent_and_terminal_record[False-standard]" time="0.049"><failure message="Failed: DID NOT RAISE BatchResourceFailure">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x110f9fa40&gt;
+path = 'standard', final_attempt = False
+
+    @pytest.mark.parametrize("path", ["standard", "custom"])
+    @pytest.mark.parametrize("final_attempt", [False, True])
+    async def test_minority_resource_failure_propagates_to_parent_and_terminal_record(
+        monkeypatch, path, final_attempt
+    ):
+        """A 1/4 failure exercises real standard/custom parents below G29's 50%."""
+        from app.schemas.task import TaskStatus
+    
+        failed_loop = _loop()
+        other_loops = []
+        for index in range(3):
+            loop = _loop()
+            loop.id = f"healthy-{index}"
+            other_loops.append(loop)
+        loops = [failed_loop, *other_loops]
+        db = AsyncMock()
+        db.__aenter__ = AsyncMock(return_value=db)
+        db.__aexit__ = AsyncMock(return_value=None)
+        loop_rows = MagicMock()
+        loop_rows.scalars.return_value.all.return_value = loops
+        metric_rows = MagicMock()
+        metric_rows.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[loop_rows, metric_rows])
+        monkeypatch.setattr("app.core.db.AsyncSessionLocal", lambda: db)
+        monkeypatch.setattr("app.core.db.close_session_guarded", AsyncMock())
+        monkeypatch.setattr(
+            "app.services.data_planner.resolve_data_version", AsyncMock(return_value="f02")
+        )
+        monkeypatch.setattr(
+            "app.services.loop_config.get_loop_type_weights_map", AsyncMock(return_value={})
+        )
+        for name, value in [
+            ("_batch_load_loop_configs", {}),
+            ("_pin_task_config", None),
+            ("_resolve_task_release_context", None),
+            ("_load_batch_runtime_overrides", {}),
+            ("_batch_load_template_keys", {}),
+            ("_prewarm_cache_for_loops", {"total": 4, "succeeded": 4, "failed": 0}),
+        ]:
+            monkeypatch.setattr(kpi_calc, name, AsyncMock(return_value=value))
+        monkeypatch.setattr(kpi_calc, "_build_data_planner", MagicMock())
+        monkeypatch.setattr(kpi_calc, "_update_backfill_progress", AsyncMock())
+        monkeypatch.setattr(kpi_calc.asyncio, "sleep", AsyncMock())
+        monkeypatch.setattr(
+            kpi_calc.result_ledger, "loop_ids_with_failed_records", AsyncMock(return_value=set())
+        )
+        start_attempt = AsyncMock()
+        finish_attempt = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "start_calculation_attempt", start_attempt)
+        monkeypatch.setattr(kpi_calc.result_ledger, "finish_calculation_attempt", finish_attempt)
+        append_failed = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "append_failed_result_record", append_failed)
+        node_dispatch = MagicMock()
+        monkeypatch.setattr(kpi_calc.calculate_node_kpi_hourly, "apply_async", node_dispatch)
+        resource_error = RuntimeError("[0x073a]: Query memory exhausted")
+    
+        async def calculate(**kwargs):
+            if kwargs["loop"] is failed_loop:
+                raise resource_error
+            return {"status": "SUCCESS"}
+    
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
+        tracker = AsyncMock()
+        monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
+        redis = MagicMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(return_value="f02-test-task")
+        redis.delete = AsyncMock()
+        monkeypatch.setattr("app.core.redis.redis_client", redis)
+    
+&gt;       with pytest.raises(kpi_calc.BatchResourceFailure, match="1/4") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE BatchResourceFailure
+
+tests/test_g5_data_acquisition_failure.py:467: Failed</failure></testcase><testcase classname="tests.test_g5_data_acquisition_failure" name="test_minority_resource_failure_propagates_to_parent_and_terminal_record[False-custom]" time="0.006"><failure message="Failed: DID NOT RAISE BatchResourceFailure">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1110a8140&gt;
+path = 'custom', final_attempt = False
+
+    @pytest.mark.parametrize("path", ["standard", "custom"])
+    @pytest.mark.parametrize("final_attempt", [False, True])
+    async def test_minority_resource_failure_propagates_to_parent_and_terminal_record(
+        monkeypatch, path, final_attempt
+    ):
+        """A 1/4 failure exercises real standard/custom parents below G29's 50%."""
+        from app.schemas.task import TaskStatus
+    
+        failed_loop = _loop()
+        other_loops = []
+        for index in range(3):
+            loop = _loop()
+            loop.id = f"healthy-{index}"
+            other_loops.append(loop)
+        loops = [failed_loop, *other_loops]
+        db = AsyncMock()
+        db.__aenter__ = AsyncMock(return_value=db)
+        db.__aexit__ = AsyncMock(return_value=None)
+        loop_rows = MagicMock()
+        loop_rows.scalars.return_value.all.return_value = loops
+        metric_rows = MagicMock()
+        metric_rows.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[loop_rows, metric_rows])
+        monkeypatch.setattr("app.core.db.AsyncSessionLocal", lambda: db)
+        monkeypatch.setattr("app.core.db.close_session_guarded", AsyncMock())
+        monkeypatch.setattr(
+            "app.services.data_planner.resolve_data_version", AsyncMock(return_value="f02")
+        )
+        monkeypatch.setattr(
+            "app.services.loop_config.get_loop_type_weights_map", AsyncMock(return_value={})
+        )
+        for name, value in [
+            ("_batch_load_loop_configs", {}),
+            ("_pin_task_config", None),
+            ("_resolve_task_release_context", None),
+            ("_load_batch_runtime_overrides", {}),
+            ("_batch_load_template_keys", {}),
+            ("_prewarm_cache_for_loops", {"total": 4, "succeeded": 4, "failed": 0}),
+        ]:
+            monkeypatch.setattr(kpi_calc, name, AsyncMock(return_value=value))
+        monkeypatch.setattr(kpi_calc, "_build_data_planner", MagicMock())
+        monkeypatch.setattr(kpi_calc, "_update_backfill_progress", AsyncMock())
+        monkeypatch.setattr(kpi_calc.asyncio, "sleep", AsyncMock())
+        monkeypatch.setattr(
+            kpi_calc.result_ledger, "loop_ids_with_failed_records", AsyncMock(return_value=set())
+        )
+        start_attempt = AsyncMock()
+        finish_attempt = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "start_calculation_attempt", start_attempt)
+        monkeypatch.setattr(kpi_calc.result_ledger, "finish_calculation_attempt", finish_attempt)
+        append_failed = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "append_failed_result_record", append_failed)
+        node_dispatch = MagicMock()
+        monkeypatch.setattr(kpi_calc.calculate_node_kpi_hourly, "apply_async", node_dispatch)
+        resource_error = RuntimeError("[0x073a]: Query memory exhausted")
+    
+        async def calculate(**kwargs):
+            if kwargs["loop"] is failed_loop:
+                raise resource_error
+            return {"status": "SUCCESS"}
+    
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
+        tracker = AsyncMock()
+        monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
+        redis = MagicMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(return_value="f02-test-task")
+        redis.delete = AsyncMock()
+        monkeypatch.setattr("app.core.redis.redis_client", redis)
+    
+&gt;       with pytest.raises(kpi_calc.BatchResourceFailure, match="1/4") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE BatchResourceFailure
+
+tests/test_g5_data_acquisition_failure.py:467: Failed</failure></testcase><testcase classname="tests.test_g5_data_acquisition_failure" name="test_minority_resource_failure_propagates_to_parent_and_terminal_record[True-standard]" time="0.005"><failure message="Failed: DID NOT RAISE BatchResourceFailure">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x111254ec0&gt;
+path = 'standard', final_attempt = True
+
+    @pytest.mark.parametrize("path", ["standard", "custom"])
+    @pytest.mark.parametrize("final_attempt", [False, True])
+    async def test_minority_resource_failure_propagates_to_parent_and_terminal_record(
+        monkeypatch, path, final_attempt
+    ):
+        """A 1/4 failure exercises real standard/custom parents below G29's 50%."""
+        from app.schemas.task import TaskStatus
+    
+        failed_loop = _loop()
+        other_loops = []
+        for index in range(3):
+            loop = _loop()
+            loop.id = f"healthy-{index}"
+            other_loops.append(loop)
+        loops = [failed_loop, *other_loops]
+        db = AsyncMock()
+        db.__aenter__ = AsyncMock(return_value=db)
+        db.__aexit__ = AsyncMock(return_value=None)
+        loop_rows = MagicMock()
+        loop_rows.scalars.return_value.all.return_value = loops
+        metric_rows = MagicMock()
+        metric_rows.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[loop_rows, metric_rows])
+        monkeypatch.setattr("app.core.db.AsyncSessionLocal", lambda: db)
+        monkeypatch.setattr("app.core.db.close_session_guarded", AsyncMock())
+        monkeypatch.setattr(
+            "app.services.data_planner.resolve_data_version", AsyncMock(return_value="f02")
+        )
+        monkeypatch.setattr(
+            "app.services.loop_config.get_loop_type_weights_map", AsyncMock(return_value={})
+        )
+        for name, value in [
+            ("_batch_load_loop_configs", {}),
+            ("_pin_task_config", None),
+            ("_resolve_task_release_context", None),
+            ("_load_batch_runtime_overrides", {}),
+            ("_batch_load_template_keys", {}),
+            ("_prewarm_cache_for_loops", {"total": 4, "succeeded": 4, "failed": 0}),
+        ]:
+            monkeypatch.setattr(kpi_calc, name, AsyncMock(return_value=value))
+        monkeypatch.setattr(kpi_calc, "_build_data_planner", MagicMock())
+        monkeypatch.setattr(kpi_calc, "_update_backfill_progress", AsyncMock())
+        monkeypatch.setattr(kpi_calc.asyncio, "sleep", AsyncMock())
+        monkeypatch.setattr(
+            kpi_calc.result_ledger, "loop_ids_with_failed_records", AsyncMock(return_value=set())
+        )
+        start_attempt = AsyncMock()
+        finish_attempt = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "start_calculation_attempt", start_attempt)
+        monkeypatch.setattr(kpi_calc.result_ledger, "finish_calculation_attempt", finish_attempt)
+        append_failed = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "append_failed_result_record", append_failed)
+        node_dispatch = MagicMock()
+        monkeypatch.setattr(kpi_calc.calculate_node_kpi_hourly, "apply_async", node_dispatch)
+        resource_error = RuntimeError("[0x073a]: Query memory exhausted")
+    
+        async def calculate(**kwargs):
+            if kwargs["loop"] is failed_loop:
+                raise resource_error
+            return {"status": "SUCCESS"}
+    
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
+        tracker = AsyncMock()
+        monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
+        redis = MagicMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(return_value="f02-test-task")
+        redis.delete = AsyncMock()
+        monkeypatch.setattr("app.core.redis.redis_client", redis)
+    
+&gt;       with pytest.raises(kpi_calc.BatchResourceFailure, match="1/4") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE BatchResourceFailure
+
+tests/test_g5_data_acquisition_failure.py:467: Failed</failure></testcase><testcase classname="tests.test_g5_data_acquisition_failure" name="test_minority_resource_failure_propagates_to_parent_and_terminal_record[True-custom]" time="0.005"><failure message="Failed: DID NOT RAISE BatchResourceFailure">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x1112ed760&gt;
+path = 'custom', final_attempt = True
+
+    @pytest.mark.parametrize("path", ["standard", "custom"])
+    @pytest.mark.parametrize("final_attempt", [False, True])
+    async def test_minority_resource_failure_propagates_to_parent_and_terminal_record(
+        monkeypatch, path, final_attempt
+    ):
+        """A 1/4 failure exercises real standard/custom parents below G29's 50%."""
+        from app.schemas.task import TaskStatus
+    
+        failed_loop = _loop()
+        other_loops = []
+        for index in range(3):
+            loop = _loop()
+            loop.id = f"healthy-{index}"
+            other_loops.append(loop)
+        loops = [failed_loop, *other_loops]
+        db = AsyncMock()
+        db.__aenter__ = AsyncMock(return_value=db)
+        db.__aexit__ = AsyncMock(return_value=None)
+        loop_rows = MagicMock()
+        loop_rows.scalars.return_value.all.return_value = loops
+        metric_rows = MagicMock()
+        metric_rows.scalars.return_value.all.return_value = []
+        db.execute = AsyncMock(side_effect=[loop_rows, metric_rows])
+        monkeypatch.setattr("app.core.db.AsyncSessionLocal", lambda: db)
+        monkeypatch.setattr("app.core.db.close_session_guarded", AsyncMock())
+        monkeypatch.setattr(
+            "app.services.data_planner.resolve_data_version", AsyncMock(return_value="f02")
+        )
+        monkeypatch.setattr(
+            "app.services.loop_config.get_loop_type_weights_map", AsyncMock(return_value={})
+        )
+        for name, value in [
+            ("_batch_load_loop_configs", {}),
+            ("_pin_task_config", None),
+            ("_resolve_task_release_context", None),
+            ("_load_batch_runtime_overrides", {}),
+            ("_batch_load_template_keys", {}),
+            ("_prewarm_cache_for_loops", {"total": 4, "succeeded": 4, "failed": 0}),
+        ]:
+            monkeypatch.setattr(kpi_calc, name, AsyncMock(return_value=value))
+        monkeypatch.setattr(kpi_calc, "_build_data_planner", MagicMock())
+        monkeypatch.setattr(kpi_calc, "_update_backfill_progress", AsyncMock())
+        monkeypatch.setattr(kpi_calc.asyncio, "sleep", AsyncMock())
+        monkeypatch.setattr(
+            kpi_calc.result_ledger, "loop_ids_with_failed_records", AsyncMock(return_value=set())
+        )
+        start_attempt = AsyncMock()
+        finish_attempt = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "start_calculation_attempt", start_attempt)
+        monkeypatch.setattr(kpi_calc.result_ledger, "finish_calculation_attempt", finish_attempt)
+        append_failed = AsyncMock()
+        monkeypatch.setattr(kpi_calc.result_ledger, "append_failed_result_record", append_failed)
+        node_dispatch = MagicMock()
+        monkeypatch.setattr(kpi_calc.calculate_node_kpi_hourly, "apply_async", node_dispatch)
+        resource_error = RuntimeError("[0x073a]: Query memory exhausted")
+    
+        async def calculate(**kwargs):
+            if kwargs["loop"] is failed_loop:
+                raise resource_error
+            return {"status": "SUCCESS"}
+    
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
+        tracker = AsyncMock()
+        monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
+        redis = MagicMock()
+        redis.set = AsyncMock(return_value=True)
+        redis.get = AsyncMock(return_value="f02-test-task")
+        redis.delete = AsyncMock()
+        monkeypatch.setattr("app.core.redis.redis_client", redis)
+    
+&gt;       with pytest.raises(kpi_calc.BatchResourceFailure, match="1/4") as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE BatchResourceFailure
+
+tests/test_g5_data_acquisition_failure.py:467: Failed</failure></testcase></testsuite></testsuites>

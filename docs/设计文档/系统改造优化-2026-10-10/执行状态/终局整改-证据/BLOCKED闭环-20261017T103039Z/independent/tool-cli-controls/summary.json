@@ -1,0 +1,29 @@
+{
+  "allMatch": true,
+  "results": [
+    {
+      "name": "capacity-missing",
+      "rc": 2,
+      "expected": 2,
+      "match": true
+    },
+    {
+      "name": "oracle-missing",
+      "rc": 2,
+      "expected": 2,
+      "match": true
+    },
+    {
+      "name": "numeric-wrong",
+      "rc": 1,
+      "expected": 1,
+      "match": true
+    },
+    {
+      "name": "numeric-correct",
+      "rc": 0,
+      "expected": 0,
+      "match": true
+    }
+  ]
+}

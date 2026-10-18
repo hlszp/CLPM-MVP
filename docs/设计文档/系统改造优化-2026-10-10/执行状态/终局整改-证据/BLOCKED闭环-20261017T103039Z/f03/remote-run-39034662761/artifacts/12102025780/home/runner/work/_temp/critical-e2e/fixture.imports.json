@@ -1,0 +1,58 @@
+{
+  "FACTORY": {
+    "code": "0",
+    "message": "\u521b\u5efa\u6210\u529f",
+    "data": {
+      "id": "6df8a9a6-df9d-46d6-aa78-b627f799f307",
+      "name": "CRITICAL-E2E-39034662761-1-FACTORY",
+      "type": "FACTORY",
+      "parentId": null,
+      "isKpiEnabled": null
+    }
+  },
+  "AREA": {
+    "code": "0",
+    "message": "\u521b\u5efa\u6210\u529f",
+    "data": {
+      "id": "184e7d62-5d70-4caf-8bc8-c500768482fd",
+      "name": "CRITICAL-E2E-39034662761-1-AREA",
+      "type": "AREA",
+      "parentId": "6df8a9a6-df9d-46d6-aa78-b627f799f307",
+      "isKpiEnabled": null
+    }
+  },
+  "UNIT": {
+    "code": "0",
+    "message": "\u521b\u5efa\u6210\u529f",
+    "data": {
+      "id": "f0797060-d338-41d3-9e70-11d466fc5eb5",
+      "name": "CRITICAL-E2E-39034662761-1-UNIT",
+      "type": "UNIT",
+      "parentId": "184e7d62-5d70-4caf-8bc8-c500768482fd",
+      "isKpiEnabled": null
+    }
+  },
+  "tags": {
+    "code": "0",
+    "message": "\u5bfc\u5165\u5b8c\u6210",
+    "data": {
+      "total": 7,
+      "inserted": 7,
+      "updated": 0,
+      "failed": 0,
+      "errors": []
+    }
+  },
+  "loops": {
+    "code": "0",
+    "message": "\u5bfc\u5165\u5b8c\u6210",
+    "data": {
+      "total": 1,
+      "inserted": 1,
+      "updated": 0,
+      "failed": 0,
+      "errors": [],
+      "warnings": []
+    }
+  }
+}

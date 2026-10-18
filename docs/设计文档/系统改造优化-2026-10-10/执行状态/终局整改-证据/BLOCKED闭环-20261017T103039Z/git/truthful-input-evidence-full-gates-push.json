@@ -1,0 +1,17 @@
+{
+  "command": [
+    "git",
+    "push",
+    "github",
+    "fix/final-audit-remediation"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 262.42,
+  "database": "clpm_audit_gate_20261017",
+  "postgres_container": "clpm-mvp-postgres",
+  "shared_business_database_touched": false,
+  "redis_and_tdengine": "disabled for isolated unit gates",
+  "log": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/git/truthful-input-evidence-full-gates-push.log",
+  "sha256": "9159d54381112ccfb6f15faf6e1b4985ee87ef9d488fb0fb7d7c0618e2e8e3e0"
+}

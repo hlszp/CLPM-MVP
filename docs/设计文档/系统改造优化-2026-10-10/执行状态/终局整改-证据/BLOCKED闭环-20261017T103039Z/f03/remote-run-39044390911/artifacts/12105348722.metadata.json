@@ -1,0 +1,426 @@
+{
+  "githubOriginal": {
+    "id": 12105348722,
+    "node_id": "MDg6QXJ0aWZhY3QxMjEwNTM0ODcyMg==",
+    "name": "backend-g3-numerics-39044390911-1",
+    "size_in_bytes": 417828,
+    "url": "https://api.github.com/repos/hlszp/CLPM-MVP/actions/artifacts/12105348722",
+    "archive_download_url": "https://api.github.com/repos/hlszp/CLPM-MVP/actions/artifacts/12105348722/zip",
+    "expired": false,
+    "digest": "sha256:96b435e578d87cc0134ea35c578f2b86db3fa6d3400f3f954b0e7b7d454c5f46",
+    "created_at": "2026-10-17T15:32:42Z",
+    "updated_at": "2026-10-17T15:32:42Z",
+    "expires_at": "2026-10-24T15:32:40Z",
+    "workflow_run": {
+      "id": 39044390911,
+      "repository_id": 1333652153,
+      "head_repository_id": 1333652153,
+      "head_branch": "fix/final-audit-remediation",
+      "head_sha": "8fc850802612b6077f3b07c08324e3694945aa0d"
+    }
+  },
+  "archive": {
+    "path": "artifacts/12105348722.zip",
+    "bytes": 417828,
+    "sha256": "96b435e578d87cc0134ea35c578f2b86db3fa6d3400f3f954b0e7b7d454c5f46"
+  },
+  "githubDigestMatchesArchive": true,
+  "uncompressedFiles": [
+    {
+      "path": "artifacts/12105348722/ci-exit-code.txt",
+      "bytes": 2,
+      "sha256": "9a271f2a916b0b6ee6cecb2426f0b3206ef074578be55d9bc94f6f3fe3ab86aa"
+    },
+    {
+      "path": "artifacts/12105348722/ci-sha256.txt",
+      "bytes": 11548,
+      "sha256": "5e9d1d96557ef3cfa2800860b78e7ef6e3096daf73724a0e92b9c53207a1f84a"
+    },
+    {
+      "path": "artifacts/12105348722/ci-finished-at.txt",
+      "bytes": 21,
+      "sha256": "058e24bb0fc5a775c662b3e30c8331ae5848d2b06097cc656894f52e3263e04c"
+    },
+    {
+      "path": "artifacts/12105348722/ci-started-at.txt",
+      "bytes": 21,
+      "sha256": "db424f3ea5479a54022ce50a0449f508f4a9519637d88e5d31514a67bb63a643"
+    },
+    {
+      "path": "artifacts/12105348722/ci-stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/12105348722/ci-stdout.log",
+      "bytes": 166,
+      "sha256": "78b2fc7f76c59b05156f56a7f690de95391b3d74871c4737c962e21ef00245a2"
+    },
+    {
+      "path": "artifacts/12105348722/observation/algorithm-debug.log",
+      "bytes": 8790,
+      "sha256": "9f63310f7d58ead2c42bdb1a8033545cc96675a5aee2247f1bf67ac1902d83a3"
+    },
+    {
+      "path": "artifacts/12105348722/observation/algorithm.cprofile",
+      "bytes": 85819,
+      "sha256": "979980ee7ec69976cc691af597d10330facb3dbc350134c6348806531d629c49"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-01-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-01-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-02-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-02-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-03-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-03-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-04-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-04-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-05-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-05-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-06-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-06-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-07-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-07-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-08-y.npy",
+      "bytes": 3488,
+      "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-08-u.npy",
+      "bytes": 3488,
+      "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-09-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-09-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-10-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-10-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-11-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-11-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-12-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-12-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-13-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-13-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-14-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-14-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-15-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-15-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-16-u.npy",
+      "bytes": 3488,
+      "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-16-y.npy",
+      "bytes": 3488,
+      "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5"
+    },
+    {
+      "path": "artifacts/12105348722/observation/armax-return-observations.json",
+      "bytes": 22169,
+      "sha256": "30ffef2112a0d63179f8ce77b5873dcb3c58e1cb8ee39d7c84d4894b84c94447"
+    },
+    {
+      "path": "artifacts/12105348722/observation/command.json",
+      "bytes": 6816,
+      "sha256": "d9679bb65498e7c55d788388b1b48e94b5917947b929e258d32f23a97ce35997"
+    },
+    {
+      "path": "artifacts/12105348722/observation/diagnostic-status.json",
+      "bytes": 158,
+      "sha256": "c31536ecaee5f55eb2880497a82df040552d6676e30ab54964d02f9a86f9495b"
+    },
+    {
+      "path": "artifacts/12105348722/observation/environment.json",
+      "bytes": 6077,
+      "sha256": "ac1ef22eb5ea9fdaf394876a3fcae2af89a00182e12a632f7a9ebd30b16005c1"
+    },
+    {
+      "path": "artifacts/12105348722/observation/git-backendTree.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/12105348722/observation/git-backendTree.stdout.log",
+      "bytes": 41,
+      "sha256": "0ae382d1791ee69ab5f8ac704f57e5257e45fc7bd89adcfb55828b7b18a2bc7b"
+    },
+    {
+      "path": "artifacts/12105348722/observation/git-head.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/12105348722/observation/git-head.stdout.log",
+      "bytes": 41,
+      "sha256": "0308cde1666aca15cc2cc2d5490701641fb70b878479370ad4aca4255f39b7e2"
+    },
+    {
+      "path": "artifacts/12105348722/observation/git-root.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "artifacts/12105348722/observation/git-root.stdout.log",
+      "bytes": 36,
+      "sha256": "1585bbca3061a6e181660247cb9a80492cfd32f8551f45f24b0eae7b17cbb308"
+    },
+    {
+      "path": "artifacts/12105348722/observation/input-identity.json",
+      "bytes": 686,
+      "sha256": "1aae4e3b76ff45916bc0ba7041efa7ecf1f23a0a21bb7183b187971aeb948702"
+    },
+    {
+      "path": "artifacts/12105348722/observation/op.npy",
+      "bytes": 12928,
+      "sha256": "9e49611274b6cec28b5f44d3d4bb57e9fb43f3043fdacc0e7e23e6a7bc33f426"
+    },
+    {
+      "path": "artifacts/12105348722/observation/profile-cumulative.txt",
+      "bytes": 4981,
+      "sha256": "d0eedc9fbc3a31d0cc70d19ac05af444c6156bd33e38bb56f0d0df90c0755d8f"
+    },
+    {
+      "path": "artifacts/12105348722/observation/pv.npy",
+      "bytes": 12928,
+      "sha256": "70192dc7be3a55bbf5e21acdf7aa803ba84e2230538f37d84dac76c43b9a3110"
+    },
+    {
+      "path": "artifacts/12105348722/observation/result-full.json",
+      "bytes": 107832,
+      "sha256": "9eda9b2df689111837cdad6690c27ea1192c2c9ae8233dea63fcc4f52284e05e"
+    },
+    {
+      "path": "artifacts/12105348722/observation/result-public.json",
+      "bytes": 27938,
+      "sha256": "44e54fc177167b8a46184cd9b48155cddac86b9e6969f5f92a2a091f51a4fc40"
+    },
+    {
+      "path": "artifacts/12105348722/observation/selection-events.json",
+      "bytes": 261841,
+      "sha256": "c18c3b276052eae17af670ee37a218fddf08c3d609da06cb681b152812dab54f"
+    },
+    {
+      "path": "artifacts/12105348722/observation/sha256-manifest.json",
+      "bytes": 11279,
+      "sha256": "5db048cf3b1e61148b283186a63f092431b35fdc52b7dba469679ef5e19b92d8"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/__init__.py",
+      "bytes": 1405,
+      "sha256": "06f0a4fb11102f2cc8b99a3f178625e9387b255df473cf7e9f07b97dd46e532b"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/armax.py",
+      "bytes": 5810,
+      "sha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/arx.py",
+      "bytes": 4233,
+      "sha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/discrete_to_continuous.py",
+      "bytes": 5233,
+      "sha256": "1d099ad970d35eb70c75c5f266bdd0d082446c950f1e7aff8f59bd093b97aa2c"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/excitation.py",
+      "bytes": 7729,
+      "sha256": "f5ce1ca80ccfa87e93b348df4d4619ddb67fd5eda4203ca153cbe53738527372"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/iv.py",
+      "bytes": 13292,
+      "sha256": "90f0a3321b173b84a9a0798846d4c3f539137329190c1d0c23c536fd2ef6f06d"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/nonparametric.py",
+      "bytes": 3008,
+      "sha256": "c10c063662b124bf56f87b5e0a828f6f6c78b1fbfc43f051fba32f22c23261e3"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/order_selection.py",
+      "bytes": 4866,
+      "sha256": "a6cef6a02e5f477b044e2e7a9f8e6751f5bcfaf69713664845572350996d9614"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/physical_feasibility.py",
+      "bytes": 3493,
+      "sha256": "ed29b4e64a5b3c2c6099e6a7b74fd935b2b5559ff2811aa89602f1b236d9c734"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/pipeline.py",
+      "bytes": 236858,
+      "sha256": "9c82b6966d6efab6808bb40e8d0d9b72a2410fa7b99e82dfaeda83ee71ab3e41"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/segmentation.py",
+      "bytes": 13728,
+      "sha256": "5154b9e8d6ee7d174c00912fe0443ec622f5082876c7917b0232751eb2743303"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/app/services/tuning_identification/types.py",
+      "bytes": 24040,
+      "sha256": "8d7a36e64a148686350f56531d2c38891b336cedc441f07d5ec8ffcd9fa771fa"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/pyproject.toml",
+      "bytes": 2745,
+      "sha256": "1d0ece7a4ee0f2f2ce7b66fd1e675a30453e154259d0156cd75bc6c96dd8db67"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17277,
+      "sha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/tests/golden/refactor_protected_manifest.json",
+      "bytes": 4925,
+      "sha256": "c3df20baaab9473745f1a1abce2844a6f3883b5f5e35804e6daf70d558b8c8c1"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/tests/test_g3_app_applicability.py",
+      "bytes": 19845,
+      "sha256": "c35c250a2e0b1b855d1e0f7b2352d36f8d23d7d4f7642a01a1b73daf8d8ae6a7"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source/backend/uv.lock",
+      "bytes": 160673,
+      "sha256": "990da4c2e132c245b42fa1c91dd65d20ec96666b5c0c883fc1cf76d61190e696"
+    },
+    {
+      "path": "artifacts/12105348722/observation/source-identity.json",
+      "bytes": 3783,
+      "sha256": "d506ab7e1e703c2c2c87056b0bee52468a474d974dcfb36568592509abef1e83"
+    },
+    {
+      "path": "artifacts/12105348722/observation/summary.json",
+      "bytes": 297,
+      "sha256": "44acc230453d83181545386aad8c501edad03b992d76ad0ccc90a5aca75801df"
+    },
+    {
+      "path": "artifacts/12105348722/workflow.yml",
+      "bytes": 19057,
+      "sha256": "674f03f52ad884e6ac686e7a551b512efd48f33ddd4e5f4fae4470c61dbc0167"
+    }
+  ],
+  "request": {
+    "path": "requests/20261017T153445609315Z-artifact-12105348722.command.json",
+    "bytes": 756,
+    "sha256": "fda5676384babe934a87a58d16c99d5bb860c7e7eef14b4b83c1d48e15d1a332"
+  },
+  "diagnosticOnly": true
+}

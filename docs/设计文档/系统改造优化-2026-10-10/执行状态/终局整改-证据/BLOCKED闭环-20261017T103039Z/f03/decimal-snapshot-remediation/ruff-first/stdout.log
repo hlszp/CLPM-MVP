@@ -1,0 +1,45 @@
+F401 [*] `tests.test_calc_snapshot.fixed_build` imported but unused
+  --> tests/test_calc_snapshot_decimal.py:23:5
+   |
+21 |     _record_stub,
+22 |     _SaveDB,
+23 |     fixed_build,
+   |     ^^^^^^^^^^^
+24 |     snap_dir,
+25 | )
+   |
+help: Remove unused import
+
+F401 [*] `tests.test_calc_snapshot.snap_dir` imported but unused
+  --> tests/test_calc_snapshot_decimal.py:24:5
+   |
+22 |     _SaveDB,
+23 |     fixed_build,
+24 |     snap_dir,
+   |     ^^^^^^^^
+25 | )
+   |
+help: Remove unused import
+
+E501 Line too long (102 > 100)
+   --> tests/test_calc_snapshot_decimal.py:105:101
+    |
+103 |             side_effect=AssertionError("重放不得查询当前源"),
+104 |         ),
+105 |         patch("app.tasks.kpi_calc._compute_kpis_three_layer", wraps=_compute_kpis_three_layer) as run,
+    |                                                                                                     ^^
+106 |     ):
+107 |         report = await cs.replay_result_record(_LoadDB(row)._db, "rec-decimal")
+    |
+
+E501 Line too long (116 > 100)
+   --> tests/test_calc_snapshot_decimal.py:175:101
+    |
+173 |         '"b":{"empty":{},"x":[1,2]}}'
+174 |     )
+175 |     assert cs.compute_input_hash(manifest, {}) == "bea616322bfb04e14073acacc0cd30106fecb4b9f75a5e886d84df6e8a8676b1"
+    |                                                                                                     ^^^^^^^^^^^^^^^^
+    |
+
+Found 4 errors.
+[*] 2 fixable with the `--fix` option.

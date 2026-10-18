@@ -1,0 +1,28 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/redis-url-guard-v2/prepare_bindings.py",
+    "apply",
+    "--plan-dir",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/redis-url-guard-v2/offline-plan",
+    "--plan-sha256",
+    "bb0a2d9f2b787d8e21ecd9baabe3410e15e58b4aa5bf499ba08337ecf3334e52",
+    "--native-env-file",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+    "--pg-dump",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/pg_dump_test_container.py",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-actual-root-v1",
+    "--keeper-ack-no-live-capacity"
+  ],
+  "mustNotRunByAuthor": true,
+  "requiresIndependentToolPass": true,
+  "requiresCurrentF03NumericAndAfterObservationCompletedAndAllOwnedServicesStopped": true,
+  "commandOnlyNotExecuted": true,
+  "originalAuthorCommandSha256": "7c14dabd270aed4662a209e9b68b54cc9bd1c761e93f07d77a56155a5d7cd4a9",
+  "deltaOnly": "--pg-dump uses independently reviewed same exact test container PostgreSQL16 adapter; other argv identical",
+  "adapterSha256": "c27d789a2c8308cfbeebc692d4565d2460b6c65fe2f3bc295fc72f51469fb3c8",
+  "rootPreflightAtUtc": "2026-10-17T15:07:30Z",
+  "rootPreflightFormerProcessesAndPortsAbsent": true
+}

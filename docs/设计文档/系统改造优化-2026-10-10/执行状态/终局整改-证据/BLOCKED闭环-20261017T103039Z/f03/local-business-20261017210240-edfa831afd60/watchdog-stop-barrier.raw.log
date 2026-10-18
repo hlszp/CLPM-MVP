@@ -1,0 +1,1 @@
+{"timestamp": "2026-10-17T13:09:40.530179+00:00", "level": "INFO", "logger": "app.main", "message": "停止 Celery Worker 进程..."}

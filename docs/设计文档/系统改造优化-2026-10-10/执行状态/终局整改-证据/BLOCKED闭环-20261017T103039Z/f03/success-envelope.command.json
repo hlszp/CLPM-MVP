@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-c",
+    "import json; from app.schemas.common import ApiResponse, success; print(json.dumps(ApiResponse[dict](**success({\"user\":{\"username\":\"admin\"}})).model_dump()))"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0
+}

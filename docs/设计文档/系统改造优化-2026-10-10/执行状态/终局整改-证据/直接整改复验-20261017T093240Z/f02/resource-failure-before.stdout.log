@@ -1,0 +1,169 @@
+FF.FFF.....F                                                             [100%]
+=================================== FAILURES ===================================
+____ test_provider_failure_propagates_without_inconclusive_snapshot[error0] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110cd4830>
+error = RuntimeError('[0x073a]: Query memory exhausted')
+
+    @pytest.mark.parametrize(
+        "error",
+        [RuntimeError("[0x073a]: Query memory exhausted"), RuntimeError("invalid SQL")],
+    )
+    async def test_provider_failure_propagates_without_inconclusive_snapshot(monkeypatch, error):
+        planner = MagicMock()
+        planner.request_bundles = AsyncMock(side_effect=error)
+        persist = AsyncMock()
+        monkeypatch.setattr(kpi_calc, "_persist_snapshot", persist)
+    
+>       with pytest.raises(RuntimeError) as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/test_g5_data_acquisition_failure.py:48: Failed
+------------------------------ Captured log call -------------------------------
+WARNING  app.tasks.kpi_calc:kpi_calc.py:2507 DataPlanner 取数失败（回路 PERF-T0892）: [0x073a]: Query memory exhausted
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/tasks/kpi_calc.py", line 2497, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 2291, in _execute_mock_call
+    raise effect
+RuntimeError: [0x073a]: Query memory exhausted
+____ test_provider_failure_propagates_without_inconclusive_snapshot[error1] ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110d8caa0>
+error = RuntimeError('invalid SQL')
+
+    @pytest.mark.parametrize(
+        "error",
+        [RuntimeError("[0x073a]: Query memory exhausted"), RuntimeError("invalid SQL")],
+    )
+    async def test_provider_failure_propagates_without_inconclusive_snapshot(monkeypatch, error):
+        planner = MagicMock()
+        planner.request_bundles = AsyncMock(side_effect=error)
+        persist = AsyncMock()
+        monkeypatch.setattr(kpi_calc, "_persist_snapshot", persist)
+    
+>       with pytest.raises(RuntimeError) as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/test_g5_data_acquisition_failure.py:48: Failed
+------------------------------ Captured log call -------------------------------
+WARNING  app.tasks.kpi_calc:kpi_calc.py:2507 DataPlanner 取数失败（回路 PERF-T0892）: invalid SQL
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/tasks/kpi_calc.py", line 2497, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 2291, in _execute_mock_call
+    raise effect
+RuntimeError: invalid SQL
+_ test_resource_retry_recovers_without_failed_record[[0x073a]: Query memory exhausted] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x110d9fec0>
+batch_boundaries = ([<AsyncMock id='4580232800'>], <AsyncMock id='4580224048'>, <AsyncMock id='4576259600'>)
+message = '[0x073a]: Query memory exhausted'
+
+    @pytest.mark.parametrize("message", ["[0x073a]: Query memory exhausted", "sorry, too many clients already"])
+    async def test_resource_retry_recovers_without_failed_record(monkeypatch, batch_boundaries, message):
+        sessions, append_failed, sleep = batch_boundaries
+        error = RuntimeError(message)
+        calc = AsyncMock(side_effect=[error, {"status": "SUCCESS"}])
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calc)
+    
+>       assert await _batch() == [{"status": "SUCCESS"}]
+E       AssertionError: assert [RuntimeError...y exhausted')] == [{'status': 'SUCCESS'}]
+E         
+E         At index 0 diff: RuntimeError('[0x073a]: Query memory exhausted') != {'status': 'SUCCESS'}
+E         Use -v to get more diff
+
+tests/test_g5_data_acquisition_failure.py:113: AssertionError
+_ test_resource_retry_recovers_without_failed_record[sorry, too many clients already] _
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x111166960>
+batch_boundaries = ([<AsyncMock id='4577664832'>, <AsyncMock id='4580216176'>], <AsyncMock id='4581661088'>, <AsyncMock id='4580217520'>)
+message = 'sorry, too many clients already'
+
+    @pytest.mark.parametrize("message", ["[0x073a]: Query memory exhausted", "sorry, too many clients already"])
+    async def test_resource_retry_recovers_without_failed_record(monkeypatch, batch_boundaries, message):
+        sessions, append_failed, sleep = batch_boundaries
+        error = RuntimeError(message)
+        calc = AsyncMock(side_effect=[error, {"status": "SUCCESS"}])
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calc)
+    
+        assert await _batch() == [{"status": "SUCCESS"}]
+        assert calc.await_count == 2
+        assert len(sessions) == 2
+        sessions[0].rollback.assert_awaited_once()
+        sessions[1].commit.assert_awaited_once()
+>       append_failed.assert_not_awaited()
+
+tests/test_g5_data_acquisition_failure.py:118: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock id='4581661088'>
+
+    def assert_not_awaited(self):
+        """
+        Assert that the mock was never awaited.
+        """
+        if self.await_count != 0:
+            msg = (f"Expected {self._mock_name or 'mock'} to not have been awaited."
+                   f" Awaited {self.await_count} times.")
+>           raise AssertionError(msg)
+E           AssertionError: Expected mock to not have been awaited. Awaited 1 times.
+
+/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:2429: AssertionError
+__________ test_resource_retry_exhaustion_writes_one_terminal_failure __________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11100d850>
+batch_boundaries = ([<AsyncMock id='4468946992'>], <AsyncMock id='4468699360'>, <AsyncMock id='4581653248'>)
+
+    async def test_resource_retry_exhaustion_writes_one_terminal_failure(monkeypatch, batch_boundaries):
+        sessions, append_failed, sleep = batch_boundaries
+        error = RuntimeError("[0x073a]: Query memory exhausted")
+        calc = AsyncMock(side_effect=error)
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calc)
+    
+        result = await _batch()
+    
+        assert result == [error]
+>       assert calc.await_count == 3
+E       AssertionError: assert 1 == 3
+E        +  where 1 = <AsyncMock id='4468947616'>.await_count
+
+tests/test_g5_data_acquisition_failure.py:131: AssertionError
+______________ test_cancel_during_resource_backoff_does_not_retry ______________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x111271130>
+batch_boundaries = ([<AsyncMock id='4582695440'>], <AsyncMock id='4582686848'>, <AsyncMock id='4469126304'>)
+
+    async def test_cancel_during_resource_backoff_does_not_retry(monkeypatch, batch_boundaries):
+        _, append_failed, sleep = batch_boundaries
+        calc = AsyncMock(side_effect=RuntimeError("[0x073a]: Query memory exhausted"))
+        monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calc)
+        sleep.side_effect = asyncio.CancelledError()
+    
+        result = await _batch()
+    
+>       assert len(result) == 1 and isinstance(result[0], asyncio.CancelledError)
+E       AssertionError: assert (1 == 1 and False)
+E        +  where 1 = len([RuntimeError('[0x073a]: Query memory exhausted')])
+E        +  and   False = isinstance(RuntimeError('[0x073a]: Query memory exhausted'), <class 'asyncio.exceptions.CancelledError'>)
+E        +    where <class 'asyncio.exceptions.CancelledError'> = asyncio.CancelledError
+
+tests/test_g5_data_acquisition_failure.py:186: AssertionError
+=============================== warnings summary ===============================
+../../CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_g5_data_acquisition_failure.py::test_provider_failure_propagates_without_inconclusive_snapshot[error0]
+FAILED tests/test_g5_data_acquisition_failure.py::test_provider_failure_propagates_without_inconclusive_snapshot[error1]
+FAILED tests/test_g5_data_acquisition_failure.py::test_resource_retry_recovers_without_failed_record[[0x073a]: Query memory exhausted]
+FAILED tests/test_g5_data_acquisition_failure.py::test_resource_retry_recovers_without_failed_record[sorry, too many clients already]
+FAILED tests/test_g5_data_acquisition_failure.py::test_resource_retry_exhaustion_writes_one_terminal_failure
+FAILED tests/test_g5_data_acquisition_failure.py::test_cancel_during_resource_backoff_does_not_retry
+6 failed, 6 passed, 1 warning in 1.71s

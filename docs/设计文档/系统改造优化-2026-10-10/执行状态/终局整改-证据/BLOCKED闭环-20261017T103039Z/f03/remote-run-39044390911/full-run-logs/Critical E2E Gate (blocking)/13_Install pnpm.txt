@@ -1,0 +1,61 @@
+﻿2026-10-17T15:18:32.3938250Z ##[group]Run pnpm/action-setup@v4
+2026-10-17T15:18:32.3938535Z with:
+2026-10-17T15:18:32.3938719Z   version: 10
+2026-10-17T15:18:32.3938904Z   dest: ~/setup-pnpm
+2026-10-17T15:18:32.3939108Z   run_install: null
+2026-10-17T15:18:32.3939307Z   cache: false
+2026-10-17T15:18:32.3939529Z   cache_dependency_path: pnpm-lock.yaml
+2026-10-17T15:18:32.3939798Z   package_json_file: package.json
+2026-10-17T15:18:32.3940031Z   standalone: false
+2026-10-17T15:18:32.3940218Z env:
+2026-10-17T15:18:32.3940375Z   CI: true
+2026-10-17T15:18:32.3940697Z   ENV: development
+2026-10-17T15:18:32.3940878Z   CLPM_TEST_MODE: 0
+2026-10-17T15:18:32.3941080Z   E2E_EXECUTION_ENV: disposable-github-ci
+2026-10-17T15:18:32.3941334Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:18:32.3941539Z   OMP_NUM_THREADS: 1
+2026-10-17T15:18:32.3941738Z   MKL_NUM_THREADS: 1
+2026-10-17T15:18:32.3941937Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:18:32.3942154Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:18:32.3942381Z   POSTGRES_HOST: localhost
+2026-10-17T15:18:32.3942649Z   POSTGRES_PORT: 5432
+2026-10-17T15:18:32.3942854Z   POSTGRES_USER: clpm
+2026-10-17T15:18:32.3943083Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T15:18:32.3943349Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T15:18:32.3943585Z   REDIS_HOST: localhost
+2026-10-17T15:18:32.3944002Z   REDIS_PORT: 6379
+2026-10-17T15:18:32.3944198Z   REDIS_DB: 0
+2026-10-17T15:18:32.3944376Z   REDIS_PASSWORD: 
+2026-10-17T15:18:32.3944570Z   TDENGINE_HOST: localhost
+2026-10-17T15:18:32.3944783Z   TDENGINE_PORT: 6030
+2026-10-17T15:18:32.3944983Z   TDENGINE_USER: root
+2026-10-17T15:18:32.3945188Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T15:18:32.3945417Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T15:18:32.3945704Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T15:18:32.3946064Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T15:18:32.3946472Z   CLPM_BUILD_CODE_SHA: bc48701efe90e2a27555a4f8794f0965e82b0902
+2026-10-17T15:18:32.3946972Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T15:18:32.3947389Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T15:18:32.3947811Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T15:18:32.3948202Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:32.3948578Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:18:32.3948955Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:32.3949311Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:32.3949661Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:32.3950010Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:18:32.3950356Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:18:32.3950784Z ##[endgroup]
+2026-10-17T15:18:32.5452942Z ##[group]Running self-installer...
+2026-10-17T15:18:32.9177315Z (node:3727) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-17T15:18:32.9179293Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T15:18:33.1482344Z Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-10-17T15:18:33.1556014Z Packages: +1
+2026-10-17T15:18:33.1586028Z +
+2026-10-17T15:18:33.6297700Z Progress: resolved 1, reused 0, downloaded 1, added 1, done
+2026-10-17T15:18:33.6488363Z 
+2026-10-17T15:18:33.6489247Z dependencies:
+2026-10-17T15:18:33.6489733Z + pnpm 10.34.7 (12.14.0 is available)
+2026-10-17T15:18:33.6490032Z 
+2026-10-17T15:18:33.6516870Z Done in 931ms
+2026-10-17T15:18:33.6713290Z ##[endgroup]
+2026-10-17T15:18:33.6750324Z Installation Completed!

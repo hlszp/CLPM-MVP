@@ -1,0 +1,10 @@
+### Browser `f04-route-reverify-20261017` opened with pid 69226.
+### Ran Playwright code
+```js
+await page.goto('http://127.0.0.1:57039/auth/login#/cockpit');
+```
+### Page
+- Page URL: http://127.0.0.1:57039/auth/login#/cockpit
+- Page Title: Independent route fixture
+### Snapshot
+- [Snapshot](.playwright-cli/page-2026-10-17T11-57-27-194Z.yml)

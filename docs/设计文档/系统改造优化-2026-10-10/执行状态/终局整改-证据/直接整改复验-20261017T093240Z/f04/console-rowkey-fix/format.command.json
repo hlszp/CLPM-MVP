@@ -1,0 +1,13 @@
+{
+  "command": [
+    "pnpm",
+    "exec",
+    "oxfmt",
+    "--check",
+    "apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+    "apps/web-antd/src/__tests__/p6-eng-templates.test.ts"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "exitCode": 0,
+  "elapsedSeconds": 1.1541122920000007
+}

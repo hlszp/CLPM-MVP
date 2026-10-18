@@ -1,0 +1,28 @@
+{
+  "name": "new-v3",
+  "driver": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-transport-v3/keeper-local-f03-v3.py",
+  "driverSha256": "de1a8981f8beb491265cbda24c3619a83b63c4cb3a80c5795b0c9f592df26801",
+  "serverArgv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215772-edfa831afd60/driver-port17267.py",
+    "serve-site",
+    "--checkout",
+    "/Users/zhangping/DEV/clpm-remediation-20261017",
+    "--expected-sha",
+    "edfa831afd6069963e7f6f73c2721637d6a199b5",
+    "--run-id",
+    "20261017215772",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215772-edfa831afd60",
+    "--native-env-file",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+    "--python",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python"
+  ],
+  "transportDirectory": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215772-edfa831afd60",
+  "businessCasesExecuted": 0,
+  "serverPid": 29412,
+  "serverPgid": 29412,
+  "startedAt": "2026-10-17T12:58:40.245562+00:00"
+}

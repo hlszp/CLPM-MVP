@@ -1,0 +1,35 @@
+{
+  "scope": "actual read-only preformal synthetic-history gap, zero business tasks executed",
+  "files": [
+    {
+      "path": "command.json",
+      "size": 712,
+      "sha256": "1803847fd7c045bf96f23badc64f8d6f323ae0639f0aa00bda5ad11945270625"
+    },
+    {
+      "path": "executed-source.py",
+      "size": 3873,
+      "sha256": "d056f9e9bc97ec01332fadbc68c6fc86961386d31483172e474cb903f88602cf"
+    },
+    {
+      "path": "executed.sql",
+      "size": 891,
+      "sha256": "3ae7f6cc90c0fe04d7f8d3faa4b29f19a6de1b9c50a820bc0b8ef648902b46e9"
+    },
+    {
+      "path": "stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "stdout.log",
+      "size": 3353881,
+      "sha256": "db3410e7d29c5c320f87473c4035d70bf24f702d34642cb2b64c6370eae4b997"
+    },
+    {
+      "path": "summary.json",
+      "size": 481,
+      "sha256": "ade8544daf04d5afbe47f76d3cc3657d6f92e8f48704559bb3bde7807d4bd935"
+    }
+  ]
+}

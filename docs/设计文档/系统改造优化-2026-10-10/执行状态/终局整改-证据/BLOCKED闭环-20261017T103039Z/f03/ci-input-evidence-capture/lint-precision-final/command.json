@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "check",
+    "--config",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/pyproject.toml",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/capture-critical-input-evidence.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/test_critical_input_evidence.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAtUtc": "2026-10-17T15:10:30.557443+00:00",
+  "elapsedSeconds": 0.03439370798878372,
+  "rc": 0,
+  "envOverrides": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "NO_PROXY": "127.0.0.1,localhost,::1",
+    "no_proxy": "127.0.0.1,localhost,::1"
+  },
+  "files": [
+    {
+      "path": "stdout.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

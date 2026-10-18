@@ -1,0 +1,51 @@
+--- /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-transport-v3/keeper-local-f03-v3.py
++++ /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/keeper-local-f03-v4.py
+@@ -824,6 +824,12 @@
+         return rows
+ 
+     def read_barrier(offset, signal_at):
++        waiting_path = OUT / "lifespan-waiting.json"
++        waiting = (
++            json.loads(waiting_path.read_text()) if waiting_path.exists() else None
++        )
++        if waiting and waiting.get("signalAt") != signal_at.isoformat():
++            waiting = None
+         with (OUT / "backend-api.stdout.log").open("rb") as log:
+             log.seek(offset)
+             while True:
+@@ -831,13 +837,26 @@
+                 raw = log.readline()
+                 if not raw.endswith(b"\n"):
+                     return begin, None
++                if raw == b"INFO:     Waiting for application shutdown.\n":
++                    (OUT / "lifespan-waiting.raw.log").write_bytes(raw)
++                    waiting = {
++                        "offsetStart": begin,
++                        "offsetEnd": log.tell(),
++                        "rawSha256": sha(raw),
++                        "signalAt": signal_at.isoformat(),
++                        "observedAt": now(),
++                    }
++                    write(waiting_path, waiting)
++                    continue
+                 try:
+                     record = json.loads(raw)
+                     timestamp = datetime.datetime.fromisoformat(record["timestamp"])
+                 except (ValueError, KeyError, TypeError):
+                     continue
+                 if (
+-                    record.get("logger") == "app.main"
++                    waiting is not None
++                    and waiting["offsetEnd"] <= begin
++                    and record.get("logger") == "app.main"
+                     and record.get("message")
+                     in {"停止 Celery Worker 进程...", "停止 Celery Beat 调度进程..."}
+                     and timestamp.tzinfo is not None
+@@ -849,6 +868,7 @@
+                         "offsetEnd": log.tell(),
+                         "rawSha256": sha(raw),
+                         "record": record,
++                        "uvicornWaitingForApplicationShutdown": waiting,
+                         "observedAt": now(),
+                     }
+                     write(OUT / "watchdog-stop-barrier.json", item)

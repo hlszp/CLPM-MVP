@@ -1,0 +1,22 @@
+{
+  "started_at": "2026-10-17T10:04:24.068049+00:00",
+  "elapsed_seconds": 377.6044943330053,
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--junitxml=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/verification/backend-full-v3.junit.xml"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "exit_code": 0,
+  "source_identity_before": "7e579a479480bbc24e4f1bdcac70feae7f87b3a8dad4ba3966e66dc71928324b",
+  "source_identity_after": "7e579a479480bbc24e4f1bdcac70feae7f87b3a8dad4ba3966e66dc71928324b",
+  "source_stable": true,
+  "stdout_sha256": "2dc2bca1a699d1e5da59dee495d3787705459fc0afadfb0989ab65dbea9ba6af",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment_boundary": "backend test mode; PG/Redis/TD unreachable ports; no real integration DSN"
+}

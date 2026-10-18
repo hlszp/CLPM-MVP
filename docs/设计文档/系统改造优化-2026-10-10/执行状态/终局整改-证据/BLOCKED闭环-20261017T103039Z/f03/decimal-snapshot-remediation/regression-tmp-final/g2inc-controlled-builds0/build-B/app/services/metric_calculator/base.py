@@ -1,0 +1,491 @@
+"""指标计算器抽象基类（Phase 3 任务 3.2）.
+
+提供所有 12 个指标计算器共享的通用辅助方法：
+- 从 MetricDataBundle 提取掩码后的信号值
+- 计算指标级有效数据率 valid_rate
+- 构建数据血缘 DataLineage
+- 构造 MetricResult（含可信度等级）
+- INCONCLUSIVE 兜底处理
+
+v6.2 变更（可信度统一 Phase 2）：
+    - 指标可信度等级改用回路级（DataBlock.loop_confidence_level），
+      消除"每个指标各打一档"的细粒度浪费。
+    - 指标级 valid_rate 降级为可计算性判定（vr < 0.20 → INCONCLUSIVE），
+      不再产生 A/B/C/D/E 等级。
+
+设计依据：算法说明 §3.6, §3.7.1, §3.7.2；数据流程图 §7.5；
+         可信度统一改进方案 §5.2
+"""
+
+from __future__ import annotations
+
+import logging
+import math
+from datetime import timedelta
+from typing import Any
+
+from app.contracts.data_types import (
+    ConfidenceLevel,
+    DataLineage,
+    MetricDataBundle,
+    MetricResult,
+)
+from app.contracts.metric_calculator import MetricCalculator
+from app.services.confidence_evaluator import ALGORITHM_VERSION, ConfidenceEvaluator
+
+logger = logging.getLogger(__name__)
+
+#: 可信度统一 Phase 2（D5）：指标级 INCONCLUSIVE 阈值。
+#: 指标 mask 有效点占比 < 0.20 → value=None（INCONCLUSIVE），沿用 E 级阈值。
+_INCONCLUSIVE_THRESHOLD: float = 0.20
+
+#: 评估三值状态枚举（P3-09a，契约 §1.2 / 10§3.1；与诊断算子 assessmentState
+#: 同名不同命名空间——O-3 契约，序列化键随 details.assessmentState 走评估侧）
+ASSESSMENT_COMPLETE = "COMPLETE"
+ASSESSMENT_PARTIAL = "PARTIAL"
+ASSESSMENT_UNASSESSABLE = "UNASSESSABLE"
+
+
+class MetricCalculatorBase(MetricCalculator):
+    """指标计算器抽象基类，提供通用辅助方法.
+
+    所有 12 个指标计算器继承本类，只需实现 ``metric_code`` 属性和
+    ``calculate`` 方法，复用本类的信号提取/可信度判定/结果构造能力。
+
+    设计依据：算法说明 §3.6, §3.7
+    """
+
+    # 子类可覆盖：算法版本号（默认与系统对齐）
+    algorithm_version: str = ALGORITHM_VERSION
+
+    #: G2-INC-a：任务固定的五层有效参数（{(metric_code, control_type): params}）。
+    #: None=未固定（回填/未接入链路），算子回落既有配置链当前缓存——行为不变。
+    _pinned_params: dict[tuple[str, str], dict[str, Any]] | None = None
+
+    #: P3-09a：评估 profile 语义开关。None/LEGACY_V2=现行正式口径（golden
+    #: 基线，行为零变化）；CANDIDATE_V3_RC1（KPI_CALC_v3.0-rc1）=10 号文
+    #: §3 新语义（09a 静稳参考/证据状态、09b 判稳、09c 依赖有效性）。
+    #: kpi_calc 侧接线（release_context.assessmentProfile → with_assessment_profile）
+    #: 归 08 Owner 串行整合（10§4.5 共享文件纪律）；本层提供能力与独立验证。
+    _assessment_profile: str | None = None
+
+    def with_pinned_params(
+        self, pinned: dict[tuple[str, str], dict[str, Any]]
+    ) -> MetricCalculatorBase:
+        """注入任务边界固定的五层有效参数（链式调用；G2-INC-a）.
+
+        注入后 ``_effective_params`` 只消费固定值（dict 拷贝隔离，任务
+        运行期不读 ``_merged_cache``——发布 v2 不影响在跑任务）；固定表
+        未收录的指标按注册表默认值（该指标在 pin 时点未注册覆盖=默认态，
+        同样不读当前缓存）。
+        """
+        self._pinned_params = pinned
+        return self
+
+    def with_assessment_profile(self, profile_id: str | None) -> MetricCalculatorBase:
+        """注入评估 profile 语义开关（P3-09a，链式调用）.
+
+        None/LEGACY_V2 → legacy 行为（默认，零回归）；CANDIDAT_V3_RC1 →
+        10 号文 §3 新语义。由任务边界（release_context.assessmentProfile）
+        一次性固定，运行中不切换。
+        """
+        self._assessment_profile = profile_id
+        return self
+
+    @property
+    def new_semantics(self) -> bool:
+        """是否按新 profile（CANDIDATE_V3_RC1，KPI_CALC_v3.0-rc1）语义计算."""
+        from app.services.assessment_profile import AssessmentProfileId
+
+        return self._assessment_profile == AssessmentProfileId.CANDIDATE_V3_RC1
+
+    def _effective_params(self, metric_code: str, bundle: MetricDataBundle) -> dict[str, Any]:
+        """算子参数统一入口（G2-INC-a）：任务固定快照优先，否则配置链缓存.
+
+        Args:
+            metric_code: 参数所属指标代码（stiction 等跨指标读参传对方代码）
+            bundle: 指标数据包（control_type=响应类别 STABLE/SLOW/FAST/LOGIC）
+        """
+        from app.services.algorithm_config import (
+            _CONTROL_TYPES,
+            _DEFAULTS,
+            get_algorithm_params,
+        )
+
+        raw_ct = bundle.data_block.control_type
+        ct = raw_ct if raw_ct in _CONTROL_TYPES else "STABLE"
+        if self._pinned_params is not None:
+            params = self._pinned_params.get((metric_code, ct))
+            if params is not None:
+                return dict(params)
+            return dict(_DEFAULTS.get(metric_code, {}).get(ct, {}))
+        return get_algorithm_params(metric_code, ct)
+
+    # ------------------------------------------------------------------
+    # 信号提取辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_signal_values(bundle: MetricDataBundle, tag_name: str) -> list[Any]:
+        """获取 DataBlock 中指定 tag 的全部信号值.
+
+        Args:
+            bundle: 指标数据包
+            tag_name: 信号名，如 ``"pv"`` / ``"sp"`` / ``"op"`` / ``"mode"``
+
+        Returns:
+            信号值列表（未掩码）
+
+        Raises:
+            KeyError: 信号不存在
+        """
+        return list(bundle.data_block.signals.get(tag_name, []))
+
+    @staticmethod
+    def _get_masked_values(bundle: MetricDataBundle, tag_name: str) -> list[Any]:
+        """获取掩码后（masked_indices）的信号值.
+
+        Args:
+            bundle: 指标数据包
+            tag_name: 信号名
+
+        Returns:
+            masked_indices 对应位置的信号值列表
+        """
+        signals = bundle.data_block.signals.get(tag_name, [])
+        return [signals[i] for i in bundle.masked_indices if i < len(signals)]
+
+    @staticmethod
+    def _get_masked_pair(bundle: MetricDataBundle, tag_a: str, tag_b: str) -> list[tuple[Any, Any]]:
+        """获取掩码后的两个信号配对值（如 PV-SP）.
+
+        Args:
+            bundle: 指标数据包
+            tag_a: 第一个信号名
+            tag_b: 第二个信号名
+
+        Returns:
+            [(value_a, value_b), ...] 配对列表
+        """
+        sig_a = bundle.data_block.signals.get(tag_a, [])
+        sig_b = bundle.data_block.signals.get(tag_b, [])
+        pairs: list[tuple[Any, Any]] = []
+        for i in bundle.masked_indices:
+            if i < len(sig_a) and i < len(sig_b):
+                pairs.append((sig_a[i], sig_b[i]))
+        return pairs
+
+    @staticmethod
+    def _get_timestamps(bundle: MetricDataBundle) -> list[Any]:
+        """获取 DataBlock 的时间戳列表."""
+        return list(bundle.data_block.timestamps)
+
+    @staticmethod
+    def _get_masked_timestamps(bundle: MetricDataBundle) -> list[Any]:
+        """获取掩码后的时间戳列表."""
+        ts = bundle.data_block.timestamps
+        return [ts[i] for i in bundle.masked_indices if i < len(ts)]
+
+    # ------------------------------------------------------------------
+    # 可信度与血缘辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _get_valid_rate(bundle: MetricDataBundle) -> float:
+        """计算指标级有效数据率 valid_rate.
+
+        valid_rate = len(masked_indices) / point_count
+
+        Args:
+            bundle: 指标数据包
+
+        Returns:
+            有效数据率 0~1；point_count=0 时返回 0
+        """
+        n = bundle.data_block.point_count
+        if n <= 0:
+            return 0.0
+        return len(bundle.masked_indices) / n
+
+    def _build_lineage(self, bundle: MetricDataBundle, valid_rate: float) -> DataLineage:
+        """构建数据血缘（委托 ConfidenceEvaluator）."""
+        return ConfidenceEvaluator.build_lineage(bundle, valid_rate, self.algorithm_version)
+
+    def _make_result(
+        self,
+        bundle: MetricDataBundle,
+        value: float,
+        details: dict[str, Any] | None = None,
+        valid_rate: float | None = None,
+        precision: int = 2,
+    ) -> MetricResult:
+        """构造正常 MetricResult（含可信度判定）.
+
+        v6.2 可信度统一 Phase 2（P2-2）：
+            - 可计算性：指标级 vr < 0.20 → INCONCLUSIVE（value=None）
+            - 可信度等级：统一用回路级 ``bundle.data_block.loop_confidence_level``，
+              不再用指标级 valid_rate 打 A/B/C/D/E
+            - 血缘 lineage 仍记录指标级 vr（审计追溯）
+
+        Args:
+            bundle: 指标数据包
+            value: 指标值（已 round 到 precision 位小数）
+            details: 指标详细信息
+            valid_rate: 有效数据率，None 时自动计算（仅用于 INCONCLUSIVE 判定 + 血缘）
+            precision: value 保留小数位数（默认 2；量级远小于 0.01 的指标
+                如 output_trip_index 应传更大精度避免被抹零）
+
+        Returns:
+            MetricResult，含 metric_code/value/confidence_level/lineage/details
+        """
+        # 整改 G20：非有限值（NaN/Inf）一律判 INCONCLUSIVE，绝不参与区间截断或落库。
+        # 此前 _clamp 用 max(low, min(high, value))，而 Python 语义下
+        # min(100.0, nan) == 100.0、max(0.0, 100.0) == 100.0 —— NaN 被静默放大为
+        # **上界**；对 accuracy/stability/good_value 等「越高越好」的指标即"报成
+        # 满分"，对 oscillation/stiction 则报成最差，两者都是错误结论且无任何信号。
+        # 另：round(nan, 2) 仍是 nan，若透传到响应会被 Starlette 的
+        # allow_nan=False 拒绝（500），写入 JSONB 亦非法——故必须在此收口。
+        try:
+            _finite = math.isfinite(float(value))
+        except (TypeError, ValueError):
+            _finite = False
+        if not _finite:
+            logger.warning("[%s] 非有限值（NaN/Inf）→ INCONCLUSIVE(non_finite)", self.metric_code)
+            return self._make_inconclusive(bundle, "non_finite")
+
+        vr = valid_rate if valid_rate is not None else self._get_valid_rate(bundle)
+
+        # 可计算性判定（D5）：指标 mask 有效点占比 < 0.20 → INCONCLUSIVE
+        if vr < _INCONCLUSIVE_THRESHOLD:
+            logger.warning(
+                "[%s] INCONCLUSIVE: valid_rate=%.4f < threshold=%.2f",
+                self.metric_code,
+                vr,
+                _INCONCLUSIVE_THRESHOLD,
+            )
+            return self._make_inconclusive(bundle, "data_insufficient")
+
+        # 可信度等级：回路级单一值（P2-2），所有指标共享
+        loop_confidence = bundle.data_block.loop_confidence_level
+        lineage = self._build_lineage(bundle, vr)
+
+        logger.debug(
+            "[%s] value=%.2f, metric_vr=%.4f, loop_confidence=%s",
+            self.metric_code,
+            value,
+            vr,
+            loop_confidence,
+        )
+
+        return MetricResult(
+            metric_code=self.metric_code,
+            value=round(float(value), precision),
+            confidence_level=loop_confidence,
+            lineage=lineage,
+            details=details or {},
+        )
+
+    def _make_inconclusive(
+        self,
+        bundle: MetricDataBundle,
+        reason: str,
+        details: dict[str, Any] | None = None,
+    ) -> MetricResult:
+        """构造 INCONCLUSIVE MetricResult（E 级可信度，value=None）.
+
+        Args:
+            bundle: 指标数据包
+            reason: 不可计算原因（如 "data_insufficient" / "signal_missing"）
+            details: 额外详细信息
+
+        Returns:
+            MetricResult，value=None，confidence_level="E"
+        """
+        vr = self._get_valid_rate(bundle)
+        lineage = self._build_lineage(bundle, vr)
+        detail = {"reason": reason}
+        if details:
+            detail.update(details)
+
+        logger.warning(
+            "[%s] INCONCLUSIVE: reason=%s, valid_rate=%.4f",
+            self.metric_code,
+            reason,
+            vr,
+        )
+
+        return MetricResult(
+            metric_code=self.metric_code,
+            value=None,
+            confidence_level=ConfidenceLevel.E.value,
+            lineage=lineage,
+            details=detail,
+        )
+
+    def _make_unassessable(
+        self,
+        bundle: MetricDataBundle,
+        reason: str,
+        details: dict[str, Any] | None = None,
+    ) -> MetricResult:
+        """构造"不可评估"结果（P3-09a 新 profile 专用）.
+
+        与 :meth:`_make_inconclusive` 的区别（10§3.3"数据好与动态不可判定
+        分开"）：value=None 但 **confidence_level 保留回路级真实数据质量**
+        ——不可判定 ≠ 数据坏。C07-EA1：数据质量 A、F 参考 100、动态不可
+        判定、P 不完整可同时成立；不得把 NO_DYNAMIC_EVIDENCE 画成数据坏
+        或自动降 L0。
+
+        Args:
+            bundle: 指标数据包
+            reason: 不可评估原因（NO_DYNAMIC_EVIDENCE / never_settles /
+                identification_failed / insufficient_data / ...）
+            details: 额外详细信息（调用方补充 referenceScore 等参考字段）
+
+        Returns:
+            MetricResult：value=None，confidence_level=回路级（非 E），
+            details 含 assessmentState=UNASSESSABLE 与 dataQualityLevel。
+        """
+        vr = self._get_valid_rate(bundle)
+        lineage = self._build_lineage(bundle, vr)
+        loop_confidence = bundle.data_block.loop_confidence_level
+        detail = {
+            "reason": reason,
+            "assessmentState": ASSESSMENT_UNASSESSABLE,
+            "dataQualityLevel": loop_confidence,
+        }
+        if details:
+            detail.update(details)
+
+        logger.info(
+            "[%s] UNASSESSABLE: reason=%s, dataQualityLevel=%s, valid_rate=%.4f",
+            self.metric_code,
+            reason,
+            loop_confidence,
+            vr,
+        )
+
+        return MetricResult(
+            metric_code=self.metric_code,
+            value=None,
+            confidence_level=loop_confidence,
+            lineage=lineage,
+            details=detail,
+        )
+
+    # ------------------------------------------------------------------
+    # 时长计算辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _segment_duration(timestamps: list, i: int) -> float:
+        """计算第 i 到 i+1 个时间戳的时长（秒）.
+
+        Args:
+            timestamps: 时间戳列表
+            i: 起始索引
+
+        Returns:
+            时长（秒）；无法解析时回退为 1.0
+        """
+        dt = timestamps[i + 1] - timestamps[i]
+        if isinstance(dt, timedelta):
+            return dt.total_seconds()
+        try:
+            return float(dt)
+        except (TypeError, ValueError):
+            return 1.0
+
+    @staticmethod
+    def _total_duration_seconds(timestamps: list) -> float:
+        """计算总时长（秒）= timestamps[-1] - timestamps[0].
+
+        Args:
+            timestamps: 时间戳列表
+
+        Returns:
+            总时长（秒）；点数 < 2 时返回 0
+        """
+        if len(timestamps) < 2:
+            return 0.0
+        dt = timestamps[-1] - timestamps[0]
+        if isinstance(dt, timedelta):
+            return dt.total_seconds()
+        try:
+            return float(dt)
+        except (TypeError, ValueError):
+            return float(len(timestamps) - 1)
+
+    @staticmethod
+    def _point_durations(timestamps: list) -> list[float]:
+        """计算每个采样点代表的时长（秒）.
+
+        采用零阶保持模型：第 i 个点的时长为 timestamps[i+1]-timestamps[i]，
+        最后一个点沿用前一段时长。这样 n 个点的总时长 = n × 平均间隔，
+        与工业 1Hz 数据的物理含义一致（每个采样点代表 1 秒运行状态）。
+
+        Args:
+            timestamps: 时间戳列表
+
+        Returns:
+            每个点的时长列表（长度与 timestamps 相同）；点数 < 2 时返回空
+        """
+        n = len(timestamps)
+        if n < 2:
+            return []
+        durations: list[float] = []
+        for i in range(n - 1):
+            durations.append(MetricCalculatorBase._segment_duration(timestamps, i))
+        # 最后一个点沿用前一段时长
+        durations.append(durations[-1])
+        return durations
+
+    @staticmethod
+    def _read_config_scalar(signals: dict, key: str, default: Any = None) -> Any:
+        """从信号字典读取标量配置值（兼容列表存储）.
+
+        DataBlock.signals 的值统一为列表类型；CONFIG tagGroup 的配置参数
+        存为单元素列表（如 ``["FC"]`` 或 ``[45.0]``）。本方法提取首元素，
+        使计算器能透明读取标量配置。
+
+        Args:
+            signals: 信号字典
+            key: 配置键名
+            default: 未找到时的默认值
+
+        Returns:
+            标量值；列表取首元素，缺失返回 default
+        """
+        val = signals.get(key)
+        if val is None:
+            return default
+        if isinstance(val, (list, tuple)):
+            if len(val) == 0:
+                return default
+            return val[0]
+        return val
+
+    # ------------------------------------------------------------------
+    # 数值辅助
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _clamp(value: float, low: float = 0.0, high: float = 100.0) -> float:
+        """将值限制在 [low, high] 区间；**非有限值原样返回**（整改 G20）。
+
+        原实现 max(low, min(high, value)) 在 Python 语义下会把 NaN 变成上界
+        （min(100.0, nan) == 100.0 → max(0.0, 100.0) == 100.0），即「越高越好」
+        的指标把 NaN 报成满分。现原样透传，交由 _make_result 统一判
+        non_finite 并转 INCONCLUSIVE。
+        """
+        if not math.isfinite(value):
+            return value
+        return max(low, min(high, value))
+
+    @staticmethod
+    def _round2(value: float) -> float:
+        """四舍五入到 2 位小数."""
+        return round(float(value), 2)
+
+
+__all__ = ["MetricCalculatorBase"]

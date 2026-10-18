@@ -1,0 +1,35 @@
+﻿2026-10-17T15:18:04.0001180Z ##[group]Run astral-sh/setup-uv@v3
+2026-10-17T15:18:04.0001638Z with:
+2026-10-17T15:18:04.0001940Z   enable-cache: true
+2026-10-17T15:18:04.0002321Z   cache-dependency-glob: backend/uv.lock
+2026-10-17T15:18:04.0002765Z   version: latest
+2026-10-17T15:18:04.0007078Z   github-token: ***
+2026-10-17T15:18:04.0007428Z   prune-cache: true
+2026-10-17T15:18:04.0007749Z env:
+2026-10-17T15:18:04.0008049Z   CI: true
+2026-10-17T15:18:04.0008355Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:18:04.0008946Z   OMP_NUM_THREADS: 1
+2026-10-17T15:18:04.0009281Z   MKL_NUM_THREADS: 1
+2026-10-17T15:18:04.0009615Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:18:04.0009982Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:18:04.0010466Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:04.0011205Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:18:04.0011922Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:04.0012556Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:04.0013242Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:04.0013888Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:18:04.0014424Z ##[endgroup]
+2026-10-17T15:18:04.1400572Z Downloading uv from "https://github.com/astral-sh/uv/releases/latest/download/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+2026-10-17T15:18:04.1411408Z (node:2983) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-17T15:18:04.1412390Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T15:18:04.5678443Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/400c085c-0475-4820-80a6-736281290353 -f /home/runner/work/_temp/917d32d2-fc6f-4390-804d-cdfc052183c9
+2026-10-17T15:18:04.8830090Z Added /opt/hostedtoolcache/uv/0.13.1/x86_64 to the path
+2026-10-17T15:18:04.8831527Z Added /home/runner/.local/bin to the path
+2026-10-17T15:18:04.8836964Z Successfully installed uv version 0.13.1
+2026-10-17T15:18:04.8845950Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:18:04.8846728Z Searching files using cache dependency glob: backend/uv.lock
+2026-10-17T15:18:04.8883992Z /home/runner/work/CLPM-MVP/CLPM-MVP/backend/uv.lock
+2026-10-17T15:18:04.8903818Z Found 1 files to hash.
+2026-10-17T15:18:04.8905106Z Trying to restore uv cache from GitHub Actions cache with key: setup-uv-1-x86_64-unknown-linux-gnu-0.13.1-4875396529d65a7c7dd5b3309da988b92e8afd6ebbef71932062d5bd3b21be94
+2026-10-17T15:18:05.0028215Z ##[warning]Failed to restore: Cache service responded with 400
+2026-10-17T15:18:05.0040338Z No GitHub Actions cache found for key: setup-uv-1-x86_64-unknown-linux-gnu-0.13.1-4875396529d65a7c7dd5b3309da988b92e8afd6ebbef71932062d5bd3b21be94

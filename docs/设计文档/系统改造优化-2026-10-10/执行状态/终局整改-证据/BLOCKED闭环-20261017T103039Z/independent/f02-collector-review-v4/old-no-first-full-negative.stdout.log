@@ -1,0 +1,56 @@
+FF                                                                       [100%]
+=================================== FAILURES ===================================
+_ test_first_witness_is_its_own_rr_transaction_and_never_post30_backfill[False] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-79/test_first_witness_is_its_own_0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107aa5370>
+partial_first = False
+
+    @pytest.mark.parametrize("partial_first", [False, True])
+    def test_first_witness_is_its_own_rr_transaction_and_never_post30_backfill(
+        tmp_path, monkeypatch, partial_first
+    ):
+        database, output, summary = FIXTURE.run_fake_sampler(
+            tmp_path, monkeypatch, partial_first
+        )
+        observations = [
+            json.loads(line)
+            for line in (output / "observations.jsonl").read_text().splitlines()
+        ]
+        observations = [row for row in observations if "poll" in row]
+>       terminal = summary["firstTerminalFullPayloads"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'firstTerminalFullPayloads'
+
+../independent/f02-collector-review-v4/test_independent_first_full.py:55: KeyError
+----------------------------- Captured stdout call -----------------------------
+{"status": "COLLECTED", "polls": 3, "parentTaskId": "00000000-0000-4000-8000-000000000001", "associatedChildren": [], "finishedAt": "2026-10-17T12:09:24.421821+00:00", "errors": [], "finalFullPayloads": {"transaction": {"readonly": "on", "snapshot": "snapshot-5", "observed_at": "tx-5"}, "artifacts": {"ledger": {"file": "objects/full-ledger-81b985ac3e93b6b3e9f885e9cf589c44c2c1297c2b0df64388adb78f7352d407.json.gz", "rawSha256": "81b985ac3e93b6b3e9f885e9cf589c44c2c1297c2b0df64388adb78f7352d407", "gzipSha256": "a16ad3f874f169011752f8f3c2b7f89732f76b7c3c1911319692c70463619802", "rows": 1000}, "latest": {"file": "objects/full-latest-54eaf827c318a017a08a3ae3f7ec138d2387544d278e5e04b884fd030b4f1a3a.json.gz", "rawSha256": "54eaf827c318a017a08a3ae3f7ec138d2387544d278e5e04b884fd030b4f1a3a", "gzipSha256": "0e2a9e6e83e9c526b2b32aa799df453fbbc82d3bc73155368bca3063477ee5c4", "rows": 1000}, "nodes": {"file": "objects/full-nodes-feba554378426a290886b58ccba278fbb42af35003109f0b83ab28a45bd40747.json.gz", "rawSha256": "feba554378426a290886b58ccba278fbb42af35003109f0b83ab28a45bd40747", "gzipSha256": "f41fabee56b8f78402813836df0bde502ab22c70d5e9a4956fa81cf31a1e9a1e", "rows": 1}, "records": {"file": "objects/full-records-585fe5ffea7ab1db21c8e4fad0d8b6babd036ef7447269f9754b0a849be313cf.json.gz", "rawSha256": "585fe5ffea7ab1db21c8e4fad0d8b6babd036ef7447269f9754b0a849be313cf", "gzipSha256": "39c19647cfd924891b06c7cca797679dfc7268ee1d6585c2288eb29774d5df1e", "rows": 1001}}}, "boundary": "COLLECTED is evidence collection completion, never a business PASS"}
+_ test_first_witness_is_its_own_rr_transaction_and_never_post30_backfill[True] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-79/test_first_witness_is_its_own_1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x107aa7380>
+partial_first = True
+
+    @pytest.mark.parametrize("partial_first", [False, True])
+    def test_first_witness_is_its_own_rr_transaction_and_never_post30_backfill(
+        tmp_path, monkeypatch, partial_first
+    ):
+        database, output, summary = FIXTURE.run_fake_sampler(
+            tmp_path, monkeypatch, partial_first
+        )
+        observations = [
+            json.loads(line)
+            for line in (output / "observations.jsonl").read_text().splitlines()
+        ]
+        observations = [row for row in observations if "poll" in row]
+>       terminal = summary["firstTerminalFullPayloads"]
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'firstTerminalFullPayloads'
+
+../independent/f02-collector-review-v4/test_independent_first_full.py:55: KeyError
+----------------------------- Captured stdout call -----------------------------
+{"status": "COLLECTED", "polls": 3, "parentTaskId": "00000000-0000-4000-8000-000000000001", "associatedChildren": [], "finishedAt": "2026-10-17T12:09:24.502014+00:00", "errors": [], "finalFullPayloads": {"transaction": {"readonly": "on", "snapshot": "snapshot-5", "observed_at": "tx-5"}, "artifacts": {"ledger": {"file": "objects/full-ledger-81b985ac3e93b6b3e9f885e9cf589c44c2c1297c2b0df64388adb78f7352d407.json.gz", "rawSha256": "81b985ac3e93b6b3e9f885e9cf589c44c2c1297c2b0df64388adb78f7352d407", "gzipSha256": "a16ad3f874f169011752f8f3c2b7f89732f76b7c3c1911319692c70463619802", "rows": 1000}, "latest": {"file": "objects/full-latest-54eaf827c318a017a08a3ae3f7ec138d2387544d278e5e04b884fd030b4f1a3a.json.gz", "rawSha256": "54eaf827c318a017a08a3ae3f7ec138d2387544d278e5e04b884fd030b4f1a3a", "gzipSha256": "0e2a9e6e83e9c526b2b32aa799df453fbbc82d3bc73155368bca3063477ee5c4", "rows": 1000}, "nodes": {"file": "objects/full-nodes-feba554378426a290886b58ccba278fbb42af35003109f0b83ab28a45bd40747.json.gz", "rawSha256": "feba554378426a290886b58ccba278fbb42af35003109f0b83ab28a45bd40747", "gzipSha256": "f41fabee56b8f78402813836df0bde502ab22c70d5e9a4956fa81cf31a1e9a1e", "rows": 1}, "records": {"file": "objects/full-records-585fe5ffea7ab1db21c8e4fad0d8b6babd036ef7447269f9754b0a849be313cf.json.gz", "rawSha256": "585fe5ffea7ab1db21c8e4fad0d8b6babd036ef7447269f9754b0a849be313cf", "gzipSha256": "39c19647cfd924891b06c7cca797679dfc7268ee1d6585c2288eb29774d5df1e", "rows": 1001}}}, "boundary": "COLLECTED is evidence collection completion, never a business PASS"}
+=========================== short test summary info ============================
+FAILED ../independent/f02-collector-review-v4/test_independent_first_full.py::test_first_witness_is_its_own_rr_transaction_and_never_post30_backfill[False]
+FAILED ../independent/f02-collector-review-v4/test_independent_first_full.py::test_first_witness_is_its_own_rr_transaction_and_never_post30_backfill[True]
+2 failed in 0.25s

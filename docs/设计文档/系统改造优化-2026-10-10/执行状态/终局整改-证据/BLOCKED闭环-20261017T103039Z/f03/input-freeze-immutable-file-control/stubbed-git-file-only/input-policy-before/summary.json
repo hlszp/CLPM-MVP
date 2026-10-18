@@ -1,0 +1,42 @@
+{
+  "at": "2026-10-17T14:01:29.143784+00:00",
+  "phase": "before",
+  "inputOnly": true,
+  "actualSourceSha": "9f356782ef4076dabb91a86f56e054e514e341ea",
+  "backendTree": "319c4df9ae2d24b0b23ee826ce96e4cd55165ae7",
+  "sourceCatalogSha256": "0da9b632614a42592519ab9ba2abe52d0805d2eb6e1aa14305de89adf3e59b27",
+  "actualDatabase": "clpm_critical_20261017_local",
+  "heldPolicyRows": [
+    {
+      "section": "held-policy",
+      "rawValue": null,
+      "rowExists": false,
+      "updatedBy": null,
+      "description": null,
+      "requestedKey": "data.held_too_long_fast_seconds",
+      "updatedAtUtc": null
+    },
+    {
+      "section": "held-policy",
+      "rawValue": null,
+      "rowExists": false,
+      "updatedBy": null,
+      "description": null,
+      "requestedKey": "data.held_too_long_slow_seconds",
+      "updatedAtUtc": null
+    }
+  ],
+  "keeperHeldOrAlgorithmPolicyWritesSinceLifespan": 0,
+  "nativeProcessCommand": [
+    "ps",
+    "-p",
+    "91036,91077,91079,91086,91087,91088,91089",
+    "-o",
+    "pid=,ppid=,lstart=,stat=,command="
+  ],
+  "nativeProcessRc": 0,
+  "nativeProcessRawSha256": "73d9d258c012e5e1d85f8570d60aabc90618de0f3316aa686fb5088535324f32",
+  "nativeTimezoneRaw": "2026-10-17T22:01:29+0800 CST",
+  "startupStateSha256": "74342aa93d24f3843a1741a5618754ddc6f79f5b3b9656340a688269b09ff78a",
+  "commandSha256": "ef506d574364c170e7209d1b59017d5acf2ba9d7ad64918faf6c22ed4797a247"
+}

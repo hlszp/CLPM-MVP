@@ -1,0 +1,17 @@
+{
+  "apiPid": 17116,
+  "apiCreated": 1792240966.227725,
+  "apiArgv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "17261"
+  ],
+  "apiCwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017203500-edfa831afd60/runtime/clpm-remediation-20261017/backend",
+  "supervisorPid": 17113
+}

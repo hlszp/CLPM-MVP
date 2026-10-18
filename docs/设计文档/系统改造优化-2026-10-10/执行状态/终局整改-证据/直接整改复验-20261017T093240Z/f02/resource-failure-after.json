@@ -1,0 +1,31 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_g5_data_acquisition_failure.py",
+    "tests/test_g5_d01_opt_batch.py",
+    "tests/test_data_planner/test_data_version_preload.py",
+    "tests/test_kpi_capacity_benchmark.py",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "elapsed": 3.7860190868377686,
+  "stdoutSha256": "f69125717f15a53f946768a5f42c3b195072a4d76a4280f50aff6e356ade9f39",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sourceFiles": {
+    "app/tasks/kpi_calc.py": "fd8976502b75eac9538ddb126fdf780a426fa381f2ab58273ff58fc58d77995b",
+    "tests/test_g5_data_acquisition_failure.py": "d885814c3ef0ae8282b4a329f47baa6962f493d62ea8ce19d6658280b24ce359"
+  },
+  "isolation": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "1",
+    "REDIS_HOST": "127.0.0.1",
+    "REDIS_PORT": "1"
+  }
+}

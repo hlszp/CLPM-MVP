@@ -1,0 +1,24 @@
+{
+  "command": [
+    "docker",
+    "exec",
+    "-i",
+    "clpm-mvp-postgres",
+    "psql",
+    "-U",
+    "clpm",
+    "-d",
+    "clpm_capacity_20261017_s01",
+    "-X",
+    "-v",
+    "ON_ERROR_STOP=1",
+    "--single-transaction"
+  ],
+  "exit_code": 0,
+  "elapsed_seconds": 1.2087340354919434,
+  "stdout": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/capacity-schema-import.stdout.log",
+  "stdout_sha256": "6c6c46a8697af9b0b8c8d9bdbe5fbb7a46dd8230f8dd0034459759596ee710ac",
+  "stderr": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/capacity-schema-import.stderr.log",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "private_reference_data": false
+}

@@ -1,0 +1,772 @@
+{
+  "status": "PASS",
+  "manifestMismatches": [],
+  "candidateSha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+  "loopId": "e0ecbd45-f227-4a73-92fd-e779f90c9c5a",
+  "roleChecks": [
+    {
+      "role": "MODE",
+      "pointId": "799cc531-c211-4b96-80cf-636a44c2fa4a",
+      "samples": 1,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    },
+    {
+      "role": "OP",
+      "pointId": "848608cd-b6bf-4d37-ab23-55f89835c860",
+      "samples": 3600,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    },
+    {
+      "role": "PID_D",
+      "pointId": "e8aa7886-3730-4d30-99c2-b294d049ca06",
+      "samples": 1,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    },
+    {
+      "role": "PID_I",
+      "pointId": "04b93984-28c8-4d91-9b20-c6bd471e06d0",
+      "samples": 1,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    },
+    {
+      "role": "PID_P",
+      "pointId": "1b90d2b6-4f32-4fd8-aee4-be6df42bb338",
+      "samples": 1,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    },
+    {
+      "role": "PV",
+      "pointId": "673035ee-397e-4c47-a522-04ed719d44d7",
+      "samples": 3600,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    },
+    {
+      "role": "SP",
+      "pointId": "d57c8f0b-c850-4ca5-93d0-d0f9a7468c45",
+      "samples": 3,
+      "allValuesFloatHexExact": true,
+      "allTimestampsAndQualityExact": true
+    }
+  ],
+  "persistedBindingSevenExact": true,
+  "heldKeys": [
+    {
+      "section": "held-policy",
+      "rawValue": null,
+      "rowExists": false,
+      "updatedBy": null,
+      "description": null,
+      "requestedKey": "data.held_too_long_fast_seconds",
+      "updatedAtUtc": null
+    },
+    {
+      "section": "held-policy",
+      "rawValue": null,
+      "rowExists": false,
+      "updatedBy": null,
+      "description": null,
+      "requestedKey": "data.held_too_long_slow_seconds",
+      "updatedAtUtc": null
+    }
+  ],
+  "frozenHeldLimitsSecondsForGrid1s": {
+    "pv": 60,
+    "sp": 7200,
+    "mode": 7200
+  },
+  "configurationInputSections": [
+    {
+      "section": "transaction-before",
+      "database": "clpm_critical_20261017_local",
+      "readOnly": "on",
+      "snapshot": "1051304:1051304:",
+      "timezone": "UTC",
+      "isolation": "repeatable read",
+      "backendPid": 2342601,
+      "serverPort": 5432,
+      "currentUser": "clpm",
+      "sessionUser": "clpm",
+      "observedAtUtc": "2026-10-17T14:45:48.516926+00:00",
+      "serverAddress": "127.0.0.1",
+      "transactionIdIfAssigned": null,
+      "transactionTimestampUtc": "2026-10-17T14:45:48.51644+00:00"
+    },
+    {
+      "section": "held-policy",
+      "rawValue": null,
+      "rowExists": false,
+      "updatedBy": null,
+      "description": null,
+      "requestedKey": "data.held_too_long_fast_seconds",
+      "updatedAtUtc": null
+    },
+    {
+      "section": "held-policy",
+      "rawValue": null,
+      "rowExists": false,
+      "updatedBy": null,
+      "description": null,
+      "requestedKey": "data.held_too_long_slow_seconds",
+      "updatedAtUtc": null
+    },
+    {
+      "rows": [
+        {
+          "id": "e0ecbd45-f227-4a73-92fd-e779f90c9c5a",
+          "remark": "synthetic=true; critical E2E INPUT, never field evidence",
+          "status": "READY",
+          "unit_id": "17abf261-ba97-48b0-92c1-1f0d6c93d12a",
+          "tag_name": "CRITICAL-LOCAL-20261017223757-1-FLOW001",
+          "is_active": true,
+          "loop_type": "FLOW",
+          "created_at": "2026-10-17T14:45:29.627148",
+          "created_by": "admin",
+          "updated_at": "2026-10-17T14:45:29.627148",
+          "updated_by": "admin",
+          "description": "synthetic CI INPUT: real algorithm, disposable runner only",
+          "complex_role": null,
+          "control_type": "STABLE",
+          "dcs_model_id": null,
+          "score_weight": null,
+          "score_weights": null,
+          "modeattr_tag_id": null,
+          "importance_level": 2,
+          "last_aas_sync_at": null,
+          "data_retention_days": null,
+          "ideal_settling_time": null,
+          "complex_loop_group_id": null,
+          "include_in_evaluation": true,
+          "op_output_lower_limit": null,
+          "op_output_upper_limit": null,
+          "engineering_template_id": null,
+          "control_action_direction": "UNKNOWN",
+          "engineering_template_version": null
+        }
+      ],
+      "section": "synthetic-loop-input",
+      "requestedLoopId": "e0ecbd45-f227-4a73-92fd-e779f90c9c5a"
+    },
+    {
+      "section": "configuration-revision",
+      "maxRevision": 0,
+      "publicationRows": 0
+    },
+    {
+      "rows": [],
+      "section": "active-release-input"
+    },
+    {
+      "rows": [],
+      "section": "algorithm-parameter-input"
+    },
+    {
+      "rows": [
+        {
+          "id": "00000000-0000-0000-0000-000000000401",
+          "weight": 0.0,
+          "formula": "count(pv_quality=Good) / count(*) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 100,
+            "min": 80,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "GOOD_VALUE_RATE",
+          "metric_name": "好值率",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000402",
+          "weight": 0.0,
+          "formula": "count(mode IN (Auto,Cascade,Remote)) / count(*) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 100,
+            "min": 90,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "AUTO_MODE_RATE",
+          "metric_name": "自控率",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000403",
+          "weight": 30.0,
+          "formula": "max(0, (1 - osc_rate - k*std_norm) / (1 - osc_rate)) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 100,
+            "min": 85,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "STEADY_RATE",
+          "metric_name": "平稳率",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000404",
+          "weight": 30.0,
+          "formula": "max(0, (1 - mean_abs_error / e_max)) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 100,
+            "min": 80,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "ACCURACY_RATE",
+          "metric_name": "准确率",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000405",
+          "weight": 0.0,
+          "formula": "min(S_A, S_B) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 5,
+            "min": 0,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "OSCILLATION_RATE",
+          "metric_name": "振荡率",
+          "control_type": "SLOW",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000406",
+          "weight": 0.0,
+          "formula": "saturated_duration / total_duration * 100",
+          "version": 1,
+          "threshold": {
+            "max": 5,
+            "min": 0,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "SATURATION_RATE",
+          "metric_name": "饱和率",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000407",
+          "weight": 20.0,
+          "formula": "min(ideal_settling / actual_settling, 1.0) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 100,
+            "min": 80,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "FAST_RATE",
+          "metric_name": "快速率",
+          "control_type": "FAST",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000408",
+          "weight": 20.0,
+          "formula": "count(auto AND op NOT saturated AND pv_quality=Good) / count(*) * 100",
+          "version": 1,
+          "threshold": {
+            "max": 100,
+            "min": 90,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "EFFECTIVE_AUTO_RATE",
+          "metric_name": "有效自控率",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-000000000409",
+          "weight": 0.0,
+          "formula": "cross_correlation_based_stiction_detection",
+          "version": 1,
+          "threshold": {
+            "max": 0.5,
+            "min": 0,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "STICTION_INDEX",
+          "metric_name": "粘滞指数",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-00000000040a",
+          "weight": 0.0,
+          "formula": "arma_green_function_settling_time",
+          "version": 1,
+          "threshold": {
+            "max": 60,
+            "min": 0,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "SETTLING_TIME",
+          "metric_name": "稳态时间",
+          "control_type": "FAST",
+          "grading_thresholds": null
+        },
+        {
+          "id": "00000000-0000-0000-0000-00000000040b",
+          "weight": 0.0,
+          "formula": "std(op_diff) / range",
+          "version": 1,
+          "threshold": {
+            "max": 0.5,
+            "min": 0,
+            "alert": "warning"
+          },
+          "is_enabled": true,
+          "updated_at": "2026-10-17T22:42:27.430231",
+          "updated_by": "admin",
+          "metric_code": "OUTPUT_TRIP_INDEX",
+          "metric_name": "输出行程指数",
+          "control_type": "STABLE",
+          "grading_thresholds": null
+        }
+      ],
+      "section": "metric-config-input"
+    },
+    {
+      "rows": [],
+      "section": "enabled-configuration-overrides"
+    },
+    {
+      "rows": [
+        {
+          "id": "3130aaae-1f5e-411a-9c1c-7450916e5be9",
+          "weight_a": 0.2,
+          "weight_f": 0.3,
+          "weight_s": 0.5,
+          "loop_type": "STABLE",
+          "type_name": "稳定型",
+          "updated_at": "2026-10-17T22:42:26.484514",
+          "updated_by": null,
+          "description": "温度/压力控制，a/f/s 相似"
+        },
+        {
+          "id": "60ced5c5-91e9-472c-aab0-480d875c454e",
+          "weight_a": 0.3,
+          "weight_f": 0.1,
+          "weight_s": 0.6,
+          "loop_type": "SLOW",
+          "type_name": "慢速型",
+          "updated_at": "2026-10-17T22:42:26.484514",
+          "updated_by": null,
+          "description": "缓慢调节，f 偏小"
+        },
+        {
+          "id": "73319354-196c-4872-acd5-01287b6ec6c4",
+          "weight_a": 0.2,
+          "weight_f": 0.5,
+          "weight_s": 0.3,
+          "loop_type": "FAST",
+          "type_name": "快速型",
+          "updated_at": "2026-10-17T22:42:26.484514",
+          "updated_by": null,
+          "description": "副回路/速度控制，f 偏大"
+        },
+        {
+          "id": "9daf2648-3d4d-4eaf-8fec-dcc133e22165",
+          "weight_a": 0.0,
+          "weight_f": 0.5,
+          "weight_s": 0.6,
+          "loop_type": "LOGIC",
+          "type_name": "逻辑型",
+          "updated_at": "2026-10-17T22:42:26.484514",
+          "updated_by": null,
+          "description": "逻辑规则控制，a 偏小"
+        }
+      ],
+      "section": "loop-type-weights-input"
+    },
+    {
+      "section": "transaction-after",
+      "database": "clpm_critical_20261017_local",
+      "readOnly": "on",
+      "snapshot": "1051304:1051304:",
+      "timezone": "UTC",
+      "isolation": "repeatable read",
+      "observedAtUtc": "2026-10-17T14:45:48.520164+00:00",
+      "transactionIdIfAssigned": null,
+      "transactionTimestampUtc": "2026-10-17T14:45:48.51644+00:00"
+    }
+  ],
+  "actualReadOnlyTransaction": {
+    "section": "transaction-before",
+    "database": "clpm_critical_20261017_local",
+    "readOnly": "on",
+    "snapshot": "1051304:1051304:",
+    "timezone": "UTC",
+    "isolation": "repeatable read",
+    "backendPid": 2342601,
+    "serverPort": 5432,
+    "currentUser": "clpm",
+    "sessionUser": "clpm",
+    "observedAtUtc": "2026-10-17T14:45:48.516926+00:00",
+    "serverAddress": "127.0.0.1",
+    "transactionIdIfAssigned": null,
+    "transactionTimestampUtc": "2026-10-17T14:45:48.51644+00:00"
+  },
+  "sourceCatalog": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/source-tracked-catalog.json",
+    "sha256": "0416a2f33b96ad953509e75cc722746bb2f23f1e6d9ba9310524e295160f9b86",
+    "gitTree": "6eaa2a22bf68bcfb578d200d8148de32f11d2ee2",
+    "files": 4046,
+    "totalBytes": 166618736,
+    "allImmutableGitBlobsRehashed": true
+  },
+  "actualCurrentTrackedFilesRehashed": 4046,
+  "sevenStartupIdentities": [
+    {
+      "pid": 50699,
+      "ppid": 50696,
+      "created": 1792248280.05259,
+      "status": "running",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-B",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "17261",
+        "--timeout-graceful-shutdown",
+        "15",
+        "--no-access-log"
+      ]
+    },
+    {
+      "pid": 50722,
+      "ppid": 50699,
+      "created": 1792248282.083399,
+      "status": "stopped",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "beat",
+        "-l",
+        "info",
+        "--pidfile",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/runtime/clpm-remediation-20261017/backend/logs/celerybeat.pid",
+        "--schedule",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/runtime/clpm-remediation-20261017/backend/logs/celerybeat-schedule"
+      ]
+    },
+    {
+      "pid": 50724,
+      "ppid": 50699,
+      "created": 1792248282.126738,
+      "status": "sleeping",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "4",
+        "-Q",
+        "default,dead_letter",
+        "--hostname",
+        "clpm-remediation-20261017@%h"
+      ]
+    },
+    {
+      "pid": 50755,
+      "ppid": 50724,
+      "created": 1792248283.313791,
+      "status": "running",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "4",
+        "-Q",
+        "default,dead_letter",
+        "--hostname",
+        "clpm-remediation-20261017@%h"
+      ]
+    },
+    {
+      "pid": 50756,
+      "ppid": 50724,
+      "created": 1792248283.365769,
+      "status": "running",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "4",
+        "-Q",
+        "default,dead_letter",
+        "--hostname",
+        "clpm-remediation-20261017@%h"
+      ]
+    },
+    {
+      "pid": 50757,
+      "ppid": 50724,
+      "created": 1792248283.421379,
+      "status": "running",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "4",
+        "-Q",
+        "default,dead_letter",
+        "--hostname",
+        "clpm-remediation-20261017@%h"
+      ]
+    },
+    {
+      "pid": 50758,
+      "ppid": 50724,
+      "created": 1792248283.475143,
+      "status": "running",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "4",
+        "-Q",
+        "default,dead_letter",
+        "--hostname",
+        "clpm-remediation-20261017@%h"
+      ]
+    }
+  ],
+  "readActualMetrics": false,
+  "productCalculatorImported": false,
+  "readSet": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-only-before-gate/input-only-manifest.json",
+      "bytes": 8098,
+      "sha256": "90e8ca6890421ea0c340bceff1f6e00452e43e0892eef9ba098b0c66185c500c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.json",
+      "bytes": 2295,
+      "sha256": "d99f05660451473feb3f10dc1066f4059052c6a657eb77bb7c72b6438d1859e4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.inputs.json",
+      "bytes": 581923,
+      "sha256": "b1c72c9748981995ae07cccb0de58e77f6f515be1a90b1a2fa99a5d5b00b2cda"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.imports.json",
+      "bytes": 1319,
+      "sha256": "6069d7f9d3d6f0a35b5bfe80365ce4f425496e6154b8e79840282f622439ceb5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.bindings.json",
+      "bytes": 24497,
+      "sha256": "67877293d961a71bf19abf4e09c91c0f7545fd5f1239e29fd700adfbbe76c539"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.td-readback.json",
+      "bytes": 1436137,
+      "sha256": "f8113b8c6f12296fb82b4fafd29b9f631beefda58dc732646e2d60804330e6dc"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/source-tracked-catalog.json",
+      "bytes": 1905757,
+      "sha256": "0416a2f33b96ad953509e75cc722746bb2f23f1e6d9ba9310524e295160f9b86"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/startup-ready-before-pause.json",
+      "bytes": 4416,
+      "sha256": "c57d614576e3eee34a35367f69a5f4e0bf22af34906912e6b47cdec1ce5380d2"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/startup-pidfile.raw.log",
+      "bytes": 6,
+      "sha256": "e85e7b1b5574d399cad8232df7b8100fc8c5de121b305f4d8e81611890db36f4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/startup-api.raw.log",
+      "bytes": 5064,
+      "sha256": "1d0ac2040ea3191b647b81ee8ae1f96f24d8bfed2bf94363d8b39a32ab3baafd"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/startup-beat.raw.log",
+      "bytes": 1514,
+      "sha256": "aa3dba36b96f06d15d8fa262e61ec09d68dea83d273ef167a9ca0c51b606fa2f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/startup-worker.raw.log",
+      "bytes": 16548,
+      "sha256": "8b1e3a53bb7a0eddc73df3f68d426b99707e7db6572bbeb07f2bb8931b2ee9e4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/command.json",
+      "bytes": 912,
+      "sha256": "bec25500091768454f629af4de9b77435a5ce7545f30fed0674d7cf2e179479a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/executed-source.py",
+      "bytes": 4652,
+      "sha256": "65986282db0aef3b7e508a1d2fb055659f73f83ec0f6e9b6b05344de8d247abb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/executed.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/native-processes.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/native-processes.stdout.log",
+      "bytes": 2404,
+      "sha256": "dae8e97e54b45a56260a5c0962701bacd5757af3fba09c23f3f60cb4766539e9"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/stdout.log",
+      "bytes": 7965,
+      "sha256": "86fb12a48f103af997614a2c698e1badfa29705f4a7f7342bcc1b2890b027092"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/summary.json",
+      "bytes": 1409,
+      "sha256": "7058ec7d02dc2c244f4ee0491ec2025496ff75b35e877fd524dd92cfab15cfc6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-only-before-gate/started-state.json",
+      "bytes": 4996,
+      "sha256": "ff80aa60c77e7c3aad24ecd0cecb97d70b4fca72463e0028b02ad132c4bc9b54"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-only-before-gate/environment-before-gate.json",
+      "bytes": 2021,
+      "sha256": "1a81087e0a6ae101d96d2bb006315f24c30a75d6a3602e62767d3aabaf2bed5f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.json",
+      "bytes": 2295,
+      "sha256": "d99f05660451473feb3f10dc1066f4059052c6a657eb77bb7c72b6438d1859e4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.inputs.json",
+      "bytes": 581923,
+      "sha256": "b1c72c9748981995ae07cccb0de58e77f6f515be1a90b1a2fa99a5d5b00b2cda"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.bindings.json",
+      "bytes": 24497,
+      "sha256": "67877293d961a71bf19abf4e09c91c0f7545fd5f1239e29fd700adfbbe76c539"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/fixture.td-readback.json",
+      "bytes": 1436137,
+      "sha256": "f8113b8c6f12296fb82b4fafd29b9f631beefda58dc732646e2d60804330e6dc"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/command.json",
+      "bytes": 912,
+      "sha256": "bec25500091768454f629af4de9b77435a5ce7545f30fed0674d7cf2e179479a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/executed.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-policy-before/stdout.log",
+      "bytes": 7965,
+      "sha256": "86fb12a48f103af997614a2c698e1badfa29705f4a7f7342bcc1b2890b027092"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-only-before-gate/started-state.json",
+      "bytes": 4996,
+      "sha256": "ff80aa60c77e7c3aad24ecd0cecb97d70b4fca72463e0028b02ad132c4bc9b54"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6/input-only-before-gate/environment-before-gate.json",
+      "bytes": 2021,
+      "sha256": "1a81087e0a6ae101d96d2bb006315f24c30a75d6a3602e62767d3aabaf2bed5f"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T09:43:30.831207+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "find",
+    "AUDIT-F07"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.5448334169923328,
+  "stdout": "### Result\nFound 1 match for \"AUDIT-F07\":\n\n- generic [ref=f4e4]:\n  - generic [ref=f4e116]:\n    - main [ref=f4e265]:\n      - generic [ref=f4e267]:\n        - generic [ref=f4e300]:\n          - generic [ref=f4e303]:\n            - table [ref=f4e307]:\n              - rowgroup [ref=f4e357]:\n                - row [ref=f4e358]:\n                  - cell [ref=f4e359]:\n                    - button \"AUDIT-F07-0001\" [ref=f4e360] [cursor=pointer]\n                  - cell \"isolated test input, no plant data\" [ref=f4e361]\n                  - cell [ref=f4e362]\n                  - cell \"其他\" [ref=f4e363]\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T09-39-34-092Z.log#L6\n",
+  "stderr": ""
+}

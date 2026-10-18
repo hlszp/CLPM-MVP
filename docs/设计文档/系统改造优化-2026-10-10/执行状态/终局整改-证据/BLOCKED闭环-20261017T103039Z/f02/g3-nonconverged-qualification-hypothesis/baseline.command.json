@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "pytest.main",
+    "-c",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/pyproject.toml",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "--basetemp=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-nonconverged-qualification-hypothesis/baseline-tmp",
+    "--junitxml=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-nonconverged-qualification-hypothesis/baseline.junit.xml",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_g3_app_applicability.py::TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded"
+  ],
+  "originalTestNodes": [
+    "TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent",
+    "TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute",
+    "TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded"
+  ],
+  "startedAt": "2026-10-17T15:56:00.787071+00:00"
+}

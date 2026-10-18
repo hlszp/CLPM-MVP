@@ -1,0 +1,50 @@
+{
+  "run": {
+    "id": 39031454818,
+    "event": "pull_request",
+    "head_sha": "8a00175339228a7dd710751d59d626ee97fe2233",
+    "status": "in_progress",
+    "conclusion": null
+  },
+  "jobs": [
+    {
+      "id": 117392568848,
+      "name": "Frontend CI",
+      "status": "completed",
+      "conclusion": "success",
+      "currentOrFailedSteps": []
+    },
+    {
+      "id": 117392568939,
+      "name": "Backend CI",
+      "status": "in_progress",
+      "conclusion": null,
+      "currentOrFailedSteps": [
+        {
+          "name": "Pytest with coverage",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
+    },
+    {
+      "id": 117392568955,
+      "name": "Critical E2E Gate (blocking)",
+      "status": "completed",
+      "conclusion": "failure",
+      "currentOrFailedSteps": [
+        {
+          "name": "Run critical E2E gate (blocking)",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    }
+  ],
+  "downloaded": [],
+  "pullRequest": {
+    "head": "8a00175339228a7dd710751d59d626ee97fe2233",
+    "base": "86301e5e3083db0feb5f2d9db8fb9eacc8d3165d",
+    "mergeCommitSha": "c452ea7fa913a7fffc721de81470ef0874b6bc46"
+  }
+}

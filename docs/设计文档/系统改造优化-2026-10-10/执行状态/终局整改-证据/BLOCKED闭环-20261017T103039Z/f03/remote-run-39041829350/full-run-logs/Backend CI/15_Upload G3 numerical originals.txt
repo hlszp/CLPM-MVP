@@ -1,0 +1,38 @@
+﻿2026-10-17T14:54:09.5623609Z ##[group]Run actions/upload-artifact@v4
+2026-10-17T14:54:09.5623933Z with:
+2026-10-17T14:54:09.5624175Z   name: backend-g3-numerics-39041829350-1
+2026-10-17T14:54:09.5624517Z   path: /home/runner/work/_temp/g3-numerical-originals
+2026-10-17T14:54:09.5624830Z   if-no-files-found: error
+2026-10-17T14:54:09.5625067Z   retention-days: 7
+2026-10-17T14:54:09.5625287Z   compression-level: 6
+2026-10-17T14:54:09.5625508Z   overwrite: false
+2026-10-17T14:54:09.5625727Z   include-hidden-files: false
+2026-10-17T14:54:09.5625965Z env:
+2026-10-17T14:54:09.5626156Z   CI: true
+2026-10-17T14:54:09.5626354Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T14:54:09.5626583Z   OMP_NUM_THREADS: 1
+2026-10-17T14:54:09.5626807Z   MKL_NUM_THREADS: 1
+2026-10-17T14:54:09.5627018Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T14:54:09.5627244Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T14:54:09.5627530Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:54:09.5627928Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T14:54:09.5628402Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:54:09.5628762Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:54:09.5629114Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:54:09.5629516Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T14:54:09.5629876Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T14:54:09.5630171Z ##[endgroup]
+2026-10-17T14:54:09.7195369Z (node:15232) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-17T14:54:09.7196098Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T14:54:09.7353523Z With the provided path, there will be 78 files uploaded
+2026-10-17T14:54:09.7359376Z Artifact name is valid!
+2026-10-17T14:54:09.7360096Z Root directory input is valid!
+2026-10-17T14:54:09.9921229Z Beginning upload of artifact content to blob storage
+2026-10-17T14:54:10.0939546Z (node:15232) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-17T14:54:10.3867185Z Uploaded bytes 419498
+2026-10-17T14:54:10.4279100Z Finished uploading artifact content to blob storage!
+2026-10-17T14:54:10.4280005Z SHA256 digest of uploaded artifact zip is 806cb820f002a5113b54e4c33b162cc7de3f4810b85079e18c27a3d1801cd4dc
+2026-10-17T14:54:10.4281782Z Finalizing artifact upload
+2026-10-17T14:54:10.6652488Z Artifact backend-g3-numerics-39041829350-1.zip successfully finalized. Artifact ID 12105065268
+2026-10-17T14:54:10.6654057Z Artifact backend-g3-numerics-39041829350-1 has been successfully uploaded! Final size is 419498 bytes. Artifact ID is 12105065268
+2026-10-17T14:54:10.6659385Z Artifact download URL: https://github.com/hlszp/CLPM-MVP/actions/runs/39041829350/artifacts/12105065268

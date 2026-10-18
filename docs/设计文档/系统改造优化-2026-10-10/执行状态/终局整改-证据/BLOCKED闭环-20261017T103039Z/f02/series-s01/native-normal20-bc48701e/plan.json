@@ -1,0 +1,32 @@
+{
+  "schema": "clpm-native-identity-v1",
+  "startedAt": "2026-10-17T15:29:26.415109+00:00",
+  "expectedSha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+  "runtime": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+  "psArgv": [
+    "ps",
+    "-ax",
+    "-o",
+    "pid=,ppid=,lstart=,stat=,command="
+  ],
+  "intervalSeconds": 2.0,
+  "maximumAcceptedIntervalSeconds": 5,
+  "maxSeconds": 43200.0,
+  "toolSha256": "f9ef43b64c5b3deeed24d8429f6a5d2eaaf96ccd40c3e41a99ddceff26a245f4",
+  "nativeEnvSha256": "27d6fc10cc68376b056d1c7803f1b6361e48c11bc3de46c4e8a46cc4b2abe04b",
+  "taosConfigSha256": "5cab803bb45b170692fd8c8ac498b367a6a3f771352179ebfe6ebec67304faec",
+  "timezoneRaw": {
+    "argv": [
+      "date",
+      "+%Z %z"
+    ],
+    "startedAt": "2026-10-17T15:29:26.415631+00:00",
+    "finishedAt": "2026-10-17T15:29:26.421588+00:00",
+    "rc": 0,
+    "stdout": "CST +0800\n",
+    "stderr": ""
+  },
+  "timezoneSymlink": "/private/var/db/timezone/tz/2026e.1.0/zoneinfo/Asia/Shanghai",
+  "scope": "actual native ps birth/ancestry; no inference of per-task executor pid",
+  "stopFile": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/native-normal20-bc48701e/STOP"
+}

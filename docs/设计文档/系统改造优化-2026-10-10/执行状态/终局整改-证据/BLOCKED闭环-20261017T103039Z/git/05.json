@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-10-17T10:34:32.244530+00:00",
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "feat(batch): expose guarded restore endpoints",
+    "-m",
+    "Preserve failed evidence and enforce audited semantics before live acceptance.\nThe complete candidate is independently tested; production is out of scope."
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "parent": "cfa44913ec549b8108f8fb23fa4473566323836a",
+  "exit_code": 0,
+  "subject": "feat(batch): expose guarded restore endpoints",
+  "changed_lines": 131,
+  "numstat": "94\t1\tbackend/app/api/v1/endpoints/loops.py\n29\t7\tbackend/app/services/loop_batch.py\n",
+  "stdout_sha256": "023fdd718c531b840b7bc303848fd720f0925cc486d9d76e48c164a95f460332",
+  "stderr_sha256": "24f6d9e02963e1e247232463a6ec8a5eb79e460cf1db258235638d411a7c9481",
+  "commit": "8222552b445e5451e83cbea325cc567088f092cd"
+}

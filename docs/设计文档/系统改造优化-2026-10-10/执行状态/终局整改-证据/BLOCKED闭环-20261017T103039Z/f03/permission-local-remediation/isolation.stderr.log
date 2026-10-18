@@ -1,0 +1,17 @@
+test_both_writers_refuse_before_imports_or_network_outside_ci (__main__.IsolationProtectionTests.test_both_writers_refuse_before_imports_or_network_outside_ci) ... ok
+test_config_closes_external_services_without_touching_product_defaults (__main__.IsolationProtectionTests.test_config_closes_external_services_without_touching_product_defaults) ... ok
+test_every_service_identity_guard_is_required (__main__.IsolationProtectionTests.test_every_service_identity_guard_is_required) ... ok
+test_only_disposable_ci_identity_is_accepted (__main__.IsolationProtectionTests.test_only_disposable_ci_identity_is_accepted) ... ok
+test_remote_api_is_rejected (__main__.IsolationProtectionTests.test_remote_api_is_rejected) ... ok
+test_each_local_identity_guard_is_required (__main__.LocalIsolationProtectionTests.test_each_local_identity_guard_is_required) ... ok
+test_explicit_local_profile_uses_its_true_identity (__main__.LocalIsolationProtectionTests.test_explicit_local_profile_uses_its_true_identity) ... ok
+test_invalid_local_attempt_is_rejected (__main__.LocalIsolationProtectionTests.test_invalid_local_attempt_is_rejected) ... ok
+test_plan_is_read_only_and_both_writers_refuse_wrong_api_before_imports (__main__.LocalIsolationProtectionTests.test_plan_is_read_only_and_both_writers_refuse_wrong_api_before_imports) ... ok
+test_shared_capacity_and_production_database_names_are_rejected (__main__.LocalIsolationProtectionTests.test_shared_capacity_and_production_database_names_are_rejected) ... ok
+test_well_formed_but_incorrect_source_sha_is_rejected (__main__.LocalIsolationProtectionTests.test_well_formed_but_incorrect_source_sha_is_rejected) ... ok
+test_wrong_api_ui_ports_remote_hosts_and_github_impersonation_are_rejected (__main__.LocalIsolationProtectionTests.test_wrong_api_ui_ports_remote_hosts_and_github_impersonation_are_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.810s
+
+OK

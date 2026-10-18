@@ -1,0 +1,12 @@
+E501 Line too long (101 > 100)
+   --> /Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:215:101
+    |
+213 | ):
+214 |     def publish(*, args, priority, task_id=None):
+215 |         assert f"task:{args[0]}" in task_store._hashes, "consumer started before task record existed"
+    |                                                                                                     ^
+216 |         stored = task_store._hashes[f"task:{args[0]}"]
+217 |         assert task_id is not None
+    |
+
+Found 1 error.

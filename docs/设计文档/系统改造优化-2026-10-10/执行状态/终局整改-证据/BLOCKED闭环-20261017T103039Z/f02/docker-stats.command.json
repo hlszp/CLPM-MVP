@@ -1,0 +1,15 @@
+{
+  "command": [
+    "docker",
+    "stats",
+    "--no-stream",
+    "--format",
+    "{{json .}}"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:32:41.092292+00:00",
+  "elapsedSeconds": 2.288608708,
+  "rc": 0,
+  "stdoutSha256": "983cbc07bf4070cfadf1a8315e2c838b5a9a9574c58f4d103421d50202f07ab7",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/remote-run-39044390911/inspect_input_counts_only_v2.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "rc": 0,
+  "startedAtUtc": "2026-10-17T15:24:54.653158+00:00",
+  "elapsedSeconds": 0.05488924999372102,
+  "stdoutSha256": "ece566fdf33d5e78b911a021a665563662b4d21a038e7aa88c172b1f6a067443",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

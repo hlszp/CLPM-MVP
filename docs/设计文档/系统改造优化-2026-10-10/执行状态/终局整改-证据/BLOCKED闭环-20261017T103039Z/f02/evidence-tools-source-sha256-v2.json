@@ -1,0 +1,50 @@
+{
+  "version": "v2",
+  "frozenAt": "2026-10-17T11:06:02.558408+00:00",
+  "candidateSha": "148dd21ac8450cd85d763f89a557adf68fd29fdb",
+  "files": [
+    {
+      "file": "audit_capacity_inputs.py",
+      "sha256": "8bd8cb604032d85948cc6bc1f429974b93424e3ab1f7648af62cebcc2e1a3b6d",
+      "bytes": 14805,
+      "syntax": "OK"
+    },
+    {
+      "file": "collect_capacity_evidence.py",
+      "sha256": "3dc2b356cb9c895bd2c2cc8ae611e5156eb61a6b6e596e621f6ef85ca9445899",
+      "bytes": 19298,
+      "syntax": "OK"
+    },
+    {
+      "file": "receive_capacity_events.py",
+      "sha256": "69cdadc682f58b184cb8ed0f2bc91afe8bcefd0b3fd36d74ba17ad31983d7943",
+      "bytes": 3344,
+      "syntax": "OK"
+    },
+    {
+      "file": "capture_capacity_cache.py",
+      "sha256": "fd75e9c55a2aa3e9ff088c7f1e926f12433f62fa3276ed81f6f6a6deee85f6b1",
+      "bytes": 4997,
+      "syntax": "OK"
+    },
+    {
+      "file": "test_evidence_tools.py",
+      "sha256": "df29fba3a8f2581d2834458210d342810d7a51b2b701f9759e2c32a21c98eb10",
+      "bytes": 5734,
+      "syntax": "OK"
+    },
+    {
+      "file": "test_input_counterexamples.py",
+      "sha256": "1343cd2a5ad9552b9e1b9b042da0083f992b3f79473f8a750fbdb8d7a0911653",
+      "bytes": 1777,
+      "syntax": "OK"
+    },
+    {
+      "file": "verify_seeded_quality_reference.py",
+      "sha256": "a9a3781a697de3a52245650a538dbd703d589890b776f078db36811181f15285",
+      "bytes": 1953,
+      "syntax": "OK"
+    }
+  ],
+  "scope": "Evidence tools only. Old v1 source and failed counterexamples retained. No actual capacity result."
+}

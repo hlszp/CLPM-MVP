@@ -1,0 +1,23 @@
+{
+  "at": "2026-10-17T11:30:10.820090+00:00",
+  "symptoms": [
+    "Linux full annotated accuracy test >30s under actual fixed one-thread profile",
+    "Critical AUTH hash route success misread as login pathname"
+  ],
+  "scope": [
+    "backend/app/services/tuning_identification/arx.py",
+    "backend/app/services/tuning_identification/pipeline.py only if proved necessary",
+    "targeted equivalence regression tests",
+    "e2e/tests/critical-business.spec.ts"
+  ],
+  "invariants": [
+    "22 original samples and16of18 gate",
+    "30s per test timeout",
+    "all candidates/uncertainty resamples and numerical semantics",
+    "same4criticalIDs/one attempt/zero retries",
+    "real auth/permission/calculation/evidence/UI assertions"
+  ],
+  "globalScopeLock": "Not acquired: parallel authorized runtime evidence and two unrelated code modules must continue; explicit file allowlist and independent git diff enforce narrow scope. No existing global lock touched.",
+  "routingNotice": "Project AGENTS.md already contains the exact skill routing supplied by user; gstack CLAUDE-only onboarding probe is not a requirement to duplicate or alter project guidance.",
+  "memoryWrites": "No learning or brain writes requested or performed by this investigation."
+}

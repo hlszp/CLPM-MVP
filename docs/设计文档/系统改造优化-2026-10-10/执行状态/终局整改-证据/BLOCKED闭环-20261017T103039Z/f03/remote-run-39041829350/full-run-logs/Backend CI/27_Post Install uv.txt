@@ -1,0 +1,8 @@
+﻿2026-10-17T14:54:10.6812083Z Post job cleanup.
+2026-10-17T14:54:10.7946527Z Pruning cache...
+2026-10-17T14:54:10.7957927Z (node:15244) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-17T14:54:10.7958660Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T14:54:10.9614536Z Saving cache path: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T14:54:10.9747865Z [command]/usr/bin/tar --posix -cf cache.tzst --exclude cache.tzst -P -C /home/runner/work/CLPM-MVP/CLPM-MVP --files-from manifest.txt --use-compress-program zstdmt
+2026-10-17T14:54:11.0719966Z ##[warning]Failed to save: <h2>Our services aren't available right now</h2><p>We're working to restore all services as soon as possible. Please check back soon.</p>0E4zTagAAAADOpBFfXG1+QqsI8Yj47ZoYTVNQMzExMDAwMTA2MDMxAEVkZ2U=
+2026-10-17T14:54:11.0722267Z cache saved with the key: setup-uv-1-x86_64-unknown-linux-gnu-0.13.1-4875396529d65a7c7dd5b3309da988b92e8afd6ebbef71932062d5bd3b21be94

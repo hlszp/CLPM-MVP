@@ -1,0 +1,15 @@
+
+ RUN  v4.1.9 /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+
+ ✓ apps/web-antd/src/__tests__/wb360-resume.test.ts (5 tests) 16ms
+ ✓ apps/web-antd/src/__tests__/personal-work-conflict.test.ts (14 tests) 16ms
+ ✓ apps/web-antd/src/__tests__/store.test.ts (10 tests) 10ms
+ ✓ apps/web-antd/src/__tests__/clpm-preferences.test.ts (13 tests) 10ms
+ ✓ apps/web-antd/src/__tests__/loop-follow.test.ts (21 tests) 131ms
+
+ Test Files  5 passed (5)
+      Tests  63 passed (63)
+   Start at  18:05:43
+   Duration  2.30s (transform 1.16s, setup 0ms, import 4.78s, tests 182ms, environment 974ms)
+
+JSON report written to /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f07/implementation/409-real-shape/forward-wire-contract.results.json

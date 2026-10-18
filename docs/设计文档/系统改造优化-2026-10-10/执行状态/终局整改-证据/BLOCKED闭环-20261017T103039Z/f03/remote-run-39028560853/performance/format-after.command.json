@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "ruff",
+    "format",
+    "--check",
+    "app/services/tuning_identification/arx.py",
+    "tests/test_arx_vectorized_equivalence.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "elapsedSeconds": 0.03423476219177246,
+  "stdoutSha256": "3bc53bf3e981a98a34a852e175bf9b77af841edea74fca595d9aedcbaf9a4938",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

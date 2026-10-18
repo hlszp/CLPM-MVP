@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/.venv/bin/python",
+    "test_keeper_stop_checks.py"
+  ],
+  "rc": 0,
+  "at": 1792236453.193048,
+  "seconds": 0.10595488548278809,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "df924573d29c38020744640289693026e749c494e1471ae42694a7d6d15e8b7b",
+  "meaning": "tool-only synthetic disk shapes, not capacity results"
+}

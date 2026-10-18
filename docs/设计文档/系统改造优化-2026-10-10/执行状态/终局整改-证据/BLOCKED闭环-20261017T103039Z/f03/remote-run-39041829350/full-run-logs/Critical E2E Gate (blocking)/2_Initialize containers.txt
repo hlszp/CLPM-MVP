@@ -1,0 +1,211 @@
+﻿2026-10-17T14:41:39.9685901Z ##[group]Checking docker version
+2026-10-17T14:41:39.9699859Z ##[command]/usr/bin/docker version --format '{{.Server.APIVersion}}'
+2026-10-17T14:41:40.1045658Z '1.48'
+2026-10-17T14:41:40.1058625Z Docker daemon API version: '1.48'
+2026-10-17T14:41:40.1059969Z ##[command]/usr/bin/docker version --format '{{.Client.APIVersion}}'
+2026-10-17T14:41:40.1247170Z '1.48'
+2026-10-17T14:41:40.1270751Z Docker client API version: '1.48'
+2026-10-17T14:41:40.1275905Z ##[endgroup]
+2026-10-17T14:41:40.1279976Z ##[group]Clean up resources from previous jobs
+2026-10-17T14:41:40.1315317Z ##[command]/usr/bin/docker ps --all --quiet --no-trunc --filter "label=c22569"
+2026-10-17T14:41:40.1525267Z ##[command]/usr/bin/docker network prune --force --filter "label=c22569"
+2026-10-17T14:41:40.1669445Z ##[endgroup]
+2026-10-17T14:41:40.1670146Z ##[group]Create local container network
+2026-10-17T14:41:40.1681376Z ##[command]/usr/bin/docker network create --label c22569 github_network_25e777904a6445bba3ad14e70d383524
+2026-10-17T14:41:40.2262145Z f8cefb3864378269ac511374bbd0b4d33ba86cc32d44ce421edbe1c60f938154
+2026-10-17T14:41:40.2285868Z ##[endgroup]
+2026-10-17T14:41:40.2311230Z ##[group]Starting redis service container
+2026-10-17T14:41:40.2337921Z ##[command]/usr/bin/docker pull redis:7-alpine
+2026-10-17T14:41:40.6698687Z 7-alpine: Pulling from library/redis
+2026-10-17T14:41:40.7949331Z 16333ee0c00f: Pulling fs layer
+2026-10-17T14:41:40.7951838Z 83234986c742: Pulling fs layer
+2026-10-17T14:41:40.7957806Z 7eb50503c2b0: Pulling fs layer
+2026-10-17T14:41:40.7962929Z 1522f9c6f453: Pulling fs layer
+2026-10-17T14:41:40.7964068Z 9928009b15c8: Pulling fs layer
+2026-10-17T14:41:40.7965120Z 4f4fb700ef54: Pulling fs layer
+2026-10-17T14:41:40.7966025Z 4eb14bae0e1d: Pulling fs layer
+2026-10-17T14:41:40.7966891Z 1522f9c6f453: Waiting
+2026-10-17T14:41:40.7967873Z 9928009b15c8: Waiting
+2026-10-17T14:41:40.7968678Z 4f4fb700ef54: Waiting
+2026-10-17T14:41:40.7969406Z 4eb14bae0e1d: Waiting
+2026-10-17T14:41:40.8673966Z 83234986c742: Download complete
+2026-10-17T14:41:40.8703107Z 7eb50503c2b0: Verifying Checksum
+2026-10-17T14:41:40.8704860Z 7eb50503c2b0: Download complete
+2026-10-17T14:41:40.8875183Z 16333ee0c00f: Download complete
+2026-10-17T14:41:40.9401921Z 9928009b15c8: Verifying Checksum
+2026-10-17T14:41:40.9404877Z 9928009b15c8: Download complete
+2026-10-17T14:41:40.9550200Z 4f4fb700ef54: Verifying Checksum
+2026-10-17T14:41:40.9551581Z 4f4fb700ef54: Download complete
+2026-10-17T14:41:40.9921600Z 1522f9c6f453: Verifying Checksum
+2026-10-17T14:41:40.9923526Z 1522f9c6f453: Download complete
+2026-10-17T14:41:41.0111312Z 16333ee0c00f: Pull complete
+2026-10-17T14:41:41.0132280Z 4eb14bae0e1d: Verifying Checksum
+2026-10-17T14:41:41.0133761Z 4eb14bae0e1d: Download complete
+2026-10-17T14:41:42.8230293Z 83234986c742: Pull complete
+2026-10-17T14:41:42.9646326Z 7eb50503c2b0: Pull complete
+2026-10-17T14:41:43.1576396Z 1522f9c6f453: Pull complete
+2026-10-17T14:41:43.1705105Z 9928009b15c8: Pull complete
+2026-10-17T14:41:43.1795830Z 4f4fb700ef54: Pull complete
+2026-10-17T14:41:43.1918474Z 4eb14bae0e1d: Pull complete
+2026-10-17T14:41:43.1961105Z Digest: sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499
+2026-10-17T14:41:43.1975722Z Status: Downloaded newer image for redis:7-alpine
+2026-10-17T14:41:43.1984010Z docker.io/library/redis:7-alpine
+2026-10-17T14:41:43.2021445Z ##[command]/usr/bin/docker create --name 7b1deabc358648e1b48ff20105ff280a_redis7alpine_8bb110 --label c22569 --network github_network_25e777904a6445bba3ad14e70d383524 --network-alias redis -p 6379:6379 --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5 -e GITHUB_ACTIONS=true -e CI=true redis:7-alpine
+2026-10-17T14:41:43.2312926Z 388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20
+2026-10-17T14:41:43.2339885Z ##[command]/usr/bin/docker start 388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20
+2026-10-17T14:41:43.6071124Z 388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20
+2026-10-17T14:41:43.6093115Z ##[command]/usr/bin/docker ps --all --filter id=388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-17T14:41:43.6231770Z 388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20 Up Less than a second (health: starting)
+2026-10-17T14:41:43.6250856Z ##[command]/usr/bin/docker port 388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20
+2026-10-17T14:41:43.6366785Z 6379/tcp -> 0.0.0.0:6379
+2026-10-17T14:41:43.6367544Z 6379/tcp -> [::]:6379
+2026-10-17T14:41:43.6413338Z ##[endgroup]
+2026-10-17T14:41:43.6414638Z ##[group]Starting postgres service container
+2026-10-17T14:41:43.6415958Z ##[command]/usr/bin/docker pull postgres:16
+2026-10-17T14:41:43.9945508Z 16: Pulling from library/postgres
+2026-10-17T14:41:44.1172779Z ecc510c1e359: Pulling fs layer
+2026-10-17T14:41:44.1173381Z 79faf13a8736: Pulling fs layer
+2026-10-17T14:41:44.1173861Z 6456bfbf35e7: Pulling fs layer
+2026-10-17T14:41:44.1174316Z b353db459ed1: Pulling fs layer
+2026-10-17T14:41:44.1174809Z 99f49de4fe2b: Pulling fs layer
+2026-10-17T14:41:44.1175567Z 83d1a2a3917c: Pulling fs layer
+2026-10-17T14:41:44.1176024Z 715ea0948cb1: Pulling fs layer
+2026-10-17T14:41:44.1198266Z 486e8305f56f: Pulling fs layer
+2026-10-17T14:41:44.1198833Z e7d675f11ded: Pulling fs layer
+2026-10-17T14:41:44.1199144Z c49864c27f35: Pulling fs layer
+2026-10-17T14:41:44.1199385Z 770ef8b308ea: Pulling fs layer
+2026-10-17T14:41:44.1199632Z 50c25daa0302: Pulling fs layer
+2026-10-17T14:41:44.1199880Z 8309db3ae5b6: Pulling fs layer
+2026-10-17T14:41:44.1200402Z 9731e27f2541: Pulling fs layer
+2026-10-17T14:41:44.1200637Z 486e8305f56f: Waiting
+2026-10-17T14:41:44.1200948Z e7d675f11ded: Waiting
+2026-10-17T14:41:44.1201159Z c49864c27f35: Waiting
+2026-10-17T14:41:44.1201368Z 770ef8b308ea: Waiting
+2026-10-17T14:41:44.1201570Z 50c25daa0302: Waiting
+2026-10-17T14:41:44.1201799Z 99f49de4fe2b: Waiting
+2026-10-17T14:41:44.1202003Z 8309db3ae5b6: Waiting
+2026-10-17T14:41:44.1202201Z 9731e27f2541: Waiting
+2026-10-17T14:41:44.1202412Z b353db459ed1: Waiting
+2026-10-17T14:41:44.1202616Z 83d1a2a3917c: Waiting
+2026-10-17T14:41:44.1202819Z 715ea0948cb1: Waiting
+2026-10-17T14:41:44.1898841Z 79faf13a8736: Verifying Checksum
+2026-10-17T14:41:44.1899864Z 79faf13a8736: Download complete
+2026-10-17T14:41:44.2237310Z 6456bfbf35e7: Verifying Checksum
+2026-10-17T14:41:44.2259437Z 6456bfbf35e7: Download complete
+2026-10-17T14:41:44.2824227Z b353db459ed1: Verifying Checksum
+2026-10-17T14:41:44.2824792Z b353db459ed1: Download complete
+2026-10-17T14:41:44.3059021Z ecc510c1e359: Download complete
+2026-10-17T14:41:44.3334021Z 99f49de4fe2b: Verifying Checksum
+2026-10-17T14:41:44.3334525Z 99f49de4fe2b: Download complete
+2026-10-17T14:41:44.3644175Z 83d1a2a3917c: Verifying Checksum
+2026-10-17T14:41:44.3644772Z 83d1a2a3917c: Download complete
+2026-10-17T14:41:44.3773591Z 715ea0948cb1: Verifying Checksum
+2026-10-17T14:41:44.3775573Z 715ea0948cb1: Download complete
+2026-10-17T14:41:44.4047820Z 486e8305f56f: Download complete
+2026-10-17T14:41:44.4500015Z c49864c27f35: Verifying Checksum
+2026-10-17T14:41:44.4501103Z c49864c27f35: Download complete
+2026-10-17T14:41:44.4889540Z 770ef8b308ea: Verifying Checksum
+2026-10-17T14:41:44.4890612Z 770ef8b308ea: Download complete
+2026-10-17T14:41:44.5267682Z 50c25daa0302: Download complete
+2026-10-17T14:41:44.5606962Z 8309db3ae5b6: Verifying Checksum
+2026-10-17T14:41:44.5607902Z 8309db3ae5b6: Download complete
+2026-10-17T14:41:44.5953196Z 9731e27f2541: Verifying Checksum
+2026-10-17T14:41:44.5954306Z 9731e27f2541: Download complete
+2026-10-17T14:41:44.8144110Z e7d675f11ded: Verifying Checksum
+2026-10-17T14:41:44.8160701Z e7d675f11ded: Download complete
+2026-10-17T14:41:45.4471966Z ecc510c1e359: Pull complete
+2026-10-17T14:41:45.7346584Z 79faf13a8736: Pull complete
+2026-10-17T14:41:45.9082197Z 6456bfbf35e7: Pull complete
+2026-10-17T14:41:45.9476421Z b353db459ed1: Pull complete
+2026-10-17T14:41:46.2529104Z 99f49de4fe2b: Pull complete
+2026-10-17T14:41:46.3213765Z 83d1a2a3917c: Pull complete
+2026-10-17T14:41:46.3297912Z 715ea0948cb1: Pull complete
+2026-10-17T14:41:46.3376149Z 486e8305f56f: Pull complete
+2026-10-17T14:41:49.3823829Z e7d675f11ded: Pull complete
+2026-10-17T14:41:49.3992296Z c49864c27f35: Pull complete
+2026-10-17T14:41:49.4080134Z 770ef8b308ea: Pull complete
+2026-10-17T14:41:49.4170513Z 50c25daa0302: Pull complete
+2026-10-17T14:41:49.4263300Z 8309db3ae5b6: Pull complete
+2026-10-17T14:41:49.4368574Z 9731e27f2541: Pull complete
+2026-10-17T14:41:49.4406392Z Digest: sha256:ca0bd484cb98bf4b24eb1010e73fb3fcbd6714d240fbc1a10eea5b7dbecb641d
+2026-10-17T14:41:49.4417577Z Status: Downloaded newer image for postgres:16
+2026-10-17T14:41:49.4425641Z docker.io/library/postgres:16
+2026-10-17T14:41:49.4472025Z ##[command]/usr/bin/docker create --name 346c53c4fb624c7086dc56681bde3ab7_postgres16_040a69 --label c22569 --network github_network_25e777904a6445bba3ad14e70d383524 --network-alias postgres -p 5432:5432 --health-cmd "pg_isready -U clpm -d clpm_critical_e2e" --health-interval 10s --health-timeout 5s --health-retries 5 -e "POSTGRES_USER=clpm" -e "POSTGRES_PASSWORD=clpm_ci_only_2026" -e "POSTGRES_DB=clpm_critical_e2e" -e GITHUB_ACTIONS=true -e CI=true postgres:16
+2026-10-17T14:41:49.4719791Z deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc
+2026-10-17T14:41:49.4734073Z ##[command]/usr/bin/docker start deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc
+2026-10-17T14:41:49.6155160Z deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc
+2026-10-17T14:41:49.6180313Z ##[command]/usr/bin/docker ps --all --filter id=deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-17T14:41:49.6320982Z deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc Up Less than a second (health: starting)
+2026-10-17T14:41:49.6334751Z ##[command]/usr/bin/docker port deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc
+2026-10-17T14:41:49.6537779Z 5432/tcp -> 0.0.0.0:5432
+2026-10-17T14:41:49.6538617Z 5432/tcp -> [::]:5432
+2026-10-17T14:41:49.6554360Z ##[endgroup]
+2026-10-17T14:41:49.6556375Z ##[group]Starting tdengine service container
+2026-10-17T14:41:49.6557958Z ##[command]/usr/bin/docker pull tdengine/tdengine:3.3.6.6
+2026-10-17T14:41:50.0785624Z 3.3.6.6: Pulling from tdengine/tdengine
+2026-10-17T14:41:50.2216514Z 9b857f539cb1: Pulling fs layer
+2026-10-17T14:41:50.2218355Z 4f4fb700ef54: Pulling fs layer
+2026-10-17T14:41:50.2219562Z 3fb7e276d2a9: Pulling fs layer
+2026-10-17T14:41:50.2220278Z 535376b75c84: Pulling fs layer
+2026-10-17T14:41:50.2221206Z eb2f8229d375: Pulling fs layer
+2026-10-17T14:41:50.2221862Z 2e598c7bb5d6: Pulling fs layer
+2026-10-17T14:41:50.2222515Z 68bf016c6587: Pulling fs layer
+2026-10-17T14:41:50.2223141Z 535376b75c84: Waiting
+2026-10-17T14:41:50.2223691Z eb2f8229d375: Waiting
+2026-10-17T14:41:50.2224222Z 2e598c7bb5d6: Waiting
+2026-10-17T14:41:50.2224739Z 68bf016c6587: Waiting
+2026-10-17T14:41:50.2902895Z 4f4fb700ef54: Download complete
+2026-10-17T14:41:50.3665944Z 535376b75c84: Verifying Checksum
+2026-10-17T14:41:50.3666593Z 535376b75c84: Download complete
+2026-10-17T14:41:50.4205979Z 9b857f539cb1: Verifying Checksum
+2026-10-17T14:41:50.4206752Z 9b857f539cb1: Download complete
+2026-10-17T14:41:50.4403366Z eb2f8229d375: Verifying Checksum
+2026-10-17T14:41:50.4404065Z eb2f8229d375: Download complete
+2026-10-17T14:41:50.6441255Z 68bf016c6587: Verifying Checksum
+2026-10-17T14:41:50.6441892Z 68bf016c6587: Download complete
+2026-10-17T14:41:51.7587612Z 9b857f539cb1: Pull complete
+2026-10-17T14:41:52.2097801Z 3fb7e276d2a9: Verifying Checksum
+2026-10-17T14:41:52.2098430Z 3fb7e276d2a9: Download complete
+2026-10-17T14:41:52.5262214Z 4f4fb700ef54: Pull complete
+2026-10-17T14:41:53.6310041Z 2e598c7bb5d6: Verifying Checksum
+2026-10-17T14:41:53.6310676Z 2e598c7bb5d6: Download complete
+2026-10-17T14:41:53.7231194Z 3fb7e276d2a9: Pull complete
+2026-10-17T14:41:53.7396323Z 535376b75c84: Pull complete
+2026-10-17T14:41:53.7498606Z eb2f8229d375: Pull complete
+2026-10-17T14:41:59.8259926Z 2e598c7bb5d6: Pull complete
+2026-10-17T14:41:59.8358051Z 68bf016c6587: Pull complete
+2026-10-17T14:41:59.8392602Z Digest: sha256:1b78945a619bf6cffc75f1c7e1cd2552aca4212b54bbdeac9ef30166752822ca
+2026-10-17T14:41:59.8403474Z Status: Downloaded newer image for tdengine/tdengine:3.3.6.6
+2026-10-17T14:41:59.8410423Z docker.io/tdengine/tdengine:3.3.6.6
+2026-10-17T14:41:59.8426225Z ##[command]/usr/bin/docker create --name 350f3c509a0f4dfe80144fa4dea2032d_tdenginetdengine3366_045664 --label c22569 --network github_network_25e777904a6445bba3ad14e70d383524 --network-alias tdengine -p 6030:6030 -p 6041:6041 --health-cmd "taos -s 'SELECT SERVER_VERSION();'" --health-interval 10s --health-timeout 5s --health-retries 10 -e GITHUB_ACTIONS=true -e CI=true tdengine/tdengine:3.3.6.6
+2026-10-17T14:41:59.8694610Z bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:41:59.8706511Z ##[command]/usr/bin/docker start bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:00.0342058Z bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:00.0380463Z ##[command]/usr/bin/docker ps --all --filter id=bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12 --filter status=running --no-trunc --format "{{.ID}} {{.Status}}"
+2026-10-17T14:42:00.0504127Z bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12 Up Less than a second (health: starting)
+2026-10-17T14:42:00.0518842Z ##[command]/usr/bin/docker port bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:00.0647013Z 6030/tcp -> 0.0.0.0:6030
+2026-10-17T14:42:00.0647973Z 6030/tcp -> [::]:6030
+2026-10-17T14:42:00.0658377Z 6041/tcp -> 0.0.0.0:6041
+2026-10-17T14:42:00.0658933Z 6041/tcp -> [::]:6041
+2026-10-17T14:42:00.0661035Z ##[endgroup]
+2026-10-17T14:42:00.0675186Z ##[group]Waiting for all services to be ready
+2026-10-17T14:42:00.0701029Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" 388be69eb0a9a3945b4d2184b43c2f5246e61c4539bc9854f905bdf83fc4dd20
+2026-10-17T14:42:00.0831798Z healthy
+2026-10-17T14:42:00.0853451Z redis service is healthy.
+2026-10-17T14:42:00.0854758Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" deb58bbee5d4b86f442df97a4bbd4ca4320476d80225c4ccd6cfcc77638e82dc
+2026-10-17T14:42:00.0975953Z healthy
+2026-10-17T14:42:00.0994495Z postgres service is healthy.
+2026-10-17T14:42:00.0995277Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:00.1128568Z starting
+2026-10-17T14:42:00.1143933Z tdengine service is starting, waiting 2 seconds before checking again.
+2026-10-17T14:42:02.1141150Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:02.1270104Z starting
+2026-10-17T14:42:02.1282423Z tdengine service is starting, waiting 4 seconds before checking again.
+2026-10-17T14:42:06.4150523Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:06.4279066Z starting
+2026-10-17T14:42:06.4291606Z tdengine service is starting, waiting 8 seconds before checking again.
+2026-10-17T14:42:14.7856530Z ##[command]/usr/bin/docker inspect --format="{{if .Config.Healthcheck}}{{print .State.Health.Status}}{{end}}" bd67dd6a5e2fe29dfa184d71d2ef709ea2300c5f6e8c7a116f5383cadc9b6f12
+2026-10-17T14:42:14.7995873Z healthy
+2026-10-17T14:42:14.8009242Z tdengine service is healthy.
+2026-10-17T14:42:14.8009968Z ##[endgroup]

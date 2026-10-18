@@ -1,0 +1,10 @@
+test_backwards_timestamp_cannot_satisfy_sample_interval (test_resource_gate_independent.ResourceGateCounterexamples.test_backwards_timestamp_cannot_satisfy_sample_interval) ... ok
+test_duplicate_timestamp_cannot_satisfy_sample_interval (test_resource_gate_independent.ResourceGateCounterexamples.test_duplicate_timestamp_cannot_satisfy_sample_interval) ... ok
+test_missing_entire_worker_log_cannot_be_no_error (test_resource_gate_independent.ResourceGateCounterexamples.test_missing_entire_worker_log_cannot_be_no_error) ... ok
+test_missing_oom_evidence_cannot_be_zero (test_resource_gate_independent.ResourceGateCounterexamples.test_missing_oom_evidence_cannot_be_zero) ... ok
+test_valid_complete_control (test_resource_gate_independent.ResourceGateCounterexamples.test_valid_complete_control) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.045s
+
+OK

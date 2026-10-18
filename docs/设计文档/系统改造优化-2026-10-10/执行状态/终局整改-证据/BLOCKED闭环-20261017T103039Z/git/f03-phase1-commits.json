@@ -1,0 +1,56 @@
+[
+  {
+    "command": [
+      "git",
+      "commit",
+      "-m",
+      "test(e2e): enforce exact critical case results",
+      "-m",
+      "Execute the four required cases against isolated real services; preserve failures and full input evidence."
+    ],
+    "elapsed_seconds": 0.19115304946899414,
+    "exit_code": 0,
+    "subject": "test(e2e): enforce exact critical case results",
+    "changed_lines": 427,
+    "numstat": "10\t0\te2e/critical-cases.json\n1\t0\te2e/package.json\n13\t0\te2e/playwright.critical.config.ts\n173\t0\te2e/scripts/test-critical-gate.mjs\n96\t0\te2e/scripts/validate-critical-results.mjs\n1\t0\te2e/tsconfig.json\n57\t76\tscripts/run-critical-e2e.sh\n",
+    "stdout_sha256": "d79b40ee92011d72a62a45eb00623e9fb76845b4e0a6c6b71763bf253c818cc9",
+    "stderr_sha256": "76c58f29f9e7ad07179222530ca119203f2074163903bf68d850fef8469183c3",
+    "commit": "5e5bcf8fc510394f1a3d528da587cae2d9e024cc"
+  },
+  {
+    "command": [
+      "git",
+      "commit",
+      "-m",
+      "test(e2e): guard real isolated fixture inputs",
+      "-m",
+      "Execute the four required cases against isolated real services; preserve failures and full input evidence."
+    ],
+    "elapsed_seconds": 0.18261313438415527,
+    "exit_code": 0,
+    "subject": "test(e2e): guard real isolated fixture inputs",
+    "changed_lines": 400,
+    "numstat": "325\t0\te2e/scripts/prepare-critical-fixture.py\n75\t0\te2e/scripts/test_critical_fixture.py\n",
+    "stdout_sha256": "b630af37a2d3abb7161c0065f0e738b43dbf4f79fc93afbe22131a5f238a6be1",
+    "stderr_sha256": "76c58f29f9e7ad07179222530ca119203f2074163903bf68d850fef8469183c3",
+    "commit": "ddf0872c894475826a560778ff86f91abd3b3894"
+  },
+  {
+    "command": [
+      "git",
+      "commit",
+      "-m",
+      "ci(e2e): run authenticated business chain",
+      "-m",
+      "Execute the four required cases against isolated real services; preserve failures and full input evidence."
+    ],
+    "elapsed_seconds": 0.1825101375579834,
+    "exit_code": 0,
+    "subject": "ci(e2e): run authenticated business chain",
+    "changed_lines": 303,
+    "numstat": "88\t8\t.github/workflows/ci.yml\n207\t0\te2e/tests/critical-business.spec.ts\n",
+    "stdout_sha256": "4c20ae5971b517a64e6dbf28f8983fe8d3e07ebb3bde6d7e6063b82042950fa3",
+    "stderr_sha256": "76c58f29f9e7ad07179222530ca119203f2074163903bf68d850fef8469183c3",
+    "commit": "08038359b01615befec566f9559fea44b1ca45ef"
+  }
+]

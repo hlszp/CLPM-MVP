@@ -1,0 +1,151 @@
+{
+  "createdAt": "2026-10-17T12:07:07.327604+00:00",
+  "scope": "This non-author reviewer output only; limited receipt verdict",
+  "files": [
+    {
+      "path": ".ruff_cache/.gitignore",
+      "bytes": 35,
+      "sha256": "9e3a60f1e6ec4ae60215c11d54b171392745ec25e9dded433d5bd921363af316"
+    },
+    {
+      "path": ".ruff_cache/0.15.18/8121234225458341854",
+      "bytes": 206,
+      "sha256": "7bc4338f0da4e20fe9bde41e2e9aad5246844fc5147c986bd219e2d2aee66c0f"
+    },
+    {
+      "path": ".ruff_cache/CACHEDIR.TAG",
+      "bytes": 43,
+      "sha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
+    },
+    {
+      "path": "actual-reconciliation-v2.command.json",
+      "bytes": 2151,
+      "sha256": "2e537d207805f92dc931cab5bf480d96e01653c1c4abcf2eba9a0162394b0540"
+    },
+    {
+      "path": "actual-reconciliation-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "actual-reconciliation-v2.stdout.log",
+      "bytes": 1161,
+      "sha256": "d07db5ead136c6e0c753f9370d124e5f0e9b3337b45f2edd5bfb702aba30c48f"
+    },
+    {
+      "path": "actual-reconciliation.command.json",
+      "bytes": 2098,
+      "sha256": "d3cc98931da2faac3fe56cb2584f545ddb4c285e9f88f0d5b74e6bc05f1a140c"
+    },
+    {
+      "path": "actual-reconciliation.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "actual-reconciliation.stdout.log",
+      "bytes": 334,
+      "sha256": "2fc0a38df1235f4e0243216579c1dede071d338e0d6aa0ab0f10184fde730705"
+    },
+    {
+      "path": "controls-v2.command.json",
+      "bytes": 865,
+      "sha256": "ef582f9f882402a4f706d25c1348ff7e0007e98fc351276a7ac82f024ffac0a1"
+    },
+    {
+      "path": "controls-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "controls-v2.stdout.log",
+      "bytes": 98,
+      "sha256": "d69b6f69e04bc0a56bc320b823fe9ffa437ecb7e0a2d05a2ace978766d34d550"
+    },
+    {
+      "path": "format-v2.command.json",
+      "bytes": 1041,
+      "sha256": "6b82b81f1338fc2b8b0a8cfcdcbb9d379c70f88176ea5aa12b434cac9bebc5c3"
+    },
+    {
+      "path": "format-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "format-v2.stdout.log",
+      "bytes": 20,
+      "sha256": "96a977f329ec3c59092d40e041a019b49dcf03ca04055e177aa0ccb8c27234df"
+    },
+    {
+      "path": "format.command.json",
+      "bytes": 728,
+      "sha256": "941fec0072ad3b461ba55e46bb516b1b78c36142d0ebcb0d54b0618be1356090"
+    },
+    {
+      "path": "format.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "format.stdout.log",
+      "bytes": 19,
+      "sha256": "413a709001976657cb743636fd34e48fc41d8d302d665460d3f874b3313da127"
+    },
+    {
+      "path": "lint-v2.command.json",
+      "bytes": 1040,
+      "sha256": "3ec2cc4d75e8491967d8ce3eff7f7e39594fef93b878b643cf915fdfda6ea3d2"
+    },
+    {
+      "path": "lint-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "lint-v2.stdout.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "path": "lint.command.json",
+      "bytes": 727,
+      "sha256": "ad4faf71afe1a828ede141d4fd74d9958657fe7f398fcc45e02a34ef00d428d7"
+    },
+    {
+      "path": "lint.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "lint.stdout.log",
+      "bytes": 760,
+      "sha256": "de7de666aa332b1654d7377c7d0dd22d72ed43931e1523f51273a012dc65058a"
+    },
+    {
+      "path": "raw-reconciliation-v2.json",
+      "bytes": 333083,
+      "sha256": "a61b7e6d3921f6f1bcce6c417def869800ce19edd4838877179d4d9deba297df"
+    },
+    {
+      "path": "raw-reconciliation.json",
+      "bytes": 332184,
+      "sha256": "213089301affb8370cafec25f1661b57c229751b6153976bee8199854ff45a69"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 1818,
+      "sha256": "c997e490f2ad4c4953cb111c417df5024ff2b440e58a8b90ada86bc205c26262"
+    },
+    {
+      "path": "tool-source-v1.json",
+      "bytes": 484,
+      "sha256": "f1f40f0f7715b9d0380a3af98eb6ff2f480aa442af49deb76569480d2c483d1a"
+    },
+    {
+      "path": "verify_closed_endpoints_raw-v1.py",
+      "bytes": 12662,
+      "sha256": "ea7b8b423be1c3bf9f28933a760642ae2012f665fda1274783163b430ad8090f"
+    }
+  ]
+}

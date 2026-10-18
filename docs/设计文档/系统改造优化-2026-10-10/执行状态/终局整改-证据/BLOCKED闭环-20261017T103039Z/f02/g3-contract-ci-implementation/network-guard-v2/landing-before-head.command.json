@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "git",
+    "rev-parse",
+    "HEAD"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T14:37:01.508683+00:00",
+  "finishedAt": "2026-10-17T14:37:01.517475+00:00",
+  "rc": 0
+}

@@ -1,0 +1,51 @@
+{
+  "at": 1792236066.358051,
+  "sql": "SHOW DNODE 1 VARIABLES LIKE 'queryUseMemoryPool'",
+  "httpStatus": 200,
+  "response": {
+    "code": 0,
+    "column_meta": [
+      [
+        "dnode_id",
+        "INT",
+        4
+      ],
+      [
+        "name",
+        "VARCHAR",
+        32
+      ],
+      [
+        "value",
+        "VARCHAR",
+        4096
+      ],
+      [
+        "scope",
+        "VARCHAR",
+        8
+      ],
+      [
+        "category",
+        "VARCHAR",
+        8
+      ],
+      [
+        "info",
+        "VARCHAR",
+        64
+      ]
+    ],
+    "data": [
+      [
+        1,
+        "queryUseMemoryPool",
+        "0",
+        "server",
+        "local",
+        ""
+      ]
+    ],
+    "rows": 1
+  }
+}

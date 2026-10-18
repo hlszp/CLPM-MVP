@@ -1,0 +1,58 @@
+base_url=http://127.0.0.1:54874
+api_url=http://127.0.0.1:54874/api/v1
+artifacts=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f03/contract-final-eight/wrong-id
+PLAYWRIGHT_COLLECT_EXIT=0
+{
+  "mode": "collect",
+  "passed": false,
+  "exitCode": 3,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T09:43:46.734Z",
+    "duration": 42.529000000000025,
+    "expected": 0,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-OTHER-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    }
+  ],
+  "violations": [
+    "unexpected case: CRITICAL-OTHER-001",
+    "CRITICAL-OTHER-001: unexpected file critical-business.spec.ts",
+    "missing case: CRITICAL-AUTH-001"
+  ]
+}

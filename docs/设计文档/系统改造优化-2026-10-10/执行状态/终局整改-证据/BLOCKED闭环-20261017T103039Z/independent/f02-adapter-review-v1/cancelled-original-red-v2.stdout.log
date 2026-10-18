@@ -1,0 +1,15 @@
+.F                                                                       [100%]
+=================================== FAILURES ===================================
+_________ test_node_cancelled_one_cannot_be_derived_as_full20_success __________
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-89/test_node_cancelled_one_cannot0')
+
+    def test_node_cancelled_one_cannot_be_derived_as_full20_success(tmp_path):
+>       with pytest.raises(subject.MissingEvidence):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE MissingEvidence
+
+test_independent_node_cancelled.py:33: Failed
+=========================== short test summary info ============================
+FAILED test_independent_node_cancelled.py::test_node_cancelled_one_cannot_be_derived_as_full20_success
+1 failed, 1 passed in 0.03s

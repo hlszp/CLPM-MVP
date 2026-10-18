@@ -1,0 +1,45 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation/verify_ci_diagnostic_structure.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation",
+  "startedAt": "2026-10-17T14:27:38.552088+00:00",
+  "elapsedSeconds": 0.18845362501451746,
+  "rc": 0,
+  "sourceBefore": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17101,
+      "sha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    }
+  ],
+  "sourceAfter": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17101,
+      "sha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    }
+  ],
+  "stdout": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation/structure.stdout.log",
+    "bytes": 39,
+    "sha256": "c21500fc7399dc9ecd72b54da8616c8a007ff971dd1c4ad92bca363416244dc9"
+  },
+  "stderr": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation/structure.stderr.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "scope": "STATIC_AND_SERIALIZER_ONLY_NO_ALGORITHM_MAIN"
+}

@@ -1,0 +1,10 @@
+{
+  "sql": "SHOW clpm_critical_20261017_local_ts.TABLES",
+  "startedAt": "2026-10-17T13:54:15.385441+00:00",
+  "finishedAt": "2026-10-17T13:54:15.398263+00:00",
+  "httpStatus": 200,
+  "code": 0,
+  "rows": 1,
+  "bytes": 112,
+  "sha256": "90bc73e8cf77417bfc542ca1242fce924c1c9ad2e60a6f8abcbdd4ad72b2fe8e"
+}

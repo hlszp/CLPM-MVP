@@ -1,0 +1,24 @@
+- 工作：每批固定配置快照，批量元信息/覆盖加载；查询计数与连接池预算；事件/人工/夜间队列优先级与退避；重试checkpoint；去重重复计算。
+- 验收：同数据结果与G3一致；1000回路不出现每指标重复元数据IO；请求峰值不超过冻结连接预算；CPU/RSS/队列/错误统计齐全；重跑不重复建议或漏快照。
+
+### P5-03 预计算与缓存真实新鲜度
+
+- 文件：`workbench_precalc.py`、`workbench_assessment.py`、`node_performance.py`、`agg_cache.py`、既有MV/索引及任务。
+- 工作：小时可合并统计复用；动态计算不任意平均降采样；最新scope行查询统一；缓存绝对有效期、single-flight、跨进程/Redis失效、分块状态和局部重试。
+- 验收：P1聚合手算不变；20同key冷请求只重建一次或有明确分布式合并证据；Redis临到期命中不延寿；权限/数据/配置更新失效；故障块显示UNAVAILABLE，其余块可用。
+
+### P5-04 服务端筛选、竞态与实时更新
+
+- 文件：`endpoints/loops.py`与监控query、`views/cockpit/{loops,performance}.vue`、`use-latest-request.ts`、SignalR订阅/实时store。
+- 工作：完整筛选/稳定排序/总数/分页服务端执行；按授权范围提供；最新请求胜出；loopId索引、短时合并、可见/选中订阅；刷新保留对象及页面状态。
+- 验收：筛选后>1000记录无需34页预抓；分页排序无重复遗漏；A→B快速切换延迟A不能覆盖B；刷新不关抽屉/不重置筛选；后台页停止高频更新；《04》浏览器性能目标。
+
+### P5-05 修正容量工具并独立测量
+
+- 文件：`backend/scripts/kpi_capacity_benchmark.py`、`backend/scripts/benchmark_kpi_optimization.py`、`e2e/tests/perf-frontend.spec.ts`等。
+- 工作：修pageSize/端口/分页与1000独立ID断言；添加独立standard-hourly模式经既有Celery `app.tasks.kpi_calc.calculate_hourly_kpi(ts_start=冻结窗口)` 入口，复用唯一Worker、不新增开放触发API；记录子节点任务ID，等待同窗小时记录/最新投影/预定节点结果持久化完成屏障，不能只等父任务结束。custom保留独立模式/profile/终点，不计标准小时SLO；状态/资格/漏写/重复/分母断言；重放模式单列loop-evals。
+- 验收G5：按《04》容量矩阵实测，原始结果归档，失败/skip不缩分母；KPI小时任务≤600秒建议目标，页面/API各自P95，不互相替代；独立验证者重跑至少一组关键工况。
+
+## 9. P6 工业岗位交互与工程交付
+
+2026-10-14用户批准G5晋级调整：真实四类及949小样独立通过、1批1000唯一回路九条件完整屏障≤900s后，G5以CONDITIONAL_PASS进入P6。原600s/十批/连续两真实日期窗/完整性能验收作为G5-D01–04接收入P6，旧失败不回写。执行正本：[G5晋级口径调整](执行状态/G5晋级口径调整-20261014.md)。下述P6任务与G6验收范围保持，不能以放宽G5替代G6。

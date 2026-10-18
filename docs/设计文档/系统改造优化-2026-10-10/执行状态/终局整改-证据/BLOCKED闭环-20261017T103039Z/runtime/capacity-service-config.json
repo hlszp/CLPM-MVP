@@ -1,0 +1,292 @@
+{
+  "database": "clpm_capacity_20261017_s01",
+  "before": [
+    {
+      "key": "aas.endpoint",
+      "value_sha256": "019bc89bf595dde17229de1e35753bdaa2fcabbd4635a626595ff63de415f072",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "aas.security_mode",
+      "value_sha256": "dc937b59892604f5a86ac96936cd7ff09e25f18ae6b758e8014a24c7fa039e91",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "aas.sync_enabled",
+      "value_sha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "aas.sync_interval_seconds",
+      "value_sha256": "983bd614bb5afece5ab3b6023f71147cd7b6bc2314f9d27af7422541c6558389",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "capacity.perf_dataset.declaration",
+      "value_sha256": "69d00b75556f61712a162156f5d32f0387e2e46af3bdeef52b08af875a948b68",
+      "updated_at": "2026-10-12 22:53:27.081366"
+    },
+    {
+      "key": "datasource.gap_backfill_enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-09-28 10:39:43.021753"
+    },
+    {
+      "key": "datasource.gap_backfill_min_gap_seconds",
+      "value_sha256": "284b7e6d788f363f910f7beb1910473e23ce9d6c871f1ce0f31f22a982d48ad4",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.history_api_timeout",
+      "value_sha256": "26c9a96ce053a14dd88a71a4830c9cbed7e1fed7e3f3f8a0b0b6a58f3f0f02e6",
+      "updated_at": "2026-09-26 06:18:19.639686"
+    },
+    {
+      "key": "datasource.history_api_token",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "datasource.history_api_url",
+      "value_sha256": "8eb05a4e1d2af09de2d0ce4ad5ded3ba982a5b4eaca3c3a2a1075e018585517b",
+      "updated_at": "2026-09-26 06:18:19.639686"
+    },
+    {
+      "key": "datasource.import_chunk_concurrency",
+      "value_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "datasource.import_loop_concurrency",
+      "value_sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "datasource.import_remote_concurrency",
+      "value_sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "datasource.network_mode",
+      "value_sha256": "094a367b026246fb64649c4f868a45d8187821d16a973141436fd9cd2acfdb4a",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "datasource.realtime_writeback_enabled",
+      "value_sha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.signalr_enabled",
+      "value_sha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.signalr_hub_url",
+      "value_sha256": "0d3ef5cb79f71099044a2dcba858763fa593dc43f3f397678d5317df722848ab",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.signalr_reconnect_interval",
+      "value_sha256": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.type",
+      "value_sha256": "2c1ca78d5fcd8d572ab4c86531cd5f3e11f4211b0a071f314c4f16dddf3db1f3",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "history.storage_mode",
+      "value_sha256": "251fecd592e56e6c4a95121752f4a73bb802dffc1cc4bce6100206ee2b7cb650",
+      "updated_at": "2026-10-11 14:52:00.433940"
+    },
+    {
+      "key": "llm.api_key",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.endpoint",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.max_tokens",
+      "value_sha256": "8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.model",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.timeout",
+      "value_sha256": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "metric_definition.current",
+      "value_sha256": "240fa1d94236c8ffdda3877b2474bd8a2de79259e72544b70e5e0b7b02a681c1",
+      "updated_at": "2026-09-23 19:32:23.648588"
+    }
+  ],
+  "after": [
+    {
+      "key": "aas.endpoint",
+      "value_sha256": "8b77f8d685075f2267f9475b6882146fea5e03efa34c3db049450e4c0a7d54fd",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "aas.security_mode",
+      "value_sha256": "dc937b59892604f5a86ac96936cd7ff09e25f18ae6b758e8014a24c7fa039e91",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "aas.sync_enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "aas.sync_interval_seconds",
+      "value_sha256": "983bd614bb5afece5ab3b6023f71147cd7b6bc2314f9d27af7422541c6558389",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "capacity.perf_dataset.declaration",
+      "value_sha256": "69d00b75556f61712a162156f5d32f0387e2e46af3bdeef52b08af875a948b68",
+      "updated_at": "2026-10-12 22:53:27.081366"
+    },
+    {
+      "key": "datasource.gap_backfill_enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "datasource.gap_backfill_min_gap_seconds",
+      "value_sha256": "284b7e6d788f363f910f7beb1910473e23ce9d6c871f1ce0f31f22a982d48ad4",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.history_api_timeout",
+      "value_sha256": "26c9a96ce053a14dd88a71a4830c9cbed7e1fed7e3f3f8a0b0b6a58f3f0f02e6",
+      "updated_at": "2026-09-26 06:18:19.639686"
+    },
+    {
+      "key": "datasource.history_api_token",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "datasource.history_api_url",
+      "value_sha256": "45a61244507236b5029dbaf492d1c7814e4980c08ae4ded31b01380ad47bf1a2",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "datasource.import_chunk_concurrency",
+      "value_sha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "datasource.import_loop_concurrency",
+      "value_sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "datasource.import_remote_concurrency",
+      "value_sha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+      "updated_at": "2026-10-07 22:16:12.968489"
+    },
+    {
+      "key": "datasource.network_mode",
+      "value_sha256": "094a367b026246fb64649c4f868a45d8187821d16a973141436fd9cd2acfdb4a",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "datasource.realtime_writeback_enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "datasource.signalr_enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "datasource.signalr_hub_url",
+      "value_sha256": "bf8ae1fb10fceb951283d5e5ac1cdd6f17a5a07559f5daf45a552abba3bac479",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "datasource.signalr_reconnect_interval",
+      "value_sha256": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+      "updated_at": "2026-09-26 06:18:17.370394"
+    },
+    {
+      "key": "datasource.type",
+      "value_sha256": "211074b6238601653abaed100a2a70e6c28dc2b9febd9564b50155e0878d4ffe",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "history.storage_mode",
+      "value_sha256": "251fecd592e56e6c4a95121752f4a73bb802dffc1cc4bce6100206ee2b7cb650",
+      "updated_at": "2026-10-11 14:52:00.433940"
+    },
+    {
+      "key": "llm.api_key",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "llm.enabled",
+      "value_sha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "llm.endpoint",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-10-17 18:47:59.935300"
+    },
+    {
+      "key": "llm.max_tokens",
+      "value_sha256": "8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.model",
+      "value_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "llm.timeout",
+      "value_sha256": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+      "updated_at": "2026-09-11 11:58:43.169584"
+    },
+    {
+      "key": "metric_definition.current",
+      "value_sha256": "240fa1d94236c8ffdda3877b2474bd8a2de79259e72544b70e5e0b7b02a681c1",
+      "updated_at": "2026-09-23 19:32:23.648588"
+    }
+  ],
+  "applied_service_only": {
+    "aas.endpoint": "opc.tcp://127.0.0.1:9",
+    "aas.sync_enabled": "false",
+    "datasource.type": "tdengine",
+    "datasource.history_api_url": "http://127.0.0.1:9/ci-disabled-history",
+    "datasource.history_api_token": "",
+    "datasource.signalr_hub_url": "ws://127.0.0.1:9/ci-disabled-signalr",
+    "datasource.signalr_enabled": "false",
+    "datasource.realtime_writeback_enabled": "false",
+    "datasource.gap_backfill_enabled": "false",
+    "llm.enabled": "false",
+    "llm.endpoint": "",
+    "llm.api_key": ""
+  },
+  "algorithm_parameters_changed": false
+}

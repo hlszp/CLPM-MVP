@@ -1,0 +1,511 @@
+{
+  "timestamp": "2026-10-17T10:21:39.019495+00:00",
+  "check_scope": "read only final snapshot; no shared service/git mutations",
+  "protected_files": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局对标检查报告.md",
+      "sha256": "517e91b57f2e2ff3c182be30d32ffb329d9c7b9397e2d3395188f190fe167016",
+      "expected": "517e91b57f2e2ff3c182be30d32ffb329d9c7b9397e2d3395188f190fe167016",
+      "matches": true
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-非作者复验回执.md",
+      "sha256": "54cc82ca97e64fb7fd5314b14b41d5444ccaaf719b8478651d919e7a50f853e6",
+      "expected": "54cc82ca97e64fb7fd5314b14b41d5444ccaaf719b8478651d919e7a50f853e6",
+      "matches": true
+    }
+  ],
+  "repositories": {
+    "main": {
+      "root": "/Users/zhangping/DEV/CLPM-MVP",
+      "head": {
+        "command": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+        "exit_code": 0,
+        "stdout": "b676ea59158aa4d1e106579017a85860add60293\n",
+        "stderr": ""
+      },
+      "status": {
+        "command": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+        "exit_code": 0,
+        "stdout": " M docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-任务状态/STATE.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/P7汇总与G7结论.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/任务看板.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-独立复验报告.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/evidence-manifest.json\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-运行来源台账.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-遗留索引.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改台账.md\n?? docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-整改后复验报告.md\n?? docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-直接整改执行.md\n?? docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/\n?? docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/非作者复验-20261017T085542Z/\n?? docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-非作者复验回执.md\n",
+        "stderr": ""
+      },
+      "changed": {
+        "command": [
+          "git",
+          "diff",
+          "--name-only",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+        "exit_code": 0,
+        "stdout": "docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-任务状态/STATE.md\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/P7汇总与G7结论.md\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/任务看板.md\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-独立复验报告.md\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/evidence-manifest.json\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-运行来源台账.md\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-遗留索引.md\ndocs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改台账.md\n",
+        "stderr": ""
+      },
+      "expected_head": "b676ea59158aa4d1e106579017a85860add60293",
+      "head_matches": true
+    },
+    "candidate": {
+      "root": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "head": {
+        "command": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "exit_code": 0,
+        "stdout": "dbb1de314ae50e7373c6559ab746b690909bf1b0\n",
+        "stderr": ""
+      },
+      "status": {
+        "command": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "exit_code": 0,
+        "stdout": " M .github/workflows/ci.yml\n M backend/app/api/v1/endpoints/loops.py\n M backend/app/schemas/loop_batch.py\n M backend/app/services/data_planner.py\n M backend/app/services/data_source/logical_wide_builder.py\n M backend/app/services/loop_batch.py\n M backend/app/tasks/kpi_calc.py\n M backend/tests/test_backfill_recovery_and_skip.py\n M backend/tests/test_kpi_calc.py\n M backend/tests/test_p5_storm_rework.py\n M e2e/package.json\n M e2e/tsconfig.json\n M frontend/apps/web-antd/src/__tests__/loop-follow.test.ts\n M frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts\n M frontend/apps/web-antd/src/__tests__/store.test.ts\n M frontend/apps/web-antd/src/api/engineering-template.ts\n M frontend/apps/web-antd/src/api/personal-work.ts\n M frontend/apps/web-antd/src/composables/use-loop-follow.ts\n M frontend/apps/web-antd/src/store/auth.ts\n M frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue\n M frontend/apps/web-antd/src/views/config/engineering-templates/index.vue\n M frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts\n M scripts/run-critical-e2e.sh\n?? backend/app/core/async_tasks.py\n?? backend/app/services/loop_batch_restore.py\n?? backend/tests/test_g5_data_acquisition_failure.py\n?? backend/tests/test_loop_batch_restore.py\n?? e2e/critical-cases.json\n?? e2e/playwright.critical.config.ts\n?? e2e/scripts/prepare-critical-fixture.py\n?? e2e/scripts/test-critical-gate.mjs\n?? e2e/scripts/test_critical_fixture.py\n?? e2e/scripts/validate-critical-results.mjs\n?? e2e/tests/critical-business.spec.ts\n?? frontend/apps/web-antd/src/__tests__/personal-work-conflict.test.ts\n?? frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue\n",
+        "stderr": ""
+      },
+      "changed": {
+        "command": [
+          "git",
+          "diff",
+          "--name-only",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "exit_code": 0,
+        "stdout": ".github/workflows/ci.yml\nbackend/app/api/v1/endpoints/loops.py\nbackend/app/schemas/loop_batch.py\nbackend/app/services/data_planner.py\nbackend/app/services/data_source/logical_wide_builder.py\nbackend/app/services/loop_batch.py\nbackend/app/tasks/kpi_calc.py\nbackend/tests/test_backfill_recovery_and_skip.py\nbackend/tests/test_kpi_calc.py\nbackend/tests/test_p5_storm_rework.py\ne2e/package.json\ne2e/tsconfig.json\nfrontend/apps/web-antd/src/__tests__/loop-follow.test.ts\nfrontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts\nfrontend/apps/web-antd/src/__tests__/store.test.ts\nfrontend/apps/web-antd/src/api/engineering-template.ts\nfrontend/apps/web-antd/src/api/personal-work.ts\nfrontend/apps/web-antd/src/composables/use-loop-follow.ts\nfrontend/apps/web-antd/src/store/auth.ts\nfrontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue\nfrontend/apps/web-antd/src/views/config/engineering-templates/index.vue\nfrontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts\nscripts/run-critical-e2e.sh\n",
+        "stderr": ""
+      },
+      "expected_head": "dbb1de314ae50e7373c6559ab746b690909bf1b0",
+      "head_matches": true
+    },
+    "runtime": {
+      "root": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+      "head": {
+        "command": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "exit_code": 0,
+        "stdout": "c9e01f5d85294f5ad403fac7ae2e571ee472e9ad\n",
+        "stderr": ""
+      },
+      "status": {
+        "command": [
+          "git",
+          "status",
+          "--short"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "exit_code": 0,
+        "stdout": "?? backend/capacity_dataset/manifest_a_2026101600.json\n?? backend/capacity_dataset/manifest_a_2026101601.json\n?? backend/capacity_dataset/manifest_a_2026101602.json\n?? backend/capacity_dataset/manifest_a_2026101603.json\n?? backend/capacity_dataset/manifest_a_2026101604.json\n?? backend/capacity_dataset/manifest_a_2026101605.json\n?? backend/capacity_dataset/manifest_a_2026101606.json\n?? backend/capacity_dataset/manifest_a_2026101607.json\n?? backend/capacity_dataset/manifest_a_2026101608.json\n?? backend/capacity_dataset/manifest_a_2026101609.json\n?? backend/capacity_dataset/manifest_a_2026101610.json\n?? backend/capacity_dataset/manifest_a_2026101611.json\n?? backend/capacity_dataset/manifest_b_2026101405.json\n?? backend/capacity_dataset/manifest_b_2026101514.json\n?? backend/capacity_dataset/manifest_b_2026101515.json\n?? backend/capacity_dataset/manifest_b_2026101516.json\n?? backend/capacity_dataset/manifest_b_2026101522.json\n?? backend/capacity_dataset/manifest_b_2026101523.json\n?? backend/capacity_dataset/run_freezes/\n?? backend/resource-a2p.jsonl\n",
+        "stderr": ""
+      },
+      "changed": {
+        "command": [
+          "git",
+          "diff",
+          "--name-only",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "exit_code": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "expected_head": "c9e01f5d85294f5ad403fac7ae2e571ee472e9ad",
+      "head_matches": true
+    }
+  },
+  "checks": {
+    "candidate_path_set_matches": true,
+    "candidate_patch_hash_matches": true,
+    "main_tracked_changes_docs_only": true,
+    "shared_parent_processes_present": true,
+    "one_worker_four_pool": true,
+    "owned_cleanup_complete": true,
+    "protected_hashes_match": true,
+    "candidate_hashes_match": true,
+    "all_heads_match": true,
+    "schema_still_p702perm01": true
+  },
+  "owned_cleanup": {
+    "ports": [
+      {
+        "port": 17261,
+        "closed": true
+      },
+      {
+        "port": 17263,
+        "closed": true
+      },
+      {
+        "port": 17266,
+        "closed": true
+      }
+    ],
+    "processes": [
+      {
+        "pid": 54398,
+        "absent": true
+      },
+      {
+        "pid": 54399,
+        "absent": true
+      },
+      {
+        "pid": 58025,
+        "absent": true
+      },
+      {
+        "pid": 64667,
+        "absent": true
+      }
+    ],
+    "redis_containers": [
+      {
+        "name": "clpm-final-audit-redis-093240",
+        "probe": {
+          "command": [
+            "docker",
+            "ps",
+            "-aq",
+            "--filter",
+            "name=^/clpm-final-audit-redis-093240$"
+          ],
+          "cwd": null,
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "absent": true
+      },
+      {
+        "name": "clpm-final-audit-redis-093240-phase2",
+        "probe": {
+          "command": [
+            "docker",
+            "ps",
+            "-aq",
+            "--filter",
+            "name=^/clpm-final-audit-redis-093240-phase2$"
+          ],
+          "cwd": null,
+          "exit_code": 0,
+          "stdout": "",
+          "stderr": ""
+        },
+        "absent": true
+      }
+    ]
+  },
+  "candidate_files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "actual_sha256": "e472f023a16de21d0fbf7637d83eb261a8b9936daef04e72a5a8ddd77d224896",
+      "expected_sha256": "e472f023a16de21d0fbf7637d83eb261a8b9936daef04e72a5a8ddd77d224896",
+      "matches": true
+    },
+    {
+      "path": "backend/app/api/v1/endpoints/loops.py",
+      "actual_sha256": "ba9c7b20cece0302b99e476d6c7b9797be95b2448284a19778c6045d8ecda6c5",
+      "expected_sha256": "ba9c7b20cece0302b99e476d6c7b9797be95b2448284a19778c6045d8ecda6c5",
+      "matches": true
+    },
+    {
+      "path": "backend/app/schemas/loop_batch.py",
+      "actual_sha256": "fbf365118679303222d955f57003169c0cc935eb05ecdbe3e57cdfa1290f3674",
+      "expected_sha256": "fbf365118679303222d955f57003169c0cc935eb05ecdbe3e57cdfa1290f3674",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/data_planner.py",
+      "actual_sha256": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6",
+      "expected_sha256": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/data_source/logical_wide_builder.py",
+      "actual_sha256": "0fd686cf47d38c530b003e164990e9e29f60f77346fdd542d5db3e628d1d011a",
+      "expected_sha256": "0fd686cf47d38c530b003e164990e9e29f60f77346fdd542d5db3e628d1d011a",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/loop_batch.py",
+      "actual_sha256": "3c07ff56a3c3104d0011ad7540e184a15e333f9121a7eca96e00b2c8d5da0577",
+      "expected_sha256": "3c07ff56a3c3104d0011ad7540e184a15e333f9121a7eca96e00b2c8d5da0577",
+      "matches": true
+    },
+    {
+      "path": "backend/app/tasks/kpi_calc.py",
+      "actual_sha256": "a222a53c9e2ae40581461ba63a22e0ce81edacaa7324aa82916c1dc3f9e66bc8",
+      "expected_sha256": "a222a53c9e2ae40581461ba63a22e0ce81edacaa7324aa82916c1dc3f9e66bc8",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_backfill_recovery_and_skip.py",
+      "actual_sha256": "d0d81acc5e102adaa00bf1efecbf2a66404eae0f6228b3b295fae772fc6b5bd1",
+      "expected_sha256": "d0d81acc5e102adaa00bf1efecbf2a66404eae0f6228b3b295fae772fc6b5bd1",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_kpi_calc.py",
+      "actual_sha256": "1471480d96ba88c357de6094fd8b129adf22e273824a907b2f008bd6224dbe61",
+      "expected_sha256": "1471480d96ba88c357de6094fd8b129adf22e273824a907b2f008bd6224dbe61",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_p5_storm_rework.py",
+      "actual_sha256": "63d1cd7600856328568d5379270488e232cec0564dffb0c90d3cb30d1ecc84c7",
+      "expected_sha256": "63d1cd7600856328568d5379270488e232cec0564dffb0c90d3cb30d1ecc84c7",
+      "matches": true
+    },
+    {
+      "path": "e2e/package.json",
+      "actual_sha256": "d2647e50cb75f022ec4f8a8ccafd02f14736a176514e7127ebe0eb6fe69b7622",
+      "expected_sha256": "d2647e50cb75f022ec4f8a8ccafd02f14736a176514e7127ebe0eb6fe69b7622",
+      "matches": true
+    },
+    {
+      "path": "e2e/tsconfig.json",
+      "actual_sha256": "c50e25f864681f96d1a04d075efccb3cf1974f3618f6559e32351a01e091f46a",
+      "expected_sha256": "c50e25f864681f96d1a04d075efccb3cf1974f3618f6559e32351a01e091f46a",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/loop-follow.test.ts",
+      "actual_sha256": "bfd0547edfa7063d14e4c3ae4c8c13201a76a7a789babf731141396a2ef2c2af",
+      "expected_sha256": "bfd0547edfa7063d14e4c3ae4c8c13201a76a7a789babf731141396a2ef2c2af",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts",
+      "actual_sha256": "6ddc12ab61a24c5076837951592ae2db081e7abf5bbe076c7dfdabdd064549a7",
+      "expected_sha256": "6ddc12ab61a24c5076837951592ae2db081e7abf5bbe076c7dfdabdd064549a7",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/store.test.ts",
+      "actual_sha256": "d34b143109ce576308662657cca48b271696d5eb92ee8f4db80913c3386a6263",
+      "expected_sha256": "d34b143109ce576308662657cca48b271696d5eb92ee8f4db80913c3386a6263",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/api/engineering-template.ts",
+      "actual_sha256": "f9b1831bed2c3044f2b4aff1402ddc0a6efb5b57ca131a8e08a0ad1124e81086",
+      "expected_sha256": "f9b1831bed2c3044f2b4aff1402ddc0a6efb5b57ca131a8e08a0ad1124e81086",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/api/personal-work.ts",
+      "actual_sha256": "57e741217257578bb9ecfa34cf428a88f434a13cfa8d6434fd3ca08d24e14888",
+      "expected_sha256": "57e741217257578bb9ecfa34cf428a88f434a13cfa8d6434fd3ca08d24e14888",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/composables/use-loop-follow.ts",
+      "actual_sha256": "dc345fa9bb3d01ab8551dd7afbf325af36f245da064328a0128e1abf54e29650",
+      "expected_sha256": "dc345fa9bb3d01ab8551dd7afbf325af36f245da064328a0128e1abf54e29650",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/store/auth.ts",
+      "actual_sha256": "56b1eac2bdcc2801f23e742f7b9c525f8e254c0663870ee07e33f215d024ec81",
+      "expected_sha256": "56b1eac2bdcc2801f23e742f7b9c525f8e254c0663870ee07e33f215d024ec81",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue",
+      "actual_sha256": "a8b2e47679c0d3d2c2bfccd6cce857d1aba68420ea75da2caeeff2519fc1e72e",
+      "expected_sha256": "a8b2e47679c0d3d2c2bfccd6cce857d1aba68420ea75da2caeeff2519fc1e72e",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/index.vue",
+      "actual_sha256": "71c92c6b2eb388c3d0e84f7f7c67d5d5137cc20d58207335dd4ad80290470e02",
+      "expected_sha256": "71c92c6b2eb388c3d0e84f7f7c67d5d5137cc20d58207335dd4ad80290470e02",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts",
+      "actual_sha256": "421ac25e536fd565fbfd97f468353bc75c8c704b652d920b62b7e65ea000cc3a",
+      "expected_sha256": "421ac25e536fd565fbfd97f468353bc75c8c704b652d920b62b7e65ea000cc3a",
+      "matches": true
+    },
+    {
+      "path": "scripts/run-critical-e2e.sh",
+      "actual_sha256": "7bbd52348ef46c0d312aaf03190c1d93438292a98e71bbad2a0211c43f369fe3",
+      "expected_sha256": "7bbd52348ef46c0d312aaf03190c1d93438292a98e71bbad2a0211c43f369fe3",
+      "matches": true
+    },
+    {
+      "path": "backend/app/core/async_tasks.py",
+      "actual_sha256": "acb19e9e457cb738ba3115e814a9b55ad60f0a297926f6c36e9493e1306b4eca",
+      "expected_sha256": "acb19e9e457cb738ba3115e814a9b55ad60f0a297926f6c36e9493e1306b4eca",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/loop_batch_restore.py",
+      "actual_sha256": "cafbce4b51318de377ab4fa9c12a71cefba4227632704bb8128fe34dc7e9c477",
+      "expected_sha256": "cafbce4b51318de377ab4fa9c12a71cefba4227632704bb8128fe34dc7e9c477",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_g5_data_acquisition_failure.py",
+      "actual_sha256": "a19efd6d67963cb7322aebb489a9f49ca6265e47f081e6a5bd45b866306a52e9",
+      "expected_sha256": "a19efd6d67963cb7322aebb489a9f49ca6265e47f081e6a5bd45b866306a52e9",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_loop_batch_restore.py",
+      "actual_sha256": "623f110defe47368e3c1c787ad3da3eec55d23e9ffa5ea18ba85f03c51c7a72f",
+      "expected_sha256": "623f110defe47368e3c1c787ad3da3eec55d23e9ffa5ea18ba85f03c51c7a72f",
+      "matches": true
+    },
+    {
+      "path": "e2e/critical-cases.json",
+      "actual_sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c",
+      "expected_sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c",
+      "matches": true
+    },
+    {
+      "path": "e2e/playwright.critical.config.ts",
+      "actual_sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4",
+      "expected_sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/prepare-critical-fixture.py",
+      "actual_sha256": "ba89e4996b11c8477ce97c7aa0e71ae001b43280a3633ce01696284656f0d33b",
+      "expected_sha256": "ba89e4996b11c8477ce97c7aa0e71ae001b43280a3633ce01696284656f0d33b",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/test-critical-gate.mjs",
+      "actual_sha256": "e0e86e4f0c7fe71707563318e2efcad47df8187dce55b79065be3feee3b71e14",
+      "expected_sha256": "e0e86e4f0c7fe71707563318e2efcad47df8187dce55b79065be3feee3b71e14",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/test_critical_fixture.py",
+      "actual_sha256": "3ce51a4be0a905d0fc01351550c709c29e26e381770b3dbed43fbb45112f98ab",
+      "expected_sha256": "3ce51a4be0a905d0fc01351550c709c29e26e381770b3dbed43fbb45112f98ab",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/validate-critical-results.mjs",
+      "actual_sha256": "6067419dbd02014818c19d5682284d9e1d365767945efa7f2d145d0c7ce743f4",
+      "expected_sha256": "6067419dbd02014818c19d5682284d9e1d365767945efa7f2d145d0c7ce743f4",
+      "matches": true
+    },
+    {
+      "path": "e2e/tests/critical-business.spec.ts",
+      "actual_sha256": "ad19423f239803ab49b795a942ce479d176d1dc87abed6630a0d17b8aef3f6bb",
+      "expected_sha256": "ad19423f239803ab49b795a942ce479d176d1dc87abed6630a0d17b8aef3f6bb",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/personal-work-conflict.test.ts",
+      "actual_sha256": "d08c64b04ed396ceb10443eec6b2176be02225c83997ee411b7ac0d672c69721",
+      "expected_sha256": "d08c64b04ed396ceb10443eec6b2176be02225c83997ee411b7ac0d672c69721",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+      "actual_sha256": "077648fcee21953223b1f9587a3619709f179fef63f9e9ed1fa172bef03425cc",
+      "expected_sha256": "077648fcee21953223b1f9587a3619709f179fef63f9e9ed1fa172bef03425cc",
+      "matches": true
+    }
+  ],
+  "shared_processes": {
+    "command": [
+      "ps",
+      "-Ao",
+      "pid,ppid,pgid,lstart,command"
+    ],
+    "exit_code": 0,
+    "records": [
+      {
+        "pid": 40677,
+        "ppid": 57326,
+        "line": "40677 57326 57326 六 10月/17 17:40:00 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 52896,
+        "ppid": 57326,
+        "line": "52896 57326 57326 六 10月/17 17:50:00 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 54701,
+        "ppid": 57326,
+        "line": "54701 57326 57326 六 10月/17 17:52:00 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 57294,
+        "ppid": 57292,
+        "line": "57294 57292 57233 六 10月/17 10:50:42 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 17101"
+      },
+      {
+        "pid": 57324,
+        "ppid": 57294,
+        "line": "57324 57294 57324 六 10月/17 10:50:44 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule"
+      },
+      {
+        "pid": 57326,
+        "ppid": 57294,
+        "line": "57326 57294 57326 六 10月/17 10:50:44 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 57651,
+        "ppid": 57631,
+        "line": "57651 57631 57233 六 10月/17 10:51:01 2026   node /Users/zhangping/DEV/CLPM-MVP/frontend/node_modules/.bin/../vite/bin/vite.js --mode development"
+      },
+      {
+        "pid": 64137,
+        "ppid": 57326,
+        "line": "64137 57326 57326 六 10月/17 18:02:01 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      }
+    ]
+  },
+  "database_probe": {
+    "command": "BEGIN READ ONLY; SELECT datname FROM pg_database WHERE datname=ANY(owned_names); SELECT version_num FROM alembic_version; COMMIT",
+    "requested_owned_databases": [
+      "clpm_final_reverify_20261017_093240",
+      "clpm_final_reverify_20261017_093240_phase2"
+    ],
+    "existing_owned_databases": [],
+    "shared_schema": "p702perm01",
+    "readonly": true
+  },
+  "shared_health": {
+    "status": 200,
+    "body": {
+      "status": "ok",
+      "version": "7.1.0"
+    }
+  },
+  "all_checks_passed": true,
+  "action_boundaries": {
+    "commit_merge_push_deploy": false,
+    "worker_beat_start_stop_restart": false,
+    "own_api_forced_after_grace": true,
+    "remote_or_memory_loaded_sha_verified": false
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "result": "REWORK",
+  "errorType": "AssertionError",
+  "error": "('reference drift', 'loop_tag_binding_history')",
+  "traceback": "Traceback (most recent call last):\n  File \"/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-s01-actual-input-review/verify_originals.py\", line 149, in <module>\n    result = verify()\n             ^^^^^^^^\n  File \"/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-s01-actual-input-review/verify_originals.py\", line 85, in verify\n    assert canon(before) == canon(reference_rows), (\"reference drift\", table)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: ('reference drift', 'loop_tag_binding_history')\n",
+  "newRealtimeCalls": 0
+}

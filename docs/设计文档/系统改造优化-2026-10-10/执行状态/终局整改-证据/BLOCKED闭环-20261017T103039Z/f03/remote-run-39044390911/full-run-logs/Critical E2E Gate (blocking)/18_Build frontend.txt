@@ -1,0 +1,1122 @@
+﻿2026-10-17T15:19:05.7485403Z ##[group]Run pnpm build:antd
+2026-10-17T15:19:05.7485625Z [36;1mpnpm build:antd[0m
+2026-10-17T15:19:05.7542275Z shell: /usr/bin/bash -e {0}
+2026-10-17T15:19:05.7542433Z env:
+2026-10-17T15:19:05.7542544Z   CI: true
+2026-10-17T15:19:05.7542658Z   ENV: development
+2026-10-17T15:19:05.7542775Z   CLPM_TEST_MODE: 0
+2026-10-17T15:19:05.7543065Z   E2E_EXECUTION_ENV: disposable-github-ci
+2026-10-17T15:19:05.7543227Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:19:05.7543357Z   OMP_NUM_THREADS: 1
+2026-10-17T15:19:05.7543478Z   MKL_NUM_THREADS: 1
+2026-10-17T15:19:05.7543598Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:19:05.7543729Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:19:05.7543868Z   POSTGRES_HOST: localhost
+2026-10-17T15:19:05.7544001Z   POSTGRES_PORT: 5432
+2026-10-17T15:19:05.7544125Z   POSTGRES_USER: clpm
+2026-10-17T15:19:05.7544259Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T15:19:05.7544418Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T15:19:05.7544556Z   REDIS_HOST: localhost
+2026-10-17T15:19:05.7544678Z   REDIS_PORT: 6379
+2026-10-17T15:19:05.7544823Z   REDIS_DB: 0
+2026-10-17T15:19:05.7544937Z   REDIS_PASSWORD: 
+2026-10-17T15:19:05.7545113Z   TDENGINE_HOST: localhost
+2026-10-17T15:19:05.7545355Z   TDENGINE_PORT: 6030
+2026-10-17T15:19:05.7545638Z   TDENGINE_USER: root
+2026-10-17T15:19:05.7545851Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T15:19:05.7546110Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T15:19:05.7546422Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T15:19:05.7565180Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T15:19:05.7565558Z   CLPM_BUILD_CODE_SHA: bc48701efe90e2a27555a4f8794f0965e82b0902
+2026-10-17T15:19:05.7565918Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T15:19:05.7566261Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T15:19:05.7566560Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T15:19:05.7566875Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:05.7567133Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:19:05.7567368Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:05.7567580Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:05.7567829Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:05.7568067Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:19:05.7568278Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:19:05.7568478Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T15:19:05.7568656Z   VITE_ROUTER_HISTORY: history
+2026-10-17T15:19:05.7568823Z   VITE_GLOB_API_URL: http://localhost:17101/api/v1
+2026-10-17T15:19:05.7568992Z ##[endgroup]
+2026-10-17T15:19:06.1290737Z 
+2026-10-17T15:19:06.1291582Z > vben-admin-monorepo@5.7.0 build:antd /home/runner/work/CLPM-MVP/CLPM-MVP/frontend
+2026-10-17T15:19:06.1291928Z > pnpm run build --filter=@vben/web-antd
+2026-10-17T15:19:06.1292086Z 
+2026-10-17T15:19:06.3274420Z 
+2026-10-17T15:19:06.3275151Z > vben-admin-monorepo@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend
+2026-10-17T15:19:06.3275627Z > cross-env NODE_OPTIONS=--max-old-space-size=8192 turbo build --filter=@vben/web-antd
+2026-10-17T15:19:06.3275873Z 
+2026-10-17T15:19:06.3997012Z 
+2026-10-17T15:19:06.3997464Z Attention:
+2026-10-17T15:19:06.3997806Z Turborepo now collects completely anonymous telemetry regarding usage.
+2026-10-17T15:19:06.3998158Z This information is used to shape the Turborepo roadmap and prioritize features.
+2026-10-17T15:19:06.3998626Z You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+2026-10-17T15:19:06.3998982Z https://turborepo.dev/docs/telemetry
+2026-10-17T15:19:06.3999108Z 
+2026-10-17T15:19:06.5060138Z 
+2026-10-17T15:19:06.5061926Z    • Packages in scope: @vben/web-antd
+2026-10-17T15:19:06.5062380Z    • Running build in 1 packages
+2026-10-17T15:19:06.5063113Z    • Remote caching disabled
+2026-10-17T15:19:06.5063257Z 
+2026-10-17T15:19:10.0809084Z ##[group]@vben-core/typings:build
+2026-10-17T15:19:10.0861750Z cache miss, executing 905b5d55f61e9d6c
+2026-10-17T15:19:10.0862107Z 
+2026-10-17T15:19:10.0862689Z > @vben-core/typings@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/typings
+2026-10-17T15:19:10.0863652Z > pnpm exec tsdown
+2026-10-17T15:19:10.0863847Z 
+2026-10-17T15:19:10.0864755Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:10.0865673Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/typings/tsdown.config.ts[24m 
+2026-10-17T15:19:10.0866304Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:10.0866686Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:10.0867003Z [34mℹ[39m Build start
+2026-10-17T15:19:10.0867513Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m0.01 kB[22m [2m│ gzip: 0.03 kB[22m
+2026-10-17T15:19:10.0868242Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m9.82 kB[22m [2m│ gzip: 3.68 kB[22m
+2026-10-17T15:19:10.0868731Z [34mℹ[39m 2 files, total: 9.83 kB
+2026-10-17T15:19:10.0869097Z [32m✔[39m Build complete in [32m2191ms[39m
+2026-10-17T15:19:10.0869672Z ##[endgroup]
+2026-10-17T15:19:10.8907730Z ##[group]@vben-core/shared:build
+2026-10-17T15:19:10.8952187Z cache miss, executing 29430a02305acb56
+2026-10-17T15:19:10.8978381Z 
+2026-10-17T15:19:10.9003698Z > @vben-core/shared@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/shared
+2026-10-17T15:19:10.9006882Z > pnpm exec tsdown
+2026-10-17T15:19:10.9027018Z 
+2026-10-17T15:19:10.9028068Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:10.9029062Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/shared/tsdown.config.ts[24m 
+2026-10-17T15:19:10.9030207Z [34mℹ[39m entry: [34msrc/cache/index.ts, src/color/index.ts, src/constants/index.ts, src/global-state.ts, src/store.ts, src/utils/index.ts[39m
+2026-10-17T15:19:10.9031333Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:10.9031744Z [34mℹ[39m Build start
+2026-10-17T15:19:10.9032115Z [34mℹ[39m Cleaning 16 files
+2026-10-17T15:19:10.9032864Z [34mℹ[39m [2mdist/[22m[1mutils/index.mjs[22m       [2m23.43 kB[22m [2m│ gzip: 7.65 kB[22m
+2026-10-17T15:19:10.9033634Z [34mℹ[39m [2mdist/[22m[1mcache/index.mjs[22m       [2m 8.06 kB[22m [2m│ gzip: 2.40 kB[22m
+2026-10-17T15:19:10.9034409Z [34mℹ[39m [2mdist/[22m[1mcolor/index.mjs[22m       [2m 2.90 kB[22m [2m│ gzip: 1.23 kB[22m
+2026-10-17T15:19:10.9035153Z [34mℹ[39m [2mdist/[22m[1mconstants/index.mjs[22m   [2m 1.71 kB[22m [2m│ gzip: 0.64 kB[22m
+2026-10-17T15:19:10.9035883Z [34mℹ[39m [2mdist/[22m[1mglobal-state.mjs[22m      [2m 0.49 kB[22m [2m│ gzip: 0.30 kB[22m
+2026-10-17T15:19:10.9036645Z [34mℹ[39m [2mdist/[22m[1mstore.mjs[22m             [2m 0.05 kB[22m [2m│ gzip: 0.06 kB[22m
+2026-10-17T15:19:10.9037538Z [34mℹ[39m [2mdist/[22m[32m[1mutils/index.d.ts[22m[39m      [2m 7.04 kB[22m [2m│ gzip: 2.05 kB[22m
+2026-10-17T15:19:10.9038384Z [34mℹ[39m [2mdist/[22m[32m[1mcache/index.d.ts[22m[39m      [2m 2.63 kB[22m [2m│ gzip: 0.61 kB[22m
+2026-10-17T15:19:10.9039178Z [34mℹ[39m [2mdist/[22m[32m[1mconstants/index.d.ts[22m[39m  [2m 1.49 kB[22m [2m│ gzip: 0.47 kB[22m
+2026-10-17T15:19:10.9039960Z [34mℹ[39m [2mdist/[22m[32m[1mcolor/index.d.ts[22m[39m      [2m 0.82 kB[22m [2m│ gzip: 0.31 kB[22m
+2026-10-17T15:19:10.9040897Z [34mℹ[39m [2mdist/[22m[32m[1mglobal-state.d.ts[22m[39m     [2m 0.61 kB[22m [2m│ gzip: 0.28 kB[22m
+2026-10-17T15:19:10.9041715Z [34mℹ[39m [2mdist/[22m[32m[1mstore.d.ts[22m[39m            [2m 0.04 kB[22m [2m│ gzip: 0.06 kB[22m
+2026-10-17T15:19:10.9042297Z [34mℹ[39m 12 files, total: 49.27 kB
+2026-10-17T15:19:10.9042808Z [32m✔[39m Build complete in [32m2979ms[39m
+2026-10-17T15:19:10.9043935Z ##[endgroup]
+2026-10-17T15:19:11.1441946Z ##[group]@vben-core/icons:build
+2026-10-17T15:19:11.1478199Z cache miss, executing aeb5509b42a52b82
+2026-10-17T15:19:11.1478800Z 
+2026-10-17T15:19:11.1479290Z > @vben-core/icons@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/icons
+2026-10-17T15:19:11.1480164Z > pnpm exec tsdown
+2026-10-17T15:19:11.1480391Z 
+2026-10-17T15:19:11.1482561Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:11.1489864Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/icons/tsdown.config.ts[24m 
+2026-10-17T15:19:11.1491832Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:11.1492385Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:11.1492818Z [34mℹ[39m Build start
+2026-10-17T15:19:11.1493572Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m2.62 kB[22m [2m│ gzip: 0.84 kB[22m
+2026-10-17T15:19:11.1494374Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m2.87 kB[22m [2m│ gzip: 0.91 kB[22m
+2026-10-17T15:19:11.1494964Z [34mℹ[39m 2 files, total: 5.49 kB
+2026-10-17T15:19:11.1495443Z [32m✔[39m Build complete in [32m3167ms[39m
+2026-10-17T15:19:11.1496124Z ##[endgroup]
+2026-10-17T15:19:12.1368728Z ##[group]@vben-core/design:build
+2026-10-17T15:19:12.1381841Z cache miss, executing ce46fac00002dc83
+2026-10-17T15:19:12.1382113Z 
+2026-10-17T15:19:12.1382399Z > @vben-core/design@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/design
+2026-10-17T15:19:12.1382683Z > pnpm vite build
+2026-10-17T15:19:12.1382765Z 
+2026-10-17T15:19:12.1383202Z [36mvite v8.0.13 [32mbuilding client environment for production...[36m[39m
+2026-10-17T15:19:12.1383430Z [2K
+2026-10-17T15:19:12.1383649Z transforming...✓ 9 modules transformed.
+2026-10-17T15:19:12.1383821Z rendering chunks...
+2026-10-17T15:19:12.1383999Z dist/design.css  155.25 kB
+2026-10-17T15:19:12.1384240Z dist/index.mjs     0.00 kB
+2026-10-17T15:19:12.1384382Z 
+2026-10-17T15:19:12.1384465Z [32m✓ built in 1.04s[39m
+2026-10-17T15:19:12.1384775Z ##[endgroup]
+2026-10-17T15:19:13.1672974Z ##[group]@vben-core/composables:build
+2026-10-17T15:19:13.1673569Z cache miss, executing 1ccf4817ad0c27c8
+2026-10-17T15:19:13.1673769Z 
+2026-10-17T15:19:13.1674218Z > @vben-core/composables@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/composables
+2026-10-17T15:19:13.1674677Z > pnpm exec tsdown
+2026-10-17T15:19:13.1674795Z 
+2026-10-17T15:19:13.1675459Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:13.1676246Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/composables/tsdown.config.ts[24m 
+2026-10-17T15:19:13.1676804Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:13.1677152Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:13.1677441Z [34mℹ[39m Build start
+2026-10-17T15:19:13.1677916Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m8.64 kB[22m [2m│ gzip: 2.77 kB[22m
+2026-10-17T15:19:13.1678541Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m3.81 kB[22m [2m│ gzip: 1.05 kB[22m
+2026-10-17T15:19:13.1678966Z [34mℹ[39m 2 files, total: 12.45 kB
+2026-10-17T15:19:13.1679312Z [32m✔[39m Build complete in [32m1432ms[39m
+2026-10-17T15:19:13.1679771Z ##[endgroup]
+2026-10-17T15:19:23.3042904Z ##[group]@vben-core/tabs-ui:build
+2026-10-17T15:19:23.3083001Z cache miss, executing 5225222b320adcd6
+2026-10-17T15:19:23.3083725Z 
+2026-10-17T15:19:23.3084359Z > @vben-core/tabs-ui@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/tabs-ui
+2026-10-17T15:19:23.3085030Z > pnpm exec tsdown
+2026-10-17T15:19:23.3085338Z 
+2026-10-17T15:19:23.3086176Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:23.3087251Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/tabs-ui/tsdown.config.ts[24m 
+2026-10-17T15:19:23.3088514Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:23.3089048Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:23.3089521Z [34mℹ[39m Build start
+2026-10-17T15:19:23.3090360Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m                                                                        [2m0.36 kB[22m [2m│ gzip: 0.17 kB[22m
+2026-10-17T15:19:23.3091906Z [34mℹ[39m [2mdist/[22mcomponents/tabs-chrome/tabs.mjs                                                  [2m7.32 kB[22m [2m│ gzip: 2.46 kB[22m
+2026-10-17T15:19:23.3093009Z [34mℹ[39m [2mdist/[22mcomponents/tabs/tabs.mjs                                                         [2m5.95 kB[22m [2m│ gzip: 2.12 kB[22m
+2026-10-17T15:19:23.3094027Z [34mℹ[39m [2mdist/[22mtabs-view.mjs                                                                    [2m3.85 kB[22m [2m│ gzip: 1.38 kB[22m
+2026-10-17T15:19:23.3095084Z [34mℹ[39m [2mdist/[22muse-tabs-view-scroll.mjs                                                         [2m3.63 kB[22m [2m│ gzip: 1.24 kB[22m
+2026-10-17T15:19:23.3096193Z [34mℹ[39m [2mdist/[22muse-tabs-drag.mjs                                                                [2m2.28 kB[22m [2m│ gzip: 0.87 kB[22m
+2026-10-17T15:19:23.3097205Z [34mℹ[39m [2mdist/[22mcomponents/widgets/tool-screen.mjs                                               [2m1.03 kB[22m [2m│ gzip: 0.54 kB[22m
+2026-10-17T15:19:23.3098370Z [34mℹ[39m [2mdist/[22mcomponents/widgets/tool-more.mjs                                                 [2m0.91 kB[22m [2m│ gzip: 0.51 kB[22m
+2026-10-17T15:19:23.3099530Z [34mℹ[39m [2mdist/[22mcomponents/tabs-chrome/tabs.vue_vue_type_style_index_0_scoped_62fdb4ca_lang.css  [2m0.86 kB[22m [2m│ gzip: 0.25 kB[22m
+2026-10-17T15:19:23.3101146Z [34mℹ[39m [2mdist/[22mcomponents/widgets/tool-refresh.mjs                                              [2m0.78 kB[22m [2m│ gzip: 0.45 kB[22m
+2026-10-17T15:19:23.3102274Z [34mℹ[39m [2mdist/[22m_virtual/_/plugin-vue/export-helper.mjs                                          [2m0.25 kB[22m [2m│ gzip: 0.18 kB[22m
+2026-10-17T15:19:23.3103370Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m                                                                       [2m0.49 kB[22m [2m│ gzip: 0.21 kB[22m
+2026-10-17T15:19:23.3104435Z [34mℹ[39m [2mdist/[22m[32mtabs-view.vue.d.ts[39m                                                               [2m0.99 kB[22m [2m│ gzip: 0.43 kB[22m
+2026-10-17T15:19:23.3105545Z [34mℹ[39m [2mdist/[22m[32mcomponents/widgets/tool-screen.vue.d.ts[39m                                          [2m0.64 kB[22m [2m│ gzip: 0.32 kB[22m
+2026-10-17T15:19:23.3106742Z [34mℹ[39m [2mdist/[22m[32mcomponents/widgets/tool-refresh.vue.d.ts[39m                                         [2m0.52 kB[22m [2m│ gzip: 0.29 kB[22m
+2026-10-17T15:19:23.3107904Z [34mℹ[39m [2mdist/[22m[32mcomponents/widgets/tool-more.vue.d.ts[39m                                            [2m0.52 kB[22m [2m│ gzip: 0.27 kB[22m
+2026-10-17T15:19:23.3108984Z [34mℹ[39m [2mdist/[22m[32mtypes.d.ts[39m                                                                       [2m0.52 kB[22m [2m│ gzip: 0.29 kB[22m
+2026-10-17T15:19:23.3110050Z [34mℹ[39m [2mdist/[22m[32mcomponents/widgets/index.d.ts[39m                                                    [2m0.17 kB[22m [2m│ gzip: 0.10 kB[22m
+2026-10-17T15:19:23.3111090Z [34mℹ[39m 18 files, total: 31.05 kB
+2026-10-17T15:19:23.3111803Z [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+2026-10-17T15:19:23.3112404Z   - unplugin-vue (54%)
+2026-10-17T15:19:23.3112835Z   - rolldown-plugin-dts:generate (34%)
+2026-10-17T15:19:23.3113485Z See https://rolldown.rs/options/checks#plugintimings for more details.
+2026-10-17T15:19:23.3113937Z 
+2026-10-17T15:19:23.3114285Z [32m✔[39m Build complete in [32m8578ms[39m
+2026-10-17T15:19:23.3114980Z ##[endgroup]
+2026-10-17T15:19:24.3242486Z ##[group]@vben-core/layout-ui:build
+2026-10-17T15:19:24.3318292Z cache miss, executing 732d00869306e86b
+2026-10-17T15:19:24.3361320Z 
+2026-10-17T15:19:24.3396880Z > @vben-core/layout-ui@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/layout-ui
+2026-10-17T15:19:24.3397753Z > pnpm exec tsdown
+2026-10-17T15:19:24.3398491Z 
+2026-10-17T15:19:24.3399348Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:24.3400404Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/layout-ui/tsdown.config.ts[24m 
+2026-10-17T15:19:24.3401351Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:24.3401851Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:24.3402332Z [34mℹ[39m Build start
+2026-10-17T15:19:24.3403036Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m                                       [2m 0.08 kB[22m [2m│ gzip: 0.09 kB[22m
+2026-10-17T15:19:24.3403915Z [34mℹ[39m [2mdist/[22mvben-layout.mjs                                 [2m19.29 kB[22m [2m│ gzip: 4.51 kB[22m
+2026-10-17T15:19:24.3404811Z [34mℹ[39m [2mdist/[22mcomponents/layout-sidebar.mjs                   [2m10.33 kB[22m [2m│ gzip: 2.58 kB[22m
+2026-10-17T15:19:24.3405713Z [34mℹ[39m [2mdist/[22mhooks/use-sidebar-drag.mjs                      [2m 3.20 kB[22m [2m│ gzip: 1.01 kB[22m
+2026-10-17T15:19:24.3406625Z [34mℹ[39m [2mdist/[22mcomponents/layout-content.mjs                   [2m 1.60 kB[22m [2m│ gzip: 0.70 kB[22m
+2026-10-17T15:19:24.3407529Z [34mℹ[39m [2mdist/[22mcomponents/layout-header.mjs                    [2m 1.54 kB[22m [2m│ gzip: 0.72 kB[22m
+2026-10-17T15:19:24.3408463Z [34mℹ[39m [2mdist/[22mcomponents/widgets/sidebar-collapse-button.mjs  [2m 1.14 kB[22m [2m│ gzip: 0.58 kB[22m
+2026-10-17T15:19:24.3409424Z [34mℹ[39m [2mdist/[22mcomponents/widgets/sidebar-fixed-button.mjs     [2m 1.12 kB[22m [2m│ gzip: 0.58 kB[22m
+2026-10-17T15:19:24.3410353Z [34mℹ[39m [2mdist/[22mcomponents/layout-footer.mjs                    [2m 0.96 kB[22m [2m│ gzip: 0.54 kB[22m
+2026-10-17T15:19:24.3411357Z [34mℹ[39m [2mdist/[22mhooks/use-layout.mjs                            [2m 0.96 kB[22m [2m│ gzip: 0.44 kB[22m
+2026-10-17T15:19:24.3412209Z [34mℹ[39m [2mdist/[22mcomponents/layout-tabbar.mjs                    [2m 0.71 kB[22m [2m│ gzip: 0.42 kB[22m
+2026-10-17T15:19:24.3413113Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m                                      [2m 0.16 kB[22m [2m│ gzip: 0.11 kB[22m
+2026-10-17T15:19:24.3413982Z [34mℹ[39m [2mdist/[22m[32mvben-layout.vue.d.ts[39m                            [2m 3.89 kB[22m [2m│ gzip: 0.98 kB[22m
+2026-10-17T15:19:24.3438821Z [34mℹ[39m [2mdist/[22m[32mvben-layout.d.ts[39m                                [2m 1.19 kB[22m [2m│ gzip: 0.39 kB[22m
+2026-10-17T15:19:24.3439537Z [34mℹ[39m 14 files, total: 46.16 kB
+2026-10-17T15:19:24.3440036Z [32m✔[39m Build complete in [32m9582ms[39m
+2026-10-17T15:19:24.3440895Z [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+2026-10-17T15:19:24.3441417Z   - unplugin-vue (43%)
+2026-10-17T15:19:24.3441798Z   - rolldown-plugin-dts:generate (33%)
+2026-10-17T15:19:24.3442181Z   - tsdown:deps (18%)
+2026-10-17T15:19:24.3442710Z See https://rolldown.rs/options/checks#plugintimings for more details.
+2026-10-17T15:19:24.3443123Z 
+2026-10-17T15:19:24.3443660Z ##[endgroup]
+2026-10-17T15:19:24.7325605Z ##[group]@vben-core/popup-ui:build
+2026-10-17T15:19:24.7361734Z cache miss, executing 9300cac45512464f
+2026-10-17T15:19:24.7362435Z 
+2026-10-17T15:19:24.7391936Z > @vben-core/popup-ui@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/popup-ui
+2026-10-17T15:19:24.7421292Z > pnpm exec tsdown
+2026-10-17T15:19:24.7430423Z 
+2026-10-17T15:19:24.7431718Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:24.7432734Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/popup-ui/tsdown.config.ts[24m 
+2026-10-17T15:19:24.7433917Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:24.7434407Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:24.7434842Z [34mℹ[39m Build start
+2026-10-17T15:19:24.7435709Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m                      [2m 0.70 kB[22m [2m│ gzip: 0.26 kB[22m
+2026-10-17T15:19:24.7436491Z [34mℹ[39m [2mdist/[22mmodal/modal.mjs                [2m12.26 kB[22m [2m│ gzip: 3.45 kB[22m
+2026-10-17T15:19:24.7437275Z [34mℹ[39m [2mdist/[22mdrawer/drawer.mjs              [2m11.71 kB[22m [2m│ gzip: 3.07 kB[22m
+2026-10-17T15:19:24.7438050Z [34mℹ[39m [2mdist/[22malert/alert2.mjs               [2m 7.39 kB[22m [2m│ gzip: 2.16 kB[22m
+2026-10-17T15:19:24.7438904Z [34mℹ[39m [2mdist/[22malert/AlertBuilder.mjs         [2m 4.01 kB[22m [2m│ gzip: 1.44 kB[22m
+2026-10-17T15:19:24.7439757Z [34mℹ[39m [2mdist/[22mmodal/use-modal-draggable.mjs  [2m 3.21 kB[22m [2m│ gzip: 1.00 kB[22m
+2026-10-17T15:19:24.7440796Z [34mℹ[39m [2mdist/[22mmodal/modal-api.mjs            [2m 3.08 kB[22m [2m│ gzip: 1.31 kB[22m
+2026-10-17T15:19:24.7441622Z [34mℹ[39m [2mdist/[22mdrawer/drawer-api.mjs          [2m 2.93 kB[22m [2m│ gzip: 1.27 kB[22m
+2026-10-17T15:19:24.7442443Z [34mℹ[39m [2mdist/[22mmodal/use-modal.mjs            [2m 2.77 kB[22m [2m│ gzip: 1.10 kB[22m
+2026-10-17T15:19:24.7443249Z [34mℹ[39m [2mdist/[22mdrawer/use-drawer.mjs          [2m 2.66 kB[22m [2m│ gzip: 1.08 kB[22m
+2026-10-17T15:19:24.7444102Z [34mℹ[39m [2mdist/[22malert/alert.mjs                [2m 0.46 kB[22m [2m│ gzip: 0.28 kB[22m
+2026-10-17T15:19:24.7445052Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m                     [2m 1.30 kB[22m [2m│ gzip: 0.40 kB[22m
+2026-10-17T15:19:24.7445928Z [34mℹ[39m [2mdist/[22m[32mdrawer/drawer.vue.d.ts[39m         [2m 1.76 kB[22m [2m│ gzip: 0.63 kB[22m
+2026-10-17T15:19:24.7446781Z [34mℹ[39m [2mdist/[22m[32mdrawer/drawer.d.ts[39m             [2m 1.66 kB[22m [2m│ gzip: 0.65 kB[22m
+2026-10-17T15:19:24.7447747Z [34mℹ[39m [2mdist/[22m[32mmodal/modal.d.ts[39m               [2m 1.64 kB[22m [2m│ gzip: 0.65 kB[22m
+2026-10-17T15:19:24.7501930Z [34mℹ[39m [2mdist/[22m[32mmodal/modal.vue.d.ts[39m           [2m 1.51 kB[22m [2m│ gzip: 0.56 kB[22m
+2026-10-17T15:19:24.7531719Z [34mℹ[39m [2mdist/[22m[32malert/alert.d.ts[39m               [2m 1.37 kB[22m [2m│ gzip: 0.58 kB[22m
+2026-10-17T15:19:24.7532575Z [34mℹ[39m [2mdist/[22m[32malert/AlertBuilder.d.ts[39m        [2m 0.83 kB[22m [2m│ gzip: 0.27 kB[22m
+2026-10-17T15:19:24.7533315Z [34mℹ[39m [2mdist/[22m[32malert/alert.vue.d.ts[39m           [2m 0.81 kB[22m [2m│ gzip: 0.38 kB[22m
+2026-10-17T15:19:24.7533996Z [34mℹ[39m [2mdist/[22m[32mdrawer/drawer-api.d.ts[39m         [2m 0.71 kB[22m [2m│ gzip: 0.38 kB[22m
+2026-10-17T15:19:24.7534717Z [34mℹ[39m [2mdist/[22m[32mmodal/modal-api.d.ts[39m           [2m 0.70 kB[22m [2m│ gzip: 0.38 kB[22m
+2026-10-17T15:19:24.7535434Z [34mℹ[39m [2mdist/[22m[32mdrawer/use-drawer.d.ts[39m         [2m 0.65 kB[22m [2m│ gzip: 0.28 kB[22m
+2026-10-17T15:19:24.7536163Z [34mℹ[39m [2mdist/[22m[32mmodal/use-modal.d.ts[39m           [2m 0.63 kB[22m [2m│ gzip: 0.28 kB[22m
+2026-10-17T15:19:24.7536890Z [34mℹ[39m [2mdist/[22m[32mdrawer/index.d.ts[39m              [2m 0.24 kB[22m [2m│ gzip: 0.15 kB[22m
+2026-10-17T15:19:24.7537582Z [34mℹ[39m [2mdist/[22m[32malert/index.d.ts[39m               [2m 0.23 kB[22m [2m│ gzip: 0.16 kB[22m
+2026-10-17T15:19:24.7538280Z [34mℹ[39m [2mdist/[22m[32mmodal/index.d.ts[39m               [2m 0.20 kB[22m [2m│ gzip: 0.13 kB[22m
+2026-10-17T15:19:24.7538739Z [34mℹ[39m 26 files, total: 65.43 kB
+2026-10-17T15:19:24.7539294Z [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+2026-10-17T15:19:24.7539740Z   - unplugin-vue (43%)
+2026-10-17T15:19:24.7540033Z   - rolldown-plugin-dts:generate (21%)
+2026-10-17T15:19:24.7540963Z   - rolldown-plugin-dts:resolver (15%)
+2026-10-17T15:19:24.7541199Z   - tsdown:deps (13%)
+2026-10-17T15:19:24.7541589Z See https://rolldown.rs/options/checks#plugintimings for more details.
+2026-10-17T15:19:24.7541861Z 
+2026-10-17T15:19:24.7542104Z [32m✔[39m Build complete in [32m10182ms[39m
+2026-10-17T15:19:24.7542866Z ##[endgroup]
+2026-10-17T15:19:25.1887497Z ##[group]@vben-core/menu-ui:build
+2026-10-17T15:19:25.1888501Z cache miss, executing 1a7aea53c4b883f0
+2026-10-17T15:19:25.1888914Z 
+2026-10-17T15:19:25.1889514Z > @vben-core/menu-ui@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/menu-ui
+2026-10-17T15:19:25.1890275Z > pnpm exec tsdown
+2026-10-17T15:19:25.1890990Z 
+2026-10-17T15:19:25.1891836Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:25.1892874Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/menu-ui/tsdown.config.ts[24m 
+2026-10-17T15:19:25.1893751Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:25.1894259Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:25.1894726Z [34mℹ[39m Build start
+2026-10-17T15:19:25.1895542Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m                                                                               [2m 0.26 kB[22m [2m│ gzip: 0.15 kB[22m
+2026-10-17T15:19:25.1896673Z [34mℹ[39m [2mdist/[22mcomponents/menu.vue_vue_type_style_index_0_lang.css                                     [2m13.61 kB[22m [2m│ gzip: 1.89 kB[22m
+2026-10-17T15:19:25.1897875Z [34mℹ[39m [2mdist/[22mcomponents/menu.mjs                                                                     [2m 8.46 kB[22m [2m│ gzip: 2.62 kB[22m
+2026-10-17T15:19:25.1898937Z [34mℹ[39m [2mdist/[22mcomponents/sub-menu.mjs                                                                 [2m 7.66 kB[22m [2m│ gzip: 2.28 kB[22m
+2026-10-17T15:19:25.1900039Z [34mℹ[39m [2mdist/[22mcomponents/menu-item.mjs                                                                [2m 4.80 kB[22m [2m│ gzip: 1.68 kB[22m
+2026-10-17T15:19:25.1901402Z [34mℹ[39m [2mdist/[22mcomponents/sub-menu-content.mjs                                                         [2m 3.23 kB[22m [2m│ gzip: 1.13 kB[22m
+2026-10-17T15:19:25.1902577Z [34mℹ[39m [2mdist/[22mcomponents/collapse-transition.mjs                                                      [2m 2.74 kB[22m [2m│ gzip: 0.72 kB[22m
+2026-10-17T15:19:25.1903832Z [34mℹ[39m [2mdist/[22mcomponents/normal-menu/normal-menu.vue_vue_type_style_index_0_scoped_424fbe3f_lang.css  [2m 2.54 kB[22m [2m│ gzip: 0.69 kB[22m
+2026-10-17T15:19:25.1905028Z [34mℹ[39m [2mdist/[22msub-menu.mjs                                                                            [2m 2.40 kB[22m [2m│ gzip: 0.88 kB[22m
+2026-10-17T15:19:25.1906141Z [34mℹ[39m [2mdist/[22mcomponents/normal-menu/normal-menu.mjs                                                  [2m 2.21 kB[22m [2m│ gzip: 0.94 kB[22m
+2026-10-17T15:19:25.1907382Z [34mℹ[39m [2mdist/[22mcomponents/menu-badge.mjs                                                               [2m 1.84 kB[22m [2m│ gzip: 0.80 kB[22m
+2026-10-17T15:19:25.1908475Z [34mℹ[39m [2mdist/[22mmenu.mjs                                                                                [2m 1.23 kB[22m [2m│ gzip: 0.58 kB[22m
+2026-10-17T15:19:25.1909536Z [34mℹ[39m [2mdist/[22mhooks/use-menu-context.mjs                                                              [2m 1.01 kB[22m [2m│ gzip: 0.40 kB[22m
+2026-10-17T15:19:25.1910971Z [34mℹ[39m [2mdist/[22mcomponents/menu-badge-dot.mjs                                                           [2m 0.94 kB[22m [2m│ gzip: 0.46 kB[22m
+2026-10-17T15:19:25.1912133Z [34mℹ[39m [2mdist/[22mutils/index.mjs                                                                         [2m 0.90 kB[22m [2m│ gzip: 0.41 kB[22m
+2026-10-17T15:19:25.1913187Z [34mℹ[39m [2mdist/[22mhooks/use-menu.mjs                                                                      [2m 0.88 kB[22m [2m│ gzip: 0.49 kB[22m
+2026-10-17T15:19:25.1914540Z [34mℹ[39m [2mdist/[22mhooks/use-menu-scroll.mjs                                                               [2m 0.79 kB[22m [2m│ gzip: 0.41 kB[22m
+2026-10-17T15:19:25.1915889Z [34mℹ[39m [2mdist/[22m_virtual/_/plugin-vue/export-helper.mjs                                                 [2m 0.25 kB[22m [2m│ gzip: 0.18 kB[22m
+2026-10-17T15:19:25.1917021Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m                                                                              [2m 0.66 kB[22m [2m│ gzip: 0.24 kB[22m
+2026-10-17T15:19:25.1918100Z [34mℹ[39m [2mdist/[22m[32mtypes.d.ts[39m                                                                              [2m 1.96 kB[22m [2m│ gzip: 0.60 kB[22m
+2026-10-17T15:19:25.1919228Z [34mℹ[39m [2mdist/[22m[32mcomponents/normal-menu/normal-menu.vue.d.ts[39m                                             [2m 0.89 kB[22m [2m│ gzip: 0.42 kB[22m
+2026-10-17T15:19:25.1920362Z [34mℹ[39m [2mdist/[22m[32mmenu.vue.d.ts[39m                                                                           [2m 0.59 kB[22m [2m│ gzip: 0.31 kB[22m
+2026-10-17T15:19:25.1921779Z [34mℹ[39m [2mdist/[22m[32mcomponents/menu-badge.vue.d.ts[39m                                                          [2m 0.56 kB[22m [2m│ gzip: 0.31 kB[22m
+2026-10-17T15:19:25.1922927Z [34mℹ[39m [2mdist/[22m[32mcomponents/normal-menu/normal-menu.d.ts[39m                                                 [2m 0.30 kB[22m [2m│ gzip: 0.22 kB[22m
+2026-10-17T15:19:25.1924091Z [34mℹ[39m [2mdist/[22m[32mcomponents/normal-menu/index.d.ts[39m                                                       [2m 0.10 kB[22m [2m│ gzip: 0.09 kB[22m
+2026-10-17T15:19:25.1924850Z [34mℹ[39m 25 files, total: 60.80 kB
+2026-10-17T15:19:25.1925562Z [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+2026-10-17T15:19:25.1926180Z   - unplugin-vue (60%)
+2026-10-17T15:19:25.1926599Z   - rolldown-plugin-dts:generate (25%)
+2026-10-17T15:19:25.1927202Z See https://rolldown.rs/options/checks#plugintimings for more details.
+2026-10-17T15:19:25.1927639Z 
+2026-10-17T15:19:25.1928008Z [32m✔[39m Build complete in [32m10220ms[39m
+2026-10-17T15:19:25.1928836Z ##[endgroup]
+2026-10-17T15:19:25.3968172Z ##[group]@vben-core/form-ui:build
+2026-10-17T15:19:25.3968718Z cache miss, executing ad4b8d955c5b96d2
+2026-10-17T15:19:25.3968901Z 
+2026-10-17T15:19:25.3969319Z > @vben-core/form-ui@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/form-ui
+2026-10-17T15:19:25.3969780Z > pnpm exec tsdown
+2026-10-17T15:19:25.3969907Z 
+2026-10-17T15:19:25.3971426Z [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:19:25.3972302Z [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/ui-kit/form-ui/tsdown.config.ts[24m 
+2026-10-17T15:19:25.3972954Z [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:19:25.3973322Z [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:19:25.3973627Z [34mℹ[39m Build start
+2026-10-17T15:19:25.3974185Z [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m                     [2m 0.17 kB[22m [2m│ gzip: 0.12 kB[22m
+2026-10-17T15:19:25.3974882Z [34mℹ[39m [2mdist/[22mform-api.mjs                  [2m13.73 kB[22m [2m│ gzip: 4.22 kB[22m
+2026-10-17T15:19:25.3975564Z [34mℹ[39m [2mdist/[22mform-render/form-field.mjs    [2m13.45 kB[22m [2m│ gzip: 3.77 kB[22m
+2026-10-17T15:19:25.3976239Z [34mℹ[39m [2mdist/[22mcomponents/form-actions.mjs   [2m 5.61 kB[22m [2m│ gzip: 1.70 kB[22m
+2026-10-17T15:19:25.3976897Z [34mℹ[39m [2mdist/[22mform-render/form.mjs          [2m 5.39 kB[22m [2m│ gzip: 1.93 kB[22m
+2026-10-17T15:19:25.3977546Z [34mℹ[39m [2mdist/[22mvben-use-form.mjs             [2m 5.33 kB[22m [2m│ gzip: 1.80 kB[22m
+2026-10-17T15:19:25.3978205Z [34mℹ[39m [2mdist/[22mform-render/dependencies.mjs  [2m 3.20 kB[22m [2m│ gzip: 1.08 kB[22m
+2026-10-17T15:19:25.3979140Z [34mℹ[39m [2mdist/[22muse-form-context.mjs          [2m 2.60 kB[22m [2m│ gzip: 0.91 kB[22m
+2026-10-17T15:19:25.3979843Z [34mℹ[39m [2mdist/[22mform-render/expandable.mjs    [2m 2.09 kB[22m [2m│ gzip: 0.90 kB[22m
+2026-10-17T15:19:25.3980971Z [34mℹ[39m [2mdist/[22mconfig.mjs                    [2m 1.72 kB[22m [2m│ gzip: 0.68 kB[22m
+2026-10-17T15:19:25.3981562Z [34mℹ[39m [2mdist/[22mform-render/form-label.mjs    [2m 1.65 kB[22m [2m│ gzip: 0.72 kB[22m
+2026-10-17T15:19:25.3982167Z [34mℹ[39m [2mdist/[22mform-render/helper.mjs        [2m 1.14 kB[22m [2m│ gzip: 0.48 kB[22m
+2026-10-17T15:19:25.3982789Z [34mℹ[39m [2mdist/[22muse-vben-form.mjs             [2m 0.97 kB[22m [2m│ gzip: 0.47 kB[22m
+2026-10-17T15:19:25.3983419Z [34mℹ[39m [2mdist/[22mform-render/context.mjs       [2m 0.65 kB[22m [2m│ gzip: 0.30 kB[22m
+2026-10-17T15:19:25.3984352Z [34mℹ[39m [2mdist/[22mfield-name.mjs                [2m 0.36 kB[22m [2m│ gzip: 0.24 kB[22m
+2026-10-17T15:19:25.3985065Z [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m                    [2m 0.39 kB[22m [2m│ gzip: 0.20 kB[22m
+2026-10-17T15:19:25.3985706Z [34mℹ[39m [2mdist/[22m[32mtypes.d.ts[39m                    [2m 7.39 kB[22m [2m│ gzip: 2.03 kB[22m
+2026-10-17T15:19:25.3986205Z [34mℹ[39m [2mdist/[22m[32mform-api.d.ts[39m                 [2m 2.54 kB[22m [2m│ gzip: 0.91 kB[22m
+2026-10-17T15:19:25.3986876Z [34mℹ[39m [2mdist/[22m[32muse-vben-form.d.ts[39m            [2m 0.55 kB[22m [2m│ gzip: 0.28 kB[22m
+2026-10-17T15:19:25.3987555Z [34mℹ[39m [2mdist/[22m[32mconfig.d.ts[39m                   [2m 0.30 kB[22m [2m│ gzip: 0.19 kB[22m
+2026-10-17T15:19:25.3987993Z [34mℹ[39m 20 files, total: 69.23 kB
+2026-10-17T15:19:25.3988515Z [33m[PLUGIN_TIMINGS] [0mYour build spent significant time in plugins. Here is a breakdown:
+2026-10-17T15:19:25.3988908Z   - unplugin-vue (48%)
+2026-10-17T15:19:25.3989167Z   - rolldown-plugin-dts:generate (25%)
+2026-10-17T15:19:25.3989416Z   - tsdown:deps (23%)
+2026-10-17T15:19:25.3989780Z See https://rolldown.rs/options/checks#plugintimings for more details.
+2026-10-17T15:19:25.3990035Z 
+2026-10-17T15:19:25.3990244Z [32m✔[39m Build complete in [32m10520ms[39m
+2026-10-17T15:19:25.3990939Z ##[endgroup]
+2026-10-17T15:19:33.8889794Z ##[group]@vben/web-antd:build
+2026-10-17T15:19:33.8890288Z cache miss, executing fb2b71c39da0f161
+2026-10-17T15:19:33.8890592Z 
+2026-10-17T15:19:33.8890856Z > @vben/web-antd@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd
+2026-10-17T15:19:33.8891279Z > pnpm vite build --mode production
+2026-10-17T15:19:33.8891386Z 
+2026-10-17T15:19:33.8891806Z [36mvite v8.0.13 [32mbuilding client environment for production...[36m[39m
+2026-10-17T15:19:33.8892201Z [2K
+2026-10-17T15:19:33.8892480Z transforming...✓ 8473 modules transformed.
+2026-10-17T15:19:33.8892725Z rendering chunks...
+2026-10-17T15:19:33.8893047Z ✨configuration file is build successfully!
+2026-10-17T15:19:33.8893385Z dist/_app.config.js                                      0.20 kB
+2026-10-17T15:19:33.8893739Z dist/index.html                                          2.72 kB
+2026-10-17T15:19:33.8894119Z dist/png/login-control-room-BHaLtEVO.png             2,410.88 kB
+2026-10-17T15:19:33.8894525Z dist/css/drill-trend-modal-BsvCLZwR.css                  0.04 kB
+2026-10-17T15:19:33.8894897Z dist/css/history-tab-B6tfpW4u.css                        0.04 kB
+2026-10-17T15:19:33.8895313Z dist/css/tuning-Cqq24wjt.css                             0.05 kB
+2026-10-17T15:19:33.8895719Z dist/css/handling-uvhlt31h.css                           0.05 kB
+2026-10-17T15:19:33.8896128Z dist/css/confirm-section-BS3-ml7g.css                    0.06 kB
+2026-10-17T15:19:33.8896563Z dist/css/diagnosis-result-panel-CXgUCBqi.css             0.06 kB
+2026-10-17T15:19:33.8897016Z dist/css/loop-evaluation-QgAX-_4x.css                    0.09 kB
+2026-10-17T15:19:33.8897844Z dist/css/LoopEditDrawer-CMKUPITm.css                     0.10 kB
+2026-10-17T15:19:33.8898287Z dist/css/DeltaScatter-DL2-Lf7P.css                       0.17 kB
+2026-10-17T15:19:33.8898741Z dist/css/confidence-threshold-lBOGfGzd.css               0.17 kB
+2026-10-17T15:19:33.8899155Z dist/css/identify-section-C570rKHJ.css                   0.19 kB
+2026-10-17T15:19:33.8899851Z dist/css/event-snapshot-view-CzhegVk6.css                0.20 kB
+2026-10-17T15:19:33.8900284Z dist/css/matrix-section-BtC7iMoH.css                     0.21 kB
+2026-10-17T15:19:33.8900830Z dist/css/cockpit-radar-CvMJxXju.css                      0.21 kB
+2026-10-17T15:19:33.8901395Z dist/css/config-BxvA21dj.css                             0.22 kB
+2026-10-17T15:19:33.8901810Z dist/css/performance-CJMksUN0.css                        0.25 kB
+2026-10-17T15:19:33.8902221Z dist/css/workbench-radar6-Dr6SV0ua.css                   0.26 kB
+2026-10-17T15:19:33.8902620Z dist/css/fitness-donut-Sr3yAQJQ.css                      0.27 kB
+2026-10-17T15:19:33.8903034Z dist/css/workbench-kpi-history-Db-hQq67.css              0.27 kB
+2026-10-17T15:19:33.8903447Z dist/css/trend-panel-DEOYVIrk.css                        0.27 kB
+2026-10-17T15:19:33.8903852Z dist/css/workbench-process-trend-kiqGV8g1.css            0.27 kB
+2026-10-17T15:19:33.8904269Z dist/css/benefit-D2WZb6z1.css                            0.30 kB
+2026-10-17T15:19:33.8904659Z dist/css/records-BLJWT5JB.css                            0.30 kB
+2026-10-17T15:19:33.8905070Z dist/css/alert-statistics-D1i8ncyg.css                   0.32 kB
+2026-10-17T15:19:33.8905493Z dist/css/data-quality-DuVwhSbh.css                       0.32 kB
+2026-10-17T15:19:33.8906037Z dist/css/handling-BlR0gUQp.css                           0.32 kB
+2026-10-17T15:19:33.8906445Z dist/css/record-detail-drawer-JRQHOFYx.css               0.32 kB
+2026-10-17T15:19:33.8906747Z dist/css/performance-CWPWgkDu.css                        0.33 kB
+2026-10-17T15:19:33.8907108Z dist/css/VerifyDrawer-BVaz9OOE.css                       0.37 kB
+2026-10-17T15:19:33.8907523Z dist/css/OrderCreateModal-COmlVClC.css                   0.41 kB
+2026-10-17T15:19:33.8907945Z dist/css/use-latest-overview-cache-oI1i7Dv9.css          0.42 kB
+2026-10-17T15:19:33.8908380Z dist/css/overview-DJ2ErdkK.css                           0.47 kB
+2026-10-17T15:19:33.8908788Z dist/css/indicator-analysis-CK-53xYM.css                 0.48 kB
+2026-10-17T15:19:33.8909193Z dist/css/records-Bif4kH3c.css                            0.52 kB
+2026-10-17T15:19:33.8909591Z dist/css/unit-auto-pareto-BeDm0mQ5.css                   0.52 kB
+2026-10-17T15:19:33.8910004Z dist/css/tab-placeholder-BmkXo7kY.css                    0.53 kB
+2026-10-17T15:19:33.8910419Z dist/css/section-placeholder-EPjEJnYP.css                0.55 kB
+2026-10-17T15:19:33.8913049Z dist/css/login-Cfd-3JqJ.css                              0.55 kB
+2026-10-17T15:19:33.8913477Z dist/css/config-mg_WkEd9.css                             0.56 kB
+2026-10-17T15:19:33.8913879Z dist/css/loading-DXYS4l2z.css                            0.56 kB
+2026-10-17T15:19:33.8914301Z dist/css/tuning-verify-compare-CHuaE7Sf.css              0.59 kB
+2026-10-17T15:19:33.8914729Z dist/css/StatusBar-eMQh0Pg4.css                          0.60 kB
+2026-10-17T15:19:33.8915150Z dist/css/diagnosis-Dd--LT9B.css                          0.60 kB
+2026-10-17T15:19:33.8915599Z dist/css/loop-pager-CUB-opin.css                         0.61 kB
+2026-10-17T15:19:33.8916085Z dist/css/drill-sla-modal-Da93pViC.css                    0.68 kB
+2026-10-17T15:19:33.8916533Z dist/css/use-authz-live-Cm6L_mVc.css                     0.69 kB
+2026-10-17T15:19:33.8916972Z dist/css/block-state-overlay-oBkUX_VI.css                0.70 kB
+2026-10-17T15:19:33.8917462Z dist/css/node-radar-panel-gZgSqI37.css                   0.70 kB
+2026-10-17T15:19:33.8917894Z dist/css/simulate-section-lJ2czAld.css                   0.76 kB
+2026-10-17T15:19:33.8918164Z dist/css/grading-threshold-D6yvmVwM.css                  0.83 kB
+2026-10-17T15:19:33.8918457Z dist/css/SplitBar-DB9UIIII.css                           0.84 kB
+2026-10-17T15:19:33.8918934Z dist/css/AllLoopWorkbenchHost-BuFOMfIh.css               0.85 kB
+2026-10-17T15:19:33.8919221Z dist/css/workbench-diagnosis-card-Cw-g_nqO.css           0.92 kB
+2026-10-17T15:19:33.8919501Z dist/css/monitor-Dt9jDSyt.css                            0.99 kB
+2026-10-17T15:19:33.8919856Z dist/css/loops-Ca_JT9aa.css                              1.02 kB
+2026-10-17T15:19:33.8920113Z dist/css/plant-node-tree-BDPapCbj.css                    1.07 kB
+2026-10-17T15:19:33.8921034Z dist/css/matrix-tab-C0CMf2ak.css                         1.12 kB
+2026-10-17T15:19:33.8921355Z dist/css/cockpit-modal-Cy0tPHst.css                      1.17 kB
+2026-10-17T15:19:33.8921685Z dist/css/workbench-metric-bars-3I_6aQ-e.css              1.19 kB
+2026-10-17T15:19:33.8921946Z dist/css/toolbar-button-D88UArcs.css                     1.20 kB
+2026-10-17T15:19:33.8922199Z dist/css/list-modal-EX03mfCA.css                         1.31 kB
+2026-10-17T15:19:33.8922618Z dist/css/work-item-list-HmxfwqiW.css                     1.35 kB
+2026-10-17T15:19:33.8923059Z dist/css/workbench360-Dhgriddj.css                       1.42 kB
+2026-10-17T15:19:33.8923463Z dist/css/WbDrawer-F9hXAN3z.css                           1.42 kB
+2026-10-17T15:19:33.8923884Z dist/css/ThumbStrip-kBih4Xle.css                         1.43 kB
+2026-10-17T15:19:33.8924301Z dist/css/unit-steady-bars-5o_cR-Mr.css                   1.44 kB
+2026-10-17T15:19:33.8924762Z dist/css/history-drawer-ujki0YnL.css                     1.46 kB
+2026-10-17T15:19:33.8925289Z dist/css/device-tree-DHVKnGAa.css                        1.51 kB
+2026-10-17T15:19:33.8925658Z dist/css/event-detail-modal-CQMcBNHn.css                 1.53 kB
+2026-10-17T15:19:33.8925926Z dist/css/kpi-band-B7LgmNIw.css                           1.57 kB
+2026-10-17T15:19:33.8926185Z dist/css/theme-toggle-BKQ46UDU.css                       1.63 kB
+2026-10-17T15:19:33.8926452Z dist/css/cohort-compare-drawer-BduDhIEQ.css              1.67 kB
+2026-10-17T15:19:33.8926740Z dist/css/AttentionDrawer-BRhn8xhG.css                    1.72 kB
+2026-10-17T15:19:33.8927036Z dist/css/loops-DChMH-Pr.css                              1.73 kB
+2026-10-17T15:19:33.8927302Z dist/css/overview-CI_WKVWq.css                           1.86 kB
+2026-10-17T15:19:33.8927595Z dist/css/gate-health-panel-CQw4zTDe.css                  1.87 kB
+2026-10-17T15:19:33.8927865Z dist/css/alert-stream-B2VSuHcH.css                       1.94 kB
+2026-10-17T15:19:33.8928127Z dist/css/batch-diagnose-modal-j6SVxScO.css               1.99 kB
+2026-10-17T15:19:33.8928389Z dist/css/loop-card-DtPgUJEs.css                          2.05 kB
+2026-10-17T15:19:33.8928642Z dist/css/overview-C3ikxsSE.css                           2.24 kB
+2026-10-17T15:19:33.8928890Z dist/css/my-work-Dc2TC_0p.css                            2.27 kB
+2026-10-17T15:19:33.8929148Z dist/css/list-Bz7V9u5S.css                               2.41 kB
+2026-10-17T15:19:33.8929393Z dist/css/rank-tab-hUjTqR7c.css                           2.46 kB
+2026-10-17T15:19:33.8929690Z dist/css/todo-panel-DzfWFiU6.css                         2.50 kB
+2026-10-17T15:19:33.8930008Z dist/css/todo-detail-modal-DLkPsNIs.css                  2.50 kB
+2026-10-17T15:19:33.8930262Z dist/css/basic-info-BaXUFeuC.css                         2.56 kB
+2026-10-17T15:19:33.8930732Z dist/css/page-toolbar-BGSgM5qY.css                       2.63 kB
+2026-10-17T15:19:33.8931000Z dist/css/modules-BtPlE5nP.css                            2.65 kB
+2026-10-17T15:19:33.8931255Z dist/css/LoopHeader-DH2BjuUw.css                         2.73 kB
+2026-10-17T15:19:33.8931509Z dist/css/JourneyRail-DxWAGfcS.css                        2.75 kB
+2026-10-17T15:19:33.8931766Z dist/css/diagnosis-C3tWczMG.css                          2.82 kB
+2026-10-17T15:19:33.8932016Z dist/css/TrendChart-CLdlnbeG.css                         2.97 kB
+2026-10-17T15:19:33.8932272Z dist/css/device-rank-bars-CqhQvgRn.css                   2.99 kB
+2026-10-17T15:19:33.8932545Z dist/css/loop-detail-panel-BxVDbvdv.css                  3.06 kB
+2026-10-17T15:19:33.8932818Z dist/css/coverage-panel-BHVIXXqZ.css                     3.17 kB
+2026-10-17T15:19:33.8933202Z dist/css/loop-detail-modal-CbZJO0hR.css                  3.18 kB
+2026-10-17T15:19:33.8933463Z dist/css/LoopSpine-Bm09_ikq.css                          3.49 kB
+2026-10-17T15:19:33.8933712Z dist/css/data-DlYFK1Df.css                               3.53 kB
+2026-10-17T15:19:33.8934065Z dist/css/cockpit-header-Bf04NrN4.css                     3.80 kB
+2026-10-17T15:19:33.8934324Z dist/css/use-page-toolbar-Bolga5ic.css                   4.07 kB
+2026-10-17T15:19:33.8934578Z dist/css/TuningSection-CqM1tjq0.css                      4.51 kB
+2026-10-17T15:19:33.8934839Z dist/css/loop-archive-drawer-D43PhlWP.css                4.88 kB
+2026-10-17T15:19:33.8935103Z dist/css/manage-COchFqV-.css                             5.46 kB
+2026-10-17T15:19:33.8935360Z dist/css/HandlingSection-B219bxAJ.css                    5.79 kB
+2026-10-17T15:19:33.8935617Z dist/css/SingleLoopWorkbench-80_P5cU4.css                6.03 kB
+2026-10-17T15:19:33.8935875Z dist/css/auth-xLBJndD4.css                               6.13 kB
+2026-10-17T15:19:33.8936121Z dist/css/AssessSection-Cx43r_KD.css                      6.23 kB
+2026-10-17T15:19:33.8936373Z dist/css/DiagSection-BlGGwdhv.css                        6.47 kB
+2026-10-17T15:19:33.8936625Z dist/css/vendor-misc-DkTQMyWH.css                        6.65 kB
+2026-10-17T15:19:33.8936906Z dist/css/diagnosis-detail-modal-Cqvqktks.css             7.81 kB
+2026-10-17T15:19:33.8937218Z dist/css/pid-dashboard-Bk0_PsDq.css                      8.89 kB
+2026-10-17T15:19:33.8937468Z dist/css/clpm-BKbRE52g.css                              16.16 kB
+2026-10-17T15:19:33.8937711Z dist/css/basic-BQ88AUi_.css                             22.29 kB
+2026-10-17T15:19:33.8937958Z dist/css/bootstrap-Bro-f5iP.css                        202.35 kB
+2026-10-17T15:19:33.8938213Z dist/js/polling-BVaPZ_i2.js                              0.03 kB
+2026-10-17T15:19:33.8938464Z dist/js/_plugin-vue_export-helper-BS_FnM7m.js            0.08 kB
+2026-10-17T15:19:33.8938717Z dist/js/demos-BiP_UX0n.js                                0.10 kB
+2026-10-17T15:19:33.8938960Z dist/js/demos-DZzPQvTu.js                                0.11 kB
+2026-10-17T15:19:33.8939205Z dist/js/plant-node-C1lBX3wW.js                           0.11 kB
+2026-10-17T15:19:33.8939452Z dist/js/profile-CtWItKjT.js                              0.15 kB
+2026-10-17T15:19:33.8939710Z dist/js/profile-BoYYbOGh.js                              0.15 kB
+2026-10-17T15:19:33.8939982Z dist/js/src-DnNzVU4P.js                                  0.22 kB
+2026-10-17T15:19:33.8940230Z dist/js/coming-soon-C1vC0jGd.js                          0.22 kB
+2026-10-17T15:19:33.8940683Z dist/js/auth-Duf9ooxD.js                                 0.23 kB
+2026-10-17T15:19:33.8940934Z dist/js/cockpit-CIIoxOTe.js                              0.24 kB
+2026-10-17T15:19:33.8941185Z dist/js/forbidden-Ty0hRWPJ.js                            0.26 kB
+2026-10-17T15:19:33.8941441Z dist/js/internal-error-CnhG1bW2.js                       0.26 kB
+2026-10-17T15:19:33.8941698Z dist/js/offline-BCNV2Wmo.js                              0.26 kB
+2026-10-17T15:19:33.8941940Z dist/js/src-BGb4PnHF2.js                                 0.27 kB
+2026-10-17T15:19:33.8942181Z dist/js/page-BHVJIrEY.js                                 0.27 kB
+2026-10-17T15:19:33.8942425Z dist/js/page-V6EYg4uG.js                                 0.28 kB
+2026-10-17T15:19:33.8942676Z dist/js/use-config-access-DQi4_Lfx.js                    0.29 kB
+2026-10-17T15:19:33.8942928Z dist/js/extends-DiOqE10O.js                              0.29 kB
+2026-10-17T15:19:33.8943179Z dist/js/monitor-MHaY-VMs.js                              0.32 kB
+2026-10-17T15:19:33.8943433Z dist/js/assessment-labels-CC2DBMKp.js                    0.36 kB
+2026-10-17T15:19:33.8943686Z dist/js/not-found-Bo1m1gnz.js                            0.41 kB
+2026-10-17T15:19:33.8943980Z dist/js/format-BzfVUA2C.js                               0.45 kB
+2026-10-17T15:19:33.8944307Z dist/js/auth-title-B3ZU2WV4.js                           0.46 kB
+2026-10-17T15:19:33.8944694Z dist/js/motion-CC0_GgCH.js                               0.49 kB
+2026-10-17T15:19:33.8944945Z dist/js/concurrency-KITR0D9P.js                          0.49 kB
+2026-10-17T15:19:33.8945190Z dist/js/dict-zFVoA6Il.js                                 0.51 kB
+2026-10-17T15:19:33.8945438Z dist/js/render-content-BwetGond.js                       0.55 kB
+2026-10-17T15:19:33.8945821Z dist/js/authorization-DKHyGdwm.js                        0.57 kB
+2026-10-17T15:19:33.8946074Z dist/js/use-table-density-CMWchlp0.js                    0.59 kB
+2026-10-17T15:19:33.8946345Z dist/js/use-latest-request-Dqh9myNt.js                   0.60 kB
+2026-10-17T15:19:33.8946601Z dist/js/tab-placeholder-CE-N-GDD.js                      0.64 kB
+2026-10-17T15:19:33.8946849Z dist/js/tag-BllBY94e.js                                  0.65 kB
+2026-10-17T15:19:33.8947098Z dist/js/rolldown-runtime-B7dzfUhG.js                     0.69 kB
+2026-10-17T15:19:33.8947354Z dist/js/drill-trend-modal-BTjkhGxK.js                    0.70 kB
+2026-10-17T15:19:33.8947613Z dist/js/block-state-overlay-DAmaywrM.js                  0.71 kB
+2026-10-17T15:19:33.8947873Z dist/js/use-loop-palettes-CMFFgJiA.js                    0.72 kB
+2026-10-17T15:19:33.8948140Z dist/js/reports-Bj6t6khl.js                              0.74 kB
+2026-10-17T15:19:33.8948476Z dist/js/use-clpm-roles-DF1jsAJZ.js                       0.75 kB
+2026-10-17T15:19:33.8948811Z dist/js/section-placeholder-CgonIoFL.js                  0.77 kB
+2026-10-17T15:19:33.8949087Z dist/js/tuning-D6Q4fOOE.js                               0.78 kB
+2026-10-17T15:19:33.8949359Z dist/js/common-DRQIMANE.js                               0.78 kB
+2026-10-17T15:19:33.8949628Z dist/js/handling-BWWrB1ol.js                             0.78 kB
+2026-10-17T15:19:33.8949887Z dist/js/use-modules-D9KgURXF.js                          0.79 kB
+2026-10-17T15:19:33.8950159Z dist/js/common-D6h0Q9_0.js                               0.81 kB
+2026-10-17T15:19:33.8950434Z dist/js/use-score-color-swsH5-kw.js                      0.81 kB
+2026-10-17T15:19:33.8950878Z dist/js/constants-Bj6lANm9.js                            0.83 kB
+2026-10-17T15:19:33.8951160Z dist/js/token-freshness-DPhHRpnv.js                      0.85 kB
+2026-10-17T15:19:33.8951440Z dist/js/plant-node-BJPBTGCv.js                           0.91 kB
+2026-10-17T15:19:33.8951723Z dist/js/format-Di6KvXua.js                               0.95 kB
+2026-10-17T15:19:33.8951995Z dist/js/loop-pager-Db4qQX_L.js                           0.95 kB
+2026-10-17T15:19:33.8952258Z dist/js/permission-U5-7tKau.js                           0.97 kB
+2026-10-17T15:19:33.8952551Z dist/js/cockpit-BatOTJgF.js                              1.06 kB
+2026-10-17T15:19:33.8952821Z dist/js/engineering-template-1HyZJFh1.js                 1.06 kB
+2026-10-17T15:19:33.8953124Z dist/js/use-polling-CcbTMV5F.js                          1.09 kB
+2026-10-17T15:19:33.8953400Z dist/js/dcs-_VoRAuJu.js                                  1.16 kB
+2026-10-17T15:19:33.8953781Z dist/js/src-f6gpCYWp.js                                  1.16 kB
+2026-10-17T15:19:33.8954109Z dist/js/HelpBubble-BwRbkHQu.js                           1.20 kB
+2026-10-17T15:19:33.8954396Z dist/js/use-cockpit-theme-HSS6Qy4t.js                    1.25 kB
+2026-10-17T15:19:33.8954682Z dist/js/Switch-DcL6VFuU.js                               1.29 kB
+2026-10-17T15:19:33.8954966Z dist/js/Spark-DGq3c30i.js                                1.29 kB
+2026-10-17T15:19:33.8955221Z dist/js/cockpit-modal--4hFp4KH.js                        1.29 kB
+2026-10-17T15:19:33.8955643Z dist/js/SplitBar-HrRIu0F0.js                             1.29 kB
+2026-10-17T15:19:33.8955918Z dist/js/GateBanner-CZUPmAJL.js                           1.30 kB
+2026-10-17T15:19:33.8956165Z dist/js/icon-button-Wd8jrffu.js                          1.31 kB
+2026-10-17T15:19:33.8956414Z dist/js/loading-BBbvwZ9Q.js                              1.31 kB
+2026-10-17T15:19:33.8956710Z dist/js/use-clpm-theme-CYzRRGog.js                       1.35 kB
+2026-10-17T15:19:33.8956973Z dist/js/OpsKanban-BkiFH4p1.js                            1.36 kB
+2026-10-17T15:19:33.8957327Z dist/js/device-tree-DPtH2w8r.js                          1.50 kB
+2026-10-17T15:19:33.8957583Z dist/js/use-site-branding-BLytI5Kr.js                    1.51 kB
+2026-10-17T15:19:33.8957856Z dist/js/handling-BhHcIwX9.js                             1.54 kB
+2026-10-17T15:19:33.8958202Z dist/js/precheck-badge-DWZbF6rP.js                       1.56 kB
+2026-10-17T15:19:33.8958461Z dist/js/export-C64Sjdt0.js                               1.59 kB
+2026-10-17T15:19:33.8958731Z dist/js/drill-modals-raBFCzQH.js                         1.61 kB
+2026-10-17T15:19:33.8959006Z dist/js/LaneCol-D_j0I00Z.js                              1.70 kB
+2026-10-17T15:19:33.8959266Z dist/js/qrcode-login-Xy9Y5omS.js                         1.71 kB
+2026-10-17T15:19:33.8959550Z dist/js/notification-setting-BXGTvjLr.js                 1.74 kB
+2026-10-17T15:19:33.8959918Z dist/js/base-setting-iSmObq9o.js                         1.76 kB
+2026-10-17T15:19:33.8960197Z dist/js/workbench-fitness-badge-UQDgbpc_.js              1.82 kB
+2026-10-17T15:19:33.8961022Z dist/js/personal-work-HnqHTwca.js                        1.86 kB
+2026-10-17T15:19:33.8961307Z dist/js/use-echarts-preset-D355Znm4.js                   1.89 kB
+2026-10-17T15:19:33.8961577Z dist/js/diagnosis-CO8bjfaY.js                            1.89 kB
+2026-10-17T15:19:33.8961853Z dist/js/security-setting-MNgJt6B2.js                     1.96 kB
+2026-10-17T15:19:33.8962120Z dist/js/button-CjUpd_6f.js                               1.97 kB
+2026-10-17T15:19:33.8962378Z dist/js/tuning-BPbDOsoA.js                               1.97 kB
+2026-10-17T15:19:33.8962651Z dist/js/FormLabel-Dl9z5Oru.js                            1.98 kB
+2026-10-17T15:19:33.8962903Z dist/js/list-modal-BZ8gne3r.js                           2.02 kB
+2026-10-17T15:19:33.8963151Z dist/js/tippy-5eVE9iKW.js                                2.05 kB
+2026-10-17T15:19:33.8963433Z dist/js/profile-diff-view-DZEMnN15.js                    2.05 kB
+2026-10-17T15:19:33.8963846Z dist/js/workbench-metric-bars-BIx0jKiM.js                2.06 kB
+2026-10-17T15:19:33.8964131Z dist/js/page-BESvG3VC.js                                 2.08 kB
+2026-10-17T15:19:33.8964385Z dist/js/use-echarts-iidMqpCg.js                          2.09 kB
+2026-10-17T15:19:33.8964647Z dist/js/alert-ws-D5er4cdp.js                             2.11 kB
+2026-10-17T15:19:33.8964911Z dist/js/drill-sla-modal-CTdvxKrg.js                      2.15 kB
+2026-10-17T15:19:33.8965176Z dist/js/password-setting-DKSuW01g.js                     2.17 kB
+2026-10-17T15:19:33.8965446Z dist/js/WbDrawer-C8bPfnKM.js                             2.20 kB
+2026-10-17T15:19:33.8965707Z dist/js/forget-password-BXZFZ8fw.js                      2.22 kB
+2026-10-17T15:19:33.8965977Z dist/js/template-utils-BWC_ovmt.js                       2.33 kB
+2026-10-17T15:19:33.8966250Z dist/js/workbench-radar6-DQaoHRDG.js                     2.35 kB
+2026-10-17T15:19:33.8966507Z dist/js/alert-DSKaaNHb.js                                2.37 kB
+2026-10-17T15:19:33.8966762Z dist/js/StatusBar-B0QOv7e6.js                            2.44 kB
+2026-10-17T15:19:33.8967021Z dist/js/TaskCard-BbsIEKGT.js                             2.44 kB
+2026-10-17T15:19:33.8967404Z dist/js/use-wb360-session-CuR1DTUY.js                    2.55 kB
+2026-10-17T15:19:33.8967741Z dist/js/src-DWCr9uCU.js                                  2.62 kB
+2026-10-17T15:19:33.8968220Z dist/js/tasks-Cu7zfVJG.js                                2.65 kB
+2026-10-17T15:19:33.8987667Z dist/js/ThumbStrip-BT8m_b0j.js                           2.67 kB
+2026-10-17T15:19:33.8988183Z dist/js/node-radar-panel-DhevzBky.js                     2.68 kB
+2026-10-17T15:19:33.8988464Z dist/js/code-login-DQ0XQFA-.js                           2.70 kB
+2026-10-17T15:19:33.8988738Z dist/js/VerifyDrawer-BwWo5acy.js                         2.72 kB
+2026-10-17T15:19:33.8989018Z dist/js/review-drawer-BO66Xs5J.js                        2.74 kB
+2026-10-17T15:19:33.8989291Z dist/js/page-toolbar-By_J3oxx.js                         2.77 kB
+2026-10-17T15:19:33.8989728Z dist/js/workbench-diagnosis-card-B_A2Gya_.js             2.79 kB
+2026-10-17T15:19:33.8990123Z dist/js/history-drawer-DFfy9AjH.js                       2.82 kB
+2026-10-17T15:19:33.8990442Z dist/js/loop-card-DEDtVZLE.js                            2.86 kB
+2026-10-17T15:19:33.8990859Z dist/js/constants-faGT2a2V.js                            2.90 kB
+2026-10-17T15:19:33.8991231Z dist/js/confirm-section-BvEVz9H-.js                      2.90 kB
+2026-10-17T15:19:33.8991506Z dist/js/AttentionDrawer-B2kJAMFg.js                      2.92 kB
+2026-10-17T15:19:33.8991771Z dist/js/tooltip-DntLs_Yj.js                              2.97 kB
+2026-10-17T15:19:33.8992037Z dist/js/DgRuleStats-NIVW9xmf.js                          3.09 kB
+2026-10-17T15:19:33.8992293Z dist/js/unit-steady-bars-CH8laUtt.js                     3.16 kB
+2026-10-17T15:19:33.8992553Z dist/js/trend-panel-ZPCUMnOV.js                          3.20 kB
+2026-10-17T15:19:33.8992902Z dist/js/fallback-BIp9eaME.js                             3.22 kB
+2026-10-17T15:19:33.8993183Z dist/js/constants-B1afP5Fk.js                            3.25 kB
+2026-10-17T15:19:33.8993532Z dist/js/register-DMYZajb8.js                             3.31 kB
+2026-10-17T15:19:33.8993911Z dist/js/use-loop-follow-C697E4B8.js                      3.34 kB
+2026-10-17T15:19:33.8994211Z dist/js/fitness-donut-CsFBzRVl.js                        3.38 kB
+2026-10-17T15:19:33.8994637Z dist/js/authentication-jEIx64Er.js                       3.40 kB
+2026-10-17T15:19:33.8995058Z dist/js/todo-panel-CajrtDAz.js                           3.41 kB
+2026-10-17T15:19:33.8995488Z dist/js/HandlingReopenList-BPhBfCvA.js                   3.41 kB
+2026-10-17T15:19:33.8996092Z dist/js/loop-performance-shared-Drt6sprr.js              3.48 kB
+2026-10-17T15:19:33.8996521Z dist/js/workbench-context-9wlZGqEV.js                    3.49 kB
+2026-10-17T15:19:33.8996923Z dist/js/authentication-DIjkUW6O.js                       3.53 kB
+2026-10-17T15:19:33.8997354Z dist/js/JourneyRail-OG2MvwUm.js                          3.63 kB
+2026-10-17T15:19:33.8997843Z dist/js/workbench-kpi-history-CKEbRvVe.js                3.63 kB
+2026-10-17T15:19:33.8998322Z dist/js/profile-pbQ2ivst.js                              3.63 kB
+2026-10-17T15:19:33.8998808Z dist/js/avatar-DFMlhYlS.js                               3.64 kB
+2026-10-17T15:19:33.8999317Z dist/js/EvalHeatMatrix-DYqSqGre.js                       3.68 kB
+2026-10-17T15:19:33.9000105Z dist/js/alert-stream-Cd4Vvx_s.js                         3.84 kB
+2026-10-17T15:19:33.9000666Z dist/js/workbench360-BSgiyS4B.js                         3.86 kB
+2026-10-17T15:19:33.9001162Z dist/js/loop-evaluation-Dufup9eH.js                      3.89 kB
+2026-10-17T15:19:33.9001689Z dist/js/StaffHBar-CgmFkrTD.js                            3.91 kB
+2026-10-17T15:19:33.9002198Z dist/js/toolbar-button-Dwk5kQTZ.js                       4.07 kB
+2026-10-17T15:19:33.9002670Z dist/js/batch-runs-drawer-B2xxkoeI.js                    4.08 kB
+2026-10-17T15:19:33.9003107Z dist/js/tasks-Bq84W8KH.js                                4.16 kB
+2026-10-17T15:19:33.9003554Z dist/js/verification-D3-3Wlm3.js                         4.18 kB
+2026-10-17T15:19:33.9003985Z dist/js/evidence-drawer-D4mBysYf.js                      4.22 kB
+2026-10-17T15:19:33.9004452Z dist/js/use-latest-overview-cache-6HXwsbzB.js            4.29 kB
+2026-10-17T15:19:33.9004914Z dist/js/unit-auto-pareto-B6fyEVQD.js                     4.30 kB
+2026-10-17T15:19:33.9005363Z dist/js/diagnosis-BPjOfncv.js                            4.33 kB
+2026-10-17T15:19:33.9005852Z dist/js/TuneQueueRow-QWZ6baMw.js                         4.39 kB
+2026-10-17T15:19:33.9006322Z dist/js/ui-CNfTnTV8.js                                   4.39 kB
+2026-10-17T15:19:33.9006758Z dist/js/LoopHeader-Cyf4i79G.js                           4.42 kB
+2026-10-17T15:19:33.9007213Z dist/js/event-detail-modal-Cl8xrmkX.js                   4.49 kB
+2026-10-17T15:19:33.9007704Z dist/js/assess-trigger-modal-wCD6xv2D.js                 4.51 kB
+2026-10-17T15:19:33.9008191Z dist/js/TuningRootCauseDist-jfVfhlIu.js                  4.51 kB
+2026-10-17T15:19:33.9008839Z dist/js/performance-D4UIhPYp.js                          4.56 kB
+2026-10-17T15:19:33.9009301Z dist/js/OrderCreateModal-B9-kb6Rk.js                     4.61 kB
+2026-10-17T15:19:33.9009760Z dist/js/EvalSummary-m2MyHNow.js                          4.64 kB
+2026-10-17T15:19:33.9010311Z dist/js/ui-DbuALmIO.js                                   4.64 kB
+2026-10-17T15:19:33.9010913Z dist/js/todo-detail-modal-yO50EicG.js                    4.65 kB
+2026-10-17T15:19:33.9011385Z dist/js/cockpit-header-CWqCVj2y.js                       4.87 kB
+2026-10-17T15:19:33.9011852Z dist/js/TuningFitnessCard-BgLlNSDu.js                    4.89 kB
+2026-10-17T15:19:33.9012324Z dist/js/LoopSpine-xOCzSBCw.js                            4.91 kB
+2026-10-17T15:19:33.9012791Z dist/js/gate-health-panel-CbBdFVHf.js                    4.91 kB
+2026-10-17T15:19:33.9013240Z dist/js/use-page-toolbar-CZ4pCBzK.js                     5.06 kB
+2026-10-17T15:19:33.9013714Z dist/js/DeltaScatter-CGXSlgcM.js                         5.17 kB
+2026-10-17T15:19:33.9014185Z dist/js/AbnormalLoopsTable-DHbp5qfN.js                   5.20 kB
+2026-10-17T15:19:33.9014659Z dist/js/DgSummaryBand-CiTW5bq_.js                        5.22 kB
+2026-10-17T15:19:33.9015121Z dist/js/modules-CL8STCOR.js                              5.24 kB
+2026-10-17T15:19:33.9015652Z dist/js/publications-tab-DC_DqiI5.js                     5.26 kB
+2026-10-17T15:19:33.9016163Z dist/js/matrix-section-C3mO-Ils.js                       5.41 kB
+2026-10-17T15:19:33.9016642Z dist/js/device-rank-bars-BCikqo9f.js                     5.47 kB
+2026-10-17T15:19:33.9017146Z dist/js/workbench-process-trend-3a56Gpx8.js              5.59 kB
+2026-10-17T15:19:33.9017650Z dist/js/cockpit-radar-C8ySGl-s.js                        5.62 kB
+2026-10-17T15:19:33.9018162Z dist/js/HandlingSlaSummary-RP_UwQb7.js                   5.66 kB
+2026-10-17T15:19:33.9018644Z dist/js/TaskDetailCard-DMSAXHpX.js                       5.76 kB
+2026-10-17T15:19:33.9019186Z dist/js/batch-detail-drawer-lz2Fv6kd.js                  5.83 kB
+2026-10-17T15:19:33.9019645Z dist/js/ParetoBarLine-CZM8ddKx.js                        5.92 kB
+2026-10-17T15:19:33.9020114Z dist/js/LoopDetailDrawer-Dcht0jzE.js                     6.02 kB
+2026-10-17T15:19:33.9020761Z dist/js/EvalDistributions-DVv4-3hE.js                    6.11 kB
+2026-10-17T15:19:33.9021285Z dist/js/kpi-band-BqWFySpR.js                             6.35 kB
+2026-10-17T15:19:33.9021780Z dist/js/version-history-tab-CawcJqyD.js                  6.36 kB
+2026-10-17T15:19:33.9022277Z dist/js/batch-diagnose-modal-DXSqhmYv.js                 6.64 kB
+2026-10-17T15:19:33.9022769Z dist/js/attention-group-drawer-BbyFDXF-.js               6.65 kB
+2026-10-17T15:19:33.9023247Z dist/js/coverage-panel-Clc3anLT.js                       6.70 kB
+2026-10-17T15:19:33.9023732Z dist/js/DgUnitStackedBar-CUJZE0mq.js                     6.72 kB
+2026-10-17T15:19:33.9024201Z dist/js/batch-restore-modal-BrdqOHu1.js                  6.75 kB
+2026-10-17T15:19:33.9024716Z dist/js/AllLoopWorkbenchHost-2o-xbAYc.js                 6.76 kB
+2026-10-17T15:19:33.9025273Z dist/js/overview-DZLR7fnP.js                             6.78 kB
+2026-10-17T15:19:33.9025761Z dist/js/config-BAbXDD6G.js                               6.82 kB
+2026-10-17T15:19:33.9026234Z dist/js/metrics-panel-CDpg1EPw.js                        6.84 kB
+2026-10-17T15:19:33.9026746Z dist/js/TuningLoopDetail-Bnlas1-_.js                     7.01 kB
+2026-10-17T15:19:33.9027200Z dist/js/tuning-verify-compare-BLLephd9.js                7.03 kB
+2026-10-17T15:19:33.9027732Z dist/js/handling-archive-drawer-DOOODRkT.js              7.05 kB
+2026-10-17T15:19:33.9028207Z dist/js/handling-detail-drawer-iRgo-s8H.js               7.05 kB
+2026-10-17T15:19:33.9028675Z dist/js/icon-500-BJdfWIrX.js                             7.09 kB
+2026-10-17T15:19:33.9029161Z dist/js/cohort-compare-drawer-BiUyA4-h.js                7.20 kB
+2026-10-17T15:19:33.9029644Z dist/js/preferences-CQTR6Knd.js                          7.26 kB
+2026-10-17T15:19:33.9030249Z dist/js/preferences-C_sDwEDf.js                          7.30 kB
+2026-10-17T15:19:33.9031084Z dist/js/backfill-task-drawer-koR1Ca9H.js                 7.30 kB
+2026-10-17T15:19:33.9031562Z dist/js/task-strategy-Dki4R7Tb.js                        7.64 kB
+2026-10-17T15:19:33.9032024Z dist/js/record-detail-drawer-sKs__ku5.js                 7.74 kB
+2026-10-17T15:19:33.9032606Z dist/js/plant-node-tree-DUXVjsbx.js                      7.92 kB
+2026-10-17T15:19:33.9033094Z dist/js/DiagTriggerModal-DrEE2-bl.js                     7.98 kB
+2026-10-17T15:19:33.9033561Z dist/js/icon-offline-DK1ZTJ3j.js                         8.09 kB
+2026-10-17T15:19:33.9034028Z dist/js/use-loop-realtime-Vlcj_CBc.js                    8.17 kB
+2026-10-17T15:19:33.9034543Z dist/js/use-clpm-preferences-ocMxcMud.js                 8.37 kB
+2026-10-17T15:19:33.9035041Z dist/js/identify-section-x53bXDpJ.js                     8.42 kB
+2026-10-17T15:19:33.9035530Z dist/js/loop-detail-modal-NKobo2tQ.js                    8.53 kB
+2026-10-17T15:19:33.9036007Z dist/js/archive-COPoggnC.js                              8.59 kB
+2026-10-17T15:19:33.9036460Z dist/js/publish-version-modal-Cu3kRhBp.js                8.61 kB
+2026-10-17T15:19:33.9036914Z dist/js/dict-D3-gKg_d.js                                 8.73 kB
+2026-10-17T15:19:33.9037387Z dist/js/confidence-threshold-CacdgGd3.js                 8.84 kB
+2026-10-17T15:19:33.9037860Z dist/js/EvalTrendChart-Dl_yJ2tr.js                       8.90 kB
+2026-10-17T15:19:33.9038334Z dist/js/about-C7KfVokH.js                                8.93 kB
+2026-10-17T15:19:33.9038789Z dist/js/basic-info-DKg2azEm.js                           8.93 kB
+2026-10-17T15:19:33.9039243Z dist/js/detail-BWSfxBcz.js                               8.95 kB
+2026-10-17T15:19:33.9039776Z dist/js/alert-statistics-18ZU0xc_.js                     9.35 kB
+2026-10-17T15:19:33.9040242Z dist/js/icon-403-BLQJFMSI.js                             9.40 kB
+2026-10-17T15:19:33.9040771Z dist/js/subscription-DXimyCsG.js                         9.52 kB
+2026-10-17T15:19:33.9041245Z dist/js/waveform-chart-CVk7d_vo.js                       9.59 kB
+2026-10-17T15:19:33.9041745Z dist/js/loop-confidence-content-b8Us-sNV.js              9.60 kB
+2026-10-17T15:19:33.9042206Z dist/js/records-BbL11jvs.js                              9.63 kB
+2026-10-17T15:19:33.9042684Z dist/js/grading-threshold-Bjm5Ss88.js                    9.68 kB
+2026-10-17T15:19:33.9043160Z dist/js/EvalRankTable-XNJZGQUv.js                        9.71 kB
+2026-10-17T15:19:33.9043651Z dist/js/event-snapshot-view-CHcwfbdg.js                  9.88 kB
+2026-10-17T15:19:33.9044162Z dist/js/theme-toggle-oIvYApBO.js                        10.35 kB
+2026-10-17T15:19:33.9044618Z dist/js/clpm-ui-CI0jDVZ6.js                             10.68 kB
+2026-10-17T15:19:33.9045098Z dist/js/loop-detail-panel-DempRZsl.js                   10.69 kB
+2026-10-17T15:19:33.9045568Z dist/js/handling-tab-CgMMINe9.js                        10.88 kB
+2026-10-17T15:19:33.9046028Z dist/js/diagnosis-cmbrqZJj.js                           11.04 kB
+2026-10-17T15:19:33.9046502Z dist/js/my-work-D5Ug_3PE.js                             11.04 kB
+2026-10-17T15:19:33.9046961Z dist/js/engineering-templates-Dk-Osb4m.js               11.09 kB
+2026-10-17T15:19:33.9047445Z dist/js/TuningSection-BsM9OrNq.js                       11.12 kB
+2026-10-17T15:19:33.9047907Z dist/js/rules-Dj4qZVng.js                               11.60 kB
+2026-10-17T15:19:33.9048356Z dist/js/auth-BF4_F4yA.js                                11.62 kB
+2026-10-17T15:19:33.9048805Z dist/js/outlier-params-CjdigRDE.js                      11.65 kB
+2026-10-17T15:19:33.9049267Z dist/js/loops-CEHXmfYe.js                               11.70 kB
+2026-10-17T15:19:33.9049751Z dist/js/use-tuning-workbench-B49AjRZi.js                11.74 kB
+2026-10-17T15:19:33.9050222Z dist/js/fitness-threshold-BPKJWvHw.js                   12.08 kB
+2026-10-17T15:19:33.9050794Z dist/js/algorithm-params-6OndkAQe.js                    12.28 kB
+2026-10-17T15:19:33.9051272Z dist/js/override-publish-modal-RTaplFD-.js              12.29 kB
+2026-10-17T15:19:33.9051884Z dist/js/data-quality-BCUQccEh.js                        12.72 kB
+2026-10-17T15:19:33.9052343Z dist/js/tuning-tab-D6ws8LZu.js                          12.75 kB
+2026-10-17T15:19:33.9052813Z dist/js/batch-apply-modal-DTnM00Py.js                   12.80 kB
+2026-10-17T15:19:33.9053407Z dist/js/overview-BIAfrh4v.js                            12.81 kB
+2026-10-17T15:19:33.9053903Z dist/js/loop-performance-detail-content-DbKckc7r.js     12.85 kB
+2026-10-17T15:19:33.9054384Z dist/js/icon-coming-soon-_i0B3h0O.js                    12.90 kB
+2026-10-17T15:19:33.9054841Z dist/js/config-definition-CFpNHt5H.js                   13.15 kB
+2026-10-17T15:19:33.9055321Z dist/js/simulate-section-PZDCY_LA.js                    13.26 kB
+2026-10-17T15:19:33.9055779Z dist/js/use-drill-DB89S-tM.js                           13.52 kB
+2026-10-17T15:19:33.9056237Z dist/js/audit-tvMaKl1W.js                               14.46 kB
+2026-10-17T15:19:33.9056683Z dist/js/AssessSection-Bf_CyROx.js                       14.80 kB
+2026-10-17T15:19:33.9057138Z dist/js/config-ljhizhze.js                              14.93 kB
+2026-10-17T15:19:33.9057588Z dist/js/handling-Dyi1l4QS.js                            15.12 kB
+2026-10-17T15:19:33.9058045Z dist/js/work-item-list-B37FzGhE.js                      15.12 kB
+2026-10-17T15:19:33.9058555Z dist/js/HandlingSection-O3OjW5K5.js                     15.24 kB
+2026-10-17T15:19:33.9059155Z dist/js/benefit-C3WY1-1C.js                             16.20 kB
+2026-10-17T15:19:33.9059628Z dist/js/TrendChart-DKOtRwKk.js                          16.27 kB
+2026-10-17T15:19:33.9060126Z dist/js/loop-archive-drawer-CeSAcnZy.js                 16.57 kB
+2026-10-17T15:19:33.9060718Z dist/js/diagnosis-result-panel--Thri6St.js              17.09 kB
+2026-10-17T15:19:33.9061188Z dist/js/list-BnQOmnTF.js                                17.24 kB
+2026-10-17T15:19:33.9061660Z dist/js/data-JVubY9sX.js                                18.12 kB
+2026-10-17T15:19:33.9062159Z dist/js/permissions-C5OemcKK.js                         18.74 kB
+2026-10-17T15:19:33.9062669Z dist/js/DiagSection-8OSGOtSv.js                         19.38 kB
+2026-10-17T15:19:33.9063234Z dist/js/users-hubPhKUI.js                               19.49 kB
+2026-10-17T15:19:33.9063671Z dist/js/overview-Bb334MZb.js                            19.75 kB
+2026-10-17T15:19:33.9064150Z dist/js/weight-config-CH1u9ROT.js                       20.20 kB
+2026-10-17T15:19:33.9064640Z dist/js/performance-BH0J5RUO.js                         20.22 kB
+2026-10-17T15:19:33.9065091Z dist/js/events-BiCNWWY2.js                              20.24 kB
+2026-10-17T15:19:33.9065541Z dist/js/records-BQRryLyZ.js                             20.51 kB
+2026-10-17T15:19:33.9065975Z dist/js/config-CIFFxIhz.js                              21.22 kB
+2026-10-17T15:19:33.9066467Z dist/js/matrix-tab-MFpoXJ8J.js                          21.62 kB
+2026-10-17T15:19:33.9066932Z dist/js/history-tab-BLNnPQoW.js                         22.56 kB
+2026-10-17T15:19:33.9067399Z dist/js/icon-404-AEuvkeNU.js                            24.35 kB
+2026-10-17T15:19:33.9067896Z dist/js/list-BXHDObfV.js                                24.45 kB
+2026-10-17T15:19:33.9068351Z dist/js/attention-CSWHX7LC.js                           24.58 kB
+2026-10-17T15:19:33.9068862Z dist/js/order-detail-drawer-yNgfrZy8.js                 25.71 kB
+2026-10-17T15:19:33.9069372Z dist/js/config-Di74uJ8Y.js                              25.83 kB
+2026-10-17T15:19:33.9069857Z dist/js/indicator-analysis-BJ6qq95P.js                  26.15 kB
+2026-10-17T15:19:33.9070352Z dist/js/rank-tab-ClWZsjD0.js                            26.71 kB
+2026-10-17T15:19:33.9070904Z dist/jse/index-index-BWu1dID0.js                        27.33 kB
+2026-10-17T15:19:33.9071388Z dist/js/request-wCGoKhcp.js                             27.61 kB
+2026-10-17T15:19:33.9071883Z dist/js/SingleLoopWorkbench-BeYCTcHI.js                 28.19 kB
+2026-10-17T15:19:33.9072361Z dist/js/workbench-TtdF65H_.js                           29.99 kB
+2026-10-17T15:19:33.9072903Z dist/js/diagnosis-detail-modal-BgCEd0QU.js              30.06 kB
+2026-10-17T15:19:33.9073517Z dist/js/login-DIVp9iEz.js                               31.53 kB
+2026-10-17T15:19:33.9073985Z dist/js/vendor-icons-BCZTPUK2.js                        31.72 kB
+2026-10-17T15:19:33.9074463Z dist/js/use-vben-form-T_CaI-vw.js                       31.73 kB
+2026-10-17T15:19:33.9075039Z dist/js/vendor-vue-VPcy6u0H.js                          33.97 kB
+2026-10-17T15:19:33.9075503Z dist/js/aas-CoFA1pXn.js                                 34.24 kB
+2026-10-17T15:19:33.9075959Z dist/js/loops-D5KvZKvS.js                               34.39 kB
+2026-10-17T15:19:33.9076441Z dist/js/monitor-CGtCwwjU.js                             34.63 kB
+2026-10-17T15:19:33.9076905Z dist/js/vendor-utils-tzym-DzF.js                        38.47 kB
+2026-10-17T15:19:33.9077395Z dist/js/pid-dashboard-CpwhieRu.js                       39.09 kB
+2026-10-17T15:19:33.9077929Z dist/js/manage-Cu9vTbYq.js                              41.81 kB
+2026-10-17T15:19:33.9078419Z dist/js/LoopEditDrawer-DCUW8UZs.js                      42.06 kB
+2026-10-17T15:19:33.9078965Z dist/js/routes-Cj8T-o_B.js                              45.89 kB
+2026-10-17T15:19:33.9079427Z dist/js/use-authz-live-Dgwf7PBJ.js                      72.22 kB
+2026-10-17T15:19:33.9079897Z dist/js/clpm-BoToKZFk.js                                85.78 kB
+2026-10-17T15:19:33.9080353Z dist/js/bootstrap-BiVpwpgE.js                           90.91 kB
+2026-10-17T15:19:33.9080912Z dist/js/src-CrYCCxCf.js                                129.77 kB
+2026-10-17T15:19:33.9081354Z dist/js/basic-ONFaWRti.js                              244.28 kB
+2026-10-17T15:19:33.9081867Z dist/js/vendor-misc-CCR-E-Fl.js                        738.13 kB
+2026-10-17T15:19:33.9082327Z dist/js/vendor-echarts-9efhoxzl.js                     753.41 kB
+2026-10-17T15:19:33.9082784Z dist/js/vendor-antd-C7EWqXIS.js                      1,267.88 kB
+2026-10-17T15:19:33.9083027Z 
+2026-10-17T15:19:33.9085055Z [33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0m../../packages/preferences/src/index.ts is dynamically imported by src/main.ts but also statically imported by src/api/request.ts, src/app.vue?vue&type=script&setup=true&lang.ts, src/bootstrap.ts, src/composables/use-authz-live.ts, src/composables/use-clpm-theme.ts, ..., dynamic import will not move module into another chunk.
+2026-10-17T15:19:33.9086442Z [39m
+2026-10-17T15:19:33.9088114Z [33m[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/api/site.ts is dynamically imported by src/composables/use-site-branding.ts but also statically imported by src/composables/use-site-branding.ts, src/views/system/basic-info.vue?vue&type=script&setup=true&lang.ts, dynamic import will not move module into another chunk.
+2026-10-17T15:19:33.9089275Z [39m
+2026-10-17T15:19:33.9089551Z [32m✓ built in 6.12s[39m
+2026-10-17T15:19:33.9089698Z 
+2026-10-17T15:19:33.9090102Z ✨ [vite-plugin-compression]:algorithm=gzip - compressed file successfully: 
+2026-10-17T15:19:33.9091067Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/AttentionDrawer-BRhn8xhG.css.gz                 1.68kb / gzip: 0.53kb
+2026-10-17T15:19:33.9092152Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/DiagSection-BlGGwdhv.css.gz                     6.32kb / gzip: 1.30kb
+2026-10-17T15:19:33.9093227Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/HandlingSection-B219bxAJ.css.gz                 5.66kb / gzip: 1.32kb
+2026-10-17T15:19:33.9094271Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/JourneyRail-DxWAGfcS.css.gz                     2.69kb / gzip: 0.85kb
+2026-10-17T15:19:33.9095331Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/LoopSpine-Bm09_ikq.css.gz                       3.41kb / gzip: 0.90kb
+2026-10-17T15:19:33.9096355Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/ThumbStrip-kBih4Xle.css.gz                      1.40kb / gzip: 0.53kb
+2026-10-17T15:19:33.9097480Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/SingleLoopWorkbench-80_P5cU4.css.gz             5.89kb / gzip: 1.34kb
+2026-10-17T15:19:33.9098652Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/LoopHeader-DH2BjuUw.css.gz                      2.67kb / gzip: 0.75kb
+2026-10-17T15:19:33.9099601Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/TrendChart-CLdlnbeG.css.gz                      2.91kb / gzip: 0.90kb
+2026-10-17T15:19:33.9100858Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/AssessSection-Cx43r_KD.css.gz                   6.09kb / gzip: 1.38kb
+2026-10-17T15:19:33.9101482Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/WbDrawer-F9hXAN3z.css.gz                        1.40kb / gzip: 0.54kb
+2026-10-17T15:19:33.9102090Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/TuningSection-CqM1tjq0.css.gz                   4.40kb / gzip: 1.00kb
+2026-10-17T15:19:33.9102666Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/alert-stream-B2VSuHcH.css.gz                    1.90kb / gzip: 0.60kb
+2026-10-17T15:19:33.9103280Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/auth-xLBJndD4.css.gz                            5.99kb / gzip: 1.51kb
+2026-10-17T15:19:33.9103834Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/basic-info-BaXUFeuC.css.gz                      2.50kb / gzip: 0.73kb
+2026-10-17T15:19:33.9104417Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/cockpit-header-Bf04NrN4.css.gz                  3.71kb / gzip: 1.01kb
+2026-10-17T15:19:33.9105007Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/batch-diagnose-modal-j6SVxScO.css.gz            1.95kb / gzip: 0.58kb
+2026-10-17T15:19:33.9105599Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/cockpit-modal-Cy0tPHst.css.gz                   1.15kb / gzip: 0.48kb
+2026-10-17T15:19:33.9106174Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/basic-BQ88AUi_.css.gz                           21.78kb / gzip: 3.46kb
+2026-10-17T15:19:33.9106731Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/clpm-BKbRE52g.css.gz                            15.79kb / gzip: 3.07kb
+2026-10-17T15:19:33.9107343Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/cohort-compare-drawer-BduDhIEQ.css.gz           1.64kb / gzip: 0.50kb
+2026-10-17T15:19:33.9107974Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/coverage-panel-BHVIXXqZ.css.gz                  3.10kb / gzip: 0.74kb
+2026-10-17T15:19:33.9108602Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/data-DlYFK1Df.css.gz                            3.45kb / gzip: 0.27kb
+2026-10-17T15:19:33.9109224Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/device-rank-bars-CqhQvgRn.css.gz                2.93kb / gzip: 0.84kb
+2026-10-17T15:19:33.9109850Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/diagnosis-C3tWczMG.css.gz                       2.76kb / gzip: 0.88kb
+2026-10-17T15:19:33.9110436Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/device-tree-DHVKnGAa.css.gz                     1.48kb / gzip: 0.51kb
+2026-10-17T15:19:33.9111290Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/diagnosis-detail-modal-Cqvqktks.css.gz          7.63kb / gzip: 1.37kb
+2026-10-17T15:19:33.9111871Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/event-detail-modal-CQMcBNHn.css.gz              1.50kb / gzip: 0.52kb
+2026-10-17T15:19:33.9112442Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/list-Bz7V9u5S.css.gz                            2.36kb / gzip: 0.41kb
+2026-10-17T15:19:33.9113059Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/history-drawer-ujki0YnL.css.gz                  1.43kb / gzip: 0.53kb
+2026-10-17T15:19:33.9113706Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/kpi-band-B7LgmNIw.css.gz                        1.54kb / gzip: 0.55kb
+2026-10-17T15:19:33.9114315Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/list-modal-EX03mfCA.css.gz                      1.28kb / gzip: 0.46kb
+2026-10-17T15:19:33.9115051Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/loop-card-DtPgUJEs.css.gz                       2.01kb / gzip: 0.63kb
+2026-10-17T15:19:33.9115798Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/loop-archive-drawer-D43PhlWP.css.gz             4.77kb / gzip: 1.18kb
+2026-10-17T15:19:33.9116625Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/loop-detail-panel-BxVDbvdv.css.gz               2.99kb / gzip: 0.83kb
+2026-10-17T15:19:33.9117246Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/matrix-tab-C0CMf2ak.css.gz                      1.10kb / gzip: 0.44kb
+2026-10-17T15:19:33.9117931Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/loops-DChMH-Pr.css.gz                           1.70kb / gzip: 0.60kb
+2026-10-17T15:19:33.9118590Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/manage-COchFqV-.css.gz                          5.33kb / gzip: 0.71kb
+2026-10-17T15:19:33.9119220Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/loop-detail-modal-CbZJO0hR.css.gz               3.11kb / gzip: 0.74kb
+2026-10-17T15:19:33.9119807Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/my-work-Dc2TC_0p.css.gz                         2.22kb / gzip: 0.55kb
+2026-10-17T15:19:33.9120404Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/overview-C3ikxsSE.css.gz                        2.19kb / gzip: 0.62kb
+2026-10-17T15:19:33.9121162Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/overview-CI_WKVWq.css.gz                        1.82kb / gzip: 0.61kb
+2026-10-17T15:19:33.9121738Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/page-toolbar-BGSgM5qY.css.gz                    2.57kb / gzip: 0.62kb
+2026-10-17T15:19:33.9122300Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/modules-BtPlE5nP.css.gz                         2.60kb / gzip: 0.75kb
+2026-10-17T15:19:33.9122850Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/rank-tab-hUjTqR7c.css.gz                        2.41kb / gzip: 0.50kb
+2026-10-17T15:19:33.9123396Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/plant-node-tree-BDPapCbj.css.gz                 1.05kb / gzip: 0.43kb
+2026-10-17T15:19:33.9123956Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/theme-toggle-BKQ46UDU.css.gz                    1.60kb / gzip: 0.53kb
+2026-10-17T15:19:33.9124506Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/todo-panel-DzfWFiU6.css.gz                      2.44kb / gzip: 0.66kb
+2026-10-17T15:19:33.9125074Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/todo-detail-modal-DLkPsNIs.css.gz               2.45kb / gzip: 0.74kb
+2026-10-17T15:19:33.9125706Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/toolbar-button-D88UArcs.css.gz                  1.18kb / gzip: 0.36kb
+2026-10-17T15:19:33.9126348Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/unit-steady-bars-5o_cR-Mr.css.gz                1.41kb / gzip: 0.54kb
+2026-10-17T15:19:33.9126983Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/pid-dashboard-Bk0_PsDq.css.gz                   8.69kb / gzip: 1.61kb
+2026-10-17T15:19:33.9127613Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/work-item-list-HmxfwqiW.css.gz                  1.32kb / gzip: 0.44kb
+2026-10-17T15:19:33.9128259Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/use-page-toolbar-Bolga5ic.css.gz                3.97kb / gzip: 0.96kb
+2026-10-17T15:19:33.9128854Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/vendor-misc-DkTQMyWH.css.gz                     6.50kb / gzip: 1.16kb
+2026-10-17T15:19:33.9129415Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/workbench-metric-bars-3I_6aQ-e.css.gz           1.17kb / gzip: 0.46kb
+2026-10-17T15:19:33.9130070Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/workbench360-Dhgriddj.css.gz                    1.39kb / gzip: 0.48kb
+2026-10-17T15:19:33.9130768Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/index.html.gz                                       2.66kb / gzip: 1.25kb
+2026-10-17T15:19:33.9131651Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/AbnormalLoopsTable-DHbp5qfN.js.gz                5.09kb / gzip: 2.35kb
+2026-10-17T15:19:33.9132228Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/DeltaScatter-CGXSlgcM.js.gz                      5.05kb / gzip: 2.50kb
+2026-10-17T15:19:33.9132786Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/gate-health-panel-CQw4zTDe.css.gz               1.83kb / gzip: 0.53kb
+2026-10-17T15:19:33.9133361Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/AttentionDrawer-B2kJAMFg.js.gz                   2.86kb / gzip: 1.62kb
+2026-10-17T15:19:33.9133953Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/AllLoopWorkbenchHost-2o-xbAYc.js.gz              6.61kb / gzip: 2.85kb
+2026-10-17T15:19:33.9134546Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/DgSummaryBand-CiTW5bq_.js.gz                     5.10kb / gzip: 1.95kb
+2026-10-17T15:19:33.9135119Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/DgUnitStackedBar-CUJZE0mq.js.gz                  6.57kb / gzip: 2.95kb
+2026-10-17T15:19:33.9135666Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/EvalHeatMatrix-DYqSqGre.js.gz                    3.60kb / gzip: 1.76kb
+2026-10-17T15:19:33.9136222Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/EvalDistributions-DVv4-3hE.js.gz                 5.98kb / gzip: 2.50kb
+2026-10-17T15:19:33.9136829Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/DiagSection-8OSGOtSv.js.gz                       18.93kb / gzip: 7.06kb
+2026-10-17T15:19:33.9137379Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/DiagTriggerModal-DrEE2-bl.js.gz                  7.80kb / gzip: 3.60kb
+2026-10-17T15:19:33.9137982Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/EvalSummary-m2MyHNow.js.gz                       4.53kb / gzip: 2.08kb
+2026-10-17T15:19:33.9138525Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/FormLabel-Dl9z5Oru.js.gz                         1.94kb / gzip: 0.88kb
+2026-10-17T15:19:33.9139078Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/HandlingReopenList-BPhBfCvA.js.gz                3.34kb / gzip: 1.75kb
+2026-10-17T15:19:33.9139687Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/EvalRankTable-XNJZGQUv.js.gz                     9.48kb / gzip: 3.57kb
+2026-10-17T15:19:33.9140329Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/GateBanner-CZUPmAJL.js.gz                        1.27kb / gzip: 0.79kb
+2026-10-17T15:19:33.9141037Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/HelpBubble-BwRbkHQu.js.gz                        1.17kb / gzip: 0.71kb
+2026-10-17T15:19:33.9141668Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/DgRuleStats-NIVW9xmf.js.gz                       3.02kb / gzip: 1.44kb
+2026-10-17T15:19:33.9142241Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/EvalTrendChart-Dl_yJ2tr.js.gz                    8.69kb / gzip: 3.57kb
+2026-10-17T15:19:33.9142794Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/JourneyRail-OG2MvwUm.js.gz                       3.54kb / gzip: 1.64kb
+2026-10-17T15:19:33.9143342Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/LoopDetailDrawer-Dcht0jzE.js.gz                  5.88kb / gzip: 2.64kb
+2026-10-17T15:19:33.9143876Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/LaneCol-D_j0I00Z.js.gz                           1.67kb / gzip: 0.90kb
+2026-10-17T15:19:33.9144405Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/AssessSection-Bf_CyROx.js.gz                     14.46kb / gzip: 5.83kb
+2026-10-17T15:19:33.9145073Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/LoopHeader-Cyf4i79G.js.gz                        4.33kb / gzip: 2.08kb
+2026-10-17T15:19:33.9145605Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/OpsKanban-BkiFH4p1.js.gz                         1.33kb / gzip: 0.79kb
+2026-10-17T15:19:33.9146232Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/HandlingSection-O3OjW5K5.js.gz                   14.88kb / gzip: 5.34kb
+2026-10-17T15:19:33.9146783Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/LoopSpine-xOCzSBCw.js.gz                         4.80kb / gzip: 2.25kb
+2026-10-17T15:19:33.9147334Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/ParetoBarLine-CZM8ddKx.js.gz                     5.79kb / gzip: 2.53kb
+2026-10-17T15:19:33.9147880Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/OrderCreateModal-B9-kb6Rk.js.gz                  4.51kb / gzip: 2.07kb
+2026-10-17T15:19:33.9148418Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/Spark-DGq3c30i.js.gz                             1.27kb / gzip: 0.75kb
+2026-10-17T15:19:33.9148950Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/SplitBar-HrRIu0F0.js.gz                          1.27kb / gzip: 0.71kb
+2026-10-17T15:19:33.9149490Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/StatusBar-B0QOv7e6.js.gz                         2.39kb / gzip: 1.27kb
+2026-10-17T15:19:33.9150022Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/StaffHBar-CgmFkrTD.js.gz                         3.82kb / gzip: 1.93kb
+2026-10-17T15:19:33.9150672Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/Switch-DcL6VFuU.js.gz                            1.27kb / gzip: 0.67kb
+2026-10-17T15:19:33.9151228Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TaskDetailCard-DMSAXHpX.js.gz                    5.63kb / gzip: 2.36kb
+2026-10-17T15:19:33.9151770Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/ThumbStrip-BT8m_b0j.js.gz                        2.61kb / gzip: 1.23kb
+2026-10-17T15:19:33.9152300Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TuneQueueRow-QWZ6baMw.js.gz                      4.29kb / gzip: 1.71kb
+2026-10-17T15:19:33.9152845Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/HandlingSlaSummary-RP_UwQb7.js.gz                5.53kb / gzip: 2.51kb
+2026-10-17T15:19:33.9153401Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TaskCard-BbsIEKGT.js.gz                          2.39kb / gzip: 1.29kb
+2026-10-17T15:19:33.9153937Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TuningLoopDetail-Bnlas1-_.js.gz                  6.85kb / gzip: 3.25kb
+2026-10-17T15:19:33.9154499Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/SingleLoopWorkbench-BeYCTcHI.js.gz               27.53kb / gzip: 10.48kb
+2026-10-17T15:19:33.9155057Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/WbDrawer-C8bPfnKM.js.gz                          2.16kb / gzip: 1.10kb
+2026-10-17T15:19:33.9155645Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TuningRootCauseDist-jfVfhlIu.js.gz               4.41kb / gzip: 2.18kb
+2026-10-17T15:19:33.9156219Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TrendChart-DKOtRwKk.js.gz                        15.89kb / gzip: 6.50kb
+2026-10-17T15:19:33.9156767Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TuningFitnessCard-BgLlNSDu.js.gz                 4.78kb / gzip: 2.33kb
+2026-10-17T15:19:33.9157367Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/VerifyDrawer-BwWo5acy.js.gz                      2.66kb / gzip: 1.52kb
+2026-10-17T15:19:33.9157899Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/alert-DSKaaNHb.js.gz                             2.32kb / gzip: 0.69kb
+2026-10-17T15:19:33.9158508Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/about-C7KfVokH.js.gz                             8.72kb / gzip: 3.57kb
+2026-10-17T15:19:33.9159061Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/alert-ws-D5er4cdp.js.gz                          2.06kb / gzip: 0.87kb
+2026-10-17T15:19:33.9159683Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/alert-statistics-18ZU0xc_.js.gz                  9.13kb / gzip: 3.78kb
+2026-10-17T15:19:33.9160228Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/TuningSection-BsM9OrNq.js.gz                     10.86kb / gzip: 4.55kb
+2026-10-17T15:19:33.9161021Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/archive-COPoggnC.js.gz                           8.39kb / gzip: 3.70kb
+2026-10-17T15:19:33.9161552Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/alert-stream-Cd4Vvx_s.js.gz                      3.75kb / gzip: 1.88kb
+2026-10-17T15:19:33.9162121Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/assess-trigger-modal-wCD6xv2D.js.gz              4.41kb / gzip: 2.19kb
+2026-10-17T15:19:33.9162680Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/algorithm-params-6OndkAQe.js.gz                  11.99kb / gzip: 5.13kb
+2026-10-17T15:19:33.9163236Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/LoopEditDrawer-DCUW8UZs.js.gz                    41.08kb / gzip: 12.79kb
+2026-10-17T15:19:33.9163778Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/audit-tvMaKl1W.js.gz                             14.12kb / gzip: 5.14kb
+2026-10-17T15:19:33.9164298Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/aas-CoFA1pXn.js.gz                               33.45kb / gzip: 9.82kb
+2026-10-17T15:19:33.9164829Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/authentication-DIjkUW6O.js.gz                    3.45kb / gzip: 1.48kb
+2026-10-17T15:19:33.9165366Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/avatar-DFMlhYlS.js.gz                            3.56kb / gzip: 1.46kb
+2026-10-17T15:19:33.9165902Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/backfill-task-drawer-koR1Ca9H.js.gz              7.14kb / gzip: 3.00kb
+2026-10-17T15:19:33.9166444Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/auth-BF4_F4yA.js.gz                              11.35kb / gzip: 4.18kb
+2026-10-17T15:19:33.9166973Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/authentication-jEIx64Er.js.gz                    3.32kb / gzip: 1.70kb
+2026-10-17T15:19:33.9167511Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/attention-CSWHX7LC.js.gz                         24.01kb / gzip: 8.97kb
+2026-10-17T15:19:33.9168047Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/base-setting-iSmObq9o.js.gz                      1.72kb / gzip: 0.96kb
+2026-10-17T15:19:33.9168585Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/basic-info-DKg2azEm.js.gz                        8.73kb / gzip: 3.19kb
+2026-10-17T15:19:33.9169129Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/batch-diagnose-modal-DXSqhmYv.js.gz              6.49kb / gzip: 2.95kb
+2026-10-17T15:19:33.9169688Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/batch-runs-drawer-B2xxkoeI.js.gz                 3.99kb / gzip: 1.96kb
+2026-10-17T15:19:33.9170223Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/button-CjUpd_6f.js.gz                            1.93kb / gzip: 0.89kb
+2026-10-17T15:19:33.9170885Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/benefit-C3WY1-1C.js.gz                           15.82kb / gzip: 6.07kb
+2026-10-17T15:19:33.9171416Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/clpm-ui-CI0jDVZ6.js.gz                           10.43kb / gzip: 5.16kb
+2026-10-17T15:19:33.9171954Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/cockpit-header-CWqCVj2y.js.gz                    4.76kb / gzip: 2.32kb
+2026-10-17T15:19:33.9172604Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/batch-detail-drawer-lz2Fv6kd.js.gz               5.70kb / gzip: 2.43kb
+2026-10-17T15:19:33.9173241Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/cockpit-modal--4hFp4KH.js.gz                     1.27kb / gzip: 0.75kb
+2026-10-17T15:19:33.9173792Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/cohort-compare-drawer-BiUyA4-h.js.gz             7.03kb / gzip: 3.40kb
+2026-10-17T15:19:33.9174344Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/cockpit-BatOTJgF.js.gz                           1.04kb / gzip: 0.54kb
+2026-10-17T15:19:33.9174914Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/code-login-DQ0XQFA-.js.gz                        2.64kb / gzip: 1.22kb
+2026-10-17T15:19:33.9175454Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/cockpit-radar-C8ySGl-s.js.gz                     5.50kb / gzip: 2.46kb
+2026-10-17T15:19:33.9176007Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/confidence-threshold-CacdgGd3.js.gz              8.64kb / gzip: 3.84kb
+2026-10-17T15:19:33.9176607Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/attention-group-drawer-BbyFDXF-.js.gz            6.50kb / gzip: 2.73kb
+2026-10-17T15:19:33.9177177Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/batch-apply-modal-DTnM00Py.js.gz                 12.50kb / gzip: 5.05kb
+2026-10-17T15:19:33.9177753Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/batch-restore-modal-BrdqOHu1.js.gz               6.60kb / gzip: 3.00kb
+2026-10-17T15:19:33.9178345Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/confirm-section-BvEVz9H-.js.gz                   2.84kb / gzip: 1.53kb
+2026-10-17T15:19:33.9178898Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/config-definition-CFpNHt5H.js.gz                 12.84kb / gzip: 4.56kb
+2026-10-17T15:19:33.9179448Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/constants-B1afP5Fk.js.gz                         3.17kb / gzip: 1.54kb
+2026-10-17T15:19:33.9179980Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/config-BAbXDD6G.js.gz                            6.66kb / gzip: 2.59kb
+2026-10-17T15:19:33.9180588Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/config-ljhizhze.js.gz                            14.59kb / gzip: 4.65kb
+2026-10-17T15:19:33.9181116Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/constants-faGT2a2V.js.gz                         2.83kb / gzip: 1.52kb
+2026-10-17T15:19:33.9181655Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/coverage-panel-Clc3anLT.js.gz                    6.55kb / gzip: 2.76kb
+2026-10-17T15:19:33.9182184Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/dcs-_VoRAuJu.js.gz                               1.13kb / gzip: 0.40kb
+2026-10-17T15:19:33.9182706Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/config-Di74uJ8Y.js.gz                            25.22kb / gzip: 8.34kb
+2026-10-17T15:19:33.9183247Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/data-quality-BCUQccEh.js.gz                      12.43kb / gzip: 5.14kb
+2026-10-17T15:19:33.9183784Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/data-JVubY9sX.js.gz                              17.70kb / gzip: 6.73kb
+2026-10-17T15:19:33.9184317Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/diagnosis-CO8bjfaY.js.gz                         1.85kb / gzip: 0.63kb
+2026-10-17T15:19:33.9184848Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/detail-BWSfxBcz.js.gz                            8.74kb / gzip: 3.33kb
+2026-10-17T15:19:33.9185388Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/device-rank-bars-BCikqo9f.js.gz                  5.35kb / gzip: 2.27kb
+2026-10-17T15:19:33.9186026Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/device-tree-DPtH2w8r.js.gz                       1.46kb / gzip: 0.89kb
+2026-10-17T15:19:33.9186560Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/diagnosis-BPjOfncv.js.gz                         4.24kb / gzip: 1.92kb
+2026-10-17T15:19:33.9187179Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/diagnosis-cmbrqZJj.js.gz                         10.78kb / gzip: 4.28kb
+2026-10-17T15:19:33.9187737Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/drill-modals-raBFCzQH.js.gz                      1.58kb / gzip: 0.71kb
+2026-10-17T15:19:33.9188271Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/config-CIFFxIhz.js.gz                            20.73kb / gzip: 7.59kb
+2026-10-17T15:19:33.9188815Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/engineering-template-1HyZJFh1.js.gz              1.04kb / gzip: 0.41kb
+2026-10-17T15:19:33.9189370Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/dict-D3-gKg_d.js.gz                              8.53kb / gzip: 3.60kb
+2026-10-17T15:19:33.9189949Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/diagnosis-result-panel--Thri6St.js.gz            16.69kb / gzip: 6.49kb
+2026-10-17T15:19:33.9190580Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/drill-sla-modal-CTdvxKrg.js.gz                   2.11kb / gzip: 1.21kb
+2026-10-17T15:19:33.9191117Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/export-C64Sjdt0.js.gz                            1.56kb / gzip: 0.85kb
+2026-10-17T15:19:33.9191667Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/diagnosis-detail-modal-BgCEd0QU.js.gz            29.36kb / gzip: 9.59kb
+2026-10-17T15:19:33.9192229Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/engineering-templates-Dk-Osb4m.js.gz             10.84kb / gzip: 4.41kb
+2026-10-17T15:19:33.9192783Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/event-detail-modal-Cl8xrmkX.js.gz                4.39kb / gzip: 1.96kb
+2026-10-17T15:19:33.9193330Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/evidence-drawer-D4mBysYf.js.gz                   4.12kb / gzip: 2.04kb
+2026-10-17T15:19:33.9193869Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/fallback-BIp9eaME.js.gz                          3.15kb / gzip: 1.23kb
+2026-10-17T15:19:33.9194414Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/event-snapshot-view-CHcwfbdg.js.gz               9.66kb / gzip: 3.87kb
+2026-10-17T15:19:33.9194962Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/forget-password-BXZFZ8fw.js.gz                   2.17kb / gzip: 1.08kb
+2026-10-17T15:19:33.9195505Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/fitness-donut-CsFBzRVl.js.gz                     3.30kb / gzip: 1.80kb
+2026-10-17T15:19:33.9196050Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/handling-BhHcIwX9.js.gz                          1.50kb / gzip: 0.43kb
+2026-10-17T15:19:33.9196591Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/fitness-threshold-BPKJWvHw.js.gz                 11.80kb / gzip: 4.83kb
+2026-10-17T15:19:33.9197160Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/gate-health-panel-CbBdFVHf.js.gz                 4.80kb / gzip: 2.27kb
+2026-10-17T15:19:33.9197716Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/handling-archive-drawer-DOOODRkT.js.gz           6.89kb / gzip: 2.50kb
+2026-10-17T15:19:33.9198274Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/handling-detail-drawer-iRgo-s8H.js.gz            6.89kb / gzip: 2.80kb
+2026-10-17T15:19:33.9198822Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/grading-threshold-Bjm5Ss88.js.gz                 9.46kb / gzip: 4.03kb
+2026-10-17T15:19:33.9199364Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/history-drawer-DFfy9AjH.js.gz                    2.76kb / gzip: 1.51kb
+2026-10-17T15:19:33.9199990Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/events-BiCNWWY2.js.gz                            19.77kb / gzip: 7.13kb
+2026-10-17T15:19:33.9200684Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/icon-500-BJdfWIrX.js.gz                          6.93kb / gzip: 2.19kb
+2026-10-17T15:19:33.9201207Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/icon-403-BLQJFMSI.js.gz                          9.18kb / gzip: 3.86kb
+2026-10-17T15:19:33.9201733Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/handling-Dyi1l4QS.js.gz                          14.77kb / gzip: 5.79kb
+2026-10-17T15:19:33.9202264Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/handling-tab-CgMMINe9.js.gz                      10.63kb / gzip: 4.41kb
+2026-10-17T15:19:33.9202798Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/icon-button-Wd8jrffu.js.gz                       1.28kb / gzip: 0.59kb
+2026-10-17T15:19:33.9203342Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/identify-section-x53bXDpJ.js.gz                  8.23kb / gzip: 3.27kb
+2026-10-17T15:19:33.9203888Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/icon-coming-soon-_i0B3h0O.js.gz                  12.60kb / gzip: 3.95kb
+2026-10-17T15:19:33.9204422Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/kpi-band-BqWFySpR.js.gz                          6.21kb / gzip: 2.40kb
+2026-10-17T15:19:33.9204952Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/icon-404-AEuvkeNU.js.gz                          23.78kb / gzip: 9.75kb
+2026-10-17T15:19:33.9205482Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/icon-offline-DK1ZTJ3j.js.gz                      7.91kb / gzip: 3.70kb
+2026-10-17T15:19:33.9206022Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/history-tab-BLNnPQoW.js.gz                       22.04kb / gzip: 7.66kb
+2026-10-17T15:19:33.9206553Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loading-BBbvwZ9Q.js.gz                           1.29kb / gzip: 0.77kb
+2026-10-17T15:19:33.9207080Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/list-modal-BZ8gne3r.js.gz                        1.98kb / gzip: 0.99kb
+2026-10-17T15:19:33.9207606Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/list-BnQOmnTF.js.gz                              16.84kb / gzip: 5.97kb
+2026-10-17T15:19:33.9208129Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-card-DEDtVZLE.js.gz                         2.80kb / gzip: 1.53kb
+2026-10-17T15:19:33.9208673Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/indicator-analysis-BJ6qq95P.js.gz                25.55kb / gzip: 9.42kb
+2026-10-17T15:19:33.9209235Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/list-BXHDObfV.js.gz                              23.89kb / gzip: 8.14kb
+2026-10-17T15:19:33.9209768Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-evaluation-Dufup9eH.js.gz                   3.80kb / gzip: 1.87kb
+2026-10-17T15:19:33.9210318Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-archive-drawer-CeSAcnZy.js.gz               16.19kb / gzip: 6.06kb
+2026-10-17T15:19:33.9210929Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-detail-modal-NKobo2tQ.js.gz                 8.33kb / gzip: 3.62kb
+2026-10-17T15:19:33.9211484Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-performance-shared-Drt6sprr.js.gz           3.40kb / gzip: 1.60kb
+2026-10-17T15:19:33.9212039Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-detail-panel-DempRZsl.js.gz                 10.44kb / gzip: 4.08kb
+2026-10-17T15:19:33.9212663Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/matrix-section-C3mO-Ils.js.gz                    5.29kb / gzip: 2.41kb
+2026-10-17T15:19:33.9213317Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-performance-detail-content-DbKckc7r.js.gz   12.55kb / gzip: 4.24kb
+2026-10-17T15:19:33.9213864Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loops-CEHXmfYe.js.gz                             11.43kb / gzip: 4.52kb
+2026-10-17T15:19:33.9214531Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/login-DIVp9iEz.js.gz                             30.79kb / gzip: 9.90kb
+2026-10-17T15:19:33.9215073Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/metrics-panel-CDpg1EPw.js.gz                     6.69kb / gzip: 3.10kb
+2026-10-17T15:19:33.9215616Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/modules-CL8STCOR.js.gz                           5.12kb / gzip: 2.36kb
+2026-10-17T15:19:33.9216158Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loop-confidence-content-b8Us-sNV.js.gz           9.38kb / gzip: 3.84kb
+2026-10-17T15:19:33.9216706Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/matrix-tab-MFpoXJ8J.js.gz                        21.12kb / gzip: 7.85kb
+2026-10-17T15:19:33.9217254Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/notification-setting-BXGTvjLr.js.gz              1.71kb / gzip: 0.90kb
+2026-10-17T15:19:33.9217805Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/node-radar-panel-DhevzBky.js.gz                  2.62kb / gzip: 1.40kb
+2026-10-17T15:19:33.9218340Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/my-work-D5Ug_3PE.js.gz                           10.79kb / gzip: 4.54kb
+2026-10-17T15:19:33.9218884Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/override-publish-modal-RTaplFD-.js.gz            12.00kb / gzip: 4.65kb
+2026-10-17T15:19:33.9219460Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/loops-D5KvZKvS.js.gz                             33.58kb / gzip: 11.65kb
+2026-10-17T15:19:33.9220008Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/order-detail-drawer-yNgfrZy8.js.gz               25.12kb / gzip: 8.14kb
+2026-10-17T15:19:33.9220641Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/monitor-CGtCwwjU.js.gz                           33.82kb / gzip: 11.61kb
+2026-10-17T15:19:33.9221175Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/overview-BIAfrh4v.js.gz                          12.51kb / gzip: 5.07kb
+2026-10-17T15:19:33.9221714Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/outlier-params-CjdigRDE.js.gz                    11.38kb / gzip: 4.72kb
+2026-10-17T15:19:33.9222249Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/overview-Bb334MZb.js.gz                          19.29kb / gzip: 7.35kb
+2026-10-17T15:19:33.9222782Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/password-setting-DKSuW01g.js.gz                  2.12kb / gzip: 1.06kb
+2026-10-17T15:19:33.9223324Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/overview-DZLR7fnP.js.gz                          6.62kb / gzip: 2.85kb
+2026-10-17T15:19:33.9223846Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/page-BESvG3VC.js.gz                              2.04kb / gzip: 0.95kb
+2026-10-17T15:19:33.9224377Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/personal-work-HnqHTwca.js.gz                     1.82kb / gzip: 0.75kb
+2026-10-17T15:19:33.9224915Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/performance-D4UIhPYp.js.gz                       4.46kb / gzip: 1.86kb
+2026-10-17T15:19:33.9225453Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/plant-node-tree-DUXVjsbx.js.gz                   7.73kb / gzip: 2.96kb
+2026-10-17T15:19:33.9225996Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/preferences-CQTR6Knd.js.gz                       7.09kb / gzip: 2.90kb
+2026-10-17T15:19:33.9226628Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/performance-BH0J5RUO.js.gz                       19.75kb / gzip: 6.91kb
+2026-10-17T15:19:33.9227167Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/permissions-C5OemcKK.js.gz                       18.30kb / gzip: 7.22kb
+2026-10-17T15:19:33.9227864Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/precheck-badge-DWZbF6rP.js.gz                    1.53kb / gzip: 1.03kb
+2026-10-17T15:19:33.9228407Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/publications-tab-DC_DqiI5.js.gz                  5.14kb / gzip: 2.51kb
+2026-10-17T15:19:33.9228939Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/preferences-C_sDwEDf.js.gz                       7.13kb / gzip: 3.43kb
+2026-10-17T15:19:33.9229475Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/profile-diff-view-DZEMnN15.js.gz                 2.01kb / gzip: 1.15kb
+2026-10-17T15:19:33.9230023Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/publish-version-modal-Cu3kRhBp.js.gz             8.41kb / gzip: 3.52kb
+2026-10-17T15:19:33.9230639Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/qrcode-login-Xy9Y5omS.js.gz                      1.67kb / gzip: 0.85kb
+2026-10-17T15:19:33.9231224Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/pid-dashboard-CpwhieRu.js.gz                     38.18kb / gzip: 13.02kb
+2026-10-17T15:19:33.9231765Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/register-DMYZajb8.js.gz                          3.24kb / gzip: 1.34kb
+2026-10-17T15:19:33.9232295Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/profile-pbQ2ivst.js.gz                           3.55kb / gzip: 1.67kb
+2026-10-17T15:19:33.9232819Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/rank-tab-ClWZsjD0.js.gz                          26.09kb / gzip: 9.85kb
+2026-10-17T15:19:33.9233342Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/records-BbL11jvs.js.gz                           9.41kb / gzip: 3.53kb
+2026-10-17T15:19:33.9233867Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/records-BQRryLyZ.js.gz                           20.04kb / gzip: 8.22kb
+2026-10-17T15:19:33.9234399Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/review-drawer-BO66Xs5J.js.gz                     2.68kb / gzip: 1.52kb
+2026-10-17T15:19:33.9234954Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/record-detail-drawer-sKs__ku5.js.gz              7.56kb / gzip: 3.20kb
+2026-10-17T15:19:33.9235505Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/security-setting-MNgJt6B2.js.gz                  1.92kb / gzip: 1.01kb
+2026-10-17T15:19:33.9236046Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/rules-Dj4qZVng.js.gz                             11.33kb / gzip: 4.22kb
+2026-10-17T15:19:33.9236566Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/request-wCGoKhcp.js.gz                           26.97kb / gzip: 8.89kb
+2026-10-17T15:19:33.9237087Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/src-DWCr9uCU.js.gz                               2.56kb / gzip: 1.18kb
+2026-10-17T15:19:33.9237629Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/simulate-section-PZDCY_LA.js.gz                  12.96kb / gzip: 4.99kb
+2026-10-17T15:19:33.9238164Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/src-f6gpCYWp.js.gz                               1.14kb / gzip: 0.59kb
+2026-10-17T15:19:33.9238685Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tasks-Bq84W8KH.js.gz                             4.06kb / gzip: 2.08kb
+2026-10-17T15:19:33.9239219Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/task-strategy-Dki4R7Tb.js.gz                     7.46kb / gzip: 2.81kb
+2026-10-17T15:19:33.9239751Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/routes-Cj8T-o_B.js.gz                            44.82kb / gzip: 11.76kb
+2026-10-17T15:19:33.9240378Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/template-utils-BWC_ovmt.js.gz                    2.28kb / gzip: 1.24kb
+2026-10-17T15:19:33.9240985Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tasks-Cu7zfVJG.js.gz                             2.59kb / gzip: 1.42kb
+2026-10-17T15:19:33.9241597Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/manage-Cu9vTbYq.js.gz                            40.83kb / gzip: 12.87kb
+2026-10-17T15:19:33.9242135Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/theme-toggle-oIvYApBO.js.gz                      10.11kb / gzip: 3.67kb
+2026-10-17T15:19:33.9242671Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/todo-panel-CajrtDAz.js.gz                        3.33kb / gzip: 1.67kb
+2026-10-17T15:19:33.9243209Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/toolbar-button-Dwk5kQTZ.js.gz                    3.98kb / gzip: 1.51kb
+2026-10-17T15:19:33.9243750Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/subscription-DXimyCsG.js.gz                      9.30kb / gzip: 3.56kb
+2026-10-17T15:19:33.9244293Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/todo-detail-modal-yO50EicG.js.gz                 4.55kb / gzip: 2.05kb
+2026-10-17T15:19:33.9244830Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tooltip-DntLs_Yj.js.gz                           2.91kb / gzip: 1.14kb
+2026-10-17T15:19:33.9245348Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tippy-5eVE9iKW.js.gz                             2.00kb / gzip: 0.76kb
+2026-10-17T15:19:33.9245869Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tuning-BPbDOsoA.js.gz                            1.93kb / gzip: 0.93kb
+2026-10-17T15:19:33.9246418Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/trend-panel-ZPCUMnOV.js.gz                       3.13kb / gzip: 1.70kb
+2026-10-17T15:19:33.9247089Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/ui-CNfTnTV8.js.gz                                4.29kb / gzip: 2.30kb
+2026-10-17T15:19:33.9247615Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tuning-tab-D6ws8LZu.js.gz                        12.46kb / gzip: 4.98kb
+2026-10-17T15:19:33.9248138Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/ui-DbuALmIO.js.gz                                4.54kb / gzip: 1.95kb
+2026-10-17T15:19:33.9248668Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/tuning-verify-compare-BLLephd9.js.gz             6.87kb / gzip: 3.02kb
+2026-10-17T15:19:33.9249222Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/unit-auto-pareto-B6fyEVQD.js.gz                  4.20kb / gzip: 2.07kb
+2026-10-17T15:19:33.9249770Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/unit-steady-bars-CH8laUtt.js.gz                  3.09kb / gzip: 1.53kb
+2026-10-17T15:19:33.9250372Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-clpm-theme-CYzRRGog.js.gz                    1.33kb / gzip: 0.59kb
+2026-10-17T15:19:33.9250995Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-latest-overview-cache-6HXwsbzB.js.gz         4.20kb / gzip: 2.29kb
+2026-10-17T15:19:33.9251543Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-drill-DB89S-tM.js.gz                         13.20kb / gzip: 4.79kb
+2026-10-17T15:19:33.9252078Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-echarts-iidMqpCg.js.gz                       2.05kb / gzip: 1.09kb
+2026-10-17T15:19:33.9252622Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-clpm-preferences-ocMxcMud.js.gz              8.17kb / gzip: 2.88kb
+2026-10-17T15:19:33.9253171Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-cockpit-theme-HSS6Qy4t.js.gz                 1.23kb / gzip: 0.70kb
+2026-10-17T15:19:33.9253813Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-loop-follow-C697E4B8.js.gz                   3.26kb / gzip: 1.53kb
+2026-10-17T15:19:33.9254411Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-echarts-preset-D355Znm4.js.gz                1.85kb / gzip: 0.87kb
+2026-10-17T15:19:33.9255138Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-loop-realtime-Vlcj_CBc.js.gz                 7.98kb / gzip: 2.90kb
+2026-10-17T15:19:33.9255707Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-page-toolbar-CZ4pCBzK.js.gz                  4.95kb / gzip: 2.13kb
+2026-10-17T15:19:33.9256261Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-polling-CcbTMV5F.js.gz                       1.07kb / gzip: 0.56kb
+2026-10-17T15:19:33.9256812Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-site-branding-BLytI5Kr.js.gz                 1.48kb / gzip: 0.68kb
+2026-10-17T15:19:33.9257363Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-wb360-session-CuR1DTUY.js.gz                 2.49kb / gzip: 1.14kb
+2026-10-17T15:19:33.9257920Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-tuning-workbench-B49AjRZi.js.gz              11.47kb / gzip: 4.21kb
+2026-10-17T15:19:33.9258472Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/users-hubPhKUI.js.gz                             19.04kb / gzip: 6.75kb
+2026-10-17T15:19:33.9259009Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/verification-D3-3Wlm3.js.gz                      4.09kb / gzip: 2.07kb
+2026-10-17T15:19:33.9259553Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-vben-form-T_CaI-vw.js.gz                     30.99kb / gzip: 10.37kb
+2026-10-17T15:19:33.9260100Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/vendor-icons-BCZTPUK2.js.gz                      30.98kb / gzip: 11.44kb
+2026-10-17T15:19:33.9260727Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/waveform-chart-CVk7d_vo.js.gz                    9.37kb / gzip: 3.75kb
+2026-10-17T15:19:33.9261284Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/version-history-tab-CawcJqyD.js.gz               6.22kb / gzip: 2.77kb
+2026-10-17T15:19:33.9261839Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-context-9wlZGqEV.js.gz                 3.41kb / gzip: 1.68kb
+2026-10-17T15:19:33.9262390Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/work-item-list-B37FzGhE.js.gz                    14.77kb / gzip: 5.31kb
+2026-10-17T15:19:33.9262930Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-TtdF65H_.js.gz                         29.29kb / gzip: 9.22kb
+2026-10-17T15:19:33.9263470Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-diagnosis-card-B_A2Gya_.js.gz          2.73kb / gzip: 1.45kb
+2026-10-17T15:19:33.9264020Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/vendor-utils-tzym-DzF.js.gz                      37.57kb / gzip: 13.49kb
+2026-10-17T15:19:33.9264573Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-kpi-history-CKEbRvVe.js.gz             3.55kb / gzip: 1.77kb
+2026-10-17T15:19:33.9265125Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-fitness-badge-UQDgbpc_.js.gz           1.78kb / gzip: 1.07kb
+2026-10-17T15:19:33.9265720Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-process-trend-3a56Gpx8.js.gz           5.46kb / gzip: 2.41kb
+2026-10-17T15:19:33.9266268Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/weight-config-CH1u9ROT.js.gz                     19.73kb / gzip: 6.91kb
+2026-10-17T15:19:33.9266822Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-radar6-DQaoHRDG.js.gz                  2.30kb / gzip: 1.27kb
+2026-10-17T15:19:33.9267377Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench-metric-bars-BIx0jKiM.js.gz             2.02kb / gzip: 1.06kb
+2026-10-17T15:19:33.9268025Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/workbench360-BSgiyS4B.js.gz                      3.78kb / gzip: 1.76kb
+2026-10-17T15:19:33.9268576Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/jse/index-index-BWu1dID0.js.gz                      26.69kb / gzip: 9.40kb
+2026-10-17T15:19:33.9269218Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/vendor-vue-VPcy6u0H.js.gz                        33.18kb / gzip: 12.73kb
+2026-10-17T15:19:33.9269854Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/css/bootstrap-Bro-f5iP.css.gz                       197.61kb / gzip: 31.20kb
+2026-10-17T15:19:33.9270438Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/bootstrap-BiVpwpgE.js.gz                         88.78kb / gzip: 26.35kb
+2026-10-17T15:19:33.9271050Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/clpm-BoToKZFk.js.gz                              83.77kb / gzip: 26.37kb
+2026-10-17T15:19:33.9271598Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/page-toolbar-By_J3oxx.js.gz                      2.71kb / gzip: 1.04kb
+2026-10-17T15:19:33.9272154Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/use-authz-live-Dgwf7PBJ.js.gz                    70.53kb / gzip: 19.10kb
+2026-10-17T15:19:33.9272762Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/basic-ONFaWRti.js.gz                             238.56kb / gzip: 58.67kb
+2026-10-17T15:19:33.9273313Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/src-CrYCCxCf.js.gz                               126.73kb / gzip: 48.00kb
+2026-10-17T15:19:33.9273932Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/vendor-misc-CCR-E-Fl.js.gz                       720.83kb / gzip: 213.39kb
+2026-10-17T15:19:33.9274506Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/vendor-echarts-9efhoxzl.js.gz                    735.75kb / gzip: 245.48kb
+2026-10-17T15:19:33.9275067Z dist//home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/js/vendor-antd-C7EWqXIS.js.gz                       1238.17kb / gzip: 375.42kb
+2026-10-17T15:19:33.9275340Z 
+2026-10-17T15:19:33.9275347Z 
+2026-10-17T15:19:33.9275600Z ZIP file created: /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/dist.zip (6536178 total bytes)
+2026-10-17T15:19:33.9276031Z Folder has been zipped to: /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/dist.zip
+2026-10-17T15:19:33.9276553Z ##[endgroup]
+2026-10-17T15:19:33.9276625Z 
+2026-10-17T15:19:33.9276707Z  Tasks:    11 successful, 11 total
+2026-10-17T15:19:33.9276874Z Cached:    0 cached, 11 total
+2026-10-17T15:19:33.9277026Z   Time:    27.499s 
+2026-10-17T15:19:33.9277099Z 

@@ -1,0 +1,65 @@
+{
+  "observedAt": "2026-10-17T14:53:47.513538+00:00",
+  "run": {
+    "id": 39041829350,
+    "head_sha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+    "run_attempt": 1,
+    "status": "in_progress",
+    "conclusion": null,
+    "event": "pull_request"
+  },
+  "jobs": [
+    {
+      "id": 117422708786,
+      "name": "Critical E2E Gate (blocking)",
+      "status": "completed",
+      "conclusion": "success",
+      "activeSteps": []
+    },
+    {
+      "id": 117422708873,
+      "name": "Backend CI",
+      "status": "in_progress",
+      "conclusion": null,
+      "activeSteps": [
+        {
+          "number": 13,
+          "name": "Pytest with coverage",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
+    },
+    {
+      "id": 117422708914,
+      "name": "Frontend CI",
+      "status": "completed",
+      "conclusion": "success",
+      "activeSteps": []
+    }
+  ],
+  "availableArtifacts": [
+    {
+      "id": 12104885530,
+      "name": "critical-e2e-645241e983856d3012f9ca2310af260ab988646f",
+      "digest": "sha256:b29ea6de7fac2f2bf8c10c7a9a7ce254c0b47f2414231371a5b018116fda0dde"
+    }
+  ],
+  "rawSnapshotRefs": {
+    "run": {
+      "path": "requests/20261017T145346671066Z-run.json",
+      "bytes": 11960,
+      "sha256": "ecbafb839ee182c07bc349a44485c22cfdc4fe54e2163c8c32e0c00b939b34ab"
+    },
+    "jobs": {
+      "path": "requests/20261017T145346671428Z-jobs.json",
+      "bytes": 13050,
+      "sha256": "ede7ca9ac675b80f488f2f9bbfcab529a2e4468d7da978412979800711771d3d"
+    },
+    "artifacts": {
+      "path": "requests/20261017T145346671925Z-artifacts.json",
+      "bytes": 765,
+      "sha256": "12fb546c58d8def2718d177e98ec35aa68a9d4b75ab71755fd9e7c221d07ca80"
+    }
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "unittest",
+    "-v",
+    "test_independent_tools"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent",
+  "startedAt": "2026-10-17T10:57:08.968459+00:00",
+  "endedAt": "2026-10-17T10:57:09.767878+00:00",
+  "rc": 0,
+  "scope": "Artifact tools only, synthetic fixtures; not real capacity or business"
+}

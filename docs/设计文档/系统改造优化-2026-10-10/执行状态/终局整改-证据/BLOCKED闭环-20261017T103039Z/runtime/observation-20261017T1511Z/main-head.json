@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "git",
+    "-C",
+    "/Users/zhangping/DEV/CLPM-MVP",
+    "rev-parse",
+    "HEAD"
+  ],
+  "startedAtUtc": "2026-10-17T15:10:51.354520+00:00",
+  "finishedAtUtc": "2026-10-17T15:10:51.370538+00:00",
+  "rc": 0,
+  "stdoutSha256": "8c5da864c71989f7e50bad7e701fa78e8d760ea20fac9901d4d5582b4759b28a",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

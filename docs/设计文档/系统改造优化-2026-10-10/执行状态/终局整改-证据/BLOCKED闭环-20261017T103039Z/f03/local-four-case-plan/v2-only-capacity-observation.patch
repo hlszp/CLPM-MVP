@@ -1,0 +1,147 @@
+--- 3597/keeper-local-f03.py
++++ v2/keeper-local-f03-v2.py
+@@ -261,67 +261,88 @@
+         )
+     connection = await pg_connect(database)
+     try:
+-        targets = [
+-            "kpi_snapshot_hourly",
+-            "loop_confidence_latest",
+-            "kpi_node_snapshot_hourly",
+-            "calculation_result_record",
+-        ]
+-        tables = [
+-            "loop_ledger",
+-            "tag_registry",
+-            "loop_tag_mapping",
+-            *targets,
+-            "kpi_snapshot_custom",
+-            "calculation_dataset_snapshot",
+-        ]
+-        observed = {}
+-        for table in tables:
+-            if not await connection.fetchval(
+-                "SELECT to_regclass($1)", f"public.{table}"
++        async with connection.transaction(isolation="repeatable_read", readonly=True):
++            metadata_sql = "SELECT row_to_json(x)::text FROM (SELECT current_database() AS database_name, current_setting('transaction_read_only') AS read_only, current_setting('transaction_isolation') AS isolation, txid_current() AS txid, txid_current_snapshot()::text AS snapshot, clock_timestamp() AT TIME ZONE 'UTC' AS observed_utc) x"
++            raw_identity = await connection.fetchval(metadata_sql)
++            identity = json.loads(raw_identity)
++            if (
++                identity["database_name"] != database
++                or identity["read_only"] != "on"
++                or identity["isolation"] != "repeatable read"
+             ):
+-                raise RuntimeError("required capacity table missing: " + table)
+-            rows = await connection.fetch(
+-                f"SELECT row_to_json(t)::text AS row, to_jsonb(t)::text AS canonical FROM {table} t ORDER BY to_jsonb(t)::text"
+-            )
+-            data = (
+-                "\n".join(row["row"] for row in rows) + ("\n" if rows else "")
+-            ).encode()
+-            path = OUT / "capacity-raw" / label / (table + ".ndjson")
+-            path.parent.mkdir(parents=True, exist_ok=True)
+-            path.write_bytes(data)
+-            canonical = (
+-                "\n".join(row["canonical"] for row in rows) + ("\n" if rows else "")
+-            ).encode()
+-            path.with_suffix(".canonical.ndjson").write_bytes(canonical)
+-            observed[table] = {
+-                "count": len(rows),
+-                "bytes": len(data),
+-                "sha256": sha(data),
+-                "canonicalBytes": len(canonical),
+-                "canonicalSha256": sha(canonical),
+-            }
+-        if observed["loop_tag_mapping"]["count"] != 7000:
+-            raise RuntimeError("capacity binding denominator is not 7000")
+-        if any(observed[t]["count"] for t in targets):
+-            raise RuntimeError("capacity target results must remain zero")
+-        payload = {"database": database, "tables": observed, "writes": False}
+-        write(OUT / f"capacity-readonly-{label}.json", {"at": now(), **payload})
+-        if label != "before":
+-            before = json.loads((OUT / "capacity-readonly-before.json").read_text())
+-            before.pop("at", None)
+-            if before != payload:
+-                raise RuntimeError("capacity baseline raw content changed")
++                raise RuntimeError(
++                    "capacity observation is not the required actual RR READ ONLY transaction"
++                )
+             write(
+-                OUT / f"capacity-equality-{label}.json",
++                OUT / f"capacity-transaction-{label}.json",
+                 {
+-                    "at": now(),
+-                    "allRequiredTablesExist": True,
+-                    "rawRowsBytesAndHashesEqual": True,
+-                    "mappingCount": 7000,
+-                    "fourTargetTablesEmpty": True,
++                    "statement": metadata_sql,
++                    "rawRow": raw_identity,
++                    "parsed": identity,
++                    "guarantee": "one independent RR READ ONLY transaction per observation; before and after are distinct",
+                 },
+             )
++            targets = [
++                "kpi_snapshot_hourly",
++                "loop_confidence_latest",
++                "kpi_node_snapshot_hourly",
++                "calculation_result_record",
++            ]
++            tables = [
++                "loop_ledger",
++                "tag_registry",
++                "loop_tag_mapping",
++                *targets,
++                "kpi_snapshot_custom",
++                "calculation_dataset_snapshot",
++            ]
++            observed = {}
++            for table in tables:
++                if not await connection.fetchval(
++                    "SELECT to_regclass($1)", f"public.{table}"
++                ):
++                    raise RuntimeError("required capacity table missing: " + table)
++                rows = await connection.fetch(
++                    f"SELECT row_to_json(t)::text AS row, to_jsonb(t)::text AS canonical FROM {table} t ORDER BY to_jsonb(t)::text"
++                )
++                data = (
++                    "\n".join(row["row"] for row in rows) + ("\n" if rows else "")
++                ).encode()
++                path = OUT / "capacity-raw" / label / (table + ".ndjson")
++                path.parent.mkdir(parents=True, exist_ok=True)
++                path.write_bytes(data)
++                canonical = (
++                    "\n".join(row["canonical"] for row in rows) + ("\n" if rows else "")
++                ).encode()
++                path.with_suffix(".canonical.ndjson").write_bytes(canonical)
++                observed[table] = {
++                    "count": len(rows),
++                    "bytes": len(data),
++                    "sha256": sha(data),
++                    "canonicalBytes": len(canonical),
++                    "canonicalSha256": sha(canonical),
++                }
++            if observed["loop_tag_mapping"]["count"] != 7000:
++                raise RuntimeError("capacity binding denominator is not 7000")
++            if any(observed[t]["count"] for t in targets):
++                raise RuntimeError("capacity target results must remain zero")
++            payload = {"database": database, "tables": observed, "writes": False}
++            write(OUT / f"capacity-readonly-{label}.json", {"at": now(), **payload})
++            if label != "before":
++                before = json.loads((OUT / "capacity-readonly-before.json").read_text())
++                before.pop("at", None)
++                if before != payload:
++                    raise RuntimeError("capacity baseline raw content changed")
++                write(
++                    OUT / f"capacity-equality-{label}.json",
++                    {
++                        "at": now(),
++                        "allRequiredTablesExist": True,
++                        "rawRowsBytesAndHashesEqual": True,
++                        "mappingCount": 7000,
++                        "fourTargetTablesEmpty": True,
++                    },
++                )
+     finally:
+         await connection.close()
+ 

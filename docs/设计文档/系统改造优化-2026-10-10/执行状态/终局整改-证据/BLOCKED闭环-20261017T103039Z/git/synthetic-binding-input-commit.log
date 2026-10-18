@@ -1,0 +1,8 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+│  ruff staged (skip) no files for inspection
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.05 seconds)
+[fix/final-audit-remediation 4818678f] test(e2e): 声明合成输入历史绑定
+ 1 file changed, 294 insertions(+), 1 deletion(-)

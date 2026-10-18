@@ -1,0 +1,407 @@
+{
+  "fixtureSha256": "e4f58781cd96599432b22006ac1a097dc7b319a785b8a7661d9de27de9b30810",
+  "startEpochMs": 1792234800000,
+  "endEpochMs": 1792238400000,
+  "allCommandsServer0": true,
+  "commands": [
+    {
+      "role": "PV",
+      "pointId": "30da49c1-2d33-4da5-9487-23027bc9e155",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='30da49c1-2d33-4da5-9487-23027bc9e155' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.298784+00:00",
+      "finishedAt": "2026-10-17T13:17:01.318711+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          3600
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PV-count.body.json",
+      "bytes": 75,
+      "sha256": "b17cb55b5a742de44ca2b813aced38b29a7b73b698d528f126a5302aca78a565"
+    },
+    {
+      "role": "PV",
+      "pointId": "30da49c1-2d33-4da5-9487-23027bc9e155",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='30da49c1-2d33-4da5-9487-23027bc9e155' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.318870+00:00",
+      "finishedAt": "2026-10-17T13:17:01.323763+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          55,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PV-first.body.json",
+      "bytes": 176,
+      "sha256": "869796f5a4056ed56a2a9e54380837a7bc03cb4b7d4f5db00366a68db9417c11"
+    },
+    {
+      "role": "PV",
+      "pointId": "30da49c1-2d33-4da5-9487-23027bc9e155",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='30da49c1-2d33-4da5-9487-23027bc9e155' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.323875+00:00",
+      "finishedAt": "2026-10-17T13:17:01.331299+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:59:59.000Z",
+          61.4931,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PV-last.body.json",
+      "bytes": 181,
+      "sha256": "f9f584e8326245146248d9068a388bd812be047b589bd8b80a25f4f1371e7149"
+    },
+    {
+      "role": "SP",
+      "pointId": "4431bb12-1530-423c-a3bc-1a01a8c8f27c",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='4431bb12-1530-423c-a3bc-1a01a8c8f27c' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.331426+00:00",
+      "finishedAt": "2026-10-17T13:17:01.335697+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          3
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/SP-count.body.json",
+      "bytes": 72,
+      "sha256": "dfae4a29f7f21d8d1a8eb3a3ad75824cc1a5f43ceac2d86f0521daf71dd24aa7"
+    },
+    {
+      "role": "SP",
+      "pointId": "4431bb12-1530-423c-a3bc-1a01a8c8f27c",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='4431bb12-1530-423c-a3bc-1a01a8c8f27c' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.335808+00:00",
+      "finishedAt": "2026-10-17T13:17:01.342888+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          55,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/SP-first.body.json",
+      "bytes": 176,
+      "sha256": "869796f5a4056ed56a2a9e54380837a7bc03cb4b7d4f5db00366a68db9417c11"
+    },
+    {
+      "role": "SP",
+      "pointId": "4431bb12-1530-423c-a3bc-1a01a8c8f27c",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='4431bb12-1530-423c-a3bc-1a01a8c8f27c' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.342996+00:00",
+      "finishedAt": "2026-10-17T13:17:01.347190+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:40:00.000Z",
+          65,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/SP-last.body.json",
+      "bytes": 176,
+      "sha256": "93a49d872e39c28c8422168c397f807e0befd51203175aac8339c9a2a621686e"
+    },
+    {
+      "role": "OP",
+      "pointId": "e9ad0a29-9428-4651-8ae3-cd9ce9f11b29",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='e9ad0a29-9428-4651-8ae3-cd9ce9f11b29' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.347303+00:00",
+      "finishedAt": "2026-10-17T13:17:01.350845+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          3600
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/OP-count.body.json",
+      "bytes": 75,
+      "sha256": "b17cb55b5a742de44ca2b813aced38b29a7b73b698d528f126a5302aca78a565"
+    },
+    {
+      "role": "OP",
+      "pointId": "e9ad0a29-9428-4651-8ae3-cd9ce9f11b29",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='e9ad0a29-9428-4651-8ae3-cd9ce9f11b29' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.350975+00:00",
+      "finishedAt": "2026-10-17T13:17:01.356207+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          49.6505,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/OP-first.body.json",
+      "bytes": 181,
+      "sha256": "3b71aa6f373957d5f5e6b062914cce0654e8219d31c45abb9df6666108ea3695"
+    },
+    {
+      "role": "OP",
+      "pointId": "e9ad0a29-9428-4651-8ae3-cd9ce9f11b29",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='e9ad0a29-9428-4651-8ae3-cd9ce9f11b29' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.356367+00:00",
+      "finishedAt": "2026-10-17T13:17:01.358810+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:59:59.000Z",
+          59.4338,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/OP-last.body.json",
+      "bytes": 181,
+      "sha256": "a096b6d567b984344ed5e9e7ad0bb01bdd48535abd99f440519e9973618b9666"
+    },
+    {
+      "role": "MODE",
+      "pointId": "82f3ed25-172b-4c0e-8708-3b8741e757a0",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='82f3ed25-172b-4c0e-8708-3b8741e757a0' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.358958+00:00",
+      "finishedAt": "2026-10-17T13:17:01.360621+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/MODE-count.body.json",
+      "bytes": 72,
+      "sha256": "f692b9b02af8f97b95afebed35d059cac412209ccb98e6a2abeb261a7410c0b6"
+    },
+    {
+      "role": "MODE",
+      "pointId": "82f3ed25-172b-4c0e-8708-3b8741e757a0",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='82f3ed25-172b-4c0e-8708-3b8741e757a0' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.360735+00:00",
+      "finishedAt": "2026-10-17T13:17:01.362587+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          1,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/MODE-first.body.json",
+      "bytes": 175,
+      "sha256": "ca557053e8382cf8c3686ed75eedf7978a4ad7cae2679be381c8d986b918edd2"
+    },
+    {
+      "role": "MODE",
+      "pointId": "82f3ed25-172b-4c0e-8708-3b8741e757a0",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='82f3ed25-172b-4c0e-8708-3b8741e757a0' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.362724+00:00",
+      "finishedAt": "2026-10-17T13:17:01.364490+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          1,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/MODE-last.body.json",
+      "bytes": 175,
+      "sha256": "ca557053e8382cf8c3686ed75eedf7978a4ad7cae2679be381c8d986b918edd2"
+    },
+    {
+      "role": "PID_P",
+      "pointId": "7da14413-761e-4246-a460-8ac5c60ef9ac",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='7da14413-761e-4246-a460-8ac5c60ef9ac' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.364614+00:00",
+      "finishedAt": "2026-10-17T13:17:01.366229+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_P-count.body.json",
+      "bytes": 72,
+      "sha256": "f692b9b02af8f97b95afebed35d059cac412209ccb98e6a2abeb261a7410c0b6"
+    },
+    {
+      "role": "PID_P",
+      "pointId": "7da14413-761e-4246-a460-8ac5c60ef9ac",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='7da14413-761e-4246-a460-8ac5c60ef9ac' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.366331+00:00",
+      "finishedAt": "2026-10-17T13:17:01.371901+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          1.2,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_P-first.body.json",
+      "bytes": 177,
+      "sha256": "742149db8739238b40d7ecb749eb442820a1e37303fab8900a14397a2b9bbdca"
+    },
+    {
+      "role": "PID_P",
+      "pointId": "7da14413-761e-4246-a460-8ac5c60ef9ac",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='7da14413-761e-4246-a460-8ac5c60ef9ac' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.372025+00:00",
+      "finishedAt": "2026-10-17T13:17:01.373913+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          1.2,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_P-last.body.json",
+      "bytes": 177,
+      "sha256": "742149db8739238b40d7ecb749eb442820a1e37303fab8900a14397a2b9bbdca"
+    },
+    {
+      "role": "PID_I",
+      "pointId": "3da633fc-e678-495c-839c-e33a9a1ac978",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='3da633fc-e678-495c-839c-e33a9a1ac978' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.374048+00:00",
+      "finishedAt": "2026-10-17T13:17:01.375631+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_I-count.body.json",
+      "bytes": 72,
+      "sha256": "f692b9b02af8f97b95afebed35d059cac412209ccb98e6a2abeb261a7410c0b6"
+    },
+    {
+      "role": "PID_I",
+      "pointId": "3da633fc-e678-495c-839c-e33a9a1ac978",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='3da633fc-e678-495c-839c-e33a9a1ac978' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.375753+00:00",
+      "finishedAt": "2026-10-17T13:17:01.377865+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          60,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_I-first.body.json",
+      "bytes": 176,
+      "sha256": "ca3bfb4ed677232be8e917ac950e2ab4f3d1f37a1cc6d2e9da11493939389476"
+    },
+    {
+      "role": "PID_I",
+      "pointId": "3da633fc-e678-495c-839c-e33a9a1ac978",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='3da633fc-e678-495c-839c-e33a9a1ac978' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.378003+00:00",
+      "finishedAt": "2026-10-17T13:17:01.380175+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          60,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_I-last.body.json",
+      "bytes": 176,
+      "sha256": "ca3bfb4ed677232be8e917ac950e2ab4f3d1f37a1cc6d2e9da11493939389476"
+    },
+    {
+      "role": "PID_D",
+      "pointId": "ce950fe9-e70a-4fcd-9739-1cffaa43f8ad",
+      "sql": "SELECT COUNT(*) FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='ce950fe9-e70a-4fcd-9739-1cffaa43f8ad' AND ts >= 1792234800000 AND ts <= 1792238400000",
+      "startedAt": "2026-10-17T13:17:01.380298+00:00",
+      "finishedAt": "2026-10-17T13:17:01.384297+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_D-count.body.json",
+      "bytes": 72,
+      "sha256": "f692b9b02af8f97b95afebed35d059cac412209ccb98e6a2abeb261a7410c0b6"
+    },
+    {
+      "role": "PID_D",
+      "pointId": "ce950fe9-e70a-4fcd-9739-1cffaa43f8ad",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='ce950fe9-e70a-4fcd-9739-1cffaa43f8ad' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts ASC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.384454+00:00",
+      "finishedAt": "2026-10-17T13:17:01.393916+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          0,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_D-first.body.json",
+      "bytes": 175,
+      "sha256": "94d735c342653db1a0cdd37487dca0f52e2b58336acad296f83ae9c7cf216eb0"
+    },
+    {
+      "role": "PID_D",
+      "pointId": "ce950fe9-e70a-4fcd-9739-1cffaa43f8ad",
+      "sql": "SELECT ts,`value`,quality_class,quality_raw FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id='ce950fe9-e70a-4fcd-9739-1cffaa43f8ad' AND ts >= 1792234800000 AND ts <= 1792238400000 ORDER BY ts DESC LIMIT 1",
+      "startedAt": "2026-10-17T13:17:01.394033+00:00",
+      "finishedAt": "2026-10-17T13:17:01.398262+00:00",
+      "httpStatus": 200,
+      "serverCode": 0,
+      "data": [
+        [
+          "2026-10-17T11:00:00.000Z",
+          0,
+          1,
+          1
+        ]
+      ],
+      "bodyPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/root-actual-utc-count-control/PID_D-last.body.json",
+      "bytes": 175,
+      "sha256": "94d735c342653db1a0cdd37487dca0f52e2b58336acad296f83ae9c7cf216eb0"
+    }
+  ]
+}

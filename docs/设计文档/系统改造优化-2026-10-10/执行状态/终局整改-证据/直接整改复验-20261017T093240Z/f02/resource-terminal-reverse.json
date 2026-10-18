@@ -1,0 +1,20 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "negative_resource_terminal_plugin",
+    "tests/test_g5_data_acquisition_failure.py::test_one_resource_failure_in_thousand_cannot_be_success",
+    "tests/test_g5_data_acquisition_failure.py::test_minority_resource_failure_propagates_to_parent_and_terminal_record",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "rc": 1,
+  "expectedRc": 1,
+  "elapsed": 2.2147300243377686,
+  "stdoutSha256": "3b97647127a205deb03c35e2191e946252a9c070caf5b5ad7e5243e93808d8ab",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "mechanism": "in-process no-op _assert_batch_resources only, source unchanged"
+}

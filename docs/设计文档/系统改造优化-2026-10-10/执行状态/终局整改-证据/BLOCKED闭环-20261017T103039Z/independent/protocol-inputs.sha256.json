@@ -1,0 +1,106 @@
+{
+  "createdAtUtc": "2026-10-17T10:34:45.662507+00:00",
+  "purpose": "read-only protocol source capture; candidate HEAD alone is not the final dirty source identity",
+  "sources": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/03-阶段任务计划.md",
+      "size": 52411,
+      "sha256": "020443d160efb398e4075894b8c5b57d65e193135fd58095c4f93f9389a1b4a5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/04-验收与容量基线.md",
+      "size": 28283,
+      "sha256": "a38bfb27d0e3485b5c543c256f82eb26fa7447e37ebce56312d94cebc36809b4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-BLOCKED闭环执行.md",
+      "size": 3668,
+      "sha256": "181fd998f871ccf2d87bcdc0e3dfa8b431cb7c48edb3e65087795d84b30dc0ad"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5晋级口径调整-20261014.md",
+      "size": 2492,
+      "sha256": "4558cf0074fa5c41432ae6d588c54467d370053a8b986bf8240373c0f7f8f805"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-任务状态/G5-D01-04-实证方案.md",
+      "size": 33356,
+      "sha256": "e542f5107f9d4165fbbebac2ee3fbfba3651891c05c4b5c27234de75fc33dda1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f02/non-author/receipt.md",
+      "size": 8519,
+      "sha256": "41cb89a5267cbcb39576f20ddad9376efff25fb082879f3032a2c2e5737a521d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f02/non-author-v3/receipt.md",
+      "size": 2453,
+      "sha256": "72047e99b943cb309764cdbaa21efba562fa8c7e9df67b65396fbc4c4cabbb26"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f03/non-author/receipt.md",
+      "size": 5894,
+      "sha256": "8e31a67b821606e5130024e5a5eebf486d30c366deb950d2cacbd7729260dfb1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/critical-cases.json",
+      "size": 359,
+      "sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/playwright.critical.config.ts",
+      "size": 351,
+      "sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/tests/critical-business.spec.ts",
+      "size": 8212,
+      "sha256": "ad19423f239803ab49b795a942ce479d176d1dc87abed6630a0d17b8aef3f6bb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/kpi_capacity_benchmark.py",
+      "size": 56456,
+      "sha256": "8e928208672b5222670c80f4b282adf5353284be21451293098c31a041dece0f"
+    }
+  ],
+  "git": {
+    "mainHead": {
+      "argv": [
+        "git",
+        "-C",
+        "/Users/zhangping/DEV/CLPM-MVP",
+        "rev-parse",
+        "HEAD"
+      ],
+      "rc": 0,
+      "stdout": "b676ea59158aa4d1e106579017a85860add60293",
+      "stderr": ""
+    },
+    "candidateHead": {
+      "argv": [
+        "git",
+        "-C",
+        "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "rev-parse",
+        "HEAD"
+      ],
+      "rc": 0,
+      "stdout": "98ccdd5f27831e699b0cc13f5e69556cd4848f0e",
+      "stderr": ""
+    },
+    "candidateBranch": {
+      "argv": [
+        "git",
+        "-C",
+        "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "branch",
+        "--show-current"
+      ],
+      "rc": 0,
+      "stdout": "fix/final-audit-remediation",
+      "stderr": ""
+    }
+  },
+  "businessOperationsPerformed": false,
+  "sourceModified": false
+}

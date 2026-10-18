@@ -1,0 +1,131 @@
+{
+  "scope": "non-author final 879b CI-input collector patch offline gate only; no real remote PG/business signoff",
+  "sealedAtUtc": "2026-10-17T15:13:23.452140+00:00",
+  "files": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/author-manifest-check.json",
+      "bytes": 412,
+      "sha256": "0d617da91219ba254bbb0800a17efa37a41cbeaac15f541613b66240bfc0530f"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/copied/capture-critical-input-evidence.py",
+      "bytes": 14308,
+      "sha256": "879b46ff4736a433cf37e2ac40a85ed30491f5b302187dfc5e98c36cbe27b295"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/copied/ci.yml",
+      "bytes": 19057,
+      "sha256": "674f03f52ad884e6ac686e7a551b512efd48f33ddd4e5f4fae4470c61dbc0167"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/copied/critical-input-dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/copied/critical-input-policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/copied/original-30f0-capture.py",
+      "bytes": 14245,
+      "sha256": "30f0b07bab182470d1a9ace4e31d42d0d7bf6b3b05b938626367baba2b522bcf"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/copied/test_critical_input_evidence.py",
+      "bytes": 11041,
+      "sha256": "71fa0cedb7f87b41570b05b0147db3696f0320472d8394c621049fdf975a247d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/critical-input-dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/critical-input-policy.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/independent-controls.command.json",
+      "bytes": 993,
+      "sha256": "d9e8c26229f70b01bb39ca140264e15d7e4c039dd0e1d83d0e517e96c7937016"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/independent-controls.stderr.log",
+      "bytes": 1885,
+      "sha256": "1453eaf0a7d99cc51c2a2361194bd53d71d7a6b043eb8a069523c2ac10f50a61"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/independent-controls.stdout.log",
+      "bytes": 88,
+      "sha256": "f90d1e2e13a2379abaf1a0c0230aa9fb19a5f3ac22a46194a73a0acf9d420686"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-fixed.command.json",
+      "bytes": 1256,
+      "sha256": "f2e28dcfce1f1fa6eab37e69ec4384100b94d3409b2a8a9314f82118fe72aad5"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-fixed.json",
+      "bytes": 224,
+      "sha256": "fc9864135927e3774533a18d4e20c91cbfdde366fc4395b722c6d635ae3113fb"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-fixed.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-fixed.stdout.log",
+      "bytes": 212,
+      "sha256": "3dd712d396853445bbc9ca60158bff5ed56ac0e503059645f014d93ca4e28ae7"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-original.command.json",
+      "bytes": 1249,
+      "sha256": "719e30c09fd851decac77118fb50a485398e84cccf7ab5af9101bc2f64e65094"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-original.json",
+      "bytes": 219,
+      "sha256": "797868793b46de8fb2f98bdafa2d8ba265aaf0acd54d3218199174dbe6d7ef1a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-original.stderr.log",
+      "bytes": 454,
+      "sha256": "f13fcb9b6b3f7d5623666c2a0a63edf862c74b27b85c426f09f8b5657dd43c60"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/precision-original.stdout.log",
+      "bytes": 207,
+      "sha256": "b54b1a56b5563708f0f335b9c038b5c41e4d64781005651bfd16346ee48d0b34"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/receipt.md",
+      "bytes": 3886,
+      "sha256": "9a9ee77fb4dbdd6ee8c7aa0815d76b2f5cef40c1ce7377b228baf5932c921300"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/static-contract.json",
+      "bytes": 2022,
+      "sha256": "a1b59ab1ae49deb478f8197cae1768c8af20d10ff35a357792627f0da079d282"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-ci-input-capture-review/workflow-c6-to-capture.diff",
+      "bytes": 3242,
+      "sha256": "2a27bf3ac70973725718a44ce36066e078dc6a82129e7a0f42964ef4ada50db8"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/run_ci_input_capture_independent_controls.py",
+      "bytes": 3838,
+      "sha256": "75a00d962d40dc3ca2f53ab5a434527516fcf105beb791a56bc1cffa8c7a0f56"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/probe_ci_policy_precision.py",
+      "bytes": 853,
+      "sha256": "23fbbd132c3db95ae866f38244819f9f04ab4d0375b694d30543b2f269cec491"
+    }
+  ]
+}

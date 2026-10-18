@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-bc48701e-config-native-preflight/verify_finite_prefix.py"
+  ],
+  "startedAtUtc": "2026-10-17T15:36:01.193957+00:00",
+  "finishedAtUtc": "2026-10-17T15:36:01.250158+00:00",
+  "rc": 1,
+  "sourceSha256": "0dc538f9c9451268f1a2211108525e8330f53c22db03a2ed263924f34f0512fd",
+  "onlySavedFileReadsAndOwnEvidenceWrites": true
+}

@@ -1,0 +1,67 @@
+{
+  "adapterSourceSha256": "c27d789a2c8308cfbeebc692d4565d2460b6c65fe2f3bc295fc72f51469fb3c8",
+  "helper": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py",
+    "bytes": 21752,
+    "sha256": "e70bbe5ee5a4022a4c1c4e027bedbc2fee1693991e857b618030c25e238bb3f3",
+    "backupFunctionLine": 500
+  },
+  "authorPreflightOriginalRefs": [
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/host-version.json",
+      "copy": "author-preflight-context/host-version.json",
+      "bytes": 355,
+      "sha256": "55497849c4bd56089de1e2f18ca69932b68c5890a1a766146642fe2b1c3b5e5f"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/host-version.stdout.log",
+      "copy": "author-preflight-context/host-version.stdout.log",
+      "bytes": 38,
+      "sha256": "85f38fb992ba95c31a202e6e97e261d32b95546fc61acb6a3296956855289412"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/host-version.stderr.log",
+      "copy": "author-preflight-context/host-version.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/container-version.json",
+      "copy": "author-preflight-context/container-version.json",
+      "bytes": 388,
+      "sha256": "f375fa4e042c4059459dbc358fc51a1255b9e5e487241460c8ab364a044f3928"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/container-version.stdout.log",
+      "copy": "author-preflight-context/container-version.stdout.log",
+      "bytes": 53,
+      "sha256": "9c2e57c048e0f1c8f478e223ffcb137d62893b98957db6b639863486cc4ef12c"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/container-version.stderr.log",
+      "copy": "author-preflight-context/container-version.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/container-identity.json",
+      "copy": "author-preflight-context/container-identity.json",
+      "bytes": 503,
+      "sha256": "9217e0b95ff602c3817ffbb2c4969c25748d438e56dc3ca671d47f9b041b7612"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/container-identity.stdout.log",
+      "copy": "author-preflight-context/container-identity.stdout.log",
+      "bytes": 222,
+      "sha256": "39b5efd8e6176a8e1cb5151c8e4125f29bc2292a0bab0cfd9f92cc8d2d037b9d"
+    },
+    {
+      "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/container-identity.stderr.log",
+      "copy": "author-preflight-context/container-identity.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "reviewScope": "STATIC_AND_OWN_TEMP_STUBS_ONLY_NO_ACTUAL_DOCKER_DB_OR_DUMP",
+  "integration": "Caller captures inherited stdout/stderr into xb files and rejects nonzero rc, non-file, or missing PGDMP header; adapter itself is not a standalone restore verifier"
+}

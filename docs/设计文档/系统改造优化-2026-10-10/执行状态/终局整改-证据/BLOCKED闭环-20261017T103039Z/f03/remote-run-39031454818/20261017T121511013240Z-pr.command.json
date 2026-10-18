@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "repos/hlszp/CLPM-MVP/pulls/1"
+  ],
+  "rc": 0,
+  "observedAt": "2026-10-17T12:15:12.039357+00:00",
+  "output": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/remote-run-39031454818/20261017T121511013240Z-pr.json",
+  "bytes": 15667,
+  "stdout_sha256": "abca930d1c108f3775606582cab1f3d8452e25726f188d52c729e8bc7ed4f10f",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

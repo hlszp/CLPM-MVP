@@ -1,0 +1,78 @@
+{
+  "run": {
+    "id": 39037749058,
+    "event": "pull_request",
+    "head_sha": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+    "status": "completed",
+    "conclusion": "failure"
+  },
+  "jobs": [
+    {
+      "id": 117410887613,
+      "name": "Critical E2E Gate (blocking)",
+      "status": "completed",
+      "conclusion": "failure",
+      "currentOrFailedSteps": [
+        {
+          "name": "Prepare isolated synthetic inputs (no KPI result seeding)",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 117410887796,
+      "name": "Frontend CI",
+      "status": "completed",
+      "conclusion": "success",
+      "currentOrFailedSteps": []
+    },
+    {
+      "id": 117410887852,
+      "name": "Backend CI",
+      "status": "completed",
+      "conclusion": "failure",
+      "currentOrFailedSteps": [
+        {
+          "name": "Pytest with coverage",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    }
+  ],
+  "downloaded": [
+    {
+      "artifactId": 12102244862,
+      "name": "critical-e2e-820aba1aecc204578b34d7892b543a21369d650c",
+      "files": 78,
+      "root": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/artifacts/12102244862"
+    },
+    {
+      "job": "Critical E2E Gate (blocking)",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/job-logs/117410887613.log",
+      "checkoutShaFromGitLog": [
+        "820aba1aecc204578b34d7892b543a21369d650c"
+      ]
+    },
+    {
+      "job": "Frontend CI",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/job-logs/117410887796.log",
+      "checkoutShaFromGitLog": [
+        "820aba1aecc204578b34d7892b543a21369d650c"
+      ]
+    },
+    {
+      "job": "Backend CI",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/job-logs/117410887852.log",
+      "checkoutShaFromGitLog": [
+        "820aba1aecc204578b34d7892b543a21369d650c"
+      ]
+    }
+  ],
+  "pullRequest": {
+    "head": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+    "base": "86301e5e3083db0feb5f2d9db8fb9eacc8d3165d",
+    "mergeCommitSha": "820aba1aecc204578b34d7892b543a21369d650c"
+  }
+}

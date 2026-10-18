@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "npm",
+    "exec",
+    "playwright",
+    "test",
+    "--",
+    "--config=playwright.critical.config.ts",
+    "--list"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "rc": 0,
+  "startedAt": "2026-10-17T13:25:35.654314+00:00",
+  "finishedAt": "2026-10-17T13:25:36.407053+00:00",
+  "stdoutSha256": "1796bd872c4edb5cd50e504a730abd0b484d86a286ce4485df71213692e39f4c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

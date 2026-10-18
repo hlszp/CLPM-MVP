@@ -1,0 +1,16 @@
+{
+  "frozenAt": "2026-10-17T11:26:39.150722+00:00",
+  "files": [
+    {
+      "file": "freeze_capacity_configuration.py",
+      "sha256": "83217b072a84b27baebc575ab4d9bc34eae3be5069c9651b69802c3afe67436a",
+      "bytes": 22932
+    },
+    {
+      "file": "test_freeze_capacity_configuration.py",
+      "sha256": "ab4fc5f8ecf9a891e3e1a0be6f09485c728d6d966ac62e03f1224a3d48f58209",
+      "bytes": 5937
+    }
+  ],
+  "scope": "Keeper-run read-only actual config freeze; not executed against runtime before 20 completed input audits"
+}

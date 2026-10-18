@@ -1,0 +1,191 @@
+{
+  "scratch": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-patch-recover-check-fnn8qa6r",
+  "check_exit_code": 0,
+  "check_stdout": "",
+  "check_stderr": "",
+  "apply_exit_code": 0,
+  "files": [
+    {
+      "path": ".github/workflows/ci.yml",
+      "sha256": "e472f023a16de21d0fbf7637d83eb261a8b9936daef04e72a5a8ddd77d224896",
+      "matches": true
+    },
+    {
+      "path": "backend/app/api/v1/endpoints/loops.py",
+      "sha256": "ba9c7b20cece0302b99e476d6c7b9797be95b2448284a19778c6045d8ecda6c5",
+      "matches": true
+    },
+    {
+      "path": "backend/app/schemas/loop_batch.py",
+      "sha256": "fbf365118679303222d955f57003169c0cc935eb05ecdbe3e57cdfa1290f3674",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/data_planner.py",
+      "sha256": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/data_source/logical_wide_builder.py",
+      "sha256": "0fd686cf47d38c530b003e164990e9e29f60f77346fdd542d5db3e628d1d011a",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/loop_batch.py",
+      "sha256": "3c07ff56a3c3104d0011ad7540e184a15e333f9121a7eca96e00b2c8d5da0577",
+      "matches": true
+    },
+    {
+      "path": "backend/app/tasks/kpi_calc.py",
+      "sha256": "a222a53c9e2ae40581461ba63a22e0ce81edacaa7324aa82916c1dc3f9e66bc8",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_backfill_recovery_and_skip.py",
+      "sha256": "d0d81acc5e102adaa00bf1efecbf2a66404eae0f6228b3b295fae772fc6b5bd1",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_kpi_calc.py",
+      "sha256": "1471480d96ba88c357de6094fd8b129adf22e273824a907b2f008bd6224dbe61",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_p5_storm_rework.py",
+      "sha256": "63d1cd7600856328568d5379270488e232cec0564dffb0c90d3cb30d1ecc84c7",
+      "matches": true
+    },
+    {
+      "path": "e2e/package.json",
+      "sha256": "d2647e50cb75f022ec4f8a8ccafd02f14736a176514e7127ebe0eb6fe69b7622",
+      "matches": true
+    },
+    {
+      "path": "e2e/tsconfig.json",
+      "sha256": "c50e25f864681f96d1a04d075efccb3cf1974f3618f6559e32351a01e091f46a",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/loop-follow.test.ts",
+      "sha256": "bfd0547edfa7063d14e4c3ae4c8c13201a76a7a789babf731141396a2ef2c2af",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts",
+      "sha256": "6ddc12ab61a24c5076837951592ae2db081e7abf5bbe076c7dfdabdd064549a7",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/store.test.ts",
+      "sha256": "d34b143109ce576308662657cca48b271696d5eb92ee8f4db80913c3386a6263",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/api/engineering-template.ts",
+      "sha256": "f9b1831bed2c3044f2b4aff1402ddc0a6efb5b57ca131a8e08a0ad1124e81086",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/api/personal-work.ts",
+      "sha256": "57e741217257578bb9ecfa34cf428a88f434a13cfa8d6434fd3ca08d24e14888",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/composables/use-loop-follow.ts",
+      "sha256": "dc345fa9bb3d01ab8551dd7afbf325af36f245da064328a0128e1abf54e29650",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/store/auth.ts",
+      "sha256": "56b1eac2bdcc2801f23e742f7b9c525f8e254c0663870ee07e33f215d024ec81",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue",
+      "sha256": "a8b2e47679c0d3d2c2bfccd6cce857d1aba68420ea75da2caeeff2519fc1e72e",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/index.vue",
+      "sha256": "71c92c6b2eb388c3d0e84f7f7c67d5d5137cc20d58207335dd4ad80290470e02",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts",
+      "sha256": "421ac25e536fd565fbfd97f468353bc75c8c704b652d920b62b7e65ea000cc3a",
+      "matches": true
+    },
+    {
+      "path": "scripts/run-critical-e2e.sh",
+      "sha256": "7bbd52348ef46c0d312aaf03190c1d93438292a98e71bbad2a0211c43f369fe3",
+      "matches": true
+    },
+    {
+      "path": "backend/app/core/async_tasks.py",
+      "sha256": "acb19e9e457cb738ba3115e814a9b55ad60f0a297926f6c36e9493e1306b4eca",
+      "matches": true
+    },
+    {
+      "path": "backend/app/services/loop_batch_restore.py",
+      "sha256": "cafbce4b51318de377ab4fa9c12a71cefba4227632704bb8128fe34dc7e9c477",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_g5_data_acquisition_failure.py",
+      "sha256": "a19efd6d67963cb7322aebb489a9f49ca6265e47f081e6a5bd45b866306a52e9",
+      "matches": true
+    },
+    {
+      "path": "backend/tests/test_loop_batch_restore.py",
+      "sha256": "623f110defe47368e3c1c787ad3da3eec55d23e9ffa5ea18ba85f03c51c7a72f",
+      "matches": true
+    },
+    {
+      "path": "e2e/critical-cases.json",
+      "sha256": "10c9be9b3b6ded20b65bdd443eba6405d8f354366cc34a03747340373cca004c",
+      "matches": true
+    },
+    {
+      "path": "e2e/playwright.critical.config.ts",
+      "sha256": "07a7256835f24aedacbe795036aa85fba701a9611c963a704f4f4f74c6a7bee4",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/prepare-critical-fixture.py",
+      "sha256": "ba89e4996b11c8477ce97c7aa0e71ae001b43280a3633ce01696284656f0d33b",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/test-critical-gate.mjs",
+      "sha256": "e0e86e4f0c7fe71707563318e2efcad47df8187dce55b79065be3feee3b71e14",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/test_critical_fixture.py",
+      "sha256": "3ce51a4be0a905d0fc01351550c709c29e26e381770b3dbed43fbb45112f98ab",
+      "matches": true
+    },
+    {
+      "path": "e2e/scripts/validate-critical-results.mjs",
+      "sha256": "6067419dbd02014818c19d5682284d9e1d365767945efa7f2d145d0c7ce743f4",
+      "matches": true
+    },
+    {
+      "path": "e2e/tests/critical-business.spec.ts",
+      "sha256": "ad19423f239803ab49b795a942ce479d176d1dc87abed6630a0d17b8aef3f6bb",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/__tests__/personal-work-conflict.test.ts",
+      "sha256": "d08c64b04ed396ceb10443eec6b2176be02225c83997ee411b7ac0d672c69721",
+      "matches": true
+    },
+    {
+      "path": "frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+      "sha256": "077648fcee21953223b1f9587a3619709f179fef63f9e9ed1fa172bef03425cc",
+      "matches": true
+    }
+  ],
+  "all_match": true,
+  "scratch_removed": true
+}

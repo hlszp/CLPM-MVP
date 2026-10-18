@@ -1,0 +1,34 @@
+﻿2026-10-17T14:42:11.5473484Z ##[group]Run pnpm exec eslint apps/web-antd --cache
+2026-10-17T14:42:11.5473957Z [36;1mpnpm exec eslint apps/web-antd --cache[0m
+2026-10-17T14:42:11.5537048Z shell: /usr/bin/bash -e {0}
+2026-10-17T14:42:11.5537311Z env:
+2026-10-17T14:42:11.5537495Z   CI: true
+2026-10-17T14:42:11.5537782Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T14:42:11.5538102Z ##[endgroup]
+2026-10-17T14:42:37.6010791Z 
+2026-10-17T14:42:37.6011895Z /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/src/__tests__/directives.test.ts
+2026-10-17T14:42:37.6041201Z ##[warning]   73:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6050200Z ##[warning]  169:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6052325Z ##[warning]  192:44  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6053862Z 
+2026-10-17T14:42:37.6054621Z /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/src/__tests__/use-loop-realtime.test.ts
+2026-10-17T14:42:37.6056444Z ##[warning]   69:21  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6058799Z ##[warning]  431:21  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6061113Z ##[warning]  507:35  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6063691Z ##[warning]  513:41  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6066114Z ##[warning]  517:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6068427Z ##[warning]  569:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6070747Z ##[warning]  590:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6073100Z ##[warning]  604:34  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6074787Z 
+2026-10-17T14:42:37.6075495Z /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/src/__tests__/wb360-session.test.ts
+2026-10-17T14:42:37.6077116Z ##[warning]   46:21  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6079432Z ##[warning]  115:36  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6081756Z ##[warning]  124:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6084331Z ##[warning]  133:23  warning  There is more than one component in this file  vue/one-component-per-file
+2026-10-17T14:42:37.6085732Z 
+2026-10-17T14:42:37.6086489Z /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/apps/web-antd/src/views/cockpit/wb-comps/EvalSummary.vue
+2026-10-17T14:42:37.6088286Z ##[warning]  152:14  warning  'v-html' directive can lead to XSS attack  vue/no-v-html
+2026-10-17T14:42:37.6089657Z 
+2026-10-17T14:42:37.6090230Z ✖ 16 problems (0 errors, 16 warnings)
+2026-10-17T14:42:37.6090571Z 

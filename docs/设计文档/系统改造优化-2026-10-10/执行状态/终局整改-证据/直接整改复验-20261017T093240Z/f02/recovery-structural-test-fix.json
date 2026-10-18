@@ -1,0 +1,39 @@
+[
+  {
+    "command": [
+      "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+      "-m",
+      "pytest",
+      "-q",
+      "tests/test_backfill_recovery_and_skip.py",
+      "tests/test_g5_data_acquisition_failure.py",
+      "-p",
+      "no:cacheprovider"
+    ],
+    "rc": 0,
+    "elapsed": 3.1339340209960938
+  },
+  {
+    "command": [
+      "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+      "-m",
+      "ruff",
+      "check",
+      "tests/test_backfill_recovery_and_skip.py"
+    ],
+    "rc": 0,
+    "elapsed": 0.0841989517211914
+  },
+  {
+    "command": [
+      "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+      "-m",
+      "ruff",
+      "format",
+      "--check",
+      "tests/test_backfill_recovery_and_skip.py"
+    ],
+    "rc": 0,
+    "elapsed": 0.04262399673461914
+  }
+]

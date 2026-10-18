@@ -1,0 +1,18 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "ci(e2e): run authenticated business chain",
+    "-m",
+    "Execute the four required cases against isolated real services; preserve failures and full input evidence."
+  ],
+  "elapsed_seconds": 0.1825101375579834,
+  "exit_code": 0,
+  "subject": "ci(e2e): run authenticated business chain",
+  "changed_lines": 303,
+  "numstat": "88\t8\t.github/workflows/ci.yml\n207\t0\te2e/tests/critical-business.spec.ts\n",
+  "stdout_sha256": "4c20ae5971b517a64e6dbf28f8983fe8d3e07ebb3bde6d7e6063b82042950fa3",
+  "stderr_sha256": "76c58f29f9e7ad07179222530ca119203f2074163903bf68d850fef8469183c3",
+  "commit": "08038359b01615befec566f9559fea44b1ca45ef"
+}

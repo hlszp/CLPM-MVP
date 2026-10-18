@@ -1,0 +1,31 @@
+2026-10-18 04:39:04,731 | INFO     | app.services.task_tracker | 任务状态更新: task_id=5546614c-81fb-42d0-b852-5b4db913a8a1, RUNNING→RUNNING
+2026-10-18 04:39:04,771 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:BASE:1792051200:1792054800:2s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:04,772 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=BASE, tags=['pv', 'sp'], interval=2s
+2026-10-18 04:39:04,801 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:MODE_HF:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:04,803 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 04:39:04,909 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:OP_HF:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:04,909 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 04:39:04,914 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:PVOP_HF:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:04,915 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 04:39:04,949 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:QUALITY_HF:1792051200:1792054800:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:04,949 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 04:39:04,953 | INFO     | app.services.task_tracker | 任务状态更新: task_id=5546614c-81fb-42d0-b852-5b4db913a8a1, RUNNING→RUNNING
+2026-10-18 04:39:04,994 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:BASE:1792051200:1792054800:5s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:04,994 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=BASE, tags=['pv', 'sp'], interval=5s
+2026-10-18 04:39:05,007 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:MODE_HF:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:05,007 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 04:39:05,019 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:OP_HF:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:05,019 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 04:39:05,101 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:PVOP_HF:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:05,107 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 04:39:05,141 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:QUALITY_HF:1792051200:1792054800:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:05,142 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 04:39:05,150 | INFO     | app.services.task_tracker | 任务状态更新: task_id=5546614c-81fb-42d0-b852-5b4db913a8a1, RUNNING→RUNNING
+2026-10-18 04:39:05,162 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:408365bc-2d57-443d-b6d0-19bd00667104:BASE:1792051200:1792054800:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:39:05,162 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=408365bc-2d57-443d-b6d0-19bd00667104, tagGroup=BASE, tags=['mode', 'op', 'pv', 'pv_quality', 'sp'], interval=1s
+2026-10-18 04:39:06,649 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=7ca5b8de-28b1-456e-8037-fa4fedda342a, tagGroup=QUALITY_HF, points=3601, controlType=TC
+2026-10-18 04:39:06,671 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:39:06,673 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:39:06,677 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=98777] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:39:06,677 | WARNING  | app.services.preprocessing.pipeline | [Pipeline] loop_confidence=E: loop=7ca5b8de-28b1-456e-8037-fa4fedda342a, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+2026-10-18 04:39:06,677 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_7ca5b8de-28b1-456e-8037-fa4fedda342a_QUALITY_HF_1s, block_valid_rate=1.0000, loop_valid_rate=0.0000, loop_confidence=E, segments=1

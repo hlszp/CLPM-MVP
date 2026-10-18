@@ -1,0 +1,1619 @@
+{
+  "templateOnly": true,
+  "doNotUseAsMeasuredEvidence": true,
+  "seriesId": "REPLACE_WITH_FROZEN_SERIES_ID",
+  "candidateSha": "REPLACE_WITH_FINAL_ACTUAL_M_40_HEX",
+  "configDigest": "REPLACE_WITH_ACTUAL_FROZEN_CONFIG_DIGEST",
+  "dbNaiveTimezone": "UTC",
+  "runtimeStartTimezone": "Asia/Shanghai",
+  "redisHost": "127.0.0.1",
+  "redisPort": 17123,
+  "plannedBatches": {
+    "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/planned-batches.json",
+    "sha256": "38cae67a0d688beac6e9ebdaad325cb7d0b0017b619d2bda19df70caf930e272",
+    "size": 6031
+  },
+  "configFreezeManifest": {
+    "path": "REPLACE_WITH_ACTUAL/config-freeze/sha256-manifest.json",
+    "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+    "size": null
+  },
+  "configFreeze": {
+    "path": "REPLACE_WITH_ACTUAL/config-freeze/config-freeze.json",
+    "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+    "size": null
+  },
+  "nodeScopeAfter": {
+    "path": "REPLACE_WITH_ACTUAL/post-node-scope.raw.json",
+    "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+    "size": null
+  },
+  "configurationIsolation": {
+    "path": "REPLACE_WITH_ACTUAL/actual-keeper-isolation-record",
+    "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+    "size": null
+  },
+  "coldHotDefinitions": {
+    "path": "REPLACE_WITH_ACTUAL/formal-frozen-protocol",
+    "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+    "size": null
+  },
+  "resourceProfile": {
+    "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/resource-profile-plan.json",
+    "sha256": "df279ab80c3e64e891eb7e65c8f47173fe4ab6c8c431dd0326fb8f2bed55a7b9",
+    "size": 1850
+  },
+  "resourceProfileProofs": [
+    {
+      "path": "REPLACE_WITH_ACTUAL/actual-effective-resource-profile",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": null
+    }
+  ],
+  "history": {
+    "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/history-input-refs.json",
+    "sha256": "9e9f60287f56f27f19e49064b2db6ade7a64907ac7489b06e962bc6b151f1d0a",
+    "size": 1914
+  },
+  "celeryEventSources": [
+    {
+      "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapter-celery-event-source/request.py",
+      "sha256": "0513b4bd259ec65ac6ff7bfddea7bf03955b431ff07f38a12f142008043e6577",
+      "size": 27979
+    },
+    {
+      "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapter-celery-event-source/dispatcher.py",
+      "sha256": "edbdfedddffaba4bd135a8f27e21cc5f562fa16348cda07acd2dfecc4510846e",
+      "size": 8987
+    }
+  ],
+  "batches": [
+    {
+      "batch": 1,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101512.json",
+        "sha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/01-a-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 2,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101513.json",
+        "sha256": "37d0de75ca28dd00cfd3be220226ab03dc210c9d5fb042b63c4629125ad6f9f8",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/02-a-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 3,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101514.json",
+        "sha256": "9308fd25d4926cfca8a07e94008c4b02702b48b01a975e3d95f64d59c6c45718",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/03-a-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 4,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101515.json",
+        "sha256": "378a38d15311d05e8713905e3033b9c0b065b66d7e3bb961763791255d68c3c7",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/04-a-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 5,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101516.json",
+        "sha256": "1757f868b46d4ceaa6eadba4ee3ba7043c35b6039fdc91f8d51881e7aacd0fcc",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/05-a-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 6,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101517.json",
+        "sha256": "ec272f2e733a076cc58ecc2e866918a88a15880ca8f7b3db3a76366dba7b3ed0",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/06-a-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 7,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101518.json",
+        "sha256": "c38297eaca57e29022708ac375ea98abed1477bc048803ffe4e55a5a33c50dee",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/07-a-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 8,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101519.json",
+        "sha256": "4dcc881c582173f1234d3507d2cff82d123a58ad523b51e951aa5fe7afbf0715",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/08-a-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 9,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101520.json",
+        "sha256": "fe14a5d4090a89b09965c90b2583c8c3eb71972aed04670f997e79f36cef17af",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/09-a-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 10,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101521.json",
+        "sha256": "1fbb576328bd24258a55a30a83e816683437f074911af18b3803f3aa8c6482fa",
+        "size": 663213
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/10-a-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 11,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101522.json",
+        "sha256": "024fc8552b5d0aca6086e9247f4ce0637323b317d663c2b1611a7c8c8d198ee8",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/11-b-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 12,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101523.json",
+        "sha256": "bb724518469a7b6cdc4854da373208dc9bb70be7d350ed80c2c0ff057a6e937d",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/12-b-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 13,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101600.json",
+        "sha256": "8965333e3e0a0cc40a0009bc1688b0883eb7d6a4404e01f44f471cc2cf22c780",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/13-b-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 14,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101601.json",
+        "sha256": "d596d4163882b38fca854319c3cfee9b16078b8dec20f4f03a046b7feea02246",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/14-b-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 15,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101602.json",
+        "sha256": "55bfc96c4f4cc45bfa62ca411133bf77557689bfd69869f91a3286562d8ff3f5",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/15-b-cold/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 16,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101603.json",
+        "sha256": "2dece79247d39b936256fa3fac959bf11d362b614104e228a0963f99d5b53da0",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/16-b-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 17,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101604.json",
+        "sha256": "7937aeee86ca195fa545a959a1db1fcb0451a0ed4d9de3b0fb7f99f726771819",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/17-b-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 18,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101605.json",
+        "sha256": "0a948511f968ed114fdb44936f7edcd885bc216e4f4994078480049c57012e6d",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/18-b-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 19,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101606.json",
+        "sha256": "02c2e92d3b4eaa42a24d10913270b240cd37afe2f115910e7a59d4810ba630e1",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/19-b-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    },
+    {
+      "batch": 20,
+      "collectorManifest": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/raw/sha256-manifest.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "manifest": {
+        "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101607.json",
+        "sha256": "5a7cad26aaa747d45fa6a0274f4a05ca434bf3e77633b870ab87bc1855c5ca1c",
+        "size": 671663
+      },
+      "freeze": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/freeze/original-freeze.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "runtimeProfile": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/runtime-profile/runtime-profile.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkCommand": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/benchmark-command.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkTimestamped": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/benchmark-timestamped.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStdout": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/benchmark.stdout.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "benchmarkStderr": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/benchmark.stderr.log",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "events": {
+        "path": "REPLACE_WITH_ACTUAL/formal/20-b-hot/events/events.jsonl",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      },
+      "cacheVector": {
+        "input": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "precompute": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "redis": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        },
+        "process": {
+          "state": null,
+          "definition": null,
+          "rawRefs": []
+        }
+      },
+      "additionalRawLogRefs": [],
+      "nativeIdentityObservations": {
+        "path": "REPLACE_WITH_ACTUAL/normal20-native-identity/summary.json",
+        "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+        "size": null
+      }
+    }
+  ],
+  "runtimeTimezoneObservation": {
+    "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/runtime/native-process-timezone.json",
+    "sha256": "a97f4082473033b4e03257600e15aa3062b4ba245bbfef9142c979061dcca430",
+    "size": 704
+  },
+  "nativeIdentitySamplerSource": {
+    "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/observe_capacity_native_identity.py",
+    "sha256": "f9ef43b64c5b3deeed24d8429f6a5d2eaaf96ccd40c3e41a99ddceff26a245f4",
+    "size": 9844
+  },
+  "nativeInterpreterObservation": {
+    "path": "REPLACE_WITH_ACTUAL/formal-M2-native-python-resolved-identity.json",
+    "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+    "size": null
+  },
+  "runtimeCodeIdentityRefs": [
+    {
+      "path": "REPLACE_WITH_ACTUAL/formal-M2-deployment-and-committed-byte-check.json",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": null
+    },
+    {
+      "path": "REPLACE_WITH_ACTUAL/formal-M2-tracked-source-catalog.json",
+      "sha256": "REPLACE_WITH_ACTUAL_SHA256",
+      "size": null
+    }
+  ]
+}

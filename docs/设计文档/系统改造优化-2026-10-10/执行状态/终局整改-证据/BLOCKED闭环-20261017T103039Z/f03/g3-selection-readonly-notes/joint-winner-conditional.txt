@@ -1,0 +1,68 @@
+1615:                 if _r.success and _r.best_model is not None:
+1616:                     _key = (
+1617:                         _order.get(_r.best_model.confidence, 0),
+1618:                         _r.best_model.fitting_score,
+1619:                         1 if _r.best_model.residual_test_passed else 0,
+1620:                     )
+1621:                     _ok.append((_key, _r, _s, _e))
+1622:             if _ok:
+1623:                 _ok.sort(key=lambda t: t[0], reverse=True)
+1624:                 _key, best_r, _bs, _be = _ok[0]
+1625: 
+1626:                 # P3-06c（P-22/R11）：多实验共同估计——同工况多窗段块堆叠
+1627:                 # 回归（A/B 共享、每段独立偏置 P-23），与逐窗择优并列输出
+1628:                 # 由证据选择（sort key 同口径竞争）；禁止跨 gap 拼接。
+1629:                 joint_cands: list[CandidateModel] = []
+1630:                 joint_audit: dict = {"ran": False}
+1631:                 try:
+1632:                     joint_cands, joint_audit = _identify_joint_windows(
+1633:                         u_raw,
+1634:                         y_raw,
+1635:                         sp_raw,
+1636:                         ts,
+1637:                         [(int(w[1]), int(w[2])) for w in _wins],
+1638:                         theta_estimate,
+1639:                         None,
+1640:                         cleaning_stats,
+1641:                         sp_cascade_hint,
+1642:                         None,
+1643:                     )
+1644:                 except Exception:
+1645:                     logger.debug("共同估计失败（逐窗结果不受影响）", exc_info=True)
+1646:                 joint_best = max(joint_cands, key=_candidate_sort_key) if joint_cands else None
+1647: 
+1648:                 # P3-06c（P-25）：跨窗稳定性——逐窗胜出模型 + 共同估计候选的
+1649:                 # 同结构两两相对偏差 ≤25% 才可升 B 及以上；超差封顶 C 并显式
+1650:                 # "跨窗不稳定"
+1651:                 stability = _cross_window_stability(
+1652:                     [r.best_model for _k, r, _s, _e in _ok] + joint_cands, ts
+1653:                 )
+1654: 
+1655:                 if joint_best is not None and _candidate_sort_key(joint_best) > _candidate_sort_key(
+1656:                     best_r.best_model
+1657:                 ):
+1658:                     # 共同估计胜出：以共同估计候选为胜出模型构建结果
+1659:                     all_cands = [c for _k, r, _s, _e in _ok for c in r.candidates] + joint_cands
+1660:                     best_r = IdentificationResult(
+1661:                         success=True,
+1662:                         best_model=joint_best,
+1663:                         candidates=all_cands,
+1664:                         reason=(
+1665:                             f"multi-window joint: {len(_ok)}/{len(_wins)} 段逐窗成功，"
+1666:                             f"共同估计（{joint_audit.get('segmentCount', '?')} 段堆叠）胜出"
+1667:                             f"（逐窗最优 fit={_key[1]:.1f} vs joint"
+1668:                             f" fit={joint_best.fitting_score:.1f}）"
+1669:                         ),
+1670:                         theta_source=(
+1671:                             ThetaSource.EXPLICIT
+1672:                             if theta_estimate is not None
+1673:                             else ThetaSource.SEARCHED
+1674:                         ),
+1675:                     )
+1676:                     _segs_j = joint_audit["segments"]
+1677:                     _bs, _be = _segs_j[0]["start"], _segs_j[-1]["end"]
+1678:                 else:
+1679:                     best_r.reason = (
+1680:                         f"multi-window: {len(_ok)}/{len(_wins)} 段动态窗辨识成功，"
+1681:                         f"最优段 [{_bs}:{_be}]"
+1682:                         f"（各段 fit={[round(t[1].best_model.fitting_score, 1) for t in _ok]}"

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="0.120" timestamp="2026-10-17T17:56:39.476345+08:00" hostname="zhangpingdeMacBook-Pro"><testcase classname="tests.test_g5_data_acquisition_failure" name="test_provider_failure_propagates_without_inconclusive_snapshot[error0]" time="0.010"><failure message="Failed: DID NOT RAISE RuntimeError">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x110dd7650&gt;
+error = RuntimeError('[0x073a]: Query memory exhausted')
+
+    @pytest.mark.parametrize(
+        "error",
+        [RuntimeError("[0x073a]: Query memory exhausted"), RuntimeError("invalid SQL")],
+    )
+    async def test_provider_failure_propagates_without_inconclusive_snapshot(monkeypatch, error):
+        planner = MagicMock()
+        planner.request_bundles = AsyncMock(side_effect=error)
+        persist = AsyncMock()
+        monkeypatch.setattr(kpi_calc, "_persist_snapshot", persist)
+    
+&gt;       with pytest.raises(RuntimeError) as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/test_g5_data_acquisition_failure.py:50: Failed</failure></testcase><testcase classname="tests.test_g5_data_acquisition_failure" name="test_provider_failure_propagates_without_inconclusive_snapshot[error1]" time="0.002"><failure message="Failed: DID NOT RAISE RuntimeError">monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x110bb2150&gt;
+error = RuntimeError('invalid SQL')
+
+    @pytest.mark.parametrize(
+        "error",
+        [RuntimeError("[0x073a]: Query memory exhausted"), RuntimeError("invalid SQL")],
+    )
+    async def test_provider_failure_propagates_without_inconclusive_snapshot(monkeypatch, error):
+        planner = MagicMock()
+        planner.request_bundles = AsyncMock(side_effect=error)
+        persist = AsyncMock()
+        monkeypatch.setattr(kpi_calc, "_persist_snapshot", persist)
+    
+&gt;       with pytest.raises(RuntimeError) as caught:
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE RuntimeError
+
+tests/test_g5_data_acquisition_failure.py:50: Failed</failure></testcase></testsuite></testsuites>

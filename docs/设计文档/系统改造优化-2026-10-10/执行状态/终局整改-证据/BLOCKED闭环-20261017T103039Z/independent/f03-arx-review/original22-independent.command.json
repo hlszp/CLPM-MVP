@@ -1,0 +1,64 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-s",
+    "tests/test_annotated_loops_evaluation.py::test_core_loops_identification_accuracy",
+    "--cov=app",
+    "--cov-report=",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T12:01:10.193697+00:00",
+  "endedAt": "2026-10-17T12:01:29.170207+00:00",
+  "rc": 0,
+  "COVERAGE_FILE": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f03-arx-review/independent22.coverage",
+  "sourceBefore": [
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/arx.py",
+      "sha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_arx_vectorized_equivalence.py",
+      "sha256": "52ead2de84e319d79afd8a73868e2337449ca3b59f1965fbdc9be8a1c72200bf"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_annotated_loops_evaluation.py",
+      "sha256": "bc6c2fe5d7d6e5591383347648fee046a1941712fe02dbe13cff3d8479b01cee"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/golden/annotated_loops_dataset.json",
+      "sha256": "dafac0d8e320bbe0d5845e60b8eca638764a8ad9952f827c3a058885c2f49814"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/pyproject.toml",
+      "sha256": "1d0ece7a4ee0f2f2ce7b66fd1e675a30453e154259d0156cd75bc6c96dd8db67"
+    }
+  ],
+  "sourceAfter": [
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/arx.py",
+      "sha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_arx_vectorized_equivalence.py",
+      "sha256": "52ead2de84e319d79afd8a73868e2337449ca3b59f1965fbdc9be8a1c72200bf"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_annotated_loops_evaluation.py",
+      "sha256": "bc6c2fe5d7d6e5591383347648fee046a1941712fe02dbe13cff3d8479b01cee"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/golden/annotated_loops_dataset.json",
+      "sha256": "dafac0d8e320bbe0d5845e60b8eca638764a8ad9952f827c3a058885c2f49814"
+    },
+    {
+      "file": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/pyproject.toml",
+      "sha256": "1d0ece7a4ee0f2f2ce7b66fd1e675a30453e154259d0156cd75bc6c96dd8db67"
+    }
+  ]
+}

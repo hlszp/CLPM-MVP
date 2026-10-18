@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "pnpm",
+    "-F",
+    "@vben/web-antd",
+    "build"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "startedAt": "2026-10-17T13:39:33.857939+00:00",
+  "finishedAt": "2026-10-17T13:39:43.799278+00:00",
+  "rc": 0,
+  "stdoutSha256": "20e13b9d92c6a224237d281b8422d485f38f013152f4d063f142f513b2edadb0",
+  "stderrSha256": "03d7452c9ec535d8e001dee37d2486a00013bd348933959540561a7d82daa517",
+  "environmentReference": "environment-safe.json; credentials never logged"
+}

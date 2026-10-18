@@ -1,0 +1,31 @@
+{
+  "at": 1792234723.9837902,
+  "env_path": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+  "env_sha256": "a0afc4f4c6284255aeab8ca3d09c32a0f47e77c28b92df3d0d1facd21adfa5e3",
+  "nonsecret_overrides": {
+    "ENV": "development",
+    "POSTGRES_DB": "clpm_capacity_20261017_s01",
+    "REDIS_HOST": "127.0.0.1",
+    "REDIS_PORT": "17123",
+    "REDIS_PASSWORD": "",
+    "CELERY_BROKER_URL": "",
+    "CELERY_RESULT_BACKEND": "",
+    "TDENGINE_DB": "clpm_capacity_20261017_s01",
+    "SIGNALR_ENABLED": "false",
+    "REALTIME_WRITEBACK_ENABLED": "false",
+    "GAP_BACKFILL_ENABLED": "false",
+    "CLPM_TEST_MODE": "0",
+    "CLPM_G5_TRACE": "1",
+    "CLPM_BUILD_CODE_SHA": "148dd21ac8450cd85d763f89a557adf68fd29fdb",
+    "CLPM_CALC_SNAPSHOT_DIR": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/series-s01/input-packages"
+  },
+  "beat_schedule_backups": [
+    {
+      "from": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule.db",
+      "to": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/runtime-env-backups/BLOCKED-20261017T103039Z/celerybeat-schedule.db",
+      "sha256": "0bd187e2f7bed9adc5c7cac7b08992cdae463dfac359cb660a4c81c55db1b09d"
+    }
+  ],
+  "original_env_backup": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/runtime-env-backups/BLOCKED-20261017T103039Z/runtime.backend.env",
+  "old_business_database_preserved": "clpm"
+}

@@ -1,0 +1,6 @@
+
+/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts
+  1191:22  error  Use `Array#toReversed()` instead of `Array#reverse()`  unicorn/no-array-reverse
+
+✖ 1 problem (1 error, 0 warnings)
+

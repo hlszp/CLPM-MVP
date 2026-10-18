@@ -1,0 +1,10 @@
+{
+  "byteIdentical": true,
+  "oldSha256": "88dd324a6ab35fbc837942adf915065eecd9307637f615991381e2b7c9f25249",
+  "newSha256": "88dd324a6ab35fbc837942adf915065eecd9307637f615991381e2b7c9f25249",
+  "completeLoopRows": 22,
+  "completeIdentificationResults": 22,
+  "globalLeastSquaresInputs": 24018,
+  "matrixScope": "entire pipeline, broader than author ARMAX-only 4676",
+  "originalTestAndDatasetUnmodified": true
+}

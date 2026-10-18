@@ -1,0 +1,10 @@
+{
+  "argv": [
+    "bash",
+    "-n",
+    "scripts/run-critical-e2e.sh"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "rc": 0,
+  "seconds": 0.005599332999999929
+}

@@ -1,0 +1,3 @@
+[fix/final-audit-remediation f4e128cd] test(batch): verify exact guarded restoration
+ 1 file changed, 458 insertions(+)
+ create mode 100644 backend/tests/test_loop_batch_restore.py

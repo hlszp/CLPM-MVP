@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py",
+    "--execute",
+    "--api-url",
+    "http://127.0.0.1:17261/api/v1",
+    "--output",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/fixture.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T13:06:58.506077+00:00",
+  "finishedAt": "2026-10-17T13:06:59.852777+00:00",
+  "rc": 0,
+  "stdoutSha256": "e4f58781cd96599432b22006ac1a097dc7b319a785b8a7661d9de27de9b30810",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environmentReference": "environment-safe.json; credentials never logged"
+}

@@ -1,0 +1,19 @@
+{
+  "timestamp": "2026-10-17T10:17:17.884838+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "screenshot",
+    "--filename",
+    "output/playwright/final-remediation-20261017/f04-restore.png"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.572399,
+  "stdout": "### Result\n- [Screenshot of viewport](output/playwright/final-remediation-20261017/f04-restore.png)\n### Ran Playwright code\n```js\n// Screenshot viewport and save it as output/playwright/final-remediation-20261017/f04-restore.png\nawait page.screenshot({\n  path: 'output/playwright/final-remediation-20261017/f04-restore.png',\n  scale: 'css',\n  type: 'png'\n});\n```\n",
+  "stderr": ""
+}

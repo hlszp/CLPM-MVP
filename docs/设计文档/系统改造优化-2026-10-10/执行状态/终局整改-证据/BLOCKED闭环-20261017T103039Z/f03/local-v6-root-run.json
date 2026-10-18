@@ -1,0 +1,11 @@
+{
+  "createdAt": "2026-10-17T13:56:08.577580+00:00",
+  "runId": "20261017215608",
+  "candidateSha": "9f356782ef4076dabb91a86f56e054e514e341ea",
+  "published": false,
+  "driver": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-startup-v6/keeper-local-f03-v6.py",
+  "driverSha256": "87c985f311f804c80a3beb84d78e342143e277fe18d8f5041c5fcb54c81e405f",
+  "out": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40",
+  "wrapper": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/run_local_phase_v6_root.py",
+  "wrapperSha256": "95f5b67dd06c199f16ece82d811504b2e9f4d7d944507bab3dd569292de620ba"
+}

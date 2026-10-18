@@ -1,0 +1,8 @@
+{
+  "full22IdentificationResultsExactlyEqual": true,
+  "full22AccuracyRowsExactlyEqual": true,
+  "originalProfileSeconds": 14.184327374998247,
+  "fixedProfileSeconds": 6.518851791974157,
+  "noTestTimeoutChange": true,
+  "oldSemanticTestsAreExpectedToPass": true
+}

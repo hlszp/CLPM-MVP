@@ -1,0 +1,9 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 196, in <module>
+    main(parser.parse_args())
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 110, in main
+    run([PY, E / 'start_capacity_api_formal_with_wait.py', label + '-formal-start'], batch / 'start', env)
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 44, in run
+    assert p.returncode == 0, f'{label}: rc={p.returncode}'
+           ^^^^^^^^^^^^^^^^^
+AssertionError: /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/01-a-cold/start: rc=1

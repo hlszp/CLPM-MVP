@@ -1,0 +1,6 @@
+{
+  "database": "production",
+  "readOnly": "on",
+  "isolation": "repeatable read",
+  "snapshot": "1"
+}

@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-s01-actual-input-review/verify_originals.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-s01-actual-input-review",
+  "startedAtUtc": "2026-10-17T15:26:15.316132+00:00",
+  "finishedAtUtc": "2026-10-17T15:26:15.703734+00:00",
+  "rc": 1,
+  "sourceSha256": "a440e2a961f524772d9aaa8c9b0f0cedb23d999d5ffa6286720e1e188a713c3c",
+  "actualDbDockerServiceCalls": 0
+}

@@ -1,0 +1,1 @@
+{"overall": "PASS within final documentation/evidence-chain review; execution package remains BLOCKED on F02/F03 stated runtime/CI requirements.", "registeredFiles": 60, "patchRecovery": {"count": 36, "matches": 36, "temporaryRemoved": true}, "backendTotal": 7431, "frontendTests": 1021, "hygieneChecks": 10}

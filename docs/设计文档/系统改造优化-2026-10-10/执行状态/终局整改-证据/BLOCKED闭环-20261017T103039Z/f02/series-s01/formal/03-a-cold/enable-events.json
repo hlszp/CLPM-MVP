@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-17T20:04:11.288374+00:00",
+  "destination": [
+    "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro"
+  ],
+  "response": [
+    {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": {
+        "ok": "task events enabled"
+      }
+    }
+  ]
+}

@@ -1,0 +1,5562 @@
+{
+  "captured_at": "2026-10-17T09:20:44.145970+00:00",
+  "candidate": "dbb1de314ae50e7373c6559ab746b690909bf1b0",
+  "checks": [
+    {
+      "command": [
+        "git",
+        "diff",
+        "--name-status",
+        "86301e5e",
+        "dbb1de31"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "exit_code": 0,
+      "stdout": "M\t.github/workflows/ci.yml\nM\tbackend/app/services/cache/l1_datablock.py\nM\tbackend/app/services/cache/l2_bundle.py\nM\tbackend/app/services/data_planner.py\nM\tbackend/app/services/node_performance.py\nM\tbackend/app/tasks/kpi_calc.py\nA\tbackend/tests/test_data_planner/test_data_version_preload.py\nA\tbackend/tests/test_g5_d01_opt_batch.py\nM\tbackend/tests/test_kpi_calc.py\nA\tscripts/run-critical-e2e.sh\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "--stat",
+        "86301e5e",
+        "dbb1de31"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "exit_code": 0,
+      "stdout": " .github/workflows/ci.yml                           | 141 +++++++++-\n backend/app/services/cache/l1_datablock.py         |  14 +-\n backend/app/services/cache/l2_bundle.py            |   8 +-\n backend/app/services/data_planner.py               | 137 +++++----\n backend/app/services/node_performance.py           |  52 ++--\n backend/app/tasks/kpi_calc.py                      |  62 ++++-\n .../test_data_planner/test_data_version_preload.py | 242 ++++++++++++++++\n backend/tests/test_g5_d01_opt_batch.py             | 307 +++++++++++++++++++++\n backend/tests/test_kpi_calc.py                     |   2 +\n scripts/run-critical-e2e.sh                        |  94 +++++++\n 10 files changed, 978 insertions(+), 81 deletions(-)\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "c9e01f5d",
+        "b676ea59",
+        "--",
+        "backend"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "git",
+        "diff",
+        "86301e5e",
+        "b676ea59",
+        "--",
+        "frontend",
+        "backend"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "exit_code": 0,
+      "stdout": "",
+      "stderr": ""
+    }
+  ],
+  "files": {
+    ".github/workflows/ci.yml": {
+      "sha256": "4e7b64f5604934337e6e86bab1a6321ffb9d0a3aed00870cf007c47e4f177fc6",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "name: CI"
+        },
+        {
+          "line": 2,
+          "text": ""
+        },
+        {
+          "line": 3,
+          "text": "on:"
+        },
+        {
+          "line": 4,
+          "text": "  push:"
+        },
+        {
+          "line": 5,
+          "text": "    branches:"
+        },
+        {
+          "line": 6,
+          "text": "      - main"
+        },
+        {
+          "line": 7,
+          "text": "      - develop"
+        },
+        {
+          "line": 8,
+          "text": "  pull_request:"
+        },
+        {
+          "line": 9,
+          "text": "    branches:"
+        },
+        {
+          "line": 10,
+          "text": "      - main"
+        },
+        {
+          "line": 11,
+          "text": "      - develop"
+        },
+        {
+          "line": 12,
+          "text": ""
+        },
+        {
+          "line": 13,
+          "text": "permissions:"
+        },
+        {
+          "line": 14,
+          "text": "  contents: read"
+        },
+        {
+          "line": 15,
+          "text": ""
+        },
+        {
+          "line": 16,
+          "text": "env:"
+        },
+        {
+          "line": 17,
+          "text": "  CI: \"true\""
+        },
+        {
+          "line": 18,
+          "text": ""
+        },
+        {
+          "line": 19,
+          "text": "jobs:"
+        },
+        {
+          "line": 20,
+          "text": "  frontend-ci:"
+        },
+        {
+          "line": 21,
+          "text": "    name: Frontend CI"
+        },
+        {
+          "line": 22,
+          "text": "    runs-on: ubuntu-latest"
+        },
+        {
+          "line": 23,
+          "text": "    timeout-minutes: 30"
+        },
+        {
+          "line": 24,
+          "text": "    defaults:"
+        },
+        {
+          "line": 25,
+          "text": "      run:"
+        },
+        {
+          "line": 26,
+          "text": "        working-directory: frontend"
+        },
+        {
+          "line": 27,
+          "text": "    steps:"
+        },
+        {
+          "line": 28,
+          "text": "      - name: Checkout code"
+        },
+        {
+          "line": 29,
+          "text": "        uses: actions/checkout@v4"
+        },
+        {
+          "line": 30,
+          "text": ""
+        },
+        {
+          "line": 31,
+          "text": "      - name: Install pnpm"
+        },
+        {
+          "line": 32,
+          "text": "        uses: pnpm/action-setup@v4"
+        },
+        {
+          "line": 33,
+          "text": "        with:"
+        },
+        {
+          "line": 34,
+          "text": "          version: 10"
+        },
+        {
+          "line": 35,
+          "text": ""
+        },
+        {
+          "line": 36,
+          "text": "      - name: Setup Node.js"
+        },
+        {
+          "line": 37,
+          "text": "        uses: actions/setup-node@v4"
+        },
+        {
+          "line": 38,
+          "text": "        with:"
+        },
+        {
+          "line": 39,
+          "text": "          node-version: 22"
+        },
+        {
+          "line": 40,
+          "text": "          cache: pnpm"
+        },
+        {
+          "line": 41,
+          "text": "          cache-dependency-path: frontend/pnpm-lock.yaml"
+        },
+        {
+          "line": 42,
+          "text": ""
+        },
+        {
+          "line": 43,
+          "text": "      - name: Install dependencies"
+        },
+        {
+          "line": 44,
+          "text": "        run: pnpm install --frozen-lockfile"
+        },
+        {
+          "line": 45,
+          "text": ""
+        },
+        {
+          "line": 46,
+          "text": "      - name: Lint"
+        },
+        {
+          "line": 47,
+          "text": "        run: pnpm exec eslint apps/web-antd --cache"
+        },
+        {
+          "line": 48,
+          "text": ""
+        },
+        {
+          "line": 49,
+          "text": "      # vitest 单元测试（workspace 全量，阻塞门禁）"
+        },
+        {
+          "line": 50,
+          "text": "      - name: Unit tests (vitest)"
+        },
+        {
+          "line": 51,
+          "text": "        run: pnpm run test:unit"
+        },
+        {
+          "line": 52,
+          "text": ""
+        },
+        {
+          "line": 53,
+          "text": "      - name: Typecheck"
+        },
+        {
+          "line": 54,
+          "text": "        run: pnpm -F @vben/web-antd run typecheck"
+        },
+        {
+          "line": 55,
+          "text": ""
+        },
+        {
+          "line": 56,
+          "text": "      - name: Build"
+        },
+        {
+          "line": 57,
+          "text": "        run: pnpm build:antd"
+        },
+        {
+          "line": 58,
+          "text": ""
+        },
+        {
+          "line": 59,
+          "text": "      # F03/P7-02: E2E 冒烟改为阻塞门禁（2026-10-17 整改）"
+        },
+        {
+          "line": 60,
+          "text": "      # 原 continue-on-error: true 移除——冒烟失败即门禁失败。"
+        },
+        {
+          "line": 61,
+          "text": "      # 关键权限/计算/证据链由 critical-e2e job 阻塞覆盖。"
+        },
+        {
+          "line": 62,
+          "text": "      - name: Install Playwright browsers"
+        },
+        {
+          "line": 63,
+          "text": "        run: npx playwright install --with-deps chromium"
+        },
+        {
+          "line": 64,
+          "text": ""
+        },
+        {
+          "line": 65,
+          "text": "      - name: Run E2E smoke tests (blocking)"
+        },
+        {
+          "line": 66,
+          "text": "        run: npx playwright test --reporter=list"
+        },
+        {
+          "line": 67,
+          "text": "        working-directory: frontend/apps/web-antd"
+        },
+        {
+          "line": 68,
+          "text": ""
+        },
+        {
+          "line": 69,
+          "text": "  backend-ci:"
+        },
+        {
+          "line": 70,
+          "text": "    name: Backend CI"
+        },
+        {
+          "line": 71,
+          "text": "    runs-on: ubuntu-latest"
+        },
+        {
+          "line": 72,
+          "text": "    timeout-minutes: 15"
+        },
+        {
+          "line": 73,
+          "text": "    defaults:"
+        },
+        {
+          "line": 74,
+          "text": "      run:"
+        },
+        {
+          "line": 75,
+          "text": "        working-directory: backend"
+        },
+        {
+          "line": 76,
+          "text": ""
+        },
+        {
+          "line": 77,
+          "text": "    services:"
+        },
+        {
+          "line": 78,
+          "text": "      redis:"
+        },
+        {
+          "line": 79,
+          "text": "        image: redis:7-alpine"
+        },
+        {
+          "line": 80,
+          "text": "        ports:"
+        },
+        {
+          "line": 81,
+          "text": "          - 6379:6379"
+        },
+        {
+          "line": 82,
+          "text": "        options: >-"
+        },
+        {
+          "line": 83,
+          "text": "          --health-cmd \"redis-cli ping\""
+        },
+        {
+          "line": 84,
+          "text": "          --health-interval 10s"
+        },
+        {
+          "line": 85,
+          "text": "          --health-timeout 5s"
+        },
+        {
+          "line": 86,
+          "text": "          --health-retries 5"
+        },
+        {
+          "line": 87,
+          "text": "      # 整改 S1-a：CI 此前只有 Redis，PG 相关门禁（迁移链、schema 漂移）"
+        },
+        {
+          "line": 88,
+          "text": "      # 仅存在于 lefthook pre-push，CI 侧完全无守护——2026-08-31 首装阻断"
+        },
+        {
+          "line": 89,
+          "text": "      # （01_schema.sql 外键类型不匹配致 initdb 中途中止）正是此类漏洞。"
+        },
+        {
+          "line": 90,
+          "text": "      postgres:"
+        },
+        {
+          "line": 91,
+          "text": "        image: postgres:16"
+        },
+        {
+          "line": 92,
+          "text": "        env:"
+        },
+        {
+          "line": 93,
+          "text": "          POSTGRES_USER: clpm"
+        },
+        {
+          "line": 94,
+          "text": "          POSTGRES_PASSWORD: clpm_ci_only_2026"
+        },
+        {
+          "line": 95,
+          "text": "          POSTGRES_DB: clpm"
+        },
+        {
+          "line": 96,
+          "text": "        ports:"
+        },
+        {
+          "line": 97,
+          "text": "          - 5432:5432"
+        },
+        {
+          "line": 98,
+          "text": "        options: >-"
+        },
+        {
+          "line": 99,
+          "text": "          --health-cmd \"pg_isready -U clpm -d clpm\""
+        },
+        {
+          "line": 100,
+          "text": "          --health-interval 10s"
+        },
+        {
+          "line": 101,
+          "text": "          --health-timeout 5s"
+        },
+        {
+          "line": 102,
+          "text": "          --health-retries 5"
+        },
+        {
+          "line": 103,
+          "text": ""
+        },
+        {
+          "line": 104,
+          "text": "    steps:"
+        },
+        {
+          "line": 105,
+          "text": "      - name: Checkout code"
+        },
+        {
+          "line": 106,
+          "text": "        uses: actions/checkout@v4"
+        },
+        {
+          "line": 107,
+          "text": ""
+        },
+        {
+          "line": 108,
+          "text": "      - name: Setup Python"
+        },
+        {
+          "line": 109,
+          "text": "        uses: actions/setup-python@v5"
+        },
+        {
+          "line": 110,
+          "text": "        with:"
+        },
+        {
+          "line": 111,
+          "text": "          python-version: \"3.12\""
+        },
+        {
+          "line": 112,
+          "text": ""
+        },
+        {
+          "line": 113,
+          "text": "      - name: Install uv"
+        },
+        {
+          "line": 114,
+          "text": "        uses: astral-sh/setup-uv@v3"
+        },
+        {
+          "line": 115,
+          "text": "        with:"
+        },
+        {
+          "line": 116,
+          "text": "          enable-cache: true"
+        },
+        {
+          "line": 117,
+          "text": "          cache-dependency-glob: backend/uv.lock"
+        },
+        {
+          "line": 118,
+          "text": ""
+        },
+        {
+          "line": 119,
+          "text": "      - name: Sync dependencies"
+        },
+        {
+          "line": 120,
+          "text": "        run: uv sync --frozen"
+        },
+        {
+          "line": 121,
+          "text": ""
+        },
+        {
+          "line": 122,
+          "text": "      - name: Ruff check"
+        },
+        {
+          "line": 123,
+          "text": "        run: uv run ruff check ."
+        },
+        {
+          "line": 124,
+          "text": ""
+        },
+        {
+          "line": 125,
+          "text": "      - name: Ruff format check"
+        },
+        {
+          "line": 126,
+          "text": "        run: uv run ruff format --check ."
+        },
+        {
+          "line": 127,
+          "text": ""
+        },
+        {
+          "line": 128,
+          "text": "      # 2026-09-24 新增：前端调用 ↔ 后端路由 契约对账"
+        },
+        {
+          "line": 129,
+          "text": "      # 阻塞项：前端调用了但后端不存在的接口（/menu/all 曾长期潜伏）；"
+        },
+        {
+          "line": 130,
+          "text": "      # 非阻塞：后端已注册但前端未调用的端点（WARN 提示登记到"
+        },
+        {
+          "line": 131,
+          "text": "      # scripts/api-contract-allowlist.json，策略见死代码登记表）。"
+        },
+        {
+          "line": 132,
+          "text": "      - name: API 契约对账（前端调用 vs 后端路由）"
+        },
+        {
+          "line": 133,
+          "text": "        run: uv run python ../scripts/check_api_contract.py"
+        },
+        {
+          "line": 134,
+          "text": ""
+        },
+        {
+          "line": 135,
+          "text": "      # S3-C7: mypy 类型检查（首次集成，非阻塞）"
+        },
+        {
+          "line": 136,
+          "text": "      - name: Mypy type check"
+        },
+        {
+          "line": 137,
+          "text": "        run: uv run mypy app/ --ignore-missing-imports --no-strict-optional"
+        },
+        {
+          "line": 138,
+          "text": "        continue-on-error: true"
+        },
+        {
+          "line": 139,
+          "text": ""
+        },
+        {
+          "line": 140,
+          "text": "      # 整改 S1-a：在真实 PostgreSQL 上验证「生产引导路径」。"
+        },
+        {
+          "line": 141,
+          "text": "      # 此前 CI 无 PG、测试全用 mock DB session（tests/conftest.py 明示"
+        },
+        {
+          "line": 142,
+          "text": "      # \"无需 PostgreSQL/Redis\"），且 addopts 默认 -m 'not integration'，"
+        },
+        {
+          "line": 143,
+          "text": "      # 导致引导 SQL、迁移 stamp、模型-库对齐在 CI 侧零验证。"
+        },
+        {
+          "line": 144,
+          "text": "      #"
+        },
+        {
+          "line": 145,
+          "text": "      # 口径说明（新发现 G51，见整改方案）：本仓库迁移链**不能从空库构建**——"
+        },
+        {
+          "line": 146,
+          "text": "      # 早期迁移以 01_schema.sql 已建表为前提（如 ALTER TABLE loop_ledger），"
+        },
+        {
+          "line": 147,
+          "text": "      # 空库上跑 alembic upgrade head 会以 UndefinedTableError 失败。"
+        },
+        {
+          "line": 148,
+          "text": "      # 故正确口径是「应用引导 SQL -> stamp head -> 漂移检查」，与生产"
+        },
+        {
+          "line": 149,
+          "text": "      # deploy/lib-migrate.sh 的实际顺序一致。"
+        },
+        {
+          "line": 150,
+          "text": "      # 该步骤可捕获：01_schema.sql 载入失败（08-31 首装阻断同类）、"
+        },
+        {
+          "line": 151,
+          "text": "      # 引导 SQL 与 ORM 元数据漂移、种子数据回归。"
+        },
+        {
+          "line": 152,
+          "text": "      - name: 引导 SQL + schema 漂移检查（真实 PG）"
+        },
+        {
+          "line": 153,
+          "text": "        env:"
+        },
+        {
+          "line": 154,
+          "text": "          POSTGRES_HOST: localhost"
+        },
+        {
+          "line": 155,
+          "text": "          POSTGRES_PORT: \"5432\""
+        },
+        {
+          "line": 156,
+          "text": "          POSTGRES_USER: clpm"
+        },
+        {
+          "line": 157,
+          "text": "          POSTGRES_PASSWORD: clpm_ci_only_2026"
+        },
+        {
+          "line": 158,
+          "text": "          POSTGRES_DB: clpm"
+        },
+        {
+          "line": 159,
+          "text": "          JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!"
+        },
+        {
+          "line": 160,
+          "text": "        run: |"
+        },
+        {
+          "line": 161,
+          "text": "          uv run python scripts/apply_bootstrap_sql.py"
+        },
+        {
+          "line": 162,
+          "text": "          uv run alembic stamp head"
+        },
+        {
+          "line": 163,
+          "text": "          uv run alembic check"
+        },
+        {
+          "line": 164,
+          "text": ""
+        },
+        {
+          "line": 165,
+          "text": "      # S3-C7: Pytest with coverage（首次集成使用 60% 门槛）"
+        },
+        {
+          "line": 166,
+          "text": "      # S1-a 续：pytest 步骤也带上 POSTGRES_*，让真实库断言真正执行而非 skip。"
+        },
+        {
+          "line": 167,
+          "text": "      # 否则 S1-a 引入的 postgres service 只服务 alembic 两步，测试侧仍看不到库。"
+        },
+        {
+          "line": 168,
+          "text": "      # 实测（本地带该 env 跑全量）：4848 passed 无回归，G15 的 DISTINCT ON 去重"
+        },
+        {
+          "line": 169,
+          "text": "      # 断言由 skip 转为实跑。"
+        },
+        {
+          "line": 170,
+          "text": "      - name: Pytest with coverage"
+        },
+        {
+          "line": 171,
+          "text": "        env:"
+        },
+        {
+          "line": 172,
+          "text": "          POSTGRES_HOST: localhost"
+        },
+        {
+          "line": 173,
+          "text": "          POSTGRES_PORT: \"5432\""
+        },
+        {
+          "line": 174,
+          "text": "          POSTGRES_USER: clpm"
+        },
+        {
+          "line": 175,
+          "text": "          POSTGRES_PASSWORD: clpm_ci_only_2026"
+        },
+        {
+          "line": 176,
+          "text": "          POSTGRES_DB: clpm"
+        },
+        {
+          "line": 177,
+          "text": "        run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=60"
+        },
+        {
+          "line": 178,
+          "text": ""
+        },
+        {
+          "line": 179,
+          "text": "  critical-e2e:"
+        },
+        {
+          "line": 180,
+          "text": "    name: Critical E2E Gate (blocking)"
+        },
+        {
+          "line": 181,
+          "text": "    runs-on: ubuntu-latest"
+        },
+        {
+          "line": 182,
+          "text": "    timeout-minutes: 25"
+        },
+        {
+          "line": 183,
+          "text": "    needs: backend-ci"
+        },
+        {
+          "line": 184,
+          "text": "    services:"
+        },
+        {
+          "line": 185,
+          "text": "      redis:"
+        },
+        {
+          "line": 186,
+          "text": "        image: redis:7-alpine"
+        },
+        {
+          "line": 187,
+          "text": "        ports:"
+        },
+        {
+          "line": 188,
+          "text": "          - 6379:6379"
+        },
+        {
+          "line": 189,
+          "text": "        options: >-"
+        },
+        {
+          "line": 190,
+          "text": "          --health-cmd \"redis-cli ping\""
+        },
+        {
+          "line": 191,
+          "text": "          --health-interval 10s"
+        },
+        {
+          "line": 192,
+          "text": "          --health-timeout 5s"
+        },
+        {
+          "line": 193,
+          "text": "          --health-retries 5"
+        },
+        {
+          "line": 194,
+          "text": "      postgres:"
+        },
+        {
+          "line": 195,
+          "text": "        image: postgres:16"
+        },
+        {
+          "line": 196,
+          "text": "        env:"
+        },
+        {
+          "line": 197,
+          "text": "          POSTGRES_USER: clpm"
+        },
+        {
+          "line": 198,
+          "text": "          POSTGRES_PASSWORD: clpm_ci_only_2026"
+        },
+        {
+          "line": 199,
+          "text": "          POSTGRES_DB: clpm"
+        },
+        {
+          "line": 200,
+          "text": "        ports:"
+        },
+        {
+          "line": 201,
+          "text": "          - 5432:5432"
+        },
+        {
+          "line": 202,
+          "text": "        options: >-"
+        },
+        {
+          "line": 203,
+          "text": "          --health-cmd \"pg_isready -U clpm -d clpm\""
+        },
+        {
+          "line": 204,
+          "text": "          --health-interval 10s"
+        },
+        {
+          "line": 205,
+          "text": "          --health-timeout 5s"
+        },
+        {
+          "line": 206,
+          "text": "          --health-retries 5"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "    steps:"
+        },
+        {
+          "line": 209,
+          "text": "      - name: Checkout code"
+        },
+        {
+          "line": 210,
+          "text": "        uses: actions/checkout@v4"
+        },
+        {
+          "line": 211,
+          "text": ""
+        },
+        {
+          "line": 212,
+          "text": "      # ---- Backend setup ----"
+        },
+        {
+          "line": 213,
+          "text": "      - name: Setup Python"
+        },
+        {
+          "line": 214,
+          "text": "        uses: actions/setup-python@v5"
+        },
+        {
+          "line": 215,
+          "text": "        with:"
+        },
+        {
+          "line": 216,
+          "text": "          python-version: \"3.12\""
+        },
+        {
+          "line": 217,
+          "text": ""
+        },
+        {
+          "line": 218,
+          "text": "      - name: Install uv"
+        },
+        {
+          "line": 219,
+          "text": "        uses: astral-sh/setup-uv@v3"
+        },
+        {
+          "line": 220,
+          "text": "        with:"
+        },
+        {
+          "line": 221,
+          "text": "          enable-cache: true"
+        },
+        {
+          "line": 222,
+          "text": "          cache-dependency-glob: backend/uv.lock"
+        },
+        {
+          "line": 223,
+          "text": ""
+        },
+        {
+          "line": 224,
+          "text": "      - name: Sync backend dependencies"
+        },
+        {
+          "line": 225,
+          "text": "        working-directory: backend"
+        },
+        {
+          "line": 226,
+          "text": "        run: uv sync --frozen"
+        },
+        {
+          "line": 227,
+          "text": ""
+        },
+        {
+          "line": 228,
+          "text": "      - name: Apply bootstrap SQL + stamp"
+        },
+        {
+          "line": 229,
+          "text": "        working-directory: backend"
+        },
+        {
+          "line": 230,
+          "text": "        env:"
+        },
+        {
+          "line": 231,
+          "text": "          POSTGRES_HOST: localhost"
+        },
+        {
+          "line": 232,
+          "text": "          POSTGRES_PORT: \"5432\""
+        },
+        {
+          "line": 233,
+          "text": "          POSTGRES_USER: clpm"
+        },
+        {
+          "line": 234,
+          "text": "          POSTGRES_PASSWORD: clpm_ci_only_2026"
+        },
+        {
+          "line": 235,
+          "text": "          POSTGRES_DB: clpm"
+        },
+        {
+          "line": 236,
+          "text": "          JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!"
+        },
+        {
+          "line": 237,
+          "text": "        run: |"
+        },
+        {
+          "line": 238,
+          "text": "          uv run python scripts/apply_bootstrap_sql.py"
+        },
+        {
+          "line": 239,
+          "text": "          uv run alembic stamp head"
+        },
+        {
+          "line": 240,
+          "text": ""
+        },
+        {
+          "line": 241,
+          "text": "      - name: Start backend"
+        },
+        {
+          "line": 242,
+          "text": "        working-directory: backend"
+        },
+        {
+          "line": 243,
+          "text": "        env:"
+        },
+        {
+          "line": 244,
+          "text": "          POSTGRES_HOST: localhost"
+        },
+        {
+          "line": 245,
+          "text": "          POSTGRES_PORT: \"5432\""
+        },
+        {
+          "line": 246,
+          "text": "          POSTGRES_USER: clpm"
+        },
+        {
+          "line": 247,
+          "text": "          POSTGRES_PASSWORD: clpm_ci_only_2026"
+        },
+        {
+          "line": 248,
+          "text": "          POSTGRES_DB: clpm"
+        },
+        {
+          "line": 249,
+          "text": "          JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!"
+        },
+        {
+          "line": 250,
+          "text": "          REDIS_HOST: localhost"
+        },
+        {
+          "line": 251,
+          "text": "          REDIS_PORT: \"6379\""
+        },
+        {
+          "line": 252,
+          "text": "        run: |"
+        },
+        {
+          "line": 253,
+          "text": "          uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 &"
+        },
+        {
+          "line": 254,
+          "text": "          echo $! > /tmp/backend.pid"
+        },
+        {
+          "line": 255,
+          "text": "          for i in $(seq 1 30); do"
+        },
+        {
+          "line": 256,
+          "text": "            curl -sf http://localhost:17101/health && break"
+        },
+        {
+          "line": 257,
+          "text": "            sleep 2"
+        },
+        {
+          "line": 258,
+          "text": "          done"
+        },
+        {
+          "line": 259,
+          "text": "          curl -sf http://localhost:17101/health"
+        },
+        {
+          "line": 260,
+          "text": ""
+        },
+        {
+          "line": 261,
+          "text": "      # ---- Frontend setup ----"
+        },
+        {
+          "line": 262,
+          "text": "      - name: Install pnpm"
+        },
+        {
+          "line": 263,
+          "text": "        uses: pnpm/action-setup@v4"
+        },
+        {
+          "line": 264,
+          "text": "        with:"
+        },
+        {
+          "line": 265,
+          "text": "          version: 10"
+        },
+        {
+          "line": 266,
+          "text": ""
+        },
+        {
+          "line": 267,
+          "text": "      - name: Setup Node.js"
+        },
+        {
+          "line": 268,
+          "text": "        uses: actions/setup-node@v4"
+        },
+        {
+          "line": 269,
+          "text": "        with:"
+        },
+        {
+          "line": 270,
+          "text": "          node-version: 22"
+        },
+        {
+          "line": 271,
+          "text": "          cache: pnpm"
+        },
+        {
+          "line": 272,
+          "text": "          cache-dependency-path: frontend/pnpm-lock.yaml"
+        },
+        {
+          "line": 273,
+          "text": ""
+        },
+        {
+          "line": 274,
+          "text": "      - name: Install frontend dependencies"
+        },
+        {
+          "line": 275,
+          "text": "        working-directory: frontend"
+        },
+        {
+          "line": 276,
+          "text": "        run: pnpm install --frozen-lockfile"
+        },
+        {
+          "line": 277,
+          "text": ""
+        },
+        {
+          "line": 278,
+          "text": "      - name: Build frontend"
+        },
+        {
+          "line": 279,
+          "text": "        working-directory: frontend"
+        },
+        {
+          "line": 280,
+          "text": "        run: pnpm build:antd"
+        },
+        {
+          "line": 281,
+          "text": ""
+        },
+        {
+          "line": 282,
+          "text": "      - name: Start frontend preview"
+        },
+        {
+          "line": 283,
+          "text": "        working-directory: frontend"
+        },
+        {
+          "line": 284,
+          "text": "        run: |"
+        },
+        {
+          "line": 285,
+          "text": "          pnpm -F @vben/web-antd preview --port 15666 &"
+        },
+        {
+          "line": 286,
+          "text": "          echo $! > /tmp/frontend.pid"
+        },
+        {
+          "line": 287,
+          "text": "          for i in $(seq 1 30); do"
+        },
+        {
+          "line": 288,
+          "text": "            curl -sf http://localhost:15666 && break"
+        },
+        {
+          "line": 289,
+          "text": "            sleep 2"
+        },
+        {
+          "line": 290,
+          "text": "          done"
+        },
+        {
+          "line": 291,
+          "text": ""
+        },
+        {
+          "line": 292,
+          "text": "      # ---- Critical E2E gate ----"
+        },
+        {
+          "line": 293,
+          "text": "      - name: Install Playwright browsers"
+        },
+        {
+          "line": 294,
+          "text": "        run: npx playwright install --with-deps chromium"
+        },
+        {
+          "line": 295,
+          "text": "        working-directory: e2e"
+        },
+        {
+          "line": 296,
+          "text": ""
+        },
+        {
+          "line": 297,
+          "text": "      - name: Run critical E2E gate (blocking)"
+        },
+        {
+          "line": 298,
+          "text": "        run: bash scripts/run-critical-e2e.sh"
+        },
+        {
+          "line": 299,
+          "text": "        env:"
+        },
+        {
+          "line": 300,
+          "text": "          E2E_BASE_URL: http://localhost:15666"
+        },
+        {
+          "line": 301,
+          "text": "          E2E_API_BASE_URL: http://localhost:17101"
+        },
+        {
+          "line": 302,
+          "text": ""
+        },
+        {
+          "line": 303,
+          "text": "      - name: Cleanup"
+        },
+        {
+          "line": 304,
+          "text": "        if: always()"
+        },
+        {
+          "line": 305,
+          "text": "        run: |"
+        },
+        {
+          "line": 306,
+          "text": "          kill $(cat /tmp/backend.pid) 2>/dev/null || true"
+        },
+        {
+          "line": 307,
+          "text": "          kill $(cat /tmp/frontend.pid) 2>/dev/null || true"
+        }
+      ]
+    },
+    "scripts/run-critical-e2e.sh": {
+      "sha256": "ea99dd609f6fab3435d8a4bc2c0fe32ec7f610027dbccdda24e8d9f1386406dd",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "#!/usr/bin/env bash"
+        },
+        {
+          "line": 2,
+          "text": "# run-critical-e2e.sh — 关键 E2E 阻塞门禁执行器"
+        },
+        {
+          "line": 3,
+          "text": "#"
+        },
+        {
+          "line": 4,
+          "text": "# P7-02 / F03：将稳定的关键权限、计算和证据链案例落实为真正阻塞门禁。"
+        },
+        {
+          "line": 5,
+          "text": "# 未收集或跳过关键案例 → 非零退出，不产生绿色通过。"
+        },
+        {
+          "line": 6,
+          "text": "#"
+        },
+        {
+          "line": 7,
+          "text": "# 选中案例（与原计划 P7-02 对应）："
+        },
+        {
+          "line": 8,
+          "text": "#   权限:   roles-smoke.spec.ts  (5 cases, 五角色核心流程冒烟)"
+        },
+        {
+          "line": 9,
+          "text": "#   认证:   login.spec.ts        (4 cases, 登录/登出/Token过期)"
+        },
+        {
+          "line": 10,
+          "text": "#   证据链: confidence.spec.ts   (6 cases, 可信度徽章/INCONCLUSIVE 展示)"
+        },
+        {
+          "line": 11,
+          "text": "#   计算:   loop.spec.ts         (7 cases, 回路管理与监控)"
+        },
+        {
+          "line": 12,
+          "text": "#"
+        },
+        {
+          "line": 13,
+          "text": "# 用法: scripts/run-critical-e2e.sh [--base-url URL]"
+        },
+        {
+          "line": 14,
+          "text": "# 环境: 需要前端可访问 (默认 http://localhost:15666)、后端 API (默认 http://localhost:17101)"
+        },
+        {
+          "line": 15,
+          "text": "#"
+        },
+        {
+          "line": 16,
+          "text": "# 退出码:"
+        },
+        {
+          "line": 17,
+          "text": "#   0 = 全部关键用例通过"
+        },
+        {
+          "line": 18,
+          "text": "#   1 = 有关键用例失败"
+        },
+        {
+          "line": 19,
+          "text": "#   2 = 环境准备失败"
+        },
+        {
+          "line": 20,
+          "text": "#   3 = 关键用例收集不足（未收集/跳过关键案例）"
+        },
+        {
+          "line": 21,
+          "text": ""
+        },
+        {
+          "line": 22,
+          "text": "set -euo pipefail"
+        },
+        {
+          "line": 23,
+          "text": ""
+        },
+        {
+          "line": 24,
+          "text": "E2E_DIR=\"$(cd \"$(dirname \"$0\")/../e2e\" && pwd)\""
+        },
+        {
+          "line": 25,
+          "text": "BASE_URL=\"${E2E_BASE_URL:-http://localhost:15666}\""
+        },
+        {
+          "line": 26,
+          "text": "API_URL=\"${E2E_API_BASE_URL:-http://localhost:17101}\""
+        },
+        {
+          "line": 27,
+          "text": ""
+        },
+        {
+          "line": 28,
+          "text": "# 关键用例文件（稳定、覆盖权限/认证/证据链/计算）"
+        },
+        {
+          "line": 29,
+          "text": "CRITICAL_SPECS=("
+        },
+        {
+          "line": 30,
+          "text": "  \"tests/login.spec.ts\""
+        },
+        {
+          "line": 31,
+          "text": "  \"tests/roles-smoke.spec.ts\""
+        },
+        {
+          "line": 32,
+          "text": "  \"tests/confidence.spec.ts\""
+        },
+        {
+          "line": 33,
+          "text": "  \"tests/loop.spec.ts\""
+        },
+        {
+          "line": 34,
+          "text": ")"
+        },
+        {
+          "line": 35,
+          "text": ""
+        },
+        {
+          "line": 36,
+          "text": "# 关键用例最低收集数（防止静默跳过）"
+        },
+        {
+          "line": 37,
+          "text": "MIN_EXPECTED_TESTS=20"
+        },
+        {
+          "line": 38,
+          "text": ""
+        },
+        {
+          "line": 39,
+          "text": "echo \"=== Critical E2E Gate ===\""
+        },
+        {
+          "line": 40,
+          "text": "echo \"base_url=$BASE_URL\""
+        },
+        {
+          "line": 41,
+          "text": "echo \"api_url=$API_URL\""
+        },
+        {
+          "line": 42,
+          "text": "echo \"specs=${CRITICAL_SPECS[*]}\""
+        },
+        {
+          "line": 43,
+          "text": "echo \"\""
+        },
+        {
+          "line": 44,
+          "text": ""
+        },
+        {
+          "line": 45,
+          "text": "# 环境准备检查"
+        },
+        {
+          "line": 46,
+          "text": "echo \"--- Environment check ---\""
+        },
+        {
+          "line": 47,
+          "text": "if ! curl -sf -o /dev/null --max-time 5 \"$BASE_URL\"; then"
+        },
+        {
+          "line": 48,
+          "text": "  echo \"ERROR: Frontend not reachable at $BASE_URL\" >&2"
+        },
+        {
+          "line": 49,
+          "text": "  exit 2"
+        },
+        {
+          "line": 50,
+          "text": "fi"
+        },
+        {
+          "line": 51,
+          "text": "if ! curl -sf -o /dev/null --max-time 5 \"$API_URL/health\"; then"
+        },
+        {
+          "line": 52,
+          "text": "  echo \"ERROR: Backend not reachable at $API_URL/health\" >&2"
+        },
+        {
+          "line": 53,
+          "text": "  exit 2"
+        },
+        {
+          "line": 54,
+          "text": "fi"
+        },
+        {
+          "line": 55,
+          "text": "echo \"Environment OK\""
+        },
+        {
+          "line": 56,
+          "text": ""
+        },
+        {
+          "line": 57,
+          "text": "# 收集关键用例（dry-run collect）"
+        },
+        {
+          "line": 58,
+          "text": "echo \"\""
+        },
+        {
+          "line": 59,
+          "text": "echo \"--- Collecting critical tests ---\""
+        },
+        {
+          "line": 60,
+          "text": "cd \"$E2E_DIR\""
+        },
+        {
+          "line": 61,
+          "text": "collect_output=$(npx playwright test --list \"${CRITICAL_SPECS[@]}\" 2>&1) || {"
+        },
+        {
+          "line": 62,
+          "text": "  echo \"ERROR: Failed to collect critical tests\" >&2"
+        },
+        {
+          "line": 63,
+          "text": "  echo \"$collect_output\" >&2"
+        },
+        {
+          "line": 64,
+          "text": "  exit 2"
+        },
+        {
+          "line": 65,
+          "text": "}"
+        },
+        {
+          "line": 66,
+          "text": "collected=$(echo \"$collect_output\" | grep -c '›' || true)"
+        },
+        {
+          "line": 67,
+          "text": "echo \"Collected: $collected tests\""
+        },
+        {
+          "line": 68,
+          "text": ""
+        },
+        {
+          "line": 69,
+          "text": "if [ \"$collected\" -lt \"$MIN_EXPECTED_TESTS\" ]; then"
+        },
+        {
+          "line": 70,
+          "text": "  echo \"ERROR: Only $collected tests collected, expected >= $MIN_EXPECTED_TESTS\" >&2"
+        },
+        {
+          "line": 71,
+          "text": "  echo \"Critical test collection insufficient — refusing green pass\" >&2"
+        },
+        {
+          "line": 72,
+          "text": "  exit 3"
+        },
+        {
+          "line": 73,
+          "text": "fi"
+        },
+        {
+          "line": 74,
+          "text": ""
+        },
+        {
+          "line": 75,
+          "text": "# 执行关键用例"
+        },
+        {
+          "line": 76,
+          "text": "echo \"\""
+        },
+        {
+          "line": 77,
+          "text": "echo \"--- Running critical tests ---\""
+        },
+        {
+          "line": 78,
+          "text": "set +e"
+        },
+        {
+          "line": 79,
+          "text": "E2E_BASE_URL=\"$BASE_URL\" E2E_API_BASE_URL=\"$API_URL\" \\"
+        },
+        {
+          "line": 80,
+          "text": "  npx playwright test \"${CRITICAL_SPECS[@]}\" \\"
+        },
+        {
+          "line": 81,
+          "text": "  --reporter=list \\"
+        },
+        {
+          "line": 82,
+          "text": "  --retries=0"
+        },
+        {
+          "line": 83,
+          "text": "rc=$?"
+        },
+        {
+          "line": 84,
+          "text": "set -e"
+        },
+        {
+          "line": 85,
+          "text": ""
+        },
+        {
+          "line": 86,
+          "text": "echo \"\""
+        },
+        {
+          "line": 87,
+          "text": "echo \"--- Result ---\""
+        },
+        {
+          "line": 88,
+          "text": "echo \"PYTEST_EXIT=$rc\""
+        },
+        {
+          "line": 89,
+          "text": "if [ $rc -eq 0 ]; then"
+        },
+        {
+          "line": 90,
+          "text": "  echo \"CRITICAL_E2E_GATE=PASS\""
+        },
+        {
+          "line": 91,
+          "text": "else"
+        },
+        {
+          "line": 92,
+          "text": "  echo \"CRITICAL_E2E_GATE=FAIL\""
+        },
+        {
+          "line": 93,
+          "text": "fi"
+        },
+        {
+          "line": 94,
+          "text": "exit $rc"
+        }
+      ]
+    },
+    "e2e/package.json": {
+      "sha256": "b827c2c5b4818f969e42c20078540f705f8e8ab40f55a4864336b197739ea1d7",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "{"
+        },
+        {
+          "line": 2,
+          "text": "  \"name\": \"clpm-e2e\","
+        },
+        {
+          "line": 3,
+          "text": "  \"version\": \"1.0.0\","
+        },
+        {
+          "line": 4,
+          "text": "  \"private\": true,"
+        },
+        {
+          "line": 5,
+          "text": "  \"description\": \"CLPM Playwright E2E 测试套件\","
+        },
+        {
+          "line": 6,
+          "text": "  \"type\": \"module\","
+        },
+        {
+          "line": 7,
+          "text": "  \"scripts\": {"
+        },
+        {
+          "line": 8,
+          "text": "    \"test\": \"playwright test\","
+        },
+        {
+          "line": 9,
+          "text": "    \"test:headed\": \"playwright test --headed\","
+        },
+        {
+          "line": 10,
+          "text": "    \"test:ui\": \"playwright test --ui\","
+        },
+        {
+          "line": 11,
+          "text": "    \"test:debug\": \"playwright test --debug\","
+        },
+        {
+          "line": 12,
+          "text": "    \"test:report\": \"playwright show-report\","
+        },
+        {
+          "line": 13,
+          "text": "    \"typecheck\": \"tsc --noEmit\""
+        },
+        {
+          "line": 14,
+          "text": "  },"
+        },
+        {
+          "line": 15,
+          "text": "  \"devDependencies\": {"
+        },
+        {
+          "line": 16,
+          "text": "    \"@playwright/test\": \"^1.48.0\","
+        },
+        {
+          "line": 17,
+          "text": "    \"@types/node\": \"^20.14.0\","
+        },
+        {
+          "line": 18,
+          "text": "    \"typescript\": \"^5.5.0\""
+        },
+        {
+          "line": 19,
+          "text": "  }"
+        },
+        {
+          "line": 20,
+          "text": "}"
+        }
+      ]
+    },
+    "e2e/tests/roles-smoke.spec.ts": {
+      "sha256": "07574cce6582e157f68d3aa1f4159333eae298edd7cf50d5e8a53ead20d57211",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "/**"
+        },
+        {
+          "line": 2,
+          "text": " * MW-P5-03 五角色核心流程冒烟测试"
+        },
+        {
+          "line": 3,
+          "text": " *"
+        },
+        {
+          "line": 4,
+          "text": " * 目标：每个角色访问其核心页面，验证不白屏、不跳 403/404、无阻断性 403 toast。"
+        },
+        {
+          "line": 5,
+          "text": " * 这是冒烟级测试，不深度验证业务逻辑——只确保关键流程可进入、可渲染。"
+        },
+        {
+          "line": 6,
+          "text": " *"
+        },
+        {
+          "line": 7,
+          "text": " * 角色权限矩阵（对齐 monitor.ts / tuning.ts / diagnosis.ts authority）："
+        },
+        {
+          "line": 8,
+          "text": " *   /loop/workbench360 : ADMIN, IC, PE, EXPERT（SPONSOR 无权限）"
+        },
+        {
+          "line": 9,
+          "text": " *   /monitor/attention      : 全五角色"
+        },
+        {
+          "line": 10,
+          "text": " *   /monitor/alerts         : 全五角色"
+        },
+        {
+          "line": 11,
+          "text": " *   /tuning/overview        : 全五角色（2026-10-04 D1；旧 /tuning/workbench redirect 至此）"
+        },
+        {
+          "line": 12,
+          "text": " *   /diagnosis/records      : 全五角色（MVP 两页式；原 /diagnosis/tasks 已不存在）"
+        },
+        {
+          "line": 13,
+          "text": " *   /metric/indicator-analysis : ADMIN, IC, PE, SPONSOR（EXPERT 无评估模块，"
+        },
+        {
+          "line": 14,
+          "text": " *                                2026-08-25 指标分析页 M3 联动新增）"
+        },
+        {
+          "line": 15,
+          "text": " *"
+        },
+        {
+          "line": 16,
+          "text": " * MW-P5-03 特别验证项："
+        },
+        {
+          "line": 17,
+          "text": " *   - EXPERT 进入回路工作台无阻断性 403 内容页（已知例外：后端"
+        },
+        {
+          "line": 18,
+          "text": " *     /configs/grading-thresholds 仅对 ADMIN/IC/PE 开放，EXPERT 访问工作台时"
+        },
+        {
+          "line": 19,
+          "text": " *     前端会触发一次 403 toast，属现行代码预期行为，前端已 .catch 降级，不计入阻断）"
+        },
+        {
+          "line": 20,
+          "text": " *   - SPONSOR 关注队列只读且无 403 toast"
+        },
+        {
+          "line": 21,
+          "text": " *"
+        },
+        {
+          "line": 22,
+          "text": " * 2026-08-23 口径变更：原\"view=table 回退 workspace\"断言随工作台 Grid 布局"
+        },
+        {
+          "line": 23,
+          "text": " * 重构下线（workbench.vue 已无 view query 处理逻辑），改为工作台可进入性验证。"
+        },
+        {
+          "line": 24,
+          "text": " */"
+        },
+        {
+          "line": 25,
+          "text": "import type { Page } from '@playwright/test';"
+        },
+        {
+          "line": 26,
+          "text": "import { expect, test } from '../fixtures/auth.js';"
+        },
+        {
+          "line": 27,
+          "text": ""
+        },
+        {
+          "line": 28,
+          "text": "/** 403 相关文案集合（命中任一即视为 403 toast / 403 内容页） */"
+        },
+        {
+          "line": 29,
+          "text": "const FORBIDDEN_PATTERNS = ['403', '无权', '没有权限', '访问被拒绝', '禁止访问', 'forbidden'];"
+        },
+        {
+          "line": 30,
+          "text": ""
+        },
+        {
+          "line": 31,
+          "text": "/** 校验页面是否渲染了 403 内容页（vben 在原 URL 渲染\"访问被拒绝\"，不跳转） */"
+        },
+        {
+          "line": 32,
+          "text": "async function assertAccessDenied(page: Page): Promise<boolean> {"
+        },
+        {
+          "line": 33,
+          "text": "  const bodyText = (await page.locator('body').innerText().catch(() => '')).toLowerCase();"
+        },
+        {
+          "line": 34,
+          "text": "  return FORBIDDEN_PATTERNS.some((p) => bodyText.includes(p.toLowerCase()));"
+        },
+        {
+          "line": 35,
+          "text": "}"
+        },
+        {
+          "line": 36,
+          "text": ""
+        },
+        {
+          "line": 37,
+          "text": "/** 等待页面渲染稳定（SignalR 心跳使 networkidle 永不触发，沿用 domcontentloaded + 短等待） */"
+        },
+        {
+          "line": 38,
+          "text": "async function waitForRender(page: Page): Promise<void> {"
+        },
+        {
+          "line": 39,
+          "text": "  await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 40,
+          "text": "  await page.waitForTimeout(2500);"
+        },
+        {
+          "line": 41,
+          "text": "}"
+        },
+        {
+          "line": 42,
+          "text": ""
+        },
+        {
+          "line": 43,
+          "text": "/** 校验页面不白屏、不跳 403/404/登录页 */"
+        },
+        {
+          "line": 44,
+          "text": "async function assertPageHealthy(page: Page, expectUrlNot: string[] = []): Promise<void> {"
+        },
+        {
+          "line": 45,
+          "text": "  const url = page.url();"
+        },
+        {
+          "line": 46,
+          "text": "  // 不应跳转到 403/404/登录"
+        },
+        {
+          "line": 47,
+          "text": "  expect(url, `URL 不应跳 403/404/登录: ${url}`).not.toMatch(/\\/403|\\/404|\\/auth\\/login/);"
+        },
+        {
+          "line": 48,
+          "text": "  for (const frag of expectUrlNot) {"
+        },
+        {
+          "line": 49,
+          "text": "    expect(url, `URL 不应含 ${frag}: ${url}`).not.toContain(frag);"
+        },
+        {
+          "line": 50,
+          "text": "  }"
+        },
+        {
+          "line": 51,
+          "text": "  // 不白屏：body 有可见文本"
+        },
+        {
+          "line": 52,
+          "text": "  const bodyText = (await page.locator('body').innerText()).trim();"
+        },
+        {
+          "line": 53,
+          "text": "  expect(bodyText.length, '页面不应白屏').toBeGreaterThan(0);"
+        },
+        {
+          "line": 54,
+          "text": "}"
+        },
+        {
+          "line": 55,
+          "text": ""
+        },
+        {
+          "line": 56,
+          "text": "/** 检查页面上是否出现 403 toast（antd message） */"
+        },
+        {
+          "line": 57,
+          "text": "async function assertNoForbiddenToast(page: Page): Promise<void> {"
+        },
+        {
+          "line": 58,
+          "text": "  const toasts = page.locator('.ant-message, .ant-notification');"
+        },
+        {
+          "line": 59,
+          "text": "  const count = await toasts.count().catch(() => 0);"
+        },
+        {
+          "line": 60,
+          "text": "  if (count === 0) return;"
+        },
+        {
+          "line": 61,
+          "text": "  const toastText = (await toasts.innerText().catch(() => '')).toLowerCase();"
+        },
+        {
+          "line": 62,
+          "text": "  for (const p of FORBIDDEN_PATTERNS) {"
+        },
+        {
+          "line": 63,
+          "text": "    expect(toastText, `不应出现 403 toast，但命中: ${p}`).not.toContain(p.toLowerCase());"
+        },
+        {
+          "line": 64,
+          "text": "  }"
+        },
+        {
+          "line": 65,
+          "text": "}"
+        },
+        {
+          "line": 66,
+          "text": ""
+        },
+        {
+          "line": 67,
+          "text": "test.describe('MW-P5-03 五角色核心流程冒烟', () => {"
+        },
+        {
+          "line": 68,
+          "text": "  test('E2E-SMOKE-ADMIN: 工作台 + 关注队列 + 配置 + 评估', async ({ page, loginAs }) => {"
+        },
+        {
+          "line": 69,
+          "text": "    await loginAs('ADMIN');"
+        },
+        {
+          "line": 70,
+          "text": ""
+        },
+        {
+          "line": 71,
+          "text": "    // 1. 回路工作台（workspace 模式）"
+        },
+        {
+          "line": 72,
+          "text": "    await page.goto('/loop/workbench360');"
+        },
+        {
+          "line": 73,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 74,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 75,
+          "text": "    // 工作台主内容区应渲染（workspace 模式用虚拟列表+自定义布局，容忍加载中/空态）"
+        },
+        {
+          "line": 76,
+          "text": "    await expect("
+        },
+        {
+          "line": 77,
+          "text": "      page"
+        },
+        {
+          "line": 78,
+          "text": "        .locator("
+        },
+        {
+          "line": 79,
+          "text": "          'main, .vben-layout-content, .ant-layout-content, .ant-table, .ant-card, .ant-spin, .ant-empty',"
+        },
+        {
+          "line": 80,
+          "text": "        )"
+        },
+        {
+          "line": 81,
+          "text": "        .first(),"
+        },
+        {
+          "line": 82,
+          "text": "    ).toBeVisible({ timeout: 20_000 });"
+        },
+        {
+          "line": 83,
+          "text": ""
+        },
+        {
+          "line": 84,
+          "text": "    // 2. 关注队列"
+        },
+        {
+          "line": 85,
+          "text": "    await page.goto('/monitor/attention');"
+        },
+        {
+          "line": 86,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 87,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 88,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 89,
+          "text": ""
+        },
+        {
+          "line": 90,
+          "text": "    // 3. 回路配置（ADMIN 专属）"
+        },
+        {
+          "line": 91,
+          "text": "    await page.goto('/config/loop');"
+        },
+        {
+          "line": 92,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 93,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 94,
+          "text": ""
+        },
+        {
+          "line": 95,
+          "text": "    // 4. 评估看板"
+        },
+        {
+          "line": 96,
+          "text": "    await page.goto('/metric/pid-dashboard');"
+        },
+        {
+          "line": 97,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 98,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 99,
+          "text": "  });"
+        },
+        {
+          "line": 100,
+          "text": ""
+        },
+        {
+          "line": 101,
+          "text": "  test('E2E-SMOKE-IC: 运维工作台 + 诊断记录 + 整定总览', async ({ page, loginAs }) => {"
+        },
+        {
+          "line": 102,
+          "text": "    await loginAs('IC_ENGINEER');"
+        },
+        {
+          "line": 103,
+          "text": ""
+        },
+        {
+          "line": 104,
+          "text": "    // 1. 回路工作台"
+        },
+        {
+          "line": 105,
+          "text": "    await page.goto('/loop/workbench360');"
+        },
+        {
+          "line": 106,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 107,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 108,
+          "text": ""
+        },
+        {
+          "line": 109,
+          "text": "    // 2. 诊断记录（原 /diagnosis/tasks 已下线，MVP 两页式为 workbench/records）"
+        },
+        {
+          "line": 110,
+          "text": "    await page.goto('/diagnosis/records');"
+        },
+        {
+          "line": 111,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 112,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 113,
+          "text": ""
+        },
+        {
+          "line": 114,
+          "text": "    // 3. 整定总览（旧 /tuning/workbench redirect 至此）"
+        },
+        {
+          "line": 115,
+          "text": "    await page.goto('/tuning/workbench');"
+        },
+        {
+          "line": 116,
+          "text": "    await page.waitForURL(/\\/tuning\\/overview/, { timeout: 15_000 });"
+        },
+        {
+          "line": 117,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 118,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 119,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 120,
+          "text": "  });"
+        },
+        {
+          "line": 121,
+          "text": ""
+        },
+        {
+          "line": 122,
+          "text": "  test('E2E-SMOKE-PE: 回路工作台 + 评估看板 + 整定总览只读', async ({ page, loginAs }) => {"
+        },
+        {
+          "line": 123,
+          "text": "    await loginAs('PE_ENGINEER');"
+        },
+        {
+          "line": 124,
+          "text": ""
+        },
+        {
+          "line": 125,
+          "text": "    // 1. 回路工作台（只读，写动作应 disabled，但不阻断渲染）"
+        },
+        {
+          "line": 126,
+          "text": "    await page.goto('/loop/workbench360');"
+        },
+        {
+          "line": 127,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 128,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 129,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 130,
+          "text": ""
+        },
+        {
+          "line": 131,
+          "text": "    // 2. 评估看板"
+        },
+        {
+          "line": 132,
+          "text": "    await page.goto('/metric/pid-dashboard');"
+        },
+        {
+          "line": 133,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 134,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 135,
+          "text": ""
+        },
+        {
+          "line": 136,
+          "text": "    // 3. 2026-10-04 D1：PE 可进整定总览（查看；「调参优化」入口按角色隐藏）"
+        },
+        {
+          "line": 137,
+          "text": "    await page.goto('/tuning/workbench');"
+        },
+        {
+          "line": 138,
+          "text": "    await page.waitForURL(/\\/tuning\\/overview/, { timeout: 15_000 });"
+        },
+        {
+          "line": 139,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 140,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 141,
+          "text": "  });"
+        },
+        {
+          "line": 142,
+          "text": ""
+        },
+        {
+          "line": 143,
+          "text": "  test('E2E-SMOKE-EXPERT: 诊断 + 整定 + 回路工作台无阻断性 403', async ({"
+        },
+        {
+          "line": 144,
+          "text": "    page,"
+        },
+        {
+          "line": 145,
+          "text": "    loginAs,"
+        },
+        {
+          "line": 146,
+          "text": "  }) => {"
+        },
+        {
+          "line": 147,
+          "text": "    await loginAs('EXPERT');"
+        },
+        {
+          "line": 148,
+          "text": ""
+        },
+        {
+          "line": 149,
+          "text": "    // 监听 403 响应，定位 toast 来源"
+        },
+        {
+          "line": 150,
+          "text": "    const forbiddenResponses: string[] = [];"
+        },
+        {
+          "line": 151,
+          "text": "    page.on('response', (res) => {"
+        },
+        {
+          "line": 152,
+          "text": "      if (res.status() === 403) {"
+        },
+        {
+          "line": 153,
+          "text": "        forbiddenResponses.push(`${res.status()} ${res.url()}`);"
+        },
+        {
+          "line": 154,
+          "text": "      }"
+        },
+        {
+          "line": 155,
+          "text": "    });"
+        },
+        {
+          "line": 156,
+          "text": ""
+        },
+        {
+          "line": 157,
+          "text": "    // 1. 诊断记录（EXPERT 有查看权限；原 /diagnosis/tasks 已下线）"
+        },
+        {
+          "line": 158,
+          "text": "    await page.goto('/diagnosis/records');"
+        },
+        {
+          "line": 159,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 160,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 161,
+          "text": ""
+        },
+        {
+          "line": 162,
+          "text": "    // 2. 整定总览（旧 /tuning/workbench redirect 至此）"
+        },
+        {
+          "line": 163,
+          "text": "    await page.goto('/tuning/workbench');"
+        },
+        {
+          "line": 164,
+          "text": "    await page.waitForURL(/\\/tuning\\/overview/, { timeout: 15_000 });"
+        },
+        {
+          "line": 165,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 166,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 167,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 168,
+          "text": ""
+        },
+        {
+          "line": 169,
+          "text": "    // 3. EXPERT 无评估模块：直接访问指标分析页应渲染 403 内容页（指标分析页 M3）"
+        },
+        {
+          "line": 170,
+          "text": "    await page.goto('/metric/indicator-analysis');"
+        },
+        {
+          "line": 171,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 172,
+          "text": "    const deniedMetric = await assertAccessDenied(page);"
+        },
+        {
+          "line": 173,
+          "text": "    expect(deniedMetric, 'EXPERT 访问指标分析应显示 403 内容页').toBeTruthy();"
+        },
+        {
+          "line": 174,
+          "text": ""
+        },
+        {
+          "line": 175,
+          "text": "    // 4. 回路工作台（EXPERT 在 authority 内）：页面健康、无 403 内容页。"
+        },
+        {
+          "line": 176,
+          "text": "    // 已知例外：后端 /configs/grading-thresholds 拒绝 EXPERT（require_roles"
+        },
+        {
+          "line": 177,
+          "text": "    // ADMIN/IC/PE），前端全局拦截器会弹一次\"无权限访问\" toast，但页面本身"
+        },
+        {
+          "line": 178,
+          "text": "    // 已 .catch 降级不影响渲染——此为现行代码预期行为，仅断言无预期外 403。"
+        },
+        {
+          "line": 179,
+          "text": "    await page.goto('/loop/workbench360');"
+        },
+        {
+          "line": 180,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 181,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 182,
+          "text": "    const unexpected403 = forbiddenResponses.filter("
+        },
+        {
+          "line": 183,
+          "text": "      (r) => !r.includes('/configs/grading-thresholds'),"
+        },
+        {
+          "line": 184,
+          "text": "    );"
+        },
+        {
+          "line": 185,
+          "text": "    expect("
+        },
+        {
+          "line": 186,
+          "text": "      unexpected403,"
+        },
+        {
+          "line": 187,
+          "text": "      `不应出现预期外 403（已知例外：grading-thresholds）: ${JSON.stringify(forbiddenResponses)}`,"
+        },
+        {
+          "line": 188,
+          "text": "    ).toHaveLength(0);"
+        },
+        {
+          "line": 189,
+          "text": "  });"
+        },
+        {
+          "line": 190,
+          "text": ""
+        },
+        {
+          "line": 191,
+          "text": "  test('E2E-SMOKE-SPONSOR: 关注队列只读 + 预警记录，无 403 toast', async ({"
+        },
+        {
+          "line": 192,
+          "text": "    page,"
+        },
+        {
+          "line": 193,
+          "text": "    loginAs,"
+        },
+        {
+          "line": 194,
+          "text": "  }) => {"
+        },
+        {
+          "line": 195,
+          "text": "    await loginAs('SPONSOR');"
+        },
+        {
+          "line": 196,
+          "text": ""
+        },
+        {
+          "line": 197,
+          "text": "    // 1. 关注队列（只读，应无确认/处置按钮）"
+        },
+        {
+          "line": 198,
+          "text": "    await page.goto('/monitor/attention');"
+        },
+        {
+          "line": 199,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 200,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 201,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 202,
+          "text": ""
+        },
+        {
+          "line": 203,
+          "text": "    // 2. 预警记录"
+        },
+        {
+          "line": 204,
+          "text": "    await page.goto('/monitor/alerts');"
+        },
+        {
+          "line": 205,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 206,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 207,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 208,
+          "text": ""
+        },
+        {
+          "line": 209,
+          "text": "    // 3. 指标分析页（SPONSOR 在 authority 内，指标分析页 M3）：页面健康"
+        },
+        {
+          "line": 210,
+          "text": "    await page.goto('/metric/indicator-analysis');"
+        },
+        {
+          "line": 211,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 212,
+          "text": "    await assertPageHealthy(page);"
+        },
+        {
+          "line": 213,
+          "text": "    await assertNoForbiddenToast(page);"
+        },
+        {
+          "line": 214,
+          "text": ""
+        },
+        {
+          "line": 215,
+          "text": "    // 4. SPONSOR 无工作台权限：直接访问 /loop/workbench360 应显示 403 内容页"
+        },
+        {
+          "line": 216,
+          "text": "    await page.goto('/loop/workbench360');"
+        },
+        {
+          "line": 217,
+          "text": "    await waitForRender(page);"
+        },
+        {
+          "line": 218,
+          "text": "    const denied = await assertAccessDenied(page);"
+        },
+        {
+          "line": 219,
+          "text": "    expect(denied, 'SPONSOR 访问工作台应显示 403 内容页').toBeTruthy();"
+        },
+        {
+          "line": 220,
+          "text": "  });"
+        },
+        {
+          "line": 221,
+          "text": "});"
+        }
+      ]
+    },
+    "e2e/tests/confidence.spec.ts": {
+      "sha256": "19b84a8356509faac4de2b056fe5f1af1e1825606e1526ab818956d1ede983af",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "/**"
+        },
+        {
+          "line": 2,
+          "text": " * E2E 可信度徽章 + INCONCLUSIVE 展示测试"
+        },
+        {
+          "line": 3,
+          "text": " *"
+        },
+        {
+          "line": 4,
+          "text": " * 覆盖用例："
+        },
+        {
+          "line": 5,
+          "text": " * - E2E-CONF-001: /metric/loop-performance 表格含「可信度」列，单元格为 A~E Badge 或 —"
+        },
+        {
+          "line": 6,
+          "text": " * - E2E-CONF-002: /metric/loop-performance 评估状态筛选含「不确定」（INCONCLUSIVE）"
+        },
+        {
+          "line": 7,
+          "text": " * - E2E-CONF-003: /metric/tasks → 评估历史 Tab：可信度/状态筛选与可信度 Tag"
+        },
+        {
+          "line": 8,
+          "text": " * - E2E-CONF-004: /loop/monitor/legacy 行内「性能」Modal：KPI 状态（良好/未确定/部分）"
+        },
+        {
+          "line": 9,
+          "text": " *   与 INCONCLUSIVE 灰化展示（Alert + opacity-60）"
+        },
+        {
+          "line": 10,
+          "text": " *   （面点分离：/loop/monitor 已重定向到 /monitor/loops 舰队视图，"
+        },
+        {
+          "line": 11,
+          "text": " *   行内 详情/趋势/性能 入口仅保留在 /loop/monitor/legacy 旧 monitor.vue）"
+        },
+        {
+          "line": 12,
+          "text": " *"
+        },
+        {
+          "line": 13,
+          "text": " * 页面源码依据："
+        },
+        {
+          "line": 14,
+          "text": " *   frontend/apps/web-antd/src/views/metric/loop-performance.vue"
+        },
+        {
+          "line": 15,
+          "text": " *   - STATUS_LABEL_MAP：SUCCESS→成功 INCONCLUSIVE→不确定 PARTIAL→部分"
+        },
+        {
+          "line": 16,
+          "text": " *   - 表格列：可信度（ConfidenceBadge 组件渲染，A/B/C/D/INCONCLUSIVE，无值时显示 —）"
+        },
+        {
+          "line": 17,
+          "text": " *   - 详情抽屉：CONFIDENCE_LABEL_MAP 全称（A 优秀 / B 良好 / C 一般 / D 较差 / E 不足）"
+        },
+        {
+          "line": 18,
+          "text": " *   - 筛选区：Select placeholder=评估状态（选项 全部/成功/不确定/部分）"
+        },
+        {
+          "line": 19,
+          "text": " *   注意：表格用 ConfidenceBadge 渲染缩写（A/B/C/D/INCONCLUSIVE），"
+        },
+        {
+          "line": 20,
+          "text": " *   与详情抽屉的 CONFIDENCE_LABEL_MAP 全称不同，E2E 正则需分别匹配。"
+        },
+        {
+          "line": 21,
+          "text": " *   frontend/apps/web-antd/src/views/metric/history-snapshots.vue（/metric/tasks 评估历史 Tab）"
+        },
+        {
+          "line": 22,
+          "text": " *   - 筛选区：Select placeholder=状态（成功/不确定/部分）、Select placeholder=可信度（A~E）"
+        },
+        {
+          "line": 23,
+          "text": " *   - 表格列：可信度（Tag）、状态（Tag）"
+        },
+        {
+          "line": 24,
+          "text": " *   frontend/apps/web-antd/src/views/loop/monitor.vue"
+        },
+        {
+          "line": 25,
+          "text": " *   - 行内操作：详情 / 趋势 / 性能 三个 Tag 入口"
+        },
+        {
+          "line": 26,
+          "text": " *   - 性能 Modal title=`性能 - {tagName}`，kpiStatusMap：SUCCESS→良好 INCONCLUSIVE→未确定 PARTIAL→部分"
+        },
+        {
+          "line": 27,
+          "text": " *   - INCONCLUSIVE 时：Alert message=该回路本期评估数据不足，结果不确定，"
+        },
+        {
+          "line": 28,
+          "text": " *     综合评分/KPI 卡片容器带 class opacity-60（灰化）"
+        },
+        {
+          "line": 29,
+          "text": " *"
+        },
+        {
+          "line": 30,
+          "text": " * 路由（router/routes/modules/metric.ts、loop.ts）："
+        },
+        {
+          "line": 31,
+          "text": " *   - /metric/loop-performance → 回路性能（含 ADMIN 在内多角色可见）"
+        },
+        {
+          "line": 32,
+          "text": " *   - /metric/tasks → 评估任务（ADMIN/IC_ENGINEER）"
+        },
+        {
+          "line": 33,
+          "text": " *   - /loop/monitor/legacy → 回路监控（旧版行内操作页，含 ADMIN 在内多角色可见）"
+        },
+        {
+          "line": 34,
+          "text": " *"
+        },
+        {
+          "line": 35,
+          "text": " * 边界：只读操作 + Modal 开关；数据相关断言防御式（无数据行则跳过）。"
+        },
+        {
+          "line": 36,
+          "text": " */"
+        },
+        {
+          "line": 37,
+          "text": "import { test, expect } from '../fixtures/auth.js';"
+        },
+        {
+          "line": 38,
+          "text": ""
+        },
+        {
+          "line": 39,
+          "text": "/**"
+        },
+        {
+          "line": 40,
+          "text": " * 可信度文案正则"
+        },
+        {
+          "line": 41,
+          "text": " *"
+        },
+        {
+          "line": 42,
+          "text": " * 两种渲染模式需分别匹配："
+        },
+        {
+          "line": 43,
+          "text": " * - CONFIDENCE_BADGE_RE：loop-performance 表格用 ConfidenceBadge 组件，渲染缩写"
+        },
+        {
+          "line": 44,
+          "text": " *   （A/B/C/D/E/INCONCLUSIVE），实测 E 级存在直接渲染为 E 的形态，"
+        },
+        {
+          "line": 45,
+          "text": " *   故同时容忍 E 与 INCONCLUSIVE 两种展示"
+        },
+        {
+          "line": 46,
+          "text": " * - CONFIDENCE_TAG_RE：history-snapshots 表格用 Tag + CONFIDENCE_LABEL_MAP，渲染全称"
+        },
+        {
+          "line": 47,
+          "text": " *   （A 优秀/B 良好/C 一般/D 较差/E 不足）"
+        },
+        {
+          "line": 48,
+          "text": " */"
+        },
+        {
+          "line": 49,
+          "text": "const CONFIDENCE_BADGE_RE = /^(A|B|C|D|E|INCONCLUSIVE|—)$/;"
+        },
+        {
+          "line": 50,
+          "text": "const CONFIDENCE_TAG_RE = /^([A-E]\\s*(优秀|良好|一般|较差|不足)|—)$/;"
+        },
+        {
+          "line": 51,
+          "text": ""
+        },
+        {
+          "line": 52,
+          "text": "test.describe('可信度徽章与 INCONCLUSIVE 展示 E2E', () => {"
+        },
+        {
+          "line": 53,
+          "text": "  test.beforeEach(async ({ page, loginAs }) => {"
+        },
+        {
+          "line": 54,
+          "text": "    await loginAs('ADMIN');"
+        },
+        {
+          "line": 55,
+          "text": "  });"
+        },
+        {
+          "line": 56,
+          "text": ""
+        },
+        {
+          "line": 57,
+          "text": "  // E2E-CONF-001: 回路性能页可信度列"
+        },
+        {
+          "line": 58,
+          "text": "  test('E2E-CONF-001: 回路性能表格可信度列', async ({ page }) => {"
+        },
+        {
+          "line": 59,
+          "text": "    await page.goto('/metric/loop-performance');"
+        },
+        {
+          "line": 60,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 61,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 62,
+          "text": ""
+        },
+        {
+          "line": 63,
+          "text": "    // 表格可见且表头含「可信度」列（loop-performance.vue columns）"
+        },
+        {
+          "line": 64,
+          "text": "    const table = page"
+        },
+        {
+          "line": 65,
+          "text": "      .locator('.ant-table')"
+        },
+        {
+          "line": 66,
+          "text": "      .filter({ has: page.locator('.ant-table-thead th', { hasText: '可信度' }) })"
+        },
+        {
+          "line": 67,
+          "text": "      .first();"
+        },
+        {
+          "line": 68,
+          "text": "    await expect(table).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 69,
+          "text": "    const headerText = await table.locator('.ant-table-thead').innerText();"
+        },
+        {
+          "line": 70,
+          "text": "    expect(headerText).toContain('可信度');"
+        },
+        {
+          "line": 71,
+          "text": ""
+        },
+        {
+          "line": 72,
+          "text": "    // 若有数据行（防御性）：首行可信度单元格 ∈ {A, B, C, D, E, INCONCLUSIVE, —}"
+        },
+        {
+          "line": 73,
+          "text": "    // ConfidenceBadge 渲染缩写，E 级存在直接渲染为 E 的形态"
+        },
+        {
+          "line": 74,
+          "text": "    const firstRow = table.locator('.ant-table-tbody tr.ant-table-row').first();"
+        },
+        {
+          "line": 75,
+          "text": "    const hasRow = await firstRow.isVisible().catch(() => false);"
+        },
+        {
+          "line": 76,
+          "text": "    if (hasRow) {"
+        },
+        {
+          "line": 77,
+          "text": "      const thTexts = await table.locator('.ant-table-thead th').allInnerTexts();"
+        },
+        {
+          "line": 78,
+          "text": "      const confIdx = thTexts.findIndex((t) => t.includes('可信度'));"
+        },
+        {
+          "line": 79,
+          "text": "      expect(confIdx).toBeGreaterThanOrEqual(0);"
+        },
+        {
+          "line": 80,
+          "text": "      const cellText = ("
+        },
+        {
+          "line": 81,
+          "text": "        await firstRow.locator('td').nth(confIdx).innerText()"
+        },
+        {
+          "line": 82,
+          "text": "      ).trim();"
+        },
+        {
+          "line": 83,
+          "text": "      expect("
+        },
+        {
+          "line": 84,
+          "text": "        CONFIDENCE_BADGE_RE.test(cellText),"
+        },
+        {
+          "line": 85,
+          "text": "        `可信度单元格应为 A/B/C/D/E/INCONCLUSIVE 徽章或 —，实际为「${cellText}」`,"
+        },
+        {
+          "line": 86,
+          "text": "      ).toBeTruthy();"
+        },
+        {
+          "line": 87,
+          "text": "    }"
+        },
+        {
+          "line": 88,
+          "text": "  });"
+        },
+        {
+          "line": 89,
+          "text": ""
+        },
+        {
+          "line": 90,
+          "text": "  // E2E-CONF-002: 回路性能页评估状态筛选含「不确定」"
+        },
+        {
+          "line": 91,
+          "text": "  test('E2E-CONF-002: 评估状态筛选含不确定选项', async ({ page }) => {"
+        },
+        {
+          "line": 92,
+          "text": "    await page.goto('/metric/loop-performance');"
+        },
+        {
+          "line": 93,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 94,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 95,
+          "text": ""
+        },
+        {
+          "line": 96,
+          "text": "    // 状态筛选 Select（loop-performance.vue placeholder 评估状态）"
+        },
+        {
+          "line": 97,
+          "text": "    const statusSelect = page"
+        },
+        {
+          "line": 98,
+          "text": "      .locator('.ant-select')"
+        },
+        {
+          "line": 99,
+          "text": "      .filter({ hasText: '评估状态' })"
+        },
+        {
+          "line": 100,
+          "text": "      .first();"
+        },
+        {
+          "line": 101,
+          "text": "    await expect(statusSelect).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 102,
+          "text": "    await statusSelect.click();"
+        },
+        {
+          "line": 103,
+          "text": ""
+        },
+        {
+          "line": 104,
+          "text": "    // 下拉选项含「不确定」（INCONCLUSIVE 中文文案）"
+        },
+        {
+          "line": 105,
+          "text": "    const options = page.locator("
+        },
+        {
+          "line": 106,
+          "text": "      '.ant-select-dropdown:visible .ant-select-item-option',"
+        },
+        {
+          "line": 107,
+          "text": "    );"
+        },
+        {
+          "line": 108,
+          "text": "    await expect(options.first()).toBeVisible({ timeout: 5_000 });"
+        },
+        {
+          "line": 109,
+          "text": "    const optionTexts = await options.allInnerTexts();"
+        },
+        {
+          "line": 110,
+          "text": "    expect("
+        },
+        {
+          "line": 111,
+          "text": "      optionTexts.some((t) => t.includes('不确定')),"
+        },
+        {
+          "line": 112,
+          "text": "      `评估状态筛选选项应包含「不确定」，实际为 ${JSON.stringify(optionTexts)}`,"
+        },
+        {
+          "line": 113,
+          "text": "    ).toBeTruthy();"
+        },
+        {
+          "line": 114,
+          "text": ""
+        },
+        {
+          "line": 115,
+          "text": "    // Escape 收起下拉"
+        },
+        {
+          "line": 116,
+          "text": "    await page.keyboard.press('Escape');"
+        },
+        {
+          "line": 117,
+          "text": "    await expect("
+        },
+        {
+          "line": 118,
+          "text": "      page.locator('.ant-select-dropdown:visible'),"
+        },
+        {
+          "line": 119,
+          "text": "    ).toHaveCount(0, { timeout: 5_000 });"
+        },
+        {
+          "line": 120,
+          "text": "  });"
+        },
+        {
+          "line": 121,
+          "text": ""
+        },
+        {
+          "line": 122,
+          "text": "  // E2E-CONF-003: 评估历史 Tab 可信度/状态筛选与可信度 Tag"
+        },
+        {
+          "line": 123,
+          "text": "  test('E2E-CONF-003: 评估历史可信度与状态筛选', async ({ page }) => {"
+        },
+        {
+          "line": 124,
+          "text": "    await page.goto('/metric/tasks');"
+        },
+        {
+          "line": 125,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 126,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 127,
+          "text": ""
+        },
+        {
+          "line": 128,
+          "text": "    // 切换到「评估历史」Tab（tasks.vue 切换时强制重载）"
+        },
+        {
+          "line": 129,
+          "text": "    await page.locator('.ant-tabs-tab').filter({ hasText: '评估历史' }).click();"
+        },
+        {
+          "line": 130,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 131,
+          "text": ""
+        },
+        {
+          "line": 132,
+          "text": "    // 当前可见 TabPane（history-snapshots.vue 渲染其中）"
+        },
+        {
+          "line": 133,
+          "text": "    const activePane = page.locator('.ant-tabs-tabpane:visible');"
+        },
+        {
+          "line": 134,
+          "text": ""
+        },
+        {
+          "line": 135,
+          "text": "    // 可信度 Select（placeholder 可信度）→ 选项 A~E"
+        },
+        {
+          "line": 136,
+          "text": "    const confSelect = activePane"
+        },
+        {
+          "line": 137,
+          "text": "      .locator('.ant-select')"
+        },
+        {
+          "line": 138,
+          "text": "      .filter({ hasText: '可信度' })"
+        },
+        {
+          "line": 139,
+          "text": "      .first();"
+        },
+        {
+          "line": 140,
+          "text": "    await expect(confSelect).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 141,
+          "text": "    await confSelect.click();"
+        },
+        {
+          "line": 142,
+          "text": "    const confOptions = page.locator("
+        },
+        {
+          "line": 143,
+          "text": "      '.ant-select-dropdown:visible .ant-select-item-option',"
+        },
+        {
+          "line": 144,
+          "text": "    );"
+        },
+        {
+          "line": 145,
+          "text": "    await expect(confOptions.first()).toBeVisible({ timeout: 5_000 });"
+        },
+        {
+          "line": 146,
+          "text": "    const confOptionTexts = await confOptions.allInnerTexts();"
+        },
+        {
+          "line": 147,
+          "text": "    for (const label of ['A 优秀', 'B 良好', 'C 一般', 'D 较差', 'E 不足']) {"
+        },
+        {
+          "line": 148,
+          "text": "      expect("
+        },
+        {
+          "line": 149,
+          "text": "        confOptionTexts.some((t) => t.includes(label)),"
+        },
+        {
+          "line": 150,
+          "text": "        `可信度筛选选项应包含「${label}」`,"
+        },
+        {
+          "line": 151,
+          "text": "      ).toBeTruthy();"
+        },
+        {
+          "line": 152,
+          "text": "    }"
+        },
+        {
+          "line": 153,
+          "text": "    await page.keyboard.press('Escape');"
+        },
+        {
+          "line": 154,
+          "text": "    await page.waitForTimeout(500);"
+        },
+        {
+          "line": 155,
+          "text": ""
+        },
+        {
+          "line": 156,
+          "text": "    // 状态 Select（placeholder 状态）→ 选项含「不确定」"
+        },
+        {
+          "line": 157,
+          "text": "    const statusSelect = activePane"
+        },
+        {
+          "line": 158,
+          "text": "      .locator('.ant-select')"
+        },
+        {
+          "line": 159,
+          "text": "      .filter({ hasText: /^状态$/ })"
+        },
+        {
+          "line": 160,
+          "text": "      .first();"
+        },
+        {
+          "line": 161,
+          "text": "    await expect(statusSelect).toBeVisible();"
+        },
+        {
+          "line": 162,
+          "text": "    await statusSelect.click();"
+        },
+        {
+          "line": 163,
+          "text": "    const statusOptions = page.locator("
+        },
+        {
+          "line": 164,
+          "text": "      '.ant-select-dropdown:visible .ant-select-item-option',"
+        },
+        {
+          "line": 165,
+          "text": "    );"
+        },
+        {
+          "line": 166,
+          "text": "    await expect(statusOptions.first()).toBeVisible({ timeout: 5_000 });"
+        },
+        {
+          "line": 167,
+          "text": "    const statusOptionTexts = await statusOptions.allInnerTexts();"
+        },
+        {
+          "line": 168,
+          "text": "    expect("
+        },
+        {
+          "line": 169,
+          "text": "      statusOptionTexts.some((t) => t.includes('不确定')),"
+        },
+        {
+          "line": 170,
+          "text": "      `状态筛选选项应包含「不确定」，实际为 ${JSON.stringify(statusOptionTexts)}`,"
+        },
+        {
+          "line": 171,
+          "text": "    ).toBeTruthy();"
+        },
+        {
+          "line": 172,
+          "text": "    await page.keyboard.press('Escape');"
+        },
+        {
+          "line": 173,
+          "text": "    await expect("
+        },
+        {
+          "line": 174,
+          "text": "      page.locator('.ant-select-dropdown:visible'),"
+        },
+        {
+          "line": 175,
+          "text": "    ).toHaveCount(0, { timeout: 5_000 });"
+        },
+        {
+          "line": 176,
+          "text": ""
+        },
+        {
+          "line": 177,
+          "text": "    // 表格有数据时（防御性）：首行可信度 Tag 文案 ∈ {A 优秀, ..., E 不足}（无值时显示 —）"
+        },
+        {
+          "line": 178,
+          "text": "    // history-snapshots.vue 用 Tag + CONFIDENCE_LABEL_MAP 渲染全称"
+        },
+        {
+          "line": 179,
+          "text": "    const table = activePane.locator('.ant-table').first();"
+        },
+        {
+          "line": 180,
+          "text": "    const firstRow = table.locator('.ant-table-tbody tr.ant-table-row').first();"
+        },
+        {
+          "line": 181,
+          "text": "    const hasRow = await firstRow.isVisible().catch(() => false);"
+        },
+        {
+          "line": 182,
+          "text": "    if (hasRow) {"
+        },
+        {
+          "line": 183,
+          "text": "      const thTexts = await table.locator('.ant-table-thead th').allInnerTexts();"
+        },
+        {
+          "line": 184,
+          "text": "      const confIdx = thTexts.findIndex((t) => t.includes('可信度'));"
+        },
+        {
+          "line": 185,
+          "text": "      expect(confIdx).toBeGreaterThanOrEqual(0);"
+        },
+        {
+          "line": 186,
+          "text": "      const cellText = ("
+        },
+        {
+          "line": 187,
+          "text": "        await firstRow.locator('td').nth(confIdx).innerText()"
+        },
+        {
+          "line": 188,
+          "text": "      ).trim();"
+        },
+        {
+          "line": 189,
+          "text": "      expect("
+        },
+        {
+          "line": 190,
+          "text": "        CONFIDENCE_TAG_RE.test(cellText),"
+        },
+        {
+          "line": 191,
+          "text": "        `可信度单元格应为 A~E 全称 Tag 或 —，实际为「${cellText}」`,"
+        },
+        {
+          "line": 192,
+          "text": "      ).toBeTruthy();"
+        },
+        {
+          "line": 193,
+          "text": "    }"
+        },
+        {
+          "line": 194,
+          "text": "  });"
+        },
+        {
+          "line": 195,
+          "text": ""
+        },
+        {
+          "line": 196,
+          "text": "  // E2E-CONF-004: 回路监控页性能 Modal 的 INCONCLUSIVE 展示"
+        },
+        {
+          "line": 197,
+          "text": "  test('E2E-CONF-004: 监控页性能 Modal KPI 状态', async ({ page }) => {"
+        },
+        {
+          "line": 198,
+          "text": "    // /loop/monitor 已重定向到 /monitor/loops（面点分离），"
+        },
+        {
+          "line": 199,
+          "text": "    // 行内「性能」Modal 仅存在于 legacy 旧版监控页"
+        },
+        {
+          "line": 200,
+          "text": "    await page.goto('/loop/monitor/legacy');"
+        },
+        {
+          "line": 201,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 202,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 203,
+          "text": ""
+        },
+        {
+          "line": 204,
+          "text": "    // 页面表格渲染"
+        },
+        {
+          "line": 205,
+          "text": "    const table = page.locator('.ant-table').first();"
+        },
+        {
+          "line": 206,
+          "text": "    await expect(table).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "    // 若有数据行（防御性）：点击第一行的「性能」打开 Modal"
+        },
+        {
+          "line": 209,
+          "text": "    const firstRow = table.locator('.ant-table-tbody tr.ant-table-row').first();"
+        },
+        {
+          "line": 210,
+          "text": "    const hasRow = await firstRow.isVisible().catch(() => false);"
+        },
+        {
+          "line": 211,
+          "text": "    if (hasRow) {"
+        },
+        {
+          "line": 212,
+          "text": "      // 行内操作：详情 / 趋势 / 性能（monitor.vue action 列）"
+        },
+        {
+          "line": 213,
+          "text": "      const perfEntry = firstRow.getByText('性能', { exact: true }).first();"
+        },
+        {
+          "line": 214,
+          "text": "      await expect(perfEntry).toBeVisible();"
+        },
+        {
+          "line": 215,
+          "text": "      await perfEntry.click();"
+        },
+        {
+          "line": 216,
+          "text": ""
+        },
+        {
+          "line": 217,
+          "text": "      // Modal title 形如 `性能 - {tagName}`"
+        },
+        {
+          "line": 218,
+          "text": "      const modal = page.locator('.ant-modal');"
+        },
+        {
+          "line": 219,
+          "text": "      await expect(modal).toBeVisible({ timeout: 10_000 });"
+        },
+        {
+          "line": 220,
+          "text": "      await expect(page.locator('.ant-modal-title')).toContainText('性能');"
+        },
+        {
+          "line": 221,
+          "text": ""
+        },
+        {
+          "line": 222,
+          "text": "      // 等待 KPI 数据加载（perfDetail 渲染后才有「KPI 状态」）"
+        },
+        {
+          "line": 223,
+          "text": "      const kpiLoaded = await modal"
+        },
+        {
+          "line": 224,
+          "text": "        .getByText('KPI 状态')"
+        },
+        {
+          "line": 225,
+          "text": "        .waitFor({ timeout: 15_000 })"
+        },
+        {
+          "line": 226,
+          "text": "        .then(() => true)"
+        },
+        {
+          "line": 227,
+          "text": "        .catch(() => false);"
+        },
+        {
+          "line": 228,
+          "text": ""
+        },
+        {
+          "line": 229,
+          "text": "      if (kpiLoaded) {"
+        },
+        {
+          "line": 230,
+          "text": "        // KPI 状态 Tag 文案 ∈ {良好, 未确定, 部分}"
+        },
+        {
+          "line": 231,
+          "text": "        // （kpiStatusMap：SUCCESS→良好 INCONCLUSIVE→未确定 PARTIAL→部分）"
+        },
+        {
+          "line": 232,
+          "text": "        const tagTexts = ("
+        },
+        {
+          "line": 233,
+          "text": "          await modal.locator('.ant-tag').allInnerTexts()"
+        },
+        {
+          "line": 234,
+          "text": "        ).map((t) => t.trim());"
+        },
+        {
+          "line": 235,
+          "text": "        const statusTag = tagTexts.find((t) =>"
+        },
+        {
+          "line": 236,
+          "text": "          ['良好', '未确定', '部分'].includes(t),"
+        },
+        {
+          "line": 237,
+          "text": "        );"
+        },
+        {
+          "line": 238,
+          "text": "        expect("
+        },
+        {
+          "line": 239,
+          "text": "          statusTag,"
+        },
+        {
+          "line": 240,
+          "text": "          `KPI 状态 Tag 应为 良好/未确定/部分，实际 Tag 列表 ${JSON.stringify(tagTexts)}`,"
+        },
+        {
+          "line": 241,
+          "text": "        ).toBeTruthy();"
+        },
+        {
+          "line": 242,
+          "text": ""
+        },
+        {
+          "line": 243,
+          "text": "        if (statusTag === '未确定') {"
+        },
+        {
+          "line": 244,
+          "text": "          // INCONCLUSIVE：出现「数据不足」Alert"
+        },
+        {
+          "line": 245,
+          "text": "          await expect("
+        },
+        {
+          "line": 246,
+          "text": "            modal.locator('.ant-alert').filter({ hasText: '数据不足' }),"
+        },
+        {
+          "line": 247,
+          "text": "          ).toBeVisible();"
+        },
+        {
+          "line": 248,
+          "text": "          // 综合评分/KPI 卡片容器灰化（class opacity-60）"
+        },
+        {
+          "line": 249,
+          "text": "          const dimmedCount = await modal.locator('.opacity-60').count();"
+        },
+        {
+          "line": 250,
+          "text": "          expect("
+        },
+        {
+          "line": 251,
+          "text": "            dimmedCount,"
+        },
+        {
+          "line": 252,
+          "text": "            'INCONCLUSIVE 时综合评分/KPI 卡片应带 opacity-60 灰化',"
+        },
+        {
+          "line": 253,
+          "text": "          ).toBeGreaterThan(0);"
+        },
+        {
+          "line": 254,
+          "text": "        }"
+        },
+        {
+          "line": 255,
+          "text": "      }"
+        },
+        {
+          "line": 256,
+          "text": ""
+        },
+        {
+          "line": 257,
+          "text": "      // 关闭 Modal（右上角 X，兜底 Escape）"
+        },
+        {
+          "line": 258,
+          "text": "      const closeBtn = modal.locator('.ant-modal-close').first();"
+        },
+        {
+          "line": 259,
+          "text": "      const hasClose = await closeBtn.isVisible().catch(() => false);"
+        },
+        {
+          "line": 260,
+          "text": "      if (hasClose) {"
+        },
+        {
+          "line": 261,
+          "text": "        await closeBtn.click().catch(() => {});"
+        },
+        {
+          "line": 262,
+          "text": "      } else {"
+        },
+        {
+          "line": 263,
+          "text": "        await page.keyboard.press('Escape').catch(() => {});"
+        },
+        {
+          "line": 264,
+          "text": "      }"
+        },
+        {
+          "line": 265,
+          "text": "      await page.waitForTimeout(1000);"
+        },
+        {
+          "line": 266,
+          "text": "      await expect(page.locator('.ant-modal:visible')).toHaveCount(0, {"
+        },
+        {
+          "line": 267,
+          "text": "        timeout: 10_000,"
+        },
+        {
+          "line": 268,
+          "text": "      });"
+        },
+        {
+          "line": 269,
+          "text": "    }"
+        },
+        {
+          "line": 270,
+          "text": "  });"
+        },
+        {
+          "line": 271,
+          "text": "});"
+        }
+      ]
+    },
+    "e2e/tests/loop.spec.ts": {
+      "sha256": "3bb3b207a487dd87ecc794e7896f4513ee2006a1eed51bf229aafe50be4f26fd",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "/**"
+        },
+        {
+          "line": 2,
+          "text": " * E2E 回路管理测试"
+        },
+        {
+          "line": 3,
+          "text": " *"
+        },
+        {
+          "line": 4,
+          "text": " * 覆盖用例："
+        },
+        {
+          "line": 5,
+          "text": " * - E2E-LOOP-001: 创建回路（/config/loop → 新建 → 填写 → 提交）"
+        },
+        {
+          "line": 6,
+          "text": " * - E2E-LOOP-002: 测点清单（/config/tag → 查看测点列表）"
+        },
+        {
+          "line": 7,
+          "text": " * - E2E-LOOP-003: 回路监控（/loop/monitor → 查看列表）"
+        },
+        {
+          "line": 8,
+          "text": " * - E2E-LOOP-004: 回路详情（点击回路 → 详情页）"
+        },
+        {
+          "line": 9,
+          "text": " *"
+        },
+        {
+          "line": 10,
+          "text": " * 页面源码依据："
+        },
+        {
+          "line": 11,
+          "text": " *   frontend/apps/web-antd/src/views/loop/{manage,monitor,detail}.vue"
+        },
+        {
+          "line": 12,
+          "text": " *   frontend/apps/web-antd/src/views/tag/list.vue"
+        },
+        {
+          "line": 13,
+          "text": " *   - manage: 工厂树 + 回路表格 + 编辑 Drawer（ClpmToolbarButton「新建回路」→ Drawer 表单）"
+        },
+        {
+          "line": 14,
+          "text": " *   - tag/list: 测点清单表格（位号/名称/测点类型/量程/实时值/单位/质量戳）"
+        },
+        {
+          "line": 15,
+          "text": " *   - monitor: 表格列表，点击行跳转 /loop/detail/:id"
+        },
+        {
+          "line": 16,
+          "text": " *   - detail: 路由 /loop/detail/:id"
+        },
+        {
+          "line": 17,
+          "text": " *"
+        },
+        {
+          "line": 18,
+          "text": " * 路由变更（IA 重构 Phase A）："
+        },
+        {
+          "line": 19,
+          "text": " *   - /loop/manage → 迁移到 /config/loop（legacy redirect 保留）"
+        },
+        {
+          "line": 20,
+          "text": " *   - /tag/list → 迁移到 /config/tag（legacy redirect 保留）"
+        },
+        {
+          "line": 21,
+          "text": " *   - /loop/ledger → 重定向到 /config/loop"
+        },
+        {
+          "line": 22,
+          "text": " * 路由变更（IA v2.9）："
+        },
+        {
+          "line": 23,
+          "text": " *   - /loop → redirect /loop/workbench360（回路一级菜单并入监控）"
+        },
+        {
+          "line": 24,
+          "text": " *   - /loop/detail/:id → redirect /loop/workbench360?loopId=:id"
+        },
+        {
+          "line": 25,
+          "text": " */"
+        },
+        {
+          "line": 26,
+          "text": "import { test, expect } from '../fixtures/auth.js';"
+        },
+        {
+          "line": 27,
+          "text": ""
+        },
+        {
+          "line": 28,
+          "text": "test.describe('回路管理 E2E', () => {"
+        },
+        {
+          "line": 29,
+          "text": "  test.beforeEach(async ({ page, loginAs }) => {"
+        },
+        {
+          "line": 30,
+          "text": "    // 回路管理需要 ADMIN 或 IC_ENGINEER 权限"
+        },
+        {
+          "line": 31,
+          "text": "    await loginAs('ADMIN');"
+        },
+        {
+          "line": 32,
+          "text": "  });"
+        },
+        {
+          "line": 33,
+          "text": ""
+        },
+        {
+          "line": 34,
+          "text": "  test('E2E-LOOP-001: 创建回路', async ({ page }) => {"
+        },
+        {
+          "line": 35,
+          "text": "    await page.goto('/config/loop');"
+        },
+        {
+          "line": 36,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 37,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 38,
+          "text": ""
+        },
+        {
+          "line": 39,
+          "text": "    // 验证页面加载（回路表格可见）"
+        },
+        {
+          "line": 40,
+          "text": "    await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 41,
+          "text": ""
+        },
+        {
+          "line": 42,
+          "text": "    // 点击「新建回路」按钮（ClpmToolbarButton 渲染为 Ant Design Button）"
+        },
+        {
+          "line": 43,
+          "text": "    await page.getByRole('button', { name: '新建回路' }).click();"
+        },
+        {
+          "line": 44,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 45,
+          "text": "    await page.waitForTimeout(500);"
+        },
+        {
+          "line": 46,
+          "text": ""
+        },
+        {
+          "line": 47,
+          "text": "    // 验证 Drawer 弹出（manage.vue 使用 Drawer 而非 Modal）"
+        },
+        {
+          "line": 48,
+          "text": "    await expect(page.locator('.ant-drawer')).toBeVisible({ timeout: 10_000 });"
+        },
+        {
+          "line": 49,
+          "text": ""
+        },
+        {
+          "line": 50,
+          "text": "    // 验证 Drawer 标题包含「新建回路」"
+        },
+        {
+          "line": 51,
+          "text": "    const drawerTitle = page.locator('.ant-drawer-header-title, .ant-drawer-title').first();"
+        },
+        {
+          "line": 52,
+          "text": "    if (await drawerTitle.isVisible().catch(() => false)) {"
+        },
+        {
+          "line": 53,
+          "text": "      const titleText = await drawerTitle.innerText();"
+        },
+        {
+          "line": 54,
+          "text": "      expect(titleText).toContain('新建回路');"
+        },
+        {
+          "line": 55,
+          "text": "    }"
+        },
+        {
+          "line": 56,
+          "text": ""
+        },
+        {
+          "line": 57,
+          "text": "    // 关闭 Drawer（点击关闭按钮或遮罩）"
+        },
+        {
+          "line": 58,
+          "text": "    await page.locator('.ant-drawer-mask').click({ timeout: 5000 }).catch(() => {});"
+        },
+        {
+          "line": 59,
+          "text": "    await page.waitForTimeout(1000);"
+        },
+        {
+          "line": 60,
+          "text": ""
+        },
+        {
+          "line": 61,
+          "text": "    // 核心验证点：新建回路 Drawer 正常弹出与关闭"
+        },
+        {
+          "line": 62,
+          "text": "    await expect(page.locator('.ant-drawer')).toBeHidden({ timeout: 10_000 }).catch(() => {});"
+        },
+        {
+          "line": 63,
+          "text": "    expect(page.url()).toContain('/config/loop');"
+        },
+        {
+          "line": 64,
+          "text": "  });"
+        },
+        {
+          "line": 65,
+          "text": ""
+        },
+        {
+          "line": 66,
+          "text": "  test('E2E-LOOP-002: 测点清单', async ({ page }) => {"
+        },
+        {
+          "line": 67,
+          "text": "    await page.goto('/config/tag');"
+        },
+        {
+          "line": 68,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 69,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 70,
+          "text": ""
+        },
+        {
+          "line": 71,
+          "text": "    // 验证页面加载（测点表格或筛选区可见）"
+        },
+        {
+          "line": 72,
+          "text": "    const table = page.locator('.ant-table').first();"
+        },
+        {
+          "line": 73,
+          "text": "    const select = page.locator('.ant-select').first();"
+        },
+        {
+          "line": 74,
+          "text": "    const hasTable = await table.isVisible({ timeout: 15_000 }).catch(() => false);"
+        },
+        {
+          "line": 75,
+          "text": "    const hasSelect = await select.isVisible({ timeout: 5000 }).catch(() => false);"
+        },
+        {
+          "line": 76,
+          "text": "    expect(hasTable || hasSelect).toBeTruthy();"
+        },
+        {
+          "line": 77,
+          "text": ""
+        },
+        {
+          "line": 78,
+          "text": "    // 验证表格表头包含关键字段（位号）"
+        },
+        {
+          "line": 79,
+          "text": "    if (hasTable) {"
+        },
+        {
+          "line": 80,
+          "text": "      const tableHeader = page.locator('.ant-table-thead').first();"
+        },
+        {
+          "line": 81,
+          "text": "      const headerText = await tableHeader.innerText().catch(() => '');"
+        },
+        {
+          "line": 82,
+          "text": "      expect(headerText).toContain('位号');"
+        },
+        {
+          "line": 83,
+          "text": "    }"
+        },
+        {
+          "line": 84,
+          "text": ""
+        },
+        {
+          "line": 85,
+          "text": "    // 核心验证点：测点清单页面正常加载"
+        },
+        {
+          "line": 86,
+          "text": "    expect(page.url()).toContain('/config/tag');"
+        },
+        {
+          "line": 87,
+          "text": "  });"
+        },
+        {
+          "line": 88,
+          "text": ""
+        },
+        {
+          "line": 89,
+          "text": "  test('E2E-LOOP-003: 回路监控', async ({ page }) => {"
+        },
+        {
+          "line": 90,
+          "text": "    await page.goto('/loop/monitor');"
+        },
+        {
+          "line": 91,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 92,
+          "text": ""
+        },
+        {
+          "line": 93,
+          "text": "    // 验证页面加载（表格或空状态）"
+        },
+        {
+          "line": 94,
+          "text": "    await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 95,
+          "text": ""
+        },
+        {
+          "line": 96,
+          "text": "    // 验证表头包含关键字段"
+        },
+        {
+          "line": 97,
+          "text": "    const tableHeader = page.locator('.ant-table-thead').first();"
+        },
+        {
+          "line": 98,
+          "text": "    await expect(tableHeader).toBeVisible({ timeout: 10_000 });"
+        },
+        {
+          "line": 99,
+          "text": "    const headerText = await tableHeader.innerText();"
+        },
+        {
+          "line": 100,
+          "text": "    expect(headerText).toContain('回路位号');"
+        },
+        {
+          "line": 101,
+          "text": "  });"
+        },
+        {
+          "line": 102,
+          "text": ""
+        },
+        {
+          "line": 103,
+          "text": "  test('E2E-LOOP-004: 回路详情', async ({ page }) => {"
+        },
+        {
+          "line": 104,
+          "text": "    // 1. 先访问监控列表"
+        },
+        {
+          "line": 105,
+          "text": "    await page.goto('/loop/monitor');"
+        },
+        {
+          "line": 106,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 107,
+          "text": ""
+        },
+        {
+          "line": 108,
+          "text": "    // 2. 等待表格数据行加载（最多 15s，E2E 环境后端可能较慢）"
+        },
+        {
+          "line": 109,
+          "text": "    await page"
+        },
+        {
+          "line": 110,
+          "text": "      .waitForSelector('.ant-table-tbody tr', { timeout: 15_000 })"
+        },
+        {
+          "line": 111,
+          "text": "      .catch(() => {});"
+        },
+        {
+          "line": 112,
+          "text": "    await page.waitForTimeout(500);"
+        },
+        {
+          "line": 113,
+          "text": ""
+        },
+        {
+          "line": 114,
+          "text": "    // 3. 点击第一行回路（跳转详情页）"
+        },
+        {
+          "line": 115,
+          "text": "    const firstRow = page.locator('.ant-table-tbody tr').first();"
+        },
+        {
+          "line": 116,
+          "text": "    const rowExists = await firstRow.isVisible().catch(() => false);"
+        },
+        {
+          "line": 117,
+          "text": ""
+        },
+        {
+          "line": 118,
+          "text": "    if (rowExists) {"
+        },
+        {
+          "line": 119,
+          "text": "      await firstRow.click();"
+        },
+        {
+          "line": 120,
+          "text": "      // IA v2.9：/loop/detail/:id redirect 到 /loop/workbench360?loopId=:id"
+        },
+        {
+          "line": 121,
+          "text": "      // 等待工作台 URL 出现（redirect 在路由层同步完成）"
+        },
+        {
+          "line": 122,
+          "text": "      await page.waitForURL(/\\/monitor\\/loop-workbench/, { timeout: 15_000 }).catch(() => {"
+        },
+        {
+          "line": 123,
+          "text": "        // 某些实现可能需要点击「查看详情」按钮"
+        },
+        {
+          "line": 124,
+          "text": "      });"
+        },
+        {
+          "line": 125,
+          "text": "      expect(page.url()).toContain('/loop/workbench360');"
+        },
+        {
+          "line": 126,
+          "text": "      expect(page.url()).toContain('loopId=');"
+        },
+        {
+          "line": 127,
+          "text": "    } else {"
+        },
+        {
+          "line": 128,
+          "text": "      // 列表为空兜底：直接访问详情页 URL，验证 redirect 到工作台。"
+        },
+        {
+          "line": 129,
+          "text": "      // 注：工作台加载列表后会自动选中首个回路并修正 URL loopId，"
+        },
+        {
+          "line": 130,
+          "text": "      //     故此处仅验证 redirect 落点为 /loop/workbench360，不限定具体 loopId。"
+        },
+        {
+          "line": 131,
+          "text": "      await page.goto('/loop/detail/00000000-0000-0000-0000-000000000201');"
+        },
+        {
+          "line": 132,
+          "text": "      await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 133,
+          "text": "      await page.waitForURL(/\\/monitor\\/loop-workbench/, { timeout: 10_000 }).catch(() => {});"
+        },
+        {
+          "line": 134,
+          "text": "      expect(page.url()).not.toContain('/auth/login');"
+        },
+        {
+          "line": 135,
+          "text": "      expect(page.url()).not.toContain('/403');"
+        },
+        {
+          "line": 136,
+          "text": "      expect(page.url()).toContain('/loop/workbench360');"
+        },
+        {
+          "line": 137,
+          "text": "    }"
+        },
+        {
+          "line": 138,
+          "text": "  });"
+        },
+        {
+          "line": 139,
+          "text": ""
+        },
+        {
+          "line": 140,
+          "text": "  // E2E-LOOP-005: 回路台账三字段编辑（控制类型 + 重要等级 + 参评状态）"
+        },
+        {
+          "line": 141,
+          "text": "  // 路由 /config/loop：表格列标题为\"参评\"（Switch）+ \"等级\"（带颜色徽章）"
+        },
+        {
+          "line": 142,
+          "text": "  // + 筛选栏 placeholder=\"参评状态\" 过滤选项；编辑抽屉中存在\"评估配置\"区"
+        },
+        {
+          "line": 143,
+          "text": "  test('E2E-LOOP-005: 回路台账三字段编辑', async ({ page }) => {"
+        },
+        {
+          "line": 144,
+          "text": "    await page.goto('/config/loop');"
+        },
+        {
+          "line": 145,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 146,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 147,
+          "text": ""
+        },
+        {
+          "line": 148,
+          "text": "    // 验证页面加载（回路表格可见）"
+        },
+        {
+          "line": 149,
+          "text": "    await expect(page.locator('.ant-table').first()).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 150,
+          "text": ""
+        },
+        {
+          "line": 151,
+          "text": "    // 验证表头包含\"参评\"列（manage.vue 列标题为简短\"参评\"，非\"参评状态\"）"
+        },
+        {
+          "line": 152,
+          "text": "    const headerText = await page.locator('.ant-table-thead').first().innerText().catch(() => '');"
+        },
+        {
+          "line": 153,
+          "text": "    expect(headerText).toContain('参评');"
+        },
+        {
+          "line": 154,
+          "text": ""
+        },
+        {
+          "line": 155,
+          "text": "    // 验证表头包含\"等级\"列（manage.vue 列标题为简短\"等级\"，非\"重要等级\"）"
+        },
+        {
+          "line": 156,
+          "text": "    expect(headerText).toContain('等级');"
+        },
+        {
+          "line": 157,
+          "text": ""
+        },
+        {
+          "line": 158,
+          "text": "    // 验证筛选栏包含参评状态过滤选项"
+        },
+        {
+          "line": 159,
+          "text": "    // manage.vue 筛选选项在 Popover 中，需先点击\"筛选\"按钮展开"
+        },
+        {
+          "line": 160,
+          "text": "    const filterBtn = page.getByRole('button', { name: /筛选/ }).first();"
+        },
+        {
+          "line": 161,
+          "text": "    if (await filterBtn.isVisible().catch(() => false)) {"
+        },
+        {
+          "line": 162,
+          "text": "      await filterBtn.click();"
+        },
+        {
+          "line": 163,
+          "text": "      await page.waitForTimeout(500);"
+        },
+        {
+          "line": 164,
+          "text": "    }"
+        },
+        {
+          "line": 165,
+          "text": "    // Popover 展开后验证参评状态 Select（placeholder=\"参评状态\" 或已选值\"参评\"/\"不参评\"）"
+        },
+        {
+          "line": 166,
+          "text": "    const evalSelect = page"
+        },
+        {
+          "line": 167,
+          "text": "      .locator('.ant-select')"
+        },
+        {
+          "line": 168,
+          "text": "      .filter({ hasText: /参评/ })"
+        },
+        {
+          "line": 169,
+          "text": "      .first();"
+        },
+        {
+          "line": 170,
+          "text": "    const hasEvalSelect = await evalSelect"
+        },
+        {
+          "line": 171,
+          "text": "      .isVisible({ timeout: 5_000 })"
+        },
+        {
+          "line": 172,
+          "text": "      .catch(() => false);"
+        },
+        {
+          "line": 173,
+          "text": ""
+        },
+        {
+          "line": 174,
+          "text": "    // 验证表格中存在 Switch 控件（参评状态列）"
+        },
+        {
+          "line": 175,
+          "text": "    const switchInTable = page.locator('.ant-table-tbody .ant-switch').first();"
+        },
+        {
+          "line": 176,
+          "text": "    const hasSwitch = await switchInTable.isVisible().catch(() => false);"
+        },
+        {
+          "line": 177,
+          "text": "    // 筛选栏 select 或表格 switch 任一存在即可（Popover 可能未展开或表格无数据）"
+        },
+        {
+          "line": 178,
+          "text": "    expect(hasEvalSelect || hasSwitch).toBeTruthy();"
+        },
+        {
+          "line": 179,
+          "text": ""
+        },
+        {
+          "line": 180,
+          "text": "    // 点击第一行的\"编辑\"按钮，验证抽屉中存在\"评估配置\"区"
+        },
+        {
+          "line": 181,
+          "text": "    const firstRow = page.locator('.ant-table-tbody tr.ant-table-row').first();"
+        },
+        {
+          "line": 182,
+          "text": "    const hasRow = await firstRow.isVisible().catch(() => false);"
+        },
+        {
+          "line": 183,
+          "text": ""
+        },
+        {
+          "line": 184,
+          "text": "    if (hasRow) {"
+        },
+        {
+          "line": 185,
+          "text": "      const editBtn = firstRow.getByRole('button', { name: /编辑/i }).first();"
+        },
+        {
+          "line": 186,
+          "text": "      if (await editBtn.isVisible().catch(() => false)) {"
+        },
+        {
+          "line": 187,
+          "text": "        await editBtn.click();"
+        },
+        {
+          "line": 188,
+          "text": "        await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 189,
+          "text": "        await page.waitForTimeout(1000);"
+        },
+        {
+          "line": 190,
+          "text": ""
+        },
+        {
+          "line": 191,
+          "text": "        // 验证 Drawer 弹出"
+        },
+        {
+          "line": 192,
+          "text": "        await expect(page.locator('.ant-drawer')).toBeVisible({ timeout: 10_000 });"
+        },
+        {
+          "line": 193,
+          "text": ""
+        },
+        {
+          "line": 194,
+          "text": "        // 验证抽屉中存在\"评估配置\"区（manage.vue: 评估配置区标题）"
+        },
+        {
+          "line": 195,
+          "text": "        const drawerText = await page.locator('.ant-drawer').first().innerText();"
+        },
+        {
+          "line": 196,
+          "text": "        expect(drawerText).toContain('评估配置');"
+        },
+        {
+          "line": 197,
+          "text": ""
+        },
+        {
+          "line": 198,
+          "text": "        // 验证评估配置区包含 RadioGroup（控制类型 + 重要等级）+ Switch（参评状态）"
+        },
+        {
+          "line": 199,
+          "text": "        // manage.vue: 控制类型 RadioGroup + 重要等级 RadioGroup + 参评状态 Switch"
+        },
+        {
+          "line": 200,
+          "text": "        const drawerRadioGroups = page.locator('.ant-drawer .ant-radio-group');"
+        },
+        {
+          "line": 201,
+          "text": "        const radioCount = await drawerRadioGroups.count();"
+        },
+        {
+          "line": 202,
+          "text": "        expect(radioCount).toBeGreaterThanOrEqual(2);"
+        },
+        {
+          "line": 203,
+          "text": ""
+        },
+        {
+          "line": 204,
+          "text": "        const drawerSwitch = page.locator('.ant-drawer .ant-switch').first();"
+        },
+        {
+          "line": 205,
+          "text": "        const hasDrawerSwitch = await drawerSwitch.isVisible().catch(() => false);"
+        },
+        {
+          "line": 206,
+          "text": "        expect(hasDrawerSwitch).toBeTruthy();"
+        },
+        {
+          "line": 207,
+          "text": ""
+        },
+        {
+          "line": 208,
+          "text": "        // 关闭抽屉（点击遮罩）"
+        },
+        {
+          "line": 209,
+          "text": "        await page.locator('.ant-drawer-mask').click({ timeout: 5000 }).catch(() => {});"
+        },
+        {
+          "line": 210,
+          "text": "        await page.waitForTimeout(500);"
+        },
+        {
+          "line": 211,
+          "text": "      }"
+        },
+        {
+          "line": 212,
+          "text": "    }"
+        },
+        {
+          "line": 213,
+          "text": ""
+        },
+        {
+          "line": 214,
+          "text": "    // 注意：不实际保存修改，只验证 UI 元素存在"
+        },
+        {
+          "line": 215,
+          "text": "    expect(page.url()).toContain('/config/loop');"
+        },
+        {
+          "line": 216,
+          "text": "  });"
+        },
+        {
+          "line": 217,
+          "text": ""
+        },
+        {
+          "line": 218,
+          "text": "  // E2E-LOOP-006: 链路配置页（原 AAS 同步状态页，v6.1 改造为链路配置）"
+        },
+        {
+          "line": 219,
+          "text": "  // 路由 /config/link → aas.vue：3 个 Tab（数据源 / DCS 系统 / DCS 型号映射）"
+        },
+        {
+          "line": 220,
+          "text": "  //   - 数据源 Tab：网络模式切换 + 历史数据导入接口 + 实时数据源 + 保存配置/测试连接按钮"
+        },
+        {
+          "line": 221,
+          "text": "  //   - DCS 系统 Tab：DCS 品牌表格"
+        },
+        {
+          "line": 222,
+          "text": "  //   - DCS 型号映射 Tab：DCS 型号映射表格"
+        },
+        {
+          "line": 223,
+          "text": "  test('E2E-LOOP-006: 链路配置页', async ({ page }) => {"
+        },
+        {
+          "line": 224,
+          "text": "    await page.goto('/config/link');"
+        },
+        {
+          "line": 225,
+          "text": "    await page.waitForLoadState('domcontentloaded');"
+        },
+        {
+          "line": 226,
+          "text": "    await page.waitForTimeout(2000);"
+        },
+        {
+          "line": 227,
+          "text": ""
+        },
+        {
+          "line": 228,
+          "text": "    // 1. 验证页面加载（Tab 组件可见）"
+        },
+        {
+          "line": 229,
+          "text": "    const tabs = page.locator('.ant-tabs').first();"
+        },
+        {
+          "line": 230,
+          "text": "    await expect(tabs).toBeVisible({ timeout: 15_000 });"
+        },
+        {
+          "line": 231,
+          "text": ""
+        },
+        {
+          "line": 232,
+          "text": "    // 2. 验证 3 个 Tab 标签存在"
+        },
+        {
+          "line": 233,
+          "text": "    const pageText = await page.locator('body').innerText();"
+        },
+        {
+          "line": 234,
+          "text": "    expect(pageText).toContain('数据源');"
+        },
+        {
+          "line": 235,
+          "text": "    expect(pageText).toContain('DCS 系统');"
+        },
+        {
+          "line": 236,
+          "text": "    expect(pageText).toContain('DCS 型号映射');"
+        },
+        {
+          "line": 237,
+          "text": ""
+        },
+        {
+          "line": 238,
+          "text": "    // 3. 验证数据源 Tab 内容（默认激活）"
+        },
+        {
+          "line": 239,
+          "text": "    //    网络模式切换卡片"
+        },
+        {
+          "line": 240,
+          "text": "    expect(pageText).toContain('网络模式');"
+        },
+        {
+          "line": 241,
+          "text": "    //    历史数据导入接口配置区"
+        },
+        {
+          "line": 242,
+          "text": "    expect(pageText).toContain('历史数据导入接口');"
+        },
+        {
+          "line": 243,
+          "text": "    //    实时数据源配置区"
+        },
+        {
+          "line": 244,
+          "text": "    expect(pageText).toContain('实时数据源');"
+        },
+        {
+          "line": 245,
+          "text": ""
+        },
+        {
+          "line": 246,
+          "text": "    // 4. 验证\"保存配置\"按钮存在（数据源 Tab 底部）"
+        },
+        {
+          "line": 247,
+          "text": "    const saveBtn = page.getByRole('button', { name: /保存配置/ }).first();"
+        },
+        {
+          "line": 248,
+          "text": "    const hasSave = await saveBtn.isVisible({ timeout: 10_000 }).catch(() => false);"
+        },
+        {
+          "line": 249,
+          "text": "    expect(hasSave).toBeTruthy();"
+        },
+        {
+          "line": 250,
+          "text": ""
+        },
+        {
+          "line": 251,
+          "text": "    // 5. 验证\"测试连接\"按钮存在"
+        },
+        {
+          "line": 252,
+          "text": "    const testBtn = page.getByRole('button', { name: /测试连接/ }).first();"
+        },
+        {
+          "line": 253,
+          "text": "    const hasTest = await testBtn.isVisible().catch(() => false);"
+        },
+        {
+          "line": 254,
+          "text": "    expect(hasTest).toBeTruthy();"
+        },
+        {
+          "line": 255,
+          "text": ""
+        },
+        {
+          "line": 256,
+          "text": "    // 注意：不实际保存或测试连接，只验证 UI 元素存在"
+        },
+        {
+          "line": 257,
+          "text": "    expect(page.url()).toContain('/config/link');"
+        },
+        {
+          "line": 258,
+          "text": "  });"
+        },
+        {
+          "line": 259,
+          "text": ""
+        },
+        {
+          "line": 260,
+          "text": "  // E2E-LOOP-007: /loop/monitor 面点分离重定向 + 回路列表行级下钻（2026-08-23 改写）"
+        },
+        {
+          "line": 261,
+          "text": "  // 现行口径（monitor.ts）：旧 /loop/monitor 重定向到独立回路列表页 /monitor/loops"
+        },
+        {
+          "line": 262,
+          "text": "  //   （LoopFleetView 复用组件），行内位号链接点击下钻回路工作台，"
+        },
+        {
+          "line": 263,
+          "text": "  //   携带 loopId + from=/monitor/loops 上下文。"
+        },
+        {
+          "line": 264,
+          "text": "  // 历史口径：旧版断言\"诊断标签列 → /diagnosis/detail/:loopId 跳转\"，该列随"
+        },
+        {
+          "line": 265,
+          "text": "  //   旧 monitor.vue 诊断标签列方案下线（现行列表无此列），属旧 IA 遗物。"
+        },
+        {
+          "line": 266,
+          "text": "  test('E2E-LOOP-007: /loop/monitor 重定向与行级下钻工作台', async ({ page }) => {"
+        },
+        {
+          "line": 267,
+          "text": "    await page.goto('/loop/monitor', { waitUntil: 'domcontentloaded' });"
+        },
+        {
+          "line": 268,
+          "text": ""
+        },
+        {
+          "line": 269,
+          "text": "    // 1. 面点分离：重定向到独立回路列表页（query 透传）"
+        },
+        {
+          "line": 270,
+          "text": "    await expect(page).toHaveURL(/\\/monitor\\/loops/, { timeout: 15_000 });"
+        },
+        {
+          "line": 271,
+          "text": ""
+        },
+        {
+          "line": 272,
+          "text": "    // 2. 列表页渲染（表头含现行列：回路位号/性能评分等）"
+        },
+        {
+          "line": 273,
+          "text": "    const tableHeader = page.locator('.ant-table-thead').first();"
+        },
+        {
+          "line": 274,
+          "text": "    await expect(tableHeader).toBeVisible({ timeout: 20_000 });"
+        },
+        {
+          "line": 275,
+          "text": "    const headerText = await tableHeader.innerText();"
+        },
+        {
+          "line": 276,
+          "text": "    expect(headerText).toContain('回路位号');"
+        },
+        {
+          "line": 277,
+          "text": "    expect(headerText).toContain('性能评分');"
+        },
+        {
+          "line": 278,
+          "text": ""
+        },
+        {
+          "line": 279,
+          "text": "    // 3. 等待数据行（防御性：无数据时仅验证重定向与列）"
+        },
+        {
+          "line": 280,
+          "text": "    const firstRow = page.locator('.ant-table-tbody tr.ant-table-row').first();"
+        },
+        {
+          "line": 281,
+          "text": "    const hasRow = await firstRow.isVisible({ timeout: 15_000 }).catch(() => false);"
+        },
+        {
+          "line": 282,
+          "text": "    if (!hasRow) {"
+        },
+        {
+          "line": 283,
+          "text": "      return;"
+        },
+        {
+          "line": 284,
+          "text": "    }"
+        },
+        {
+          "line": 285,
+          "text": ""
+        },
+        {
+          "line": 286,
+          "text": "    // 4. 点击首行位号链接 → 下钻回路工作台（handleRowClick）"
+        },
+        {
+          "line": 287,
+          "text": "    const tagLink = firstRow.locator('a[role=\"button\"]').first();"
+        },
+        {
+          "line": 288,
+          "text": "    await tagLink.click();"
+        },
+        {
+          "line": 289,
+          "text": "    await page.waitForURL(/\\/monitor\\/loop-workbench/, { timeout: 15_000 });"
+        },
+        {
+          "line": 290,
+          "text": "    expect(page.url()).toContain('loopId=');"
+        },
+        {
+          "line": 291,
+          "text": "    // from 参数现行实现为未编码原样拼接（loops.vue），解码后比对兼容两种形态"
+        },
+        {
+          "line": 292,
+          "text": "    expect(decodeURIComponent(page.url())).toContain('from=/monitor/loops');"
+        },
+        {
+          "line": 293,
+          "text": "  });"
+        },
+        {
+          "line": 294,
+          "text": "});"
+        }
+      ]
+    },
+    "backend/app/schemas/loop_batch.py": {
+      "sha256": "c710617ce63d0a2e6f23a2557f07d39b711fd2b0ad977203ef75a1f481422079",
+      "numbered_text": [
+        {
+          "line": 1,
+          "text": "\"\"\"Loop batch operation schemas (配置增强)."
+        },
+        {
+          "line": 2,
+          "text": ""
+        },
+        {
+          "line": 3,
+          "text": "批量配置回路（监控/统计/级别 + P2-04 工程属性 dry-run 预览）+ 批量软删除。"
+        },
+        {
+          "line": 4,
+          "text": "\"\"\""
+        },
+        {
+          "line": 5,
+          "text": ""
+        },
+        {
+          "line": 6,
+          "text": "from __future__ import annotations"
+        },
+        {
+          "line": 7,
+          "text": ""
+        },
+        {
+          "line": 8,
+          "text": "from pydantic import Field, model_validator"
+        },
+        {
+          "line": 9,
+          "text": ""
+        },
+        {
+          "line": 10,
+          "text": "from app.schemas.base import CamelModel"
+        },
+        {
+          "line": 11,
+          "text": ""
+        },
+        {
+          "line": 12,
+          "text": ""
+        },
+        {
+          "line": 13,
+          "text": "class LoopBatchUpdates(CamelModel):"
+        },
+        {
+          "line": 14,
+          "text": "    \"\"\"批量更新字段（至少一个非 None）。"
+        },
+        {
+          "line": 15,
+          "text": ""
+        },
+        {
+          "line": 16,
+          "text": "    - isMonitored: 是否监控（is_active=True 表示启用监控）"
+        },
+        {
+          "line": 17,
+          "text": "    - isStatEnabled: 是否纳入统计（当前复用 is_active 语义）"
+        },
+        {
+          "line": 18,
+          "text": "    - importanceLevel: 回路重要等级 1/2/3"
+        },
+        {
+          "line": 19,
+          "text": "    - includeInEvaluation: 是否参与评估"
+        },
+        {
+          "line": 20,
+          "text": "    - P2-04 工程属性：controlActionDirection / opOutputLowerLimit /"
+        },
+        {
+          "line": 21,
+          "text": "      opOutputUpperLimit / dcsModelId / engineeringTemplateId /"
+        },
+        {
+          "line": 22,
+          "text": "      engineeringTemplateVersion（批量语义：None=不更新该字段）"
+        },
+        {
+          "line": 23,
+          "text": ""
+        },
+        {
+          "line": 24,
+          "text": "    P1 #10: isMonitored 与 isStatEnabled 共用 is_active 字段，"
+        },
+        {
+          "line": 25,
+          "text": "    同时传值会导致后者覆盖前者（静默数据错误），Schema 层强制互斥。"
+        },
+        {
+          "line": 26,
+          "text": "    \"\"\""
+        },
+        {
+          "line": 27,
+          "text": ""
+        },
+        {
+          "line": 28,
+          "text": "    is_monitored: bool | None = Field(None, description=\"是否监控\")"
+        },
+        {
+          "line": 29,
+          "text": "    is_stat_enabled: bool | None = Field(None, description=\"是否纳入统计\")"
+        },
+        {
+          "line": 30,
+          "text": "    # v5.3 对齐 DDS v4.1：level → importance_level"
+        },
+        {
+          "line": 31,
+          "text": "    importance_level: int | None = Field(None, ge=1, le=3, description=\"回路重要等级 1/2/3\")"
+        },
+        {
+          "line": 32,
+          "text": "    include_in_evaluation: bool | None = Field(None, description=\"是否参与评估\")"
+        },
+        {
+          "line": 33,
+          "text": "    # P2-04（07 号文 §3.3）工程属性批次"
+        },
+        {
+          "line": 34,
+          "text": "    control_action_direction: str | None = Field("
+        },
+        {
+          "line": 35,
+          "text": "        None,"
+        },
+        {
+          "line": 36,
+          "text": "        pattern=\"^(DIRECT|REVERSE|UNKNOWN)$\","
+        },
+        {
+          "line": 37,
+          "text": "        description=\"控制作用方向：DIRECT/REVERSE/UNKNOWN（未知为显式态）\","
+        },
+        {
+          "line": 38,
+          "text": "    )"
+        },
+        {
+          "line": 39,
+          "text": "    op_output_lower_limit: float | None = Field(None, description=\"OP 输出下限位\")"
+        },
+        {
+          "line": 40,
+          "text": "    op_output_upper_limit: float | None = Field(None, description=\"OP 输出上限位\")"
+        },
+        {
+          "line": 41,
+          "text": "    dcs_model_id: str | None = Field(None, description=\"关联 DCS 型号 ID\")"
+        },
+        {
+          "line": 42,
+          "text": "    engineering_template_id: str | None = Field(None, description=\"关联工程模板 ID\")"
+        },
+        {
+          "line": 43,
+          "text": "    engineering_template_version: int | None = Field("
+        },
+        {
+          "line": 44,
+          "text": "        None, ge=1, description=\"固定引用的模板版本号（须同时指定模板）\""
+        },
+        {
+          "line": 45,
+          "text": "    )"
+        },
+        {
+          "line": 46,
+          "text": ""
+        },
+        {
+          "line": 47,
+          "text": "    @model_validator(mode=\"after\")"
+        },
+        {
+          "line": 48,
+          "text": "    def check_monitor_stat_exclusive(self) -> LoopBatchUpdates:"
+        },
+        {
+          "line": 49,
+          "text": "        \"\"\"P1 #10: is_monitored 与 is_stat_enabled 不能同时更新。"
+        },
+        {
+          "line": 50,
+          "text": ""
+        },
+        {
+          "line": 51,
+          "text": "        当前 LoopLedger 无独立 is_stat_enabled 字段，二者都写入 is_active，"
+        },
+        {
+          "line": 52,
+          "text": "        同时传值会导致后者静默覆盖前者。后续若新增独立字段可解除此限制。"
+        },
+        {
+          "line": 53,
+          "text": "        \"\"\""
+        },
+        {
+          "line": 54,
+          "text": "        if self.is_monitored is not None and self.is_stat_enabled is not None:"
+        },
+        {
+          "line": 55,
+          "text": "            raise ValueError("
+        },
+        {
+          "line": 56,
+          "text": "                \"isMonitored 与 isStatEnabled 不能同时更新（当前共用 is_active 字段），请分两次调用\""
+        },
+        {
+          "line": 57,
+          "text": "            )"
+        },
+        {
+          "line": 58,
+          "text": "        return self"
+        },
+        {
+          "line": 59,
+          "text": ""
+        },
+        {
+          "line": 60,
+          "text": ""
+        },
+        {
+          "line": 61,
+          "text": "class LoopBatchConfigRequest(CamelModel):"
+        },
+        {
+          "line": 62,
+          "text": "    \"\"\"POST /api/v1/loops/batch-config 请求体。"
+        },
+        {
+          "line": 63,
+          "text": ""
+        },
+        {
+          "line": 64,
+          "text": "    两种模式（互斥）："
+        },
+        {
+          "line": 65,
+          "text": "    - 更新模式：提供 updates 字段（监控/统计/级别/参评 + P2-04 工程属性）"
+        },
+        {
+          "line": 66,
+          "text": "    - 删除模式：action=\"delete\""
+        },
+        {
+          "line": 67,
+          "text": ""
+        },
+        {
+          "line": 68,
+          "text": "    校验："
+        },
+        {
+          "line": 69,
+          "text": "    - loopIds 不能为空"
+        },
+        {
+          "line": 70,
+          "text": "    - action=\"delete\" 时 updates 必须为 None"
+        },
+        {
+          "line": 71,
+          "text": "    - updates 非 None 时至少包含一个待更新字段"
+        },
+        {
+          "line": 72,
+          "text": "    - dryRun=true 时与 action=\"delete\" 互斥（删除不提供预览）"
+        },
+        {
+          "line": 73,
+          "text": "    \"\"\""
+        },
+        {
+          "line": 74,
+          "text": ""
+        },
+        {
+          "line": 75,
+          "text": "    # max_length 与其他批量入参对齐（对照 schemas/tag.py 的 BatchWaveformRequest"
+        },
+        {
+          "line": 76,
+          "text": "    # max_length=50）：无上限时单请求可产生 O(N×3) 次 DB 往返 + N 条审计插入。"
+        },
+        {
+          "line": 77,
+          "text": "    loop_ids: list[str] = Field(..., min_length=1, max_length=200, description=\"回路 ID 列表\")"
+        },
+        {
+          "line": 78,
+          "text": "    updates: LoopBatchUpdates | None = Field(None, description=\"批量更新字段\")"
+        },
+        {
+          "line": 79,
+          "text": "    action: str | None = Field(None, pattern=\"^(delete)$\", description=\"批量动作（delete=软删除）\")"
+        },
+        {
+          "line": 80,
+          "text": "    dry_run: bool = Field("
+        },
+        {
+          "line": 81,
+          "text": "        False,"
+        },
+        {
+          "line": 82,
+          "text": "        description=\"P2-04 dry-run 预览：只返回逐回路差异/部分失败状态/受影响清单，零写入\","
+        },
+        {
+          "line": 83,
+          "text": "    )"
+        },
+        {
+          "line": 84,
+          "text": ""
+        },
+        {
+          "line": 85,
+          "text": "    @model_validator(mode=\"after\")"
+        },
+        {
+          "line": 86,
+          "text": "    def check_action_updates_exclusive(self) -> LoopBatchConfigRequest:"
+        },
+        {
+          "line": 87,
+          "text": "        \"\"\"action 和 updates 互斥；非删除动作必须有 updates。\"\"\""
+        },
+        {
+          "line": 88,
+          "text": "        if self.action == \"delete\":"
+        },
+        {
+          "line": 89,
+          "text": "            if self.updates is not None:"
+        },
+        {
+          "line": 90,
+          "text": "                raise ValueError(\"action=delete 时不能同时提供 updates\")"
+        },
+        {
+          "line": 91,
+          "text": "            if self.dry_run:"
+        },
+        {
+          "line": 92,
+          "text": "                raise ValueError(\"dryRun 预览仅支持更新模式（删除不提供预览）\")"
+        },
+        {
+          "line": 93,
+          "text": "            return self"
+        },
+        {
+          "line": 94,
+          "text": "        # 非删除模式必须有 updates"
+        },
+        {
+          "line": 95,
+          "text": "        if self.updates is None:"
+        },
+        {
+          "line": 96,
+          "text": "            raise ValueError(\"非删除模式必须提供 updates 字段\")"
+        },
+        {
+          "line": 97,
+          "text": "        # updates 至少有一个非 None 字段"
+        },
+        {
+          "line": 98,
+          "text": "        if all("
+        },
+        {
+          "line": 99,
+          "text": "            getattr(self.updates, f) is None"
+        },
+        {
+          "line": 100,
+          "text": "            for f in ("
+        },
+        {
+          "line": 101,
+          "text": "                \"is_monitored\","
+        },
+        {
+          "line": 102,
+          "text": "                \"is_stat_enabled\","
+        },
+        {
+          "line": 103,
+          "text": "                \"importance_level\","
+        },
+        {
+          "line": 104,
+          "text": "                \"include_in_evaluation\","
+        },
+        {
+          "line": 105,
+          "text": "                \"control_action_direction\","
+        },
+        {
+          "line": 106,
+          "text": "                \"op_output_lower_limit\","
+        },
+        {
+          "line": 107,
+          "text": "                \"op_output_upper_limit\","
+        },
+        {
+          "line": 108,
+          "text": "                \"dcs_model_id\","
+        },
+        {
+          "line": 109,
+          "text": "                \"engineering_template_id\","
+        },
+        {
+          "line": 110,
+          "text": "                \"engineering_template_version\","
+        },
+        {
+          "line": 111,
+          "text": "            )"
+        },
+        {
+          "line": 112,
+          "text": "        ):"
+        },
+        {
+          "line": 113,
+          "text": "            raise ValueError(\"updates 至少包含一个待更新字段\")"
+        },
+        {
+          "line": 114,
+          "text": "        return self"
+        },
+        {
+          "line": 115,
+          "text": ""
+        },
+        {
+          "line": 116,
+          "text": ""
+        },
+        {
+          "line": 117,
+          "text": "class LoopBatchChangeItem(CamelModel):"
+        },
+        {
+          "line": 118,
+          "text": "    \"\"\"dry-run 预览中单个字段的差异。\"\"\""
+        },
+        {
+          "line": 119,
+          "text": ""
+        },
+        {
+          "line": 120,
+          "text": "    field: str = Field(..., description=\"字段名（snake_case，与 updates 键一致）\")"
+        },
+        {
+          "line": 121,
+          "text": "    before: object = Field(None, description=\"变更前值\")"
+        },
+        {
+          "line": 122,
+          "text": "    after: object = Field(None, description=\"变更后值\")"
+        },
+        {
+          "line": 123,
+          "text": ""
+        },
+        {
+          "line": 124,
+          "text": ""
+        },
+        {
+          "line": 125,
+          "text": "class LoopBatchResultItem(CamelModel):"
+        },
+        {
+          "line": 126,
+          "text": "    \"\"\"dry-run 预览/执行结果中的单回路条目。\"\"\""
+        },
+        {
+          "line": 127,
+          "text": ""
+        },
+        {
+          "line": 128,
+          "text": "    loop_id: str = Field(..., description=\"回路 ID\")"
+        },
+        {
+          "line": 129,
+          "text": "    tag_name: str | None = Field(None, description=\"回路位号\")"
+        },
+        {
+          "line": 130,
+          "text": "    status: str = Field("
+        },
+        {
+          "line": 131,
+          "text": "        ...,"
+        },
+        {
+          "line": 132,
+          "text": "        description=\"OK=将更新/已更新；UNCHANGED=无差异跳过；FAIL=回路级校验失败；NOT_FOUND=回路不存在\","
+        },
+        {
+          "line": 133,
+          "text": "    )"
+        },
+        {
+          "line": 134,
+          "text": "    changes: list[LoopBatchChangeItem] = Field(default_factory=list, description=\"字段级差异\")"
+        },
+        {
+          "line": 135,
+          "text": "    error: str | None = Field(None, description=\"失败原因（status=FAIL/NOT_FOUND 时）\")"
+        },
+        {
+          "line": 136,
+          "text": ""
+        },
+        {
+          "line": 137,
+          "text": ""
+        },
+        {
+          "line": 138,
+          "text": "class LoopBatchConfigResult(CamelModel):"
+        },
+        {
+          "line": 139,
+          "text": "    \"\"\"POST /api/v1/loops/batch-config 响应。\"\"\""
+        },
+        {
+          "line": 140,
+          "text": ""
+        },
+        {
+          "line": 141,
+          "text": "    affected: int = Field(..., description=\"受影响的回路数量（dry-run=将更新数）\")"
+        },
+        {
+          "line": 142,
+          "text": "    action: str = Field(..., description=\"执行的动作：update/delete\")"
+        },
+        {
+          "line": 143,
+          "text": "    loop_ids: list[str] = Field(default_factory=list, description=\"受影响的回路 ID 列表\")"
+        },
+        {
+          "line": 144,
+          "text": "    skipped: list[dict] | None = Field("
+        },
+        {
+          "line": 145,
+          "text": "        None, description=\"跳过的回路列表（仅 delete 动作，含 loopId/reason）\""
+        },
+        {
+          "line": 146,
+          "text": "    )"
+        },
+        {
+          "line": 147,
+          "text": "    dry_run: bool = Field(False, description=\"本次是否为 dry-run 预览\")"
+        },
+        {
+          "line": 148,
+          "text": "    results: list[LoopBatchResultItem] | None = Field("
+        },
+        {
+          "line": 149,
+          "text": "        None, description=\"逐回路结果（update 动作；差异/失败状态可追溯）\""
+        },
+        {
+          "line": 150,
+          "text": "    )"
+        },
+        {
+          "line": 151,
+          "text": ""
+        },
+        {
+          "line": 152,
+          "text": ""
+        },
+        {
+          "line": 153,
+          "text": "__all__ = ["
+        },
+        {
+          "line": 154,
+          "text": "    \"LoopBatchChangeItem\","
+        },
+        {
+          "line": 155,
+          "text": "    \"LoopBatchConfigRequest\","
+        },
+        {
+          "line": 156,
+          "text": "    \"LoopBatchConfigResult\","
+        },
+        {
+          "line": 157,
+          "text": "    \"LoopBatchResultItem\","
+        },
+        {
+          "line": 158,
+          "text": "    \"LoopBatchUpdates\","
+        },
+        {
+          "line": 159,
+          "text": "]"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,1 @@
+import{Wt as e}from"./vendor-antd-C7EWqXIS.js";import{Ht as t}from"./request-B-pt0m7_.js";var n=new Set([`ADMIN`,`IC_ENGINEER`,`PE_ENGINEER`]);function r(){let r=t();return{canReadConfig:e(()=>{var e,t;return((e=(t=r.userInfo)==null?void 0:t.roles)==null?[]:e).some(e=>n.has(e))})}}export{r as t};

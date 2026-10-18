@@ -1,0 +1,34 @@
+FF.                                                                      [100%]
+=================================== FAILURES ===================================
+_ test_fault_policy_is_disarmed_and_observers_closed_with_failure_preserved[arm-health] _
+
+failure = 'arm-health'
+
+    @pytest.mark.parametrize("failure", ["arm-health", "disarm-health", "none"])
+    def test_fault_policy_is_disarmed_and_observers_closed_with_failure_preserved(failure):
+        actual = probe(failure)
+>       assert actual["policyCalls"] == ["arm", "disarm"], actual
+E       AssertionError: {'policyCalls': ['arm'], 'allOwnObserversTerminated': True, 'allOwnHandlesClosed': True, 'failureStillRaised': True, ...}
+E       assert ['arm'] == ['arm', 'disarm']
+E         
+E         Right contains one more item: 'disarm'
+E         Use -v to get more diff
+
+test_independent_error_cleanup.py:129: AssertionError
+_ test_fault_policy_is_disarmed_and_observers_closed_with_failure_preserved[disarm-health] _
+
+failure = 'disarm-health'
+
+    @pytest.mark.parametrize("failure", ["arm-health", "disarm-health", "none"])
+    def test_fault_policy_is_disarmed_and_observers_closed_with_failure_preserved(failure):
+        actual = probe(failure)
+        assert actual["policyCalls"] == ["arm", "disarm"], actual
+>       assert actual["allOwnObserversTerminated"], actual
+E       AssertionError: {'policyCalls': ['arm', 'disarm'], 'allOwnObserversTerminated': False, 'allOwnHandlesClosed': False, 'failureStillRaised': True, ...}
+E       assert False
+
+test_independent_error_cleanup.py:130: AssertionError
+=========================== short test summary info ============================
+FAILED test_independent_error_cleanup.py::test_fault_policy_is_disarmed_and_observers_closed_with_failure_preserved[arm-health]
+FAILED test_independent_error_cleanup.py::test_fault_policy_is_disarmed_and_observers_closed_with_failure_preserved[disarm-health]
+2 failed, 1 passed in 0.02s

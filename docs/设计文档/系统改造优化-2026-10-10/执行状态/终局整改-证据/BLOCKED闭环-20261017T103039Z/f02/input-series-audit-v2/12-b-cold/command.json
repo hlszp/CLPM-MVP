@@ -1,0 +1,62 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/audit_capacity_inputs.py",
+    "--env-file",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+    "--manifest",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101523.json",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-series-audit-v2/12-b-cold/audit",
+    "--raw-samples-per-composition",
+    "1"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "startedAt": "2026-10-17T11:25:51.844996+00:00",
+  "finishedAt": "2026-10-17T11:25:52.782472+00:00",
+  "elapsedSeconds": 0.9374832919856999,
+  "rc": 0,
+  "stdoutSha256": "087467136173ab49e0a4809a0b0b59892033220f99074367c31b36d643ac1d51",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "manifestSha256Before": "bb724518469a7b6cdc4854da373208dc9bb70be7d350ed80c2c0ff057a6e937d",
+  "manifestSha256After": "bb724518469a7b6cdc4854da373208dc9bb70be7d350ed80c2c0ff057a6e937d",
+  "auditSourceSha256Before": "8bd8cb604032d85948cc6bc1f429974b93424e3ab1f7648af62cebcc2e1a3b6d",
+  "auditSourceSha256After": "8bd8cb604032d85948cc6bc1f429974b93424e3ab1f7648af62cebcc2e1a3b6d",
+  "generation": {
+    "batch": {
+      "batch": 12,
+      "scenario": "b",
+      "cache": "cold",
+      "ts_start": "2026-10-15T23:00:00",
+      "ts_end": "2026-10-16T00:00:00",
+      "manifest_name": "manifest_b_2026101523.json",
+      "required": true,
+      "slo_seconds": 600,
+      "expected_loops": 1000
+    },
+    "command": [
+      "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+      "-u",
+      "scripts/generate_capacity_dataset.py",
+      "--execute",
+      "--scenario",
+      "b",
+      "--ts-start",
+      "2026-10-15T23:00:00",
+      "--base-url",
+      "http://127.0.0.1:17101/api/v1"
+    ],
+    "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend",
+    "candidate_sha": "148dd21ac8450cd85d763f89a557adf68fd29fdb",
+    "generator_sha256": "e179e42529c78b9708e9970e92d1fa75654d507e18ceac72da5e902d86308a34",
+    "started_at": 1792236231.0941231,
+    "finished_at": 1792236350.7198331,
+    "exit_code": 0,
+    "stdout": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/generation/12-b-cold.stdout.log",
+    "stderr": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/generation/12-b-cold.stderr.log",
+    "stdout_sha256": "2724f027fa78d5cbaa46dec3113a7643e1ea38aa857d890da9b418c91903c5ff",
+    "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_b_2026101523.json",
+    "manifest_sha256": "bb724518469a7b6cdc4854da373208dc9bb70be7d350ed80c2c0ff057a6e937d"
+  }
+}

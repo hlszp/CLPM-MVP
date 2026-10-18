@@ -1,0 +1,23 @@
+{
+  "command": [
+    "env",
+    "CLPM_TEST_MODE=1",
+    "CLPM_SKIP_EXIT_HOOKS=1",
+    "PYTHONDONTWRITEBYTECODE=1",
+    "PYTHONPATH=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_full_shape.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "startedAt": "2026-10-17T12:15:57.405297+00:00",
+  "elapsedSeconds": 0.674396375019569,
+  "rc": 0,
+  "stdoutSha256": "30d881abf466353b6662fb9b4356f0c9442f1831e3fc597ba99df81b6d743112",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,44 @@
+{
+  "frozenAt": "2026-10-17T11:43:04.255730+00:00",
+  "files": [
+    {
+      "path": "run_capacity_series.py",
+      "size": 13018,
+      "sha256": "2eb03f4306c30da671f18f367b7bdfe4d683eb21001c0c60265c67eeb75a8dae"
+    },
+    {
+      "path": "capacity_lifecycle.py",
+      "size": 8100,
+      "sha256": "fa304d3afb7fdba2ea4ba378de35301a5b7e4a6f18a726732150bbf30f42b395"
+    },
+    {
+      "path": "start_capacity_api_formal.py",
+      "size": 4648,
+      "sha256": "50662e8a4b1a9025f4f96d15081aa43902481cc363f56d98b5c70b60261f7e23"
+    },
+    {
+      "path": "capture_capacity_runtime_profile.py",
+      "size": 5924,
+      "sha256": "43c4abe622d6526e00b405a41749c12435589a44dbf4fdbadc6c75241cdd229e"
+    },
+    {
+      "path": "capacity_keeper_guards.py",
+      "size": 1423,
+      "sha256": "d244e23dff5d364a50793ffad25a25336be58670cafa8521accdda2cd481afde"
+    },
+    {
+      "path": "validate_capacity_batch.py",
+      "size": 10208,
+      "sha256": "55ff1c4b811fc1bbd55d2b0a810e02fbf1ca69cf88b7154f8504482f99817c00"
+    }
+  ],
+  "localToolVerdict": "PASS",
+  "checks": {
+    "old37RedisShapesRejectAssertionsFail": true,
+    "finalEightIndependentPass": true,
+    "sourceIdentityStillFrozen": true,
+    "extraFourGuard": true
+  },
+  "supersedes": "ops-source-freeze.json only because initial reverse incorrectly selected already-fixed55 source; no author/tool source changes",
+  "scope": "Tool-only preflight; real24 inputs/finalruntime/config/20capacity/CI still required"
+}

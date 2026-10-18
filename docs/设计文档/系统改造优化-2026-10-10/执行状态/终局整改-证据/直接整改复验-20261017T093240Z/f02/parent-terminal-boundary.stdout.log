@@ -1,0 +1,79 @@
+...........................................F.........                    [100%]
+=================================== FAILURES ===================================
+_____ TestFailureLogsCarryStack.test_dataplanner_failure_log_has_exc_info ______
+
+self = <tests.test_p5_storm_rework.TestFailureLogsCarryStack object at 0x110ada090>
+caplog = <_pytest.logging.LogCaptureFixture object at 0x111301a00>
+
+    async def test_dataplanner_failure_log_has_exc_info(self, caplog):
+        """「DataPlanner 取数失败」必须带 exc_info（首发点钉死的日志缺口）。
+    
+        走真实 `_calculate_loop_kpi` 的取数失败分支（request_bundles 抛错），
+        只 mock 取数与落库；断言日志记录携带异常堆栈。
+        """
+        from datetime import datetime
+    
+        planner = MagicMock()
+        planner.request_bundles = AsyncMock(side_effect=ValueError("provisioning poison"))
+        loop = SimpleNamespace(id="l1", tag_name="T-9", loop_type="FC", ideal_settling_time=None)
+        with (
+            patch.object(kpi_calc, "_persist_snapshot", new=AsyncMock(return_value={})),
+            caplog.at_level(logging.WARNING, logger="app.tasks.kpi_calc"),
+        ):
+>           result = await kpi_calc._calculate_loop_kpi(
+                db=AsyncMock(),
+                loop=loop,
+                metric_configs={},
+                ts_start=datetime(2026, 10, 13, 0),
+                ts_end=datetime(2026, 10, 13, 1),
+                data_planner=planner,
+                type_weights=None,
+                runtime_overrides={"fitness": {}},
+            )
+
+tests/test_p5_storm_rework.py:305: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app/core/g5_trace.py:79: in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+app/tasks/kpi_calc.py:2526: in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <AsyncMock name='mock.request_bundles' id='4583490960'>, args = ()
+kwargs = {'loop_id': 'l1', 'metrics': ['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', '...ime.datetime(2026, 10, 13, 0, 0), end=datetime.datetime(2026, 10, 13, 1, 0)), 'control_type': <ControlType.FLOW: 'FC'>}
+
+    async def _execute_mock_call(self, /, *args, **kwargs):
+        # This is nearly just like super(), except for special handling
+        # of coroutines
+    
+        _call = _Call((args, kwargs), two=True)
+        self.await_count += 1
+        self.await_args = _call
+        self.await_args_list.append(_call)
+    
+        effect = self.side_effect
+        if effect is not None:
+            if _is_exception(effect):
+>               raise effect
+E               ValueError: provisioning poison
+
+/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py:2291: ValueError
+------------------------------ Captured log call -------------------------------
+WARNING  app.tasks.kpi_calc:kpi_calc.py:2536 DataPlanner 取数失败（回路 T-9）: provisioning poison
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/tasks/kpi_calc.py", line 2526, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/unittest/mock.py", line 2291, in _execute_mock_call
+    raise effect
+ValueError: provisioning poison
+=============================== warnings summary ===============================
+../../CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED tests/test_p5_storm_rework.py::TestFailureLogsCarryStack::test_dataplanner_failure_log_has_exc_info
+1 failed, 52 passed, 1 warning in 1.59s

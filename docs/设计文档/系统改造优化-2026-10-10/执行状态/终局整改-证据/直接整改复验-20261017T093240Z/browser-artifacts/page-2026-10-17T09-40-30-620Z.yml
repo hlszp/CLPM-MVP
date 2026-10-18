@@ -1,0 +1,83 @@
+- generic [ref=f1e4]:
+  - complementary [ref=f1e5]:
+    - generic [ref=f1e6]:
+      - generic [ref=f1e7] [cursor=pointer]
+      - link "iCLPM 系统" [ref=f1e12] [cursor=pointer]:
+        - /url: javascript:void 0
+      - menu [ref=f1e16]:
+        - menuitem "我的工作" [ref=f1e17] [cursor=pointer]
+        - menuitem "驾驶舱" [ref=f1e22] [cursor=pointer]
+        - menuitem "回路工作台" [ref=f1e27] [cursor=pointer]
+        - listitem [ref=f1e34]:
+          - generic [ref=f1e35] [cursor=pointer]: 回路监控
+        - listitem [ref=f1e41]:
+          - generic [ref=f1e42] [cursor=pointer]: 性能评估
+        - listitem [ref=f1e48]:
+          - generic [ref=f1e49] [cursor=pointer]: 回路诊断
+        - listitem [ref=f1e58]:
+          - generic [ref=f1e59] [cursor=pointer]: 参数整定
+        - listitem [ref=f1e65]:
+          - generic [ref=f1e66] [cursor=pointer]: 运维处置
+        - listitem [ref=f1e75]:
+          - generic [ref=f1e76] [cursor=pointer]: 统计分析
+        - listitem [ref=f1e84]:
+          - generic [ref=f1e85] [cursor=pointer]: 参数配置
+      - generic [ref=f1e95] [cursor=pointer]
+  - generic [ref=f1e100]:
+    - generic [ref=f1e101]:
+      - banner [ref=f1e102]:
+        - button [ref=f1e103] [cursor=pointer]
+        - button [ref=f1e106] [cursor=pointer]
+        - navigation "breadcrumb" [ref=f1e111]:
+          - list [ref=f1e112]:
+            - listitem [ref=f1e113]:
+              - link [ref=f1e114] [cursor=pointer]:
+                - /url: javascript:void 0
+            - listitem [ref=f1e118]:
+              - link "我的工作" [disabled] [ref=f1e119]
+        - generic [ref=f1e124]:
+          - generic [ref=f1e125]: 在线
+          - generic [ref=f1e131] [cursor=pointer]
+          - generic [ref=f1e137] [cursor=pointer]:
+            - generic [ref=f1e141]: 搜索
+            - generic [ref=f1e142]: ⌘ K
+          - button [ref=f1e144] [cursor=pointer]
+          - button "dark" [ref=f1e149] [cursor=pointer]
+          - button [ref=f1e158] [cursor=pointer]
+          - button [ref=f1e161] [cursor=pointer]
+          - button [ref=f1e167] [cursor=pointer]:
+            - button [ref=f1e169]
+          - generic [ref=f1e173]:
+            - generic [ref=f1e174]: 仪控工程师
+            - button "程师" [ref=f1e175] [cursor=pointer]
+      - generic [ref=f1e182]:
+        - generic [ref=f1e183]: 我的工作
+        - generic [ref=f1e202]:
+          - button [ref=f1e203] [cursor=pointer]
+          - generic [ref=f1e210] [cursor=pointer]
+          - generic [ref=f1e214] [cursor=pointer]
+    - main [ref=f1e221]:
+      - generic [ref=f1e225]:
+        - generic [ref=f1e228]:
+          - generic [ref=f1e229]:
+            - generic [ref=f1e230]: 我的工作
+            - generic [ref=f1e231]: 清单截至 10-17 17:40:29
+            - generic [ref=f1e232]: 共 0 条
+          - generic [ref=f1e233]:
+            - button "设为默认首页" [ref=f1e234] [cursor=pointer]
+            - button "刷 新" [ref=f1e263] [cursor=pointer]
+        - generic [ref=f1e239]:
+          - generic [ref=f1e240]:
+            - tablist [ref=f1e241]:
+              - generic [ref=f1e243]:
+                - tab "分配给我" [ref=f1e245] [cursor=pointer]
+                - tab "系统建议" [ref=f1e247] [cursor=pointer]
+                - tab "我的关注" [active] [selected] [ref=f1e249] [cursor=pointer]
+                - tab "最近继续" [ref=f1e251] [cursor=pointer]
+            - generic:
+              - generic:
+                - tabpanel "我的关注"
+          - generic [ref=f1e264]:
+            - text: 还没有关注的回路（关注不产生责任，不自动变成待办）
+            - generic [ref=f1e265]: 在「回路监视」列表或回路工作台页头点击 ☆ 星标即可关注回路
+            - button "去关注回路" [ref=f1e266] [cursor=pointer]

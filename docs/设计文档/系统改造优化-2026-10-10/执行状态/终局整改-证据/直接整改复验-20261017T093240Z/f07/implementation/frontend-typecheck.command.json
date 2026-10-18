@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "pnpm",
+    "-F",
+    "@vben/web-antd",
+    "run",
+    "typecheck"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "rc": 0,
+  "seconds": 20.29113325
+}

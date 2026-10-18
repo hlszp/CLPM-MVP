@@ -1,0 +1,136 @@
+{
+  "createdAt": "2026-10-17T11:18:39.372125+00:00",
+  "files": [
+    {
+      "path": "actionlint.command.json",
+      "size": 491,
+      "sha256": "6d6a75518a7986ee8ea85c1a24f1577e75164e02741733f4ba3428ae0a7840b9"
+    },
+    {
+      "path": "actionlint.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "actionlint.stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "critical-cases-identity.json",
+      "size": 423,
+      "sha256": "2847fe96ff6b11a4aff98d92012eaf3c3c96093fc5785c2f5c14e3824093edb4"
+    },
+    {
+      "path": "installed-playwright.command.json",
+      "size": 482,
+      "sha256": "abc1552a5c37364914ba3b94cd0cf6bca5823df4d63d6628fe8261cfc3fa93a9"
+    },
+    {
+      "path": "installed-playwright.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "installed-playwright.stdout.log",
+      "size": 172,
+      "sha256": "8f0c3fecd5f026a067d22ce38dfc157c0239cecf18ebab0e3bc311f487ef25d2"
+    },
+    {
+      "path": "numeric-diagnostic-backend-ci.command.json",
+      "size": 950,
+      "sha256": "be5fe7684c7d4a9923faeec6fd7cd6ce3b6e5a7a0cf965c8fc2b0665b00971eb"
+    },
+    {
+      "path": "numeric-diagnostic-backend-ci.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "numeric-diagnostic-backend-ci.stdout.log",
+      "size": 1501,
+      "sha256": "21fa67550671fd6876d4c59656134c650eca85c6911b70c16bc9fbe109d04c88"
+    },
+    {
+      "path": "numeric-diagnostic-critical-e2e.command.json",
+      "size": 1131,
+      "sha256": "f167594960b4f223fc31b73db8a032f26201c746621ad1ec63125d7ae5340cea"
+    },
+    {
+      "path": "numeric-diagnostic-critical-e2e.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "numeric-diagnostic-critical-e2e.stdout.log",
+      "size": 1501,
+      "sha256": "21fa67550671fd6876d4c59656134c650eca85c6911b70c16bc9fbe109d04c88"
+    },
+    {
+      "path": "numeric-diagnostics.json",
+      "size": 5177,
+      "sha256": "c1cf52db326ce83f6b63b6093dc426ec8b3b1ea0b38123a005444529df41c3c9"
+    },
+    {
+      "path": "receipt.md",
+      "size": 3020,
+      "sha256": "7c2bff90edf6ee0b5d2955949cc817cc35055d96f3e49fb95903ff6b025895f8"
+    },
+    {
+      "path": "result.json",
+      "size": 1493,
+      "sha256": "2fe36e12757c8e826b412b814696de3971958350f522677f48ceb9b8ad35d61b"
+    },
+    {
+      "path": "smoke-collected-titles.json",
+      "size": 91,
+      "sha256": "3f9d9816721a6013bce9009b810ab2c51058fa96f04cbceb1a44356b5f0c1f04"
+    },
+    {
+      "path": "smoke-collection.command.json",
+      "size": 402,
+      "sha256": "7298e1ecdd8aecfd7f6776938991a59f4ff6e8b6cf674d4e0d035e3c005450c4"
+    },
+    {
+      "path": "smoke-collection.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "smoke-collection.stdout.log",
+      "size": 3300,
+      "sha256": "327f6b72ffe7d748f0892392b0bcf40b4c7c7aef1542121dc04f992bc61b4d7a"
+    },
+    {
+      "path": "source-after.json",
+      "size": 2059,
+      "sha256": "e435e9bfb8fff976c1291d499ead2f3206b0759e718ce3f32865d301983440fc"
+    },
+    {
+      "path": "source-before.json",
+      "size": 2123,
+      "sha256": "cf7cb9016e30c012e96fcaa925d142d24ce13148b4ca98f859563bd7a48fb033"
+    },
+    {
+      "path": "verification.command.json",
+      "size": 410,
+      "sha256": "5cbdd1d1b5d2acb209ccd672842c66e1f9cb9d22f4c0997149a3b56ab53328cb"
+    },
+    {
+      "path": "verification.stderr.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "verification.stdout.log",
+      "size": 958,
+      "sha256": "ea93f96b680baca822b2f92271646ca2e8491949277539705932ef58d7c15c5a"
+    },
+    {
+      "path": "verify_independent.py",
+      "size": 10736,
+      "sha256": "91491693664cd6377d18598c6111675c3374cdc1c0c8d89b41f97ce28ebccb0a"
+    }
+  ],
+  "scope": "Non-author CI supplement check only; actual business BLOCKED"
+}

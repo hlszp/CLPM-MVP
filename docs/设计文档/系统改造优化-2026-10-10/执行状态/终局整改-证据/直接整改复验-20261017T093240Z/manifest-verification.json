@@ -1,0 +1,10 @@
+{
+  "timestamp": "2026-10-17T10:25:48.299344+00:00",
+  "manifest_sha256": "e879276a95dea6ee87001fbfe021f77b78c0a9d623434b5aa3f5311f3e6b3d9f",
+  "checked_evidence_entries": 1205,
+  "checked_documents": 11,
+  "checked_source_manifest": true,
+  "checked_external_archives": 1,
+  "mismatches": [],
+  "pass": true
+}

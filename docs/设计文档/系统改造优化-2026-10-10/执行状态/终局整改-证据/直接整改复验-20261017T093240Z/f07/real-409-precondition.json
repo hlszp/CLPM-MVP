@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-10-17T10:00:22.272104+00:00",
+  "boundary": "only own scratch DB, peer user, F07 loop",
+  "records": [
+    {
+      "path": "/auth/login",
+      "method": "POST",
+      "status": 200,
+      "request": {
+        "username": "audit_peer",
+        "password": "REDACTED"
+      },
+      "response": {
+        "login": "OK",
+        "tokens": "REDACTED"
+      }
+    },
+    {
+      "path": "/me/loop-follows/a0d17000-0000-4000-8000-000000000001",
+      "method": "PUT",
+      "status": 200,
+      "request": {
+        "isFollowed": true,
+        "expectedRevision": 0,
+        "requestId": "94fef45c-7294-428a-9c48-a92b3089ad53"
+      },
+      "response": {
+        "code": "0",
+        "message": "保存成功",
+        "data": {
+          "loopId": "a0d17000-0000-4000-8000-000000000001",
+          "isFollowed": true,
+          "revision": 1,
+          "updatedAt": "2026-10-17T10:00:22.235500",
+          "replayed": false
+        }
+      }
+    },
+    {
+      "path": "/me/loop-follows/a0d17000-0000-4000-8000-000000000001",
+      "method": "PUT",
+      "status": 200,
+      "request": {
+        "isFollowed": false,
+        "expectedRevision": 1,
+        "requestId": "7ab72510-5312-4a7f-b851-7d0e7f721ce7"
+      },
+      "response": {
+        "code": "0",
+        "message": "保存成功",
+        "data": {
+          "loopId": "a0d17000-0000-4000-8000-000000000001",
+          "isFollowed": false,
+          "revision": 2,
+          "updatedAt": "2026-10-17T10:00:22.263140",
+          "replayed": false
+        }
+      }
+    }
+  ]
+}

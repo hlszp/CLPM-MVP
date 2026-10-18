@@ -1,0 +1,63 @@
+{
+  "observedAt": "2026-10-17T13:15:04.682161+00:00",
+  "git": {
+    "argv": [
+      "git",
+      "rev-parse",
+      "HEAD"
+    ],
+    "rc": 0,
+    "stdout": "edfa831afd6069963e7f6f73c2721637d6a199b5\n",
+    "stderr": ""
+  },
+  "files": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/services/calc_snapshot.py",
+      "bytes": 81697,
+      "sha256": "39e67b9af522ccf694513bac11307d7002f6acb7d0092d34b3016e4dbe2a9850"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/data_planner.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/services/data_planner.py",
+      "bytes": 52004,
+      "sha256": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/tasks/kpi_calc.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/tasks/kpi_calc.py",
+      "bytes": 254612,
+      "sha256": "a222a53c9e2ae40581461ba63a22e0ce81edacaa7324aa82916c1dc3f9e66bc8"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/api/v1/endpoints/tasks.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/api/v1/endpoints/tasks.py",
+      "bytes": 65190,
+      "sha256": "391610b03b4b6c503a611acc451984b179424f13038f2e922eb62a8eaeddf32a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/task_tracker.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/services/task_tracker.py",
+      "bytes": 29282,
+      "sha256": "34305a2123c84dff37e7ed1969912f88081aa9088a9e6abc798e917b58ecd45e"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/data_source/logical_wide_builder.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/services/data_source/logical_wide_builder.py",
+      "bytes": 31879,
+      "sha256": "0fd686cf47d38c530b003e164990e9e29f60f77346fdd542d5db3e628d1d011a"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/data_source/history_layout_router.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/services/data_source/history_layout_router.py",
+      "bytes": 6575,
+      "sha256": "2c1ef37a545030355a7142969bfe4b457ff5172ed956e2a9e9fdd14f3043637d"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py",
+      "snapshot": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/e2e/scripts/prepare-critical-fixture.py",
+      "bytes": 15059,
+      "sha256": "f8084521ceeb216d776cd8b6bdf42e98b788aadf084815463f7c8d705bc2b12b"
+    }
+  ]
+}

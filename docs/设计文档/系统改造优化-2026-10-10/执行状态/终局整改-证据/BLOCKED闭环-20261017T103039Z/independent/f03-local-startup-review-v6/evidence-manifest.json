@@ -1,0 +1,57 @@
+{
+  "schema": "clpm-independent-evidence-manifest-v1",
+  "createdAt": "2026-10-17T13:59:36.686515+00:00",
+  "reviewer": "/root/f04_restore (non-author for F02/F03)",
+  "files": [
+    {
+      "path": "keeper-local-f03-v6.frozen.py",
+      "bytes": 49015,
+      "sha256": "87c985f311f804c80a3beb84d78e342143e277fe18d8f5041c5fcb54c81e405f"
+    },
+    {
+      "path": "own-controls.command.json",
+      "bytes": 1069,
+      "sha256": "564adec4cf07c2c38b45e348f472f2cf4e3530bf40411f83ac4e2395b4df0b30"
+    },
+    {
+      "path": "own-controls.stderr.log",
+      "bytes": 1252,
+      "sha256": "c079311beaad0d2fc11b8efb6f391069281a3a9051f8da14099e72875d8a79d4"
+    },
+    {
+      "path": "own-controls.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 1347,
+      "sha256": "d80ca1cf25ee2525b996280be062a70c88388552d742bd0f6498782d548ffbb4"
+    },
+    {
+      "path": "root-controls.command.json",
+      "bytes": 1047,
+      "sha256": "e984658b9ef60457435f74007777430b43c9acf1644c904f26227b83b242b739"
+    },
+    {
+      "path": "root-controls.stderr.log",
+      "bytes": 1101,
+      "sha256": "d6d62aaf5f247f03d32123c0a1b33c1fb24b381f7ab6f31749ed35a530e5d3ce"
+    },
+    {
+      "path": "root-controls.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "source-identity.json",
+      "bytes": 657,
+      "sha256": "ca42937feeb0c9398ee399b56397bacd880a6f46517ca41d6ee139644bdf4acd"
+    },
+    {
+      "path": "test_independent_startup.py",
+      "bytes": 10365,
+      "sha256": "1fc31d5f9c308738e2c88049b63190877ca7c193be2acf315dd39fdfdee21c8d"
+    }
+  ]
+}

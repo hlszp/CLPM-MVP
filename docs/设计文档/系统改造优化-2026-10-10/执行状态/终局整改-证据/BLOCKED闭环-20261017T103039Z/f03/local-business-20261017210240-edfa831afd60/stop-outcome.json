@@ -1,0 +1,16 @@
+{
+  "errors": [
+    {
+      "phase": "api-stop",
+      "error": "RuntimeError(\"API real exit identity/rc={'pid': 39579, 'rc': -15, 'at': '2026-10-17T13:09:55.915252+00:00'}\")"
+    }
+  ],
+  "watchdogBarrierObserved": true,
+  "beatReleasedAfterBarrier": true,
+  "actualApiExit": {
+    "pid": 39579,
+    "rc": -15,
+    "at": "2026-10-17T13:09:55.915252+00:00"
+  },
+  "at": "2026-10-17T13:09:57.264946+00:00"
+}

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:04:07.725870+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "run-code",
+    "async (page) => { const promise=page.waitForResponse(r=>r.url().includes('/versions') && r.request().method()==='POST'); await page.getByTestId('btn-confirm-publish').click(); const r=await promise; await page.getByTestId('flow-done').waitFor(); return {status:r.status(),body:await r.json(),rendered:await page.getByTestId('flow-done').innerText()}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 1.574143500009086,
+  "stdout": "### Result\n{\"status\":200,\"body\":{\"code\":\"0\",\"message\":\"模板版本已发布（不可变，固定引用不受影响）\",\"data\":{\"revision\":1,\"rollbackRevision\":0,\"templateId\":\"295fea85-2f64-4048-a644-95e1c90e58d1\",\"templateKey\":\"AUDIT-F04-UI-1017\",\"version\":1,\"revisionRef\":\"engineering_template:295fea85-2f64-4048-a644-95e1c90e58d1@v1\",\"affectedLoops\":0}},\"rendered\":\"新版本 v1 已发布（不可变；固定引用不受影响）\\n固定引用：engineering_template:295fea85-2f64-4048-a644-95e1c90e58d1@v1\\n发布 revision：1 （回退引用 rollbackRevision= 0）\\n影响回路：0 条\\n如需回退：版本历史 Tab「回拨到此版本」可将当前指针回拨至任一既有版本。\"}\n### Ran Playwright code\n```js\nawait (async (page) => { const promise=page.waitForResponse(r=>r.url().includes('/versions') && r.request().method()==='POST'); await page.getByTestId('btn-confirm-publish').click(); const r=await promise; await page.getByTestId('flow-done').waitFor(); return {status:r.status(),body:await r.json(),rendered:await page.getByTestId('flow-done').innerText()}; })(page);\n```\n",
+  "stderr": ""
+}

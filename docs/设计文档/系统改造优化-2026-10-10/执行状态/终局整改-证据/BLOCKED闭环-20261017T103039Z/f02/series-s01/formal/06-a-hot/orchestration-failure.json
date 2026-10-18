@@ -1,0 +1,7 @@
+{
+  "at": "2026-10-17T21:21:05.971991+00:00",
+  "type": "AssertionError",
+  "message": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/06-a-hot/local-evidence-validation: rc=1",
+  "completedBatches": 5,
+  "status": "SERIES_FAILED_NOT_REUSED"
+}

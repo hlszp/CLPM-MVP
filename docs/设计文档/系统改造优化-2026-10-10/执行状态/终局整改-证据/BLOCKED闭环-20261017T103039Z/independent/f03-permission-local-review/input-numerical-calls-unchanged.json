@@ -1,0 +1,7 @@
+{
+  "synth_series": true,
+  "_td_rows": true,
+  "execute_native_effective": true,
+  "ensure_schema": true,
+  "load_role_points": true
+}

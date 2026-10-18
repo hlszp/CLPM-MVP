@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "ps",
+    "-ax",
+    "-o",
+    "pid=,ppid=,lstart=,stat=,command="
+  ],
+  "startedAt": "2026-10-17T13:35:41.262923+00:00",
+  "finishedAt": "2026-10-17T13:35:41.324069+00:00",
+  "rc": 0,
+  "stdoutSha256": "b1640b059a3292f58c8ae59ecefaf227926f818e9a076f400da3ada3fa35957e",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

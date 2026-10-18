@@ -1,0 +1,533 @@
+"""8 类异常值检测模块.
+
+实现算法说明 §3.4.3 和 PRD §5.5.2 定义的 8 类异常值检测。
+检测结果为 (index, OutlierReason) 列表，由 Pipeline 步骤④汇总。
+
+关键规则（算法说明 §3.4.3 备注）：
+    - TS_ANOMALY（时间戳异常）和 HF_NOISE（高频噪声）仅标记，不置 valid=False
+    - FROZEN（冻结值）仅标记，不置 valid=False：控制良好的平稳回路 PV 长期
+      低方差属正常现象，置 invalid 会把 valid_rate 拖零导致全 KPI INCONCLUSIVE；
+      真仪表卡死由 instrument_fault_rate 的复合判据（持续≥N 分钟且 OP 有变化）
+      单独识别
+    - 其余 5 类异常置 valid=False
+    - KEEP_ALL_WITH_VALIDITY：不删除任何数据点
+
+设计依据：算法说明 §3.4.3-3.4.4, PRD §5.5.2-5.5.3
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+from typing import Any
+
+import numpy as np
+
+from app.contracts.data_types import (
+    OutlierReason,
+    QualityStatus,
+)
+from app.services.preprocessing.quality_code import (
+    is_nan_or_inf,
+    map_quality_code,
+)
+from app.services.preprocessing.thresholds import ControlTypeThreshold, is_detector_enabled
+
+logger = logging.getLogger(__name__)
+
+# 标记但不置 valid=False 的原因码
+# FROZEN 仅标记：平稳良好回路 PV 低方差会大面积命中冻结检测，
+# 置 invalid 会把 valid_rate 拖零（误伤）；真冻结由仪表故障率复合判据识别
+_MARK_ONLY: frozenset[OutlierReason] = frozenset(
+    {OutlierReason.TS_ANOMALY, OutlierReason.HF_NOISE, OutlierReason.FROZEN}
+)
+
+
+# ---------------------------------------------------------------------------
+# 单项检测器
+# ---------------------------------------------------------------------------
+
+
+def detect_nan(values: list[Any]) -> list[tuple[int, OutlierReason]]:
+    """检测 NaN/Inf/NULL 值（算法说明 §3.4.3 第5类）.
+
+    Args:
+        values: 信号值数组
+
+    Returns:
+        (index, OutlierReason.NAN) 列表
+    """
+    return [(i, OutlierReason.NAN) for i, v in enumerate(values) if is_nan_or_inf(v)]
+
+
+def detect_out_of_range(
+    values: list[Any], range_min: float, range_max: float
+) -> list[tuple[int, OutlierReason]]:
+    """检测超量程值（算法说明 §3.4.3 第1类）.
+
+    PV/SP/OP 超出配置的量程上下限时标记为 OUT_OF_RANGE。
+    NaN 值跳过（由 detect_nan 处理）。
+
+    Args:
+        values: 信号值数组
+        range_min: 量程下限
+        range_max: 量程上限
+
+    Returns:
+        (index, OutlierReason.OUT_OF_RANGE) 列表
+    """
+    results: list[tuple[int, OutlierReason]] = []
+    for i, v in enumerate(values):
+        if is_nan_or_inf(v):
+            continue
+        try:
+            f = float(v)
+        except (ValueError, TypeError):
+            continue
+        if f < range_min or f > range_max:
+            results.append((i, OutlierReason.OUT_OF_RANGE))
+    return results
+
+
+def _detect_frozen_indices(values: list[Any], win: int, std_threshold: float) -> list[int]:
+    """Return indices covered by a low-variance window in O(n) time.
+
+    This preserves the legacy semantics: conversion failures become NaN, windows
+    with fewer than two non-NaN values are ignored, and comparison is strict.
+    """
+    n = len(values)
+    if n < win:
+        return []
+
+    float_vals: list[float] = []
+    for value in values:
+        if is_nan_or_inf(value):
+            float_vals.append(float("nan"))
+        else:
+            try:
+                float_vals.append(float(value))
+            except (ValueError, TypeError):
+                float_vals.append(float("nan"))
+
+    arr = np.asarray(float_vals, dtype=float)
+    valid = ~np.isnan(arr)
+    # Variance is translation-invariant. Center before prefix sums so raw
+    # engineering values with a large offset do not lose small variance through
+    # sum-of-squares cancellation.
+    reference = arr[np.flatnonzero(valid)[0]] if np.any(valid) else 0.0
+    safe_values = np.where(valid, arr - reference, 0.0)
+    prefix_count = np.concatenate(([0], np.cumsum(valid, dtype=np.int64)))
+    prefix_sum = np.concatenate(([0.0], np.cumsum(safe_values)))
+    prefix_sum_sq = np.concatenate(([0.0], np.cumsum(safe_values * safe_values)))
+
+    counts = prefix_count[win:] - prefix_count[:-win]
+    sums = prefix_sum[win:] - prefix_sum[:-win]
+    sums_sq = prefix_sum_sq[win:] - prefix_sum_sq[:-win]
+    valid_windows = counts >= 2
+
+    variance = np.zeros_like(sums, dtype=float)
+    variance[valid_windows] = (
+        sums_sq[valid_windows] / counts[valid_windows]
+        - (sums[valid_windows] / counts[valid_windows]) ** 2
+    )
+    # Floating point cancellation can produce a tiny negative value for a
+    # constant signal; population standard deviation is never negative.
+    stds = np.sqrt(np.maximum(variance, 0.0))
+    frozen_windows = valid_windows & (stds < std_threshold)
+
+    coverage = np.zeros(n + 1, dtype=np.int64)
+    for start in np.flatnonzero(frozen_windows):
+        coverage[start] += 1
+        coverage[start + win] -= 1
+    return np.flatnonzero(np.cumsum(coverage[:-1]) > 0).tolist()
+
+
+def detect_frozen(
+    values: list[Any], threshold: ControlTypeThreshold
+) -> list[tuple[int, OutlierReason]]:
+    """检测冻结值（算法说明 §3.4.3 第2类, §3.4.4 阈值）.
+
+    在滑动窗口（frozen_window_points 点）内计算标准差，
+    若 std < frozen_std_pct × range 则标记窗口内所有点为 FROZEN。
+
+    Args:
+        values: 信号值数组
+        threshold: 控制类型阈值
+
+    Returns:
+        (index, OutlierReason.FROZEN) 列表
+    """
+    std_threshold = threshold.frozen_std_pct * 100.0
+    return [
+        (index, OutlierReason.FROZEN)
+        for index in _detect_frozen_indices(values, threshold.frozen_window_points, std_threshold)
+    ]
+
+
+def detect_frozen_raw(
+    values: list[Any],
+    threshold: ControlTypeThreshold,
+    range_min: float,
+    range_max: float,
+) -> list[tuple[int, OutlierReason]]:
+    """检测冻结值（原始值版本，使用实际量程计算 std 阈值）.
+
+    Args:
+        values: 信号值数组（原始工程值）
+        threshold: 控制类型阈值
+        range_min: 量程下限
+        range_max: 量程上限
+
+    Returns:
+        (index, OutlierReason.FROZEN) 列表
+    """
+    range_span = max(range_max - range_min, 1e-9)
+    std_threshold = threshold.frozen_std_pct * range_span
+    return [
+        (index, OutlierReason.FROZEN)
+        for index in _detect_frozen_indices(values, threshold.frozen_window_points, std_threshold)
+    ]
+
+
+def detect_jump(
+    values: list[Any],
+    threshold: ControlTypeThreshold,
+    range_min: float,
+    range_max: float,
+) -> list[tuple[int, OutlierReason]]:
+    """检测跳变（算法说明 §3.4.3 第3类, §3.4.4 阈值）.
+
+    相邻采样点变化幅度超过 jump_threshold_pct × range 时标记为 JUMP。
+    仅标记跳变点本身（索引 i，即变化后的点）；前一个点不标记，
+    避免一次跳变双点计数放大故障率/无效率统计。
+
+    Args:
+        values: 信号值数组
+        threshold: 控制类型阈值
+        range_min: 量程下限
+        range_max: 量程上限
+
+    Returns:
+        (index, OutlierReason.JUMP) 列表
+    """
+    n = len(values)
+    if n < 2:
+        return []
+
+    range_span = max(range_max - range_min, 1e-9)
+    jump_threshold = threshold.jump_threshold_pct * range_span
+
+    results: list[tuple[int, OutlierReason]] = []
+    for i in range(1, n):
+        if is_nan_or_inf(values[i]) or is_nan_or_inf(values[i - 1]):
+            continue
+        try:
+            diff = abs(float(values[i]) - float(values[i - 1]))
+        except (ValueError, TypeError):
+            continue
+        if diff > jump_threshold:
+            results.append((i, OutlierReason.JUMP))
+    return results
+
+
+def detect_spike(
+    values: list[Any],
+    threshold: ControlTypeThreshold,
+    range_min: float,
+    range_max: float,
+) -> list[tuple[int, OutlierReason]]:
+    """检测尖峰（算法说明 §3.4.3 第4类）.
+
+    单点突变且前后点回落：|v[i]-v[i-1]| > spike_threshold 且
+    |v[i]-v[i+1]| > spike_threshold（突变后立即恢复）。
+
+    Args:
+        values: 信号值数组
+        threshold: 控制类型阈值
+        range_min: 量程下限
+        range_max: 量程上限
+
+    Returns:
+        (index, OutlierReason.SPIKE) 列表
+    """
+    n = len(values)
+    if n < 3:
+        return []
+
+    range_span = max(range_max - range_min, 1e-9)
+    spike_threshold = threshold.spike_threshold_pct * range_span
+
+    results: list[tuple[int, OutlierReason]] = []
+    for i in range(1, n - 1):
+        if is_nan_or_inf(values[i]) or is_nan_or_inf(values[i - 1]) or is_nan_or_inf(values[i + 1]):
+            continue
+        try:
+            prev_diff = abs(float(values[i]) - float(values[i - 1]))
+            next_diff = abs(float(values[i]) - float(values[i + 1]))
+        except (ValueError, TypeError):
+            continue
+        if prev_diff > spike_threshold and next_diff > spike_threshold:
+            results.append((i, OutlierReason.SPIKE))
+    return results
+
+
+def detect_ts_anomaly(
+    timestamps: list[datetime],
+    expected_interval_s: float,
+) -> list[tuple[int, OutlierReason]]:
+    """检测时间戳异常（算法说明 §3.4.3 第6类，仅标记）.
+
+    检测：重复时间戳、逆序时间戳、间隔异常（> 2× 期望间隔）。
+    此检测仅标记，不置 valid=False。
+
+    Args:
+        timestamps: 时间戳序列
+        expected_interval_s: 期望采样间隔（秒）
+
+    Returns:
+        (index, OutlierReason.TS_ANOMALY) 列表
+    """
+    n = len(timestamps)
+    if n < 2:
+        return []
+
+    results: list[tuple[int, OutlierReason]] = []
+    max_gap = expected_interval_s * 2.0
+    # 直接用 datetime 对象做重复检测（datetime 可哈希，等值判断语义一致）。
+    # 避免调用 ts.timestamp()：naive datetime 的 timestamp() 走 mktime/localtime，
+    # 在 fork 出的子进程（celery prefork worker）中会陷入 macOS 时区慢路径，
+    # 每次调用 ~0.5ms，3601 点 × 4 信号 ≈ 6-29s/窗口（实测证据见性能诊断记录）。
+    seen_ts: set[datetime] = set()
+
+    for i, ts in enumerate(timestamps):
+        if ts in seen_ts:
+            results.append((i, OutlierReason.TS_ANOMALY))
+        seen_ts.add(ts)
+
+    for i in range(1, n):
+        gap = (timestamps[i] - timestamps[i - 1]).total_seconds()
+        if gap <= 0:
+            # 逆序或重复（重复已在上面处理，这里处理逆序）
+            if gap < 0:
+                results.append((i, OutlierReason.TS_ANOMALY))
+        elif gap > max_gap:
+            results.append((i, OutlierReason.TS_ANOMALY))
+
+    return results
+
+
+def detect_qc_bad(
+    quality_codes: list[int] | None,
+) -> list[tuple[int, OutlierReason]]:
+    """检测质量码异常（算法说明 §3.4.3 第7类）.
+
+    PV tag 携带的 OPC 质量码为 Bad/Uncertain 时标记为 QC_BAD。
+    质量码为 None（缺省）时不标记（容错视为 Good）。
+
+    Args:
+        quality_codes: 质量码数组，None 表示无质量码数据
+
+    Returns:
+        (index, OutlierReason.QC_BAD) 列表
+    """
+    if not quality_codes:
+        return []
+    results: list[tuple[int, OutlierReason]] = []
+    for i, qc in enumerate(quality_codes):
+        status = map_quality_code(qc)
+        if status != QualityStatus.GOOD:
+            results.append((i, OutlierReason.QC_BAD))
+    return results
+
+
+def detect_hf_noise(
+    values: list[Any],
+    threshold: ControlTypeThreshold,
+    sampling_freq_hz: float,
+) -> list[tuple[int, OutlierReason]]:
+    """检测高频噪声（算法说明 §3.4.3 第8类，仅标记不滤波）.
+
+    通过 FFT 计算功率谱，若超过截止频率的成分能量占比超过 30%，
+    则标记整个信号段为 HF_NOISE。此检测仅标记，不置 valid=False，
+    也不做滤波（振荡率指标自行决定是否过滤）。
+
+    Args:
+        values: 信号值数组
+        threshold: 控制类型阈值（取 noise_cutoff_hz）
+        sampling_freq_hz: 实际采样频率（Hz）
+
+    Returns:
+        (index, OutlierReason.HF_NOISE) 列表（若检测到则标记所有点）
+    """
+    n = len(values)
+    if n < 8:
+        return []
+
+    # 提取有效浮点值，NaN 用线性插值填充
+    float_vals: list[float] = []
+    for v in values:
+        if is_nan_or_inf(v):
+            float_vals.append(float("nan"))
+        else:
+            try:
+                float_vals.append(float(v))
+            except (ValueError, TypeError):
+                float_vals.append(float("nan"))
+
+    arr = np.array(float_vals, dtype=float)
+    nan_mask = np.isnan(arr)
+    if nan_mask.all():
+        return []
+    if nan_mask.any():
+        # 线性插值填充 NaN
+        valid_idx = np.where(~nan_mask)[0]
+        arr[nan_mask] = np.interp(np.where(nan_mask)[0], valid_idx, arr[valid_idx])
+
+    # 去均值后 FFT
+    arr = arr - np.mean(arr)
+    if np.max(np.abs(arr)) < 1e-9:
+        return []
+
+    spectrum = np.abs(np.fft.rfft(arr))
+    freqs = np.fft.rfftfreq(n, d=1.0 / sampling_freq_hz)
+    power = spectrum**2
+    total_power = float(np.sum(power))
+    if total_power < 1e-12:
+        return []
+
+    # 超过截止频率的能量占比
+    hf_mask = freqs > threshold.noise_cutoff_hz
+    hf_ratio = float(np.sum(power[hf_mask]) / total_power)
+
+    if hf_ratio > 0.3:
+        logger.debug(
+            "HF_NOISE detected: hf_ratio=%.3f, cutoff=%.2fHz, freq=%.1fHz",
+            hf_ratio,
+            threshold.noise_cutoff_hz,
+            sampling_freq_hz,
+        )
+        return [(i, OutlierReason.HF_NOISE) for i in range(n)]
+    return []
+
+
+# ---------------------------------------------------------------------------
+# 异常值检测编排器
+# ---------------------------------------------------------------------------
+
+
+class OutlierDetector:
+    """8 类异常值检测编排器.
+
+    对单个信号执行全部 8 类检测，汇总异常原因码。
+    返回每个点的异常原因码列表，由 Pipeline 步骤②④使用。
+
+    设计依据：算法说明 §3.4.3-3.4.4
+    """
+
+    def __init__(self, threshold: ControlTypeThreshold) -> None:
+        self.threshold = threshold
+
+    def detect_all(
+        self,
+        tag_name: str,
+        values: list[Any],
+        timestamps: list[datetime],
+        range_min: float,
+        range_max: float,
+        quality_codes: list[int] | None = None,
+        is_normalized: bool = False,
+        skip_frozen: bool = False,
+    ) -> dict[int, list[OutlierReason]]:
+        """对单个信号执行全部 8 类异常值检测.
+
+        Args:
+            tag_name: 信号名（如 "pv" / "sp" / "op"）
+            values: 信号值数组
+            timestamps: 时间戳序列
+            range_min: 量程下限
+            range_max: 量程上限
+            quality_codes: 质量码数组（仅 PV 有）
+            is_normalized: 是否已归一化（归一化后量程为 0~100）
+            skip_frozen: 跳过冻结值检测（用于 SP/MODE/PID 等常态为常量的信号）
+
+        Returns:
+            dict[index, list[OutlierReason]]：每个异常点的异常原因码列表
+        """
+        n = len(values)
+        if n == 0:
+            return {}
+
+        # 归一化后量程为 0~100，原始值量程为 range_min~range_max
+        eff_min = 0.0 if is_normalized else range_min
+        eff_max = 100.0 if is_normalized else range_max
+        sampling_freq_hz = 1.0 / self.threshold.base_sampling_freq
+        expected_interval = float(self.threshold.base_sampling_freq)
+
+        all_reasons: dict[int, list[OutlierReason]] = {}
+
+        def _add(reasons: list[tuple[int, OutlierReason]]) -> None:
+            for idx, reason in reasons:
+                all_reasons.setdefault(idx, []).append(reason)
+
+        # 各类检测可通过 sys_config（outlier_params.current）开关停用，
+        # 停用的检测不参与异常判断和标记（is_detector_enabled 读进程内缓存）。
+
+        # 1. NaN/Inf/NULL
+        if is_detector_enabled("nan"):
+            _add(detect_nan(values))
+
+        # 2. 超量程
+        if is_detector_enabled("out_of_range"):
+            _add(detect_out_of_range(values, eff_min, eff_max))
+
+        # 3. 冻结值（SP/MODE/PID 等常态为常量的信号跳过）
+        if not skip_frozen and is_detector_enabled("frozen"):
+            if is_normalized:
+                _add(detect_frozen(values, self.threshold))
+            else:
+                _add(detect_frozen_raw(values, self.threshold, range_min, range_max))
+
+        # 4. 跳变（与超量程/冻结一致，按 is_normalized 选量程：
+        #    归一化数据用 0~100，原始数据用工程量程，否则量程≠100 时永不触发）
+        if is_detector_enabled("jump"):
+            _add(detect_jump(values, self.threshold, eff_min, eff_max))
+
+        # 5. 尖峰（同跳变，量程需与数据量纲一致）
+        if is_detector_enabled("spike"):
+            _add(detect_spike(values, self.threshold, eff_min, eff_max))
+
+        # 6. 时间戳异常（仅标记）
+        if is_detector_enabled("ts_anomaly"):
+            _add(detect_ts_anomaly(timestamps, expected_interval))
+
+        # 7. 质量码异常（仅 PV 有质量码）
+        if quality_codes is not None and is_detector_enabled("qc_bad"):
+            _add(detect_qc_bad(quality_codes))
+
+        # 8. 高频噪声（仅标记不滤波）
+        if is_detector_enabled("hf_noise"):
+            _add(detect_hf_noise(values, self.threshold, sampling_freq_hz))
+
+        logger.debug(
+            "OutlierDetector: tag=%s, points=%d, anomalous=%d, reasons=%s",
+            tag_name,
+            n,
+            len(all_reasons),
+            {k: [r.value for r in v] for k, v in list(all_reasons.items())[:5]},
+        )
+        return all_reasons
+
+    @staticmethod
+    def should_invalidate(reasons: list[OutlierReason]) -> bool:
+        """判断一组异常原因码是否应置 valid=False.
+
+        TS_ANOMALY、HF_NOISE、FROZEN 仅标记不置 valid=False
+        （算法说明 §3.4.3 + FROZEN 误伤平稳回路整改）。
+
+        Args:
+            reasons: 某个点的所有异常原因码
+
+        Returns:
+            True if any reason should invalidate the point
+        """
+        return any(r not in _MARK_ONLY for r in reasons)

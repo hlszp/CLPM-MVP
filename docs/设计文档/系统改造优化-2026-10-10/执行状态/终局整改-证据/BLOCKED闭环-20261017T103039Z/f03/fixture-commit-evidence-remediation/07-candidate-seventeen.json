@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/test_critical_fixture.py",
+    "-v"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T13:38:11.441854+00:00",
+  "finishedAt": "2026-10-17T13:38:12.038823+00:00",
+  "rc": 0,
+  "expectedRc": 0,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "5d8aef96cf8da3b8f6336161b2163e3b63a3ca17a9c1c839a2292f5d81b4fc25"
+}

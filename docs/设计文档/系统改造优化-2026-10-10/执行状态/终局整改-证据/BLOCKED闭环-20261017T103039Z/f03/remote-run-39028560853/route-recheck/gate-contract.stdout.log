@@ -1,0 +1,62 @@
+
+> clpm-e2e@1.0.0 test:gate-contract
+> node --test scripts/test-critical-gate.mjs
+
+TAP version 13
+# Subtest: real Playwright gate: passed -> rc=0
+ok 1 - real Playwright gate: passed -> rc=0
+  ---
+  duration_ms: 1003.876209
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: unreachable -> rc=2
+ok 2 - real Playwright gate: unreachable -> rc=2
+  ---
+  duration_ms: 25.167791
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: failed -> rc=1
+ok 3 - real Playwright gate: failed -> rc=1
+  ---
+  duration_ms: 1262.830834
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: all-skipped -> rc=3
+ok 4 - real Playwright gate: all-skipped -> rc=3
+  ---
+  duration_ms: 984.346041
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: part-skipped -> rc=3
+ok 5 - real Playwright gate: part-skipped -> rc=3
+  ---
+  duration_ms: 982.041709
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: missing -> rc=3
+ok 6 - real Playwright gate: missing -> rc=3
+  ---
+  duration_ms: 393.421916
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: wrong-id -> rc=3
+ok 7 - real Playwright gate: wrong-id -> rc=3
+  ---
+  duration_ms: 379.243708
+  type: 'test'
+  ...
+# Subtest: real Playwright flaky retry is rejected even when Playwright exits zero
+ok 8 - real Playwright flaky retry is rejected even when Playwright exits zero
+  ---
+  duration_ms: 818.927584
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5918.055916

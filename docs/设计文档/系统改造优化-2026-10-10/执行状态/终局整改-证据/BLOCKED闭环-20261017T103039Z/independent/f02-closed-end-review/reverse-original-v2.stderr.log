@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-closed-end-review/independent_original_counter.py", line 36, in <module>
+    main()
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-closed-end-review/independent_original_counter.py", line 30, in main
+    assert failures, (
+           ^^^^^^^^
+AssertionError: Incomplete original row was accepted without value/quality evidence

@@ -1,0 +1,694 @@
+{
+  "numpy": "2.5.0",
+  "cases": [
+    {
+      "case": "list:-9223372036854775808",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "ef97203ff6d59cc9cd743a5fc9314a67315244485578651c7d03715815d8cb1d",
+            "responseSha256": "716bfc72bb94549075cc2d4f53abe2526000bc5db3d31dc3ca473cfedfd1eef5",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "ef97203ff6d59cc9cd743a5fc9314a67315244485578651c7d03715815d8cb1d",
+            "responseSha256": "716bfc72bb94549075cc2d4f53abe2526000bc5db3d31dc3ca473cfedfd1eef5",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "tuple:-9223372036854775808",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "ef97203ff6d59cc9cd743a5fc9314a67315244485578651c7d03715815d8cb1d",
+            "responseSha256": "716bfc72bb94549075cc2d4f53abe2526000bc5db3d31dc3ca473cfedfd1eef5",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "ef97203ff6d59cc9cd743a5fc9314a67315244485578651c7d03715815d8cb1d",
+            "responseSha256": "716bfc72bb94549075cc2d4f53abe2526000bc5db3d31dc3ca473cfedfd1eef5",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "list:9223372036854775808",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "db6c3cc1be2093e8fb547701c290c93cb5273532c04cbe4706bf20c4c0fd53ec",
+            "responseSha256": "0a0b3d8080ab94d88b00b71e8618a6e302ea632ab05f1a94794c96f1c94f72f7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "db6c3cc1be2093e8fb547701c290c93cb5273532c04cbe4706bf20c4c0fd53ec",
+            "responseSha256": "0a0b3d8080ab94d88b00b71e8618a6e302ea632ab05f1a94794c96f1c94f72f7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "tuple:9223372036854775808",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "db6c3cc1be2093e8fb547701c290c93cb5273532c04cbe4706bf20c4c0fd53ec",
+            "responseSha256": "0a0b3d8080ab94d88b00b71e8618a6e302ea632ab05f1a94794c96f1c94f72f7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -1.0842021724855044e-19
+          ],
+          "b_coeffs": [
+            4.907284471830195e-39
+          ],
+          "d": 0,
+          "residual_var": 2.1253665258046787e+36,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "db6c3cc1be2093e8fb547701c290c93cb5273532c04cbe4706bf20c4c0fd53ec",
+            "responseSha256": "0a0b3d8080ab94d88b00b71e8618a6e302ea632ab05f1a94794c96f1c94f72f7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "list:-1208925819614629174706176",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "0187103dfcb222ea2cc8a9e2a0a8923b36db62b0486f82c4ed61fb63fae84729",
+            "responseSha256": "6a7704129c2f6cdf509806dafb5936ede8250d12d5873c62175899aafc2ba1d7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "0187103dfcb222ea2cc8a9e2a0a8923b36db62b0486f82c4ed61fb63fae84729",
+            "responseSha256": "6a7704129c2f6cdf509806dafb5936ede8250d12d5873c62175899aafc2ba1d7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "tuple:-1208925819614629174706176",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "0187103dfcb222ea2cc8a9e2a0a8923b36db62b0486f82c4ed61fb63fae84729",
+            "responseSha256": "6a7704129c2f6cdf509806dafb5936ede8250d12d5873c62175899aafc2ba1d7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "0187103dfcb222ea2cc8a9e2a0a8923b36db62b0486f82c4ed61fb63fae84729",
+            "responseSha256": "6a7704129c2f6cdf509806dafb5936ede8250d12d5873c62175899aafc2ba1d7",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "list:1208925819614629174706176",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "b485f2fe7028479fdf3684289d48786cf60a6c5582f3eda5c8c7f29e5b7da69a",
+            "responseSha256": "ed5a1a5c9e9e2539ce017c2c448750cb8e165214906e4a54f270f0e89e4590d1",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "b485f2fe7028479fdf3684289d48786cf60a6c5582f3eda5c8c7f29e5b7da69a",
+            "responseSha256": "ed5a1a5c9e9e2539ce017c2c448750cb8e165214906e4a54f270f0e89e4590d1",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "tuple:1208925819614629174706176",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "b485f2fe7028479fdf3684289d48786cf60a6c5582f3eda5c8c7f29e5b7da69a",
+            "responseSha256": "ed5a1a5c9e9e2539ce017c2c448750cb8e165214906e4a54f270f0e89e4590d1",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -8.271806125530277e-25
+          ],
+          "b_coeffs": [
+            2.8564155054221598e-49
+          ],
+          "d": 0,
+          "residual_var": 3.651351888137694e+46,
+          "n_samples": 39,
+          "r_squared": -0.026315789473683848
+        },
+        "matrices": [
+          {
+            "matrixSha256": "b485f2fe7028479fdf3684289d48786cf60a6c5582f3eda5c8c7f29e5b7da69a",
+            "responseSha256": "ed5a1a5c9e9e2539ce017c2c448750cb8e165214906e4a54f270f0e89e4590d1",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "list:179769313486231590772930519078902473361797697894230657273430081157732675805500963132708477322407536021120113879871393357658789768814416622492847430639474124377767893424865485276302219601246094119453082952085005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "OverflowError",
+        "message": "int too large to convert to float",
+        "matrices": []
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "OverflowError",
+        "message": "int too large to convert to float",
+        "matrices": []
+      }
+    },
+    {
+      "case": "tuple:179769313486231590772930519078902473361797697894230657273430081157732675805500963132708477322407536021120113879871393357658789768814416622492847430639474124377767893424865485276302219601246094119453082952085005768838150682342462881473913110540827237163350510684586298239947245938479716304835356329624224137216",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "OverflowError",
+        "message": "int too large to convert to float",
+        "matrices": []
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "OverflowError",
+        "message": "int too large to convert to float",
+        "matrices": []
+      }
+    },
+    {
+      "case": "column-y",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "ValueError",
+        "message": "setting an array element with a sequence.",
+        "matrices": []
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "ValueError",
+        "message": "setting an array element with a sequence.",
+        "matrices": []
+      }
+    },
+    {
+      "case": "column-u",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "ValueError",
+        "message": "setting an array element with a sequence.",
+        "matrices": []
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "ValueError",
+        "message": "setting an array element with a sequence.",
+        "matrices": []
+      }
+    },
+    {
+      "case": "masked-y",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "LinAlgError",
+        "message": "SVD did not converge in Linear Least Squares",
+        "matrices": [
+          {
+            "matrixSha256": "7a7b9f5ff3c11d3b463673a5940a49acb5933667b4583fb58e7efc6f273be010",
+            "responseSha256": "bb6c19044d9f0a498e0acc84d02b1260bc71e0664de17a8a71775c748012237e",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "LinAlgError",
+        "message": "SVD did not converge in Linear Least Squares",
+        "matrices": [
+          {
+            "matrixSha256": "7a7b9f5ff3c11d3b463673a5940a49acb5933667b4583fb58e7efc6f273be010",
+            "responseSha256": "bb6c19044d9f0a498e0acc84d02b1260bc71e0664de17a8a71775c748012237e",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "masked-u",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "LinAlgError",
+        "message": "SVD did not converge in Linear Least Squares",
+        "matrices": [
+          {
+            "matrixSha256": "b42715618d9c970a8178042dea321adb8aa6ff6cc0700c26de883fdb3fada9db",
+            "responseSha256": "2b00565f11c9533716455799adc7091dd90f5bd9acfb202af98589b94fab705c",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "LinAlgError",
+        "message": "SVD did not converge in Linear Least Squares",
+        "matrices": [
+          {
+            "matrixSha256": "b42715618d9c970a8178042dea321adb8aa6ff6cc0700c26de883fdb3fada9db",
+            "responseSha256": "2b00565f11c9533716455799adc7091dd90f5bd9acfb202af98589b94fab705c",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "negative-order-legacy",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            1.0418118466896917
+          ],
+          "b_coeffs": [
+            -0.18118466898933575
+          ],
+          "d": -5,
+          "residual_var": 35.35310614430186,
+          "n_samples": 41,
+          "r_squared": 0.7457492451930716
+        },
+        "matrices": [
+          {
+            "matrixSha256": "5c2ca64b0bb86d0ddd203d829f1c4ae2d626aeec20ca6f8521ae8813ab594235",
+            "responseSha256": "fc1ee4773a984e1aade971a1524842b220520992d5e115b4fd8035cbc8e425bf",
+            "shape": [
+              41,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            1.0418118466896917
+          ],
+          "b_coeffs": [
+            -0.18118466898933575
+          ],
+          "d": -5,
+          "residual_var": 35.35310614430186,
+          "n_samples": 41,
+          "r_squared": 0.7457492451930716
+        },
+        "matrices": [
+          {
+            "matrixSha256": "5c2ca64b0bb86d0ddd203d829f1c4ae2d626aeec20ca6f8521ae8813ab594235",
+            "responseSha256": "fc1ee4773a984e1aade971a1524842b220520992d5e115b4fd8035cbc8e425bf",
+            "shape": [
+              41,
+              2
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "case": "short-u",
+      "same": true,
+      "legacy": {
+        "kind": "error",
+        "type": "IndexError",
+        "message": "index 12 is out of bounds for axis 0 with size 12",
+        "matrices": []
+      },
+      "fixed": {
+        "kind": "error",
+        "type": "IndexError",
+        "message": "index 12 is out of bounds for axis 0 with size 12",
+        "matrices": []
+      }
+    },
+    {
+      "case": "negative-delay",
+      "same": true,
+      "legacy": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -0.7500000000000016
+          ],
+          "b_coeffs": [
+            0.24999999999999892
+          ],
+          "d": -3,
+          "residual_var": 3.4157732302230996e-29,
+          "n_samples": 39,
+          "r_squared": 1.0
+        },
+        "matrices": [
+          {
+            "matrixSha256": "8f9c04d38ec72f011a4ada1361e1f01f2f009ceaaa4c166ef617766ae57d4261",
+            "responseSha256": "2b00565f11c9533716455799adc7091dd90f5bd9acfb202af98589b94fab705c",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      },
+      "fixed": {
+        "kind": "result",
+        "value": {
+          "a_coeffs": [
+            -0.7500000000000016
+          ],
+          "b_coeffs": [
+            0.24999999999999892
+          ],
+          "d": -3,
+          "residual_var": 3.4157732302230996e-29,
+          "n_samples": 39,
+          "r_squared": 1.0
+        },
+        "matrices": [
+          {
+            "matrixSha256": "8f9c04d38ec72f011a4ada1361e1f01f2f009ceaaa4c166ef617766ae57d4261",
+            "responseSha256": "2b00565f11c9533716455799adc7091dd90f5bd9acfb202af98589b94fab705c",
+            "shape": [
+              39,
+              2
+            ]
+          }
+        ]
+      }
+    }
+  ],
+  "allSame": true
+}

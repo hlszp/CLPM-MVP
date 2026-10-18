@@ -1,0 +1,10 @@
+{
+  "at": 1792234573.166367,
+  "reason": "SIGTERM grace exceeded 60 seconds; uvicorn waiting for background tasks after websocket connections closed",
+  "escalation": "SIGINT to exact old API PID only",
+  "remaining": [],
+  "api_sigkill": false,
+  "original_queue_purged": false,
+  "preparation_td_restart_before_profile": true,
+  "formal_capacity_started": false
+}

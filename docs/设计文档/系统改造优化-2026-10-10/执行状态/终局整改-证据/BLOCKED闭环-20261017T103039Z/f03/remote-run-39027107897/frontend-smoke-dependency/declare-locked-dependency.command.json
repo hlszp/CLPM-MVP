@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "pnpm",
+    "--filter",
+    "@vben/web-antd",
+    "add",
+    "-D",
+    "@playwright/test@catalog:",
+    "--offline",
+    "--lockfile-only",
+    "--ignore-scripts"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "rc": 1,
+  "observedAt": "2026-10-17T11:10:23.881865+00:00"
+}

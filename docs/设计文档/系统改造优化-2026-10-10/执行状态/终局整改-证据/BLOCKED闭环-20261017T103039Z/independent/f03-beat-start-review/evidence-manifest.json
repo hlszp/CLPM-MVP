@@ -1,0 +1,132 @@
+{
+  "schema": "clpm-independent-evidence-manifest-v1",
+  "createdAt": "2026-10-17T13:59:36.685835+00:00",
+  "reviewer": "/root/f04_restore (non-author for F02/F03)",
+  "files": [
+    {
+      "path": "fixed-test-runtime-regressions.py",
+      "bytes": 7757,
+      "sha256": "3d6c5e15d71f04a1d08812a1e0cfb3cdf5f89f28bdbb76420ee00a4c01c51eef"
+    },
+    {
+      "path": "observed-backend-api.stdout.log",
+      "bytes": 5658,
+      "sha256": "1e09942daf29e5a4caa339863e7bf8d2e3f1266b6674b7ac1e9de5464daeb374"
+    },
+    {
+      "path": "observed-celery-beat.log",
+      "bytes": 3447,
+      "sha256": "ab6794a0bb44ea4c6baac011ae658d78ed2818bf360b36856cedf82c63dae8a3"
+    },
+    {
+      "path": "observed-runtime-prefixes.json",
+      "bytes": 838,
+      "sha256": "dc56a5d5f76771da2caeeee8d9aa02592c8d8e9b4c45d3686645509b2e3be6ab"
+    },
+    {
+      "path": "original-main.py",
+      "bytes": 57214,
+      "sha256": "5f59552d61e4e1229d4b784471b17f3c00a42af797d810dc5194f73c6624252b"
+    },
+    {
+      "path": "original-test-runtime-regressions.py",
+      "bytes": 6454,
+      "sha256": "4bb5acd73a8be5ba1376c0e6ac945761b2dbc205a5de91387245628cd4f0a10b"
+    },
+    {
+      "path": "probe_pure_test_boundary.py",
+      "bytes": 4064,
+      "sha256": "fb942a9e653c61051ee4f468d41e32e86ed9952c9bd64a1d7d3e8fb0d3810dd9"
+    },
+    {
+      "path": "pure-fixed-independent/result.json",
+      "bytes": 589,
+      "sha256": "bc9fa2567f4d489f6f33a7a31a4c69ce6607b249e02f0892792ba4af7a25d9cd"
+    },
+    {
+      "path": "pure-fixed-independent.command.json",
+      "bytes": 1419,
+      "sha256": "40d960a5af8bbef4359d1cda7dec65687b435335440fb0deafe80b65a9aa5e4c"
+    },
+    {
+      "path": "pure-fixed-independent.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "pure-fixed-independent.stdout.log",
+      "bytes": 589,
+      "sha256": "bc9fa2567f4d489f6f33a7a31a4c69ce6607b249e02f0892792ba4af7a25d9cd"
+    },
+    {
+      "path": "pure-original-red/result.json",
+      "bytes": 832,
+      "sha256": "69f95c1db4b4a58e46fcc510ffe2e98385acfc07789d3e08b6618ce635608cb2"
+    },
+    {
+      "path": "pure-original-red.command.json",
+      "bytes": 1701,
+      "sha256": "5760b12b0f3547b24477c24478c0733ed698bd6ae63926bac4c4766f10f22aec"
+    },
+    {
+      "path": "pure-original-red.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "pure-original-red.stdout.log",
+      "bytes": 832,
+      "sha256": "69f95c1db4b4a58e46fcc510ffe2e98385acfc07789d3e08b6618ce635608cb2"
+    },
+    {
+      "path": "pure-original-replay-v2/result.json",
+      "bytes": 832,
+      "sha256": "69f95c1db4b4a58e46fcc510ffe2e98385acfc07789d3e08b6618ce635608cb2"
+    },
+    {
+      "path": "pure-original-replay-v2.command.json",
+      "bytes": 1423,
+      "sha256": "056041117b4ec44a2775fbcb65b2d107af99c55057a160e0e1c73e2628e0f127"
+    },
+    {
+      "path": "pure-original-replay-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "pure-original-replay-v2.stdout.log",
+      "bytes": 832,
+      "sha256": "69f95c1db4b4a58e46fcc510ffe2e98385acfc07789d3e08b6618ce635608cb2"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 1200,
+      "sha256": "aca1f4dd99ee6f8bc86c60887dab78ef3a3f05ddd27ba7dcdfe95e477e7ccb78"
+    },
+    {
+      "path": "startup-analysis.md",
+      "bytes": 2311,
+      "sha256": "abf0fb0c01e1c828e38fe14d24a08e808422781d67bfd6da5626427e2fa546f8"
+    },
+    {
+      "path": "unit-cleanup-boundary.command.json",
+      "bytes": 840,
+      "sha256": "24613ccffff890edb896c4185702a8f716233257e166977bdb25bdcdd9c09610"
+    },
+    {
+      "path": "unit-cleanup-boundary.json",
+      "bytes": 1858,
+      "sha256": "b104e5647d5432c497e85fa47d7d6e55448178af355abfade46a3089ef96f095"
+    },
+    {
+      "path": "unit-cleanup-boundary.stderr.log",
+      "bytes": 105,
+      "sha256": "36e955c869e78816438f53b9da70050bb63d9e3ae44047ada942bfa6fbaedff6"
+    },
+    {
+      "path": "unit-cleanup-boundary.stdout.log",
+      "bytes": 1858,
+      "sha256": "b104e5647d5432c497e85fa47d7d6e55448178af355abfade46a3089ef96f095"
+    }
+  ]
+}

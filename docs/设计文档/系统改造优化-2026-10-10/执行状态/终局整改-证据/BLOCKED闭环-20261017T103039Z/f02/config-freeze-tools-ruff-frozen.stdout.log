@@ -1,0 +1,14 @@
+F401 [*] `pathlib.Path` imported but unused
+ --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_freeze_capacity_configuration.py:6:21
+  |
+4 | import hashlib
+5 | import json
+6 | from pathlib import Path
+  |                     ^^^^
+7 | import pytest
+8 | from freeze_capacity_configuration import (
+  |
+help: Remove unused import: `pathlib.Path`
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

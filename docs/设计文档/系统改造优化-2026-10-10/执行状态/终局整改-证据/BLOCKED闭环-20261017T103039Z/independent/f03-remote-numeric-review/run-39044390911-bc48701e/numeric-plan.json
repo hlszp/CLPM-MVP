@@ -1,0 +1,40 @@
+{
+  "frozenAtUtc": "2026-10-17T15:27:53.831538+00:00",
+  "candidateSha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+  "githubRunId": 39044390911,
+  "fixture": {
+    "path": "f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.json",
+    "size": 2296,
+    "sha256": "9d150c116632f843bbbd9edeab9d7208d096fb8809f274a934f7c39d832a0fff"
+  },
+  "rawInput": {
+    "path": "f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.inputs.json",
+    "size": 581923,
+    "sha256": "8f524a3ad1e9b2a4ae65aa1d51093a4957f911f5331016bf241c76ea65edc15b"
+  },
+  "datasetManifest": {
+    "path": "f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.manifest.json",
+    "size": 2356229,
+    "sha256": "6a9d8b6161a3e6e2ba50c4e612244a586a40043fa92bd9235ef47b6be64a3bf1"
+  },
+  "datasetNpz": {
+    "path": "f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.npz",
+    "size": 1177609,
+    "sha256": "0bed77880aa58fdcd6257fafa9fafea527ff07e00298706f9ba9c2c253229f1f"
+  },
+  "declaredDatasetInputHash": "b7627b87f2997fbb0c31756a7c42a89b16a4e7b7e33546d5eeec43c6b577f634",
+  "identity": {
+    "assessmentProfile": "LEGACY_V2",
+    "algorithmVersion": "KPI_CALC_v2.0",
+    "configRevision": "rev:0:4cc7116649a473df",
+    "executableBuildDigest": "7dd8a6a4c0427bbd"
+  },
+  "effectiveParamsSha256": "8acc78fda61240e600e5e1556706e118d805e880b346b896c41ecdd483ac709a",
+  "heldLimitsSeconds": {
+    "pv": 60,
+    "sp": 7200,
+    "mode": 7200
+  },
+  "inclusiveEndSeconds": 1,
+  "actualKpiOutputsRead": false
+}

@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "python3",
+    "e2e/scripts/prepare-critical-fixture.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "rc": 1,
+  "seconds": 0.10354491600000004
+}

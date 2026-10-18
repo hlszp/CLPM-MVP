@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "alembic",
+    "check"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T13:39:15.246531+00:00",
+  "finishedAt": "2026-10-17T13:39:15.846173+00:00",
+  "rc": 0,
+  "stdoutSha256": "43d345b67ace77ab8c4cbf575a3baddf66e8623cf7d1e0b78e602b1d641ecf50",
+  "stderrSha256": "ccf52ef898ae26a37c19bc6c221dbb86df6255400e14a10189dd15bea70716e8",
+  "environmentReference": "environment-safe.json; credentials never logged"
+}

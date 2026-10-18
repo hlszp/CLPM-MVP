@@ -1,0 +1,26 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_loop_batch_restore.py::test_preview_aba_change_conflicts_and_does_not_overwrite",
+    "-p",
+    "negative_aba_plugin"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "envSafety": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "1",
+    "REDIS_HOST": "127.0.0.1",
+    "REDIS_PORT": "1"
+  },
+  "rc": 1,
+  "elapsed": 1.1197704579972196,
+  "stdoutSha256": "ca8fc6ad7b5247a2162b99aa1a70466b2d1958c2ea3beaf3cf89904da3e14c0a",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

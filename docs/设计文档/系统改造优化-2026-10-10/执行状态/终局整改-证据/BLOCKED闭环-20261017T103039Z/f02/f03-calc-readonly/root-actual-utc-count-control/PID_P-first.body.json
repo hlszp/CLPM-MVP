@@ -1,0 +1,1 @@
+{"code":0,"column_meta":[["ts","TIMESTAMP",8],["value","DOUBLE",8],["quality_class","TINYINT",1],["quality_raw","INT",4]],"data":[["2026-10-17T11:00:00.000Z",1.2,1,1]],"rows":1}

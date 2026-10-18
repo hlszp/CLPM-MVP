@@ -1,0 +1,5 @@
+#!/bin/bash
+if [[ "$1" == *test_critical_input_evidence.py ]]; then echo controlled-unit; exit "$UNIT_CONTROL_RC"; fi
+echo controlled-capture
+echo controlled-stderr >&2
+exit "$CAPTURE_CONTROL_RC"

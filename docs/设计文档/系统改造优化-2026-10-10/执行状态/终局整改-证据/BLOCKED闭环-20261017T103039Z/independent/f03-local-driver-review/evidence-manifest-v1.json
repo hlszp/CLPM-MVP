@@ -1,0 +1,105 @@
+{
+  "files": [
+    {
+      "file": ".ruff_cache/.gitignore",
+      "bytes": 35,
+      "sha256": "9e3a60f1e6ec4ae60215c11d54b171392745ec25e9dded433d5bd921363af316"
+    },
+    {
+      "file": ".ruff_cache/0.15.18/168514567360727678",
+      "bytes": 235,
+      "sha256": "e562a8db805e889f8a8d96fb704bbbbfe41fa64affe7f3ca8084ebc4ce6fd571"
+    },
+    {
+      "file": ".ruff_cache/CACHEDIR.TAG",
+      "bytes": 43,
+      "sha256": "5953156d7e0c564a427251316eaf26f8870e6483ae2197f916b630e4f93e31ae"
+    },
+    {
+      "file": "actual-plan-environment-safe.json",
+      "bytes": 2021,
+      "sha256": "1c5991642e09b31f145a15d716d68b4f7b7349a615876f275091941610d4937c"
+    },
+    {
+      "file": "actual-plan-independent.command.json",
+      "bytes": 1629,
+      "sha256": "96f64f80766947d417c6a74283530b371e92f62313cedbb9d8d4796b31cc4465"
+    },
+    {
+      "file": "actual-plan-independent.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "actual-plan-independent.stdout.log",
+      "bytes": 2332,
+      "sha256": "d2a0e6e5b4185870b2adda0e80cf3928db0a37dd061a318737c0e920e5e3943b"
+    },
+    {
+      "file": "actual-plan-restored.json",
+      "bytes": 2332,
+      "sha256": "d2a0e6e5b4185870b2adda0e80cf3928db0a37dd061a318737c0e920e5e3943b"
+    },
+    {
+      "file": "controls-independent.command.json",
+      "bytes": 829,
+      "sha256": "5678c8ed7e0006153429c0c7d2f3abdb38d18d0076add30629e35d887aa57aaf"
+    },
+    {
+      "file": "controls-independent.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "controls-independent.stdout.log",
+      "bytes": 99,
+      "sha256": "e8b981c8b9010bb633ad4e4d591190d80aad92cbe20d00915232255ce3e7fd94"
+    },
+    {
+      "file": "driver.before.py",
+      "bytes": 32932,
+      "sha256": "3597c3bc3826185dfeaf1b391239c70d7c043f27fb3518ce4d5feb19b27aa084"
+    },
+    {
+      "file": "own-format.command.json",
+      "bytes": 747,
+      "sha256": "f98b1903f3c422177f690fca1e1eb79c45f643e6cfa57ed288e01cea1faaad53"
+    },
+    {
+      "file": "own-format.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "own-format.stdout.log",
+      "bytes": 19,
+      "sha256": "413a709001976657cb743636fd34e48fc41d8d302d665460d3f874b3313da127"
+    },
+    {
+      "file": "own-lint.command.json",
+      "bytes": 746,
+      "sha256": "c3b8d445f9f5752b5422bb9bc241d7d96e3046c7b16f003aa89fbc5a8dc18292"
+    },
+    {
+      "file": "own-lint.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "own-lint.stdout.log",
+      "bytes": 19,
+      "sha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18"
+    },
+    {
+      "file": "receipt-v1.md",
+      "bytes": 2214,
+      "sha256": "529a6c77f78ace369876869bf974f89e6cf3cd67a06144f6f3b354d7e8396fef"
+    },
+    {
+      "file": "test_independent_driver_controls.py",
+      "bytes": 8678,
+      "sha256": "51bed7d8a10daefc06b79bf5e85ff1b3ad0491893f5cf467bc4b57ca4e450e8a"
+    }
+  ],
+  "scope": "OFFLINE_CONTROLS_AND_PLAN_ONLY_RR_INCREMENT_PENDING"
+}

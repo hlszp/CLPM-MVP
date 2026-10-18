@@ -1,0 +1,44 @@
+{
+  "items": [
+    {
+      "path": "broker.json",
+      "bytes": 441,
+      "sha256": "8bf7fc889e5b69a4394ac40915b052fc79ff37cac5336f5ecbae2470ec37293e"
+    },
+    {
+      "path": "ports.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ports.stdout.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "postgres-readonly.json",
+      "bytes": 1396,
+      "sha256": "39a493c387acb4ae4f09da191604d8e748c7b7f177be41ac55f0a2ff60318274"
+    },
+    {
+      "path": "ps.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ps.stdout.log",
+      "bytes": 377910,
+      "sha256": "2e34562c3d4afebb3a586dd482fd6e37fdacf91488c9350a3fc1440d889d1269"
+    },
+    {
+      "path": "readonly-queries.json",
+      "bytes": 2287,
+      "sha256": "5a767ee7cb657c0490cb07e146982d5ab463396d8206959a20a92c8944a6acaf"
+    },
+    {
+      "path": "state.json",
+      "bytes": 5088,
+      "sha256": "ea8ba5ca824d2171b820e0bd2ed138c1bdeed28dbe3d1706a356c51b4b8dfee3"
+    }
+  ]
+}

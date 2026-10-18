@@ -1,0 +1,1331 @@
+[
+  {
+    "parameters": {
+      "d": 5,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0317026552947413
+      ],
+      "b_coeffs": [
+        -0.016310742028318236
+      ],
+      "c_coeffs": [
+        -0.30767014100003887
+      ],
+      "d": 5,
+      "iterations": 200,
+      "n_samples": 1074,
+      "r_squared": 0.9915391416783318,
+      "residual_var": 0.09986672422368176
+    },
+    "sequence": 0,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_000_u",
+      "sha256": "b8b06f3485f9e97ab968f11f5da043f7d38edf80f0129d43ff8cffdcc914afa1",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_000_y",
+      "sha256": "ec658fae36b8f221105d889cbc4354b23da57e33c194b27f78207f9b6875d376",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 3,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9524901731794365
+      ],
+      "b_coeffs": [
+        0.0517099663171334
+      ],
+      "c_coeffs": [
+        -0.4062707129070902
+      ],
+      "d": 3,
+      "iterations": 200,
+      "n_samples": 596,
+      "r_squared": 0.9970223141679802,
+      "residual_var": 0.01962194955556928
+    },
+    "sequence": 1,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_001_u",
+      "sha256": "c904ec99c1cef062a3bf6efab46d4331d51218a2b0eb630e564805c0852e1947",
+      "shape": [
+        600
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_001_y",
+      "sha256": "f6ee8d9b804457d096ffe24d8fdc618c58b41aee7e008ca3994ef6eea9bf3b86",
+      "shape": [
+        600
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 3,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.8497397916726956
+      ],
+      "b_coeffs": [
+        0.09957000883469219
+      ],
+      "c_coeffs": [
+        -0.40610403870040046
+      ],
+      "d": 3,
+      "iterations": 200,
+      "n_samples": 716,
+      "r_squared": 0.9891579175428977,
+      "residual_var": 0.16995084858611303
+    },
+    "sequence": 2,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_002_u",
+      "sha256": "4c61dbaaa9a2033ef242092a22fca05ed7217edd594cc3d7444ca6616ddb09e0",
+      "shape": [
+        720
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_002_y",
+      "sha256": "ec8bc9cb201e1dc5ddd3eb6f44729757a0617a4f35dbf563c5ed508c19629b06",
+      "shape": [
+        720
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 1,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.8183567190381623
+      ],
+      "b_coeffs": [
+        0.21741991392753213
+      ],
+      "c_coeffs": [
+        -0.4803871239977384
+      ],
+      "d": 1,
+      "iterations": 32,
+      "n_samples": 478,
+      "r_squared": 0.9995521595492544,
+      "residual_var": 0.06917990080540172
+    },
+    "sequence": 3,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_003_u",
+      "sha256": "8faa29c27216c701de8e810c17ffd2c16bb86d36a258cdf63d9235ca44f7e597",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_003_y",
+      "sha256": "6f9c0e1a77e1127e8cd25dc2facb46dae3fbc31f584b540b706c33f8a6dcddf2",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 4,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9508137394320996
+      ],
+      "b_coeffs": [
+        0.14720352325540953
+      ],
+      "c_coeffs": [
+        -0.2850498335490089
+      ],
+      "d": 4,
+      "iterations": 5,
+      "n_samples": 895,
+      "r_squared": 0.9999141672247638,
+      "residual_var": 0.04333200217567886
+    },
+    "sequence": 4,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_004_u",
+      "sha256": "8e598e31e8f48b0f944df54e97d8bed1c044a102794872efb78605ea7f5ee4a1",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_004_y",
+      "sha256": "3292c899cce7ca6195cfcdf2b03da682cd7adbaa1b7e0ee07947d0bbaa3041ec",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 8,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9777838500634664
+      ],
+      "b_coeffs": [
+        0.0883745702858979
+      ],
+      "c_coeffs": [
+        -0.3960161470068541
+      ],
+      "d": 8,
+      "iterations": 11,
+      "n_samples": 1191,
+      "r_squared": 0.9999466374679269,
+      "residual_var": 0.16956004642669412
+    },
+    "sequence": 5,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_005_u",
+      "sha256": "c5acaf7a523d0bc91ef1f6fac9c6de9da296355c06f8f22be666e71abbb55aab",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_005_y",
+      "sha256": "496587470e30563e9bea6a9c539ef43018b1d2b9a16a977164c7ad47e9f70aaf",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 1,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9159324716010713
+      ],
+      "b_coeffs": [
+        0.03429422715601619
+      ],
+      "c_coeffs": [
+        -0.3761884177924837
+      ],
+      "d": 1,
+      "iterations": 200,
+      "n_samples": 478,
+      "r_squared": 0.996118910689893,
+      "residual_var": 0.005288463335376878
+    },
+    "sequence": 6,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_006_u",
+      "sha256": "6c6e1efa13a49cfa918847903c9a96811c839e4db7028e163b958992098a303a",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_006_y",
+      "sha256": "0ded0bd8b4db7952aa2d90b273557280d33c064fcb98d57a5e42284a4a507094",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 0,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.8814068472707912
+      ],
+      "b_coeffs": [
+        0.1183249274936033
+      ],
+      "c_coeffs": [
+        -0.0563590729573093
+      ],
+      "d": 0,
+      "iterations": 5,
+      "n_samples": 479,
+      "r_squared": 0.999935750325185,
+      "residual_var": 0.018648474617724235
+    },
+    "sequence": 7,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_007_u",
+      "sha256": "c4f994d0b8fd676d6e10050dbbf93fb1c861c2d4fb2f00001764658646636856",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_007_y",
+      "sha256": "305afe5a900f4a0cd0c8c00d641fa1f1dc067fae06a361d7547da8117b0fba5b",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 0,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.7733008573690467
+      ],
+      "b_coeffs": [
+        1.1412617193977468
+      ],
+      "c_coeffs": [
+        1.8094540566560646
+      ],
+      "d": 0,
+      "iterations": 200,
+      "n_samples": 479,
+      "r_squared": 0.9997370208842281,
+      "residual_var": 0.02626238250011992
+    },
+    "sequence": 8,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_008_u",
+      "sha256": "7de14f5deb196c2efcd37ca2351ba87cb86f0461296f46459f88b719cee848ff",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_008_y",
+      "sha256": "e544e7791b3f516702b0c73a867b7f517f55e4fe7f574c16a8378c13b1815f73",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 10,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.988650208492393
+      ],
+      "b_coeffs": [
+        0.027859510056817964
+      ],
+      "c_coeffs": [
+        -0.26561832681390996
+      ],
+      "d": 10,
+      "iterations": 5,
+      "n_samples": 1069,
+      "r_squared": 0.9999725916699554,
+      "residual_var": 0.07509707951659607
+    },
+    "sequence": 9,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_009_u",
+      "sha256": "76379ee33f11daa548f72248c325cce77dcdde47317ddb764fb1b828d476b9ec",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_009_y",
+      "sha256": "8ff4bb5fe705a6bc1f29629e27e952c4ad9d6a13eaf8ccc9db314edc25cab348",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 2,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.8505410742449909
+      ],
+      "b_coeffs": [
+        0.2494861144942827
+      ],
+      "c_coeffs": [
+        -0.39634892306088165
+      ],
+      "d": 2,
+      "iterations": 200,
+      "n_samples": 597,
+      "r_squared": 0.9979110712622079,
+      "residual_var": 0.13059905567223443
+    },
+    "sequence": 10,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_010_u",
+      "sha256": "b3f2cc597001999b502ab0b5943eb26d908a2442333cb05a21be529d89406a50",
+      "shape": [
+        600
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_010_y",
+      "sha256": "041770bf5df30641428f2c96094468ccd23cbbf273e4f63b1e4ec56d700c4a71",
+      "shape": [
+        600
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 6,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9750413672318554
+      ],
+      "b_coeffs": [
+        0.044594147291564204
+      ],
+      "c_coeffs": [
+        -0.3904450002311838
+      ],
+      "d": 6,
+      "iterations": 9,
+      "n_samples": 1073,
+      "r_squared": 0.999926318670987,
+      "residual_var": 0.07622268256779607
+    },
+    "sequence": 11,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_011_u",
+      "sha256": "2550621de70fe7169f1c58b09e18ea5cfac436ccccef0b9f58082e0e3de062e2",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_011_y",
+      "sha256": "aad7813cf0b4fff525ae9551058ac8a7d55cd39e2ea5084b69bfc88f1120172c",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 5,
+      "max_iter": 200,
+      "na": 2,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.258867678099546,
+        0.2930556843999712
+      ],
+      "b_coeffs": [
+        0.04878782424712836
+      ],
+      "c_coeffs": [
+        -0.2466960451320146
+      ],
+      "d": 5,
+      "iterations": 16,
+      "n_samples": 894,
+      "r_squared": 0.9995946447142611,
+      "residual_var": 0.08591584894207371
+    },
+    "sequence": 12,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_012_u",
+      "sha256": "0d3823ec3bee4eb1025450235acb0190341473da34ac1afc7ce5b38df7f8fdc5",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_012_y",
+      "sha256": "e8385aa952645888f73c5cbab1bf8ccdd067b941a82d78a1469622110185c3e1",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 4,
+      "max_iter": 200,
+      "na": 2,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.3167679894618356,
+        0.3322362420187399
+      ],
+      "b_coeffs": [
+        0.033010714320687605
+      ],
+      "c_coeffs": [
+        -0.38575990168714347
+      ],
+      "d": 4,
+      "iterations": 200,
+      "n_samples": 1075,
+      "r_squared": 0.9999159085348814,
+      "residual_var": 0.13872444491840472
+    },
+    "sequence": 13,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_013_u",
+      "sha256": "604c1afd81062221f53410d70f4e544f8ab35135d81c74c7ca2702d86491dd14",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_013_y",
+      "sha256": "919b072e2cf785375a5e5ba53893393514de82090253b27f17e41fff9b177499",
+      "shape": [
+        1080
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 4,
+      "max_iter": 200,
+      "na": 2,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.527705731466693,
+        0.5528873645938691
+      ],
+      "b_coeffs": [
+        0.02411052881772543
+      ],
+      "c_coeffs": [
+        -0.46081987437454414
+      ],
+      "d": 4,
+      "iterations": 60,
+      "n_samples": 715,
+      "r_squared": 0.9997146047843585,
+      "residual_var": 0.04445534276753238
+    },
+    "sequence": 14,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_014_u",
+      "sha256": "2a59545327940900681c0f7427f8813dfd64211c74ab969137d50b6c4811e4a5",
+      "shape": [
+        720
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_014_y",
+      "sha256": "ea0e724a92fd10ab20b04e7c1618a6baffe366f869f9308270ff5b3180e34aeb",
+      "shape": [
+        720
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 7,
+      "max_iter": 200,
+      "na": 2,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9333703239978287,
+        -0.05838359157174948
+      ],
+      "b_coeffs": [
+        0.02782392063867141
+      ],
+      "c_coeffs": [
+        -0.2650028008441023
+      ],
+      "d": 7,
+      "iterations": 121,
+      "n_samples": 1192,
+      "r_squared": 0.9958294501819208,
+      "residual_var": 0.0521583325749703
+    },
+    "sequence": 15,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_015_u",
+      "sha256": "1e7722b078897a8272f9b046993ce6d57d0cb9f90db2f3df850bb285c4310949",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_015_y",
+      "sha256": "32e57931fa661c99ffb41649f1ef1bb18cecdab9ba5a105f82236de50d0553e1",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 8,
+      "max_iter": 200,
+      "na": 2,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9296910811248923,
+        -0.06101195271899854
+      ],
+      "b_coeffs": [
+        0.026586222953617324
+      ],
+      "c_coeffs": [
+        -0.2263859575560238
+      ],
+      "d": 8,
+      "iterations": 46,
+      "n_samples": 1191,
+      "r_squared": 0.9956696497902238,
+      "residual_var": 0.05420407664809508
+    },
+    "sequence": 16,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_016_u",
+      "sha256": "1e7722b078897a8272f9b046993ce6d57d0cb9f90db2f3df850bb285c4310949",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_016_y",
+      "sha256": "32e57931fa661c99ffb41649f1ef1bb18cecdab9ba5a105f82236de50d0553e1",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 6,
+      "max_iter": 200,
+      "na": 2,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.4943537055330491,
+        0.4990211190407319
+      ],
+      "b_coeffs": [
+        0.015133784344275408
+      ],
+      "c_coeffs": [
+        -0.44167370843979803
+      ],
+      "d": 6,
+      "iterations": 200,
+      "n_samples": 1193,
+      "r_squared": 0.9935013327851493,
+      "residual_var": 0.0812159950467459
+    },
+    "sequence": 17,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_017_u",
+      "sha256": "1e7722b078897a8272f9b046993ce6d57d0cb9f90db2f3df850bb285c4310949",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_017_y",
+      "sha256": "32e57931fa661c99ffb41649f1ef1bb18cecdab9ba5a105f82236de50d0553e1",
+      "shape": [
+        1200
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 4,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9733249125199017
+      ],
+      "b_coeffs": [
+        0.0959714901452177
+      ],
+      "c_coeffs": [
+        -0.3510646408565632
+      ],
+      "d": 4,
+      "iterations": 200,
+      "n_samples": 895,
+      "r_squared": 0.9952451373115175,
+      "residual_var": 1.3770971471155762
+    },
+    "sequence": 18,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_018_u",
+      "sha256": "6269afdfd09faf24af6bf472fa7b17676dd593d1b20a58e38e8f675d6eed3773",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_018_y",
+      "sha256": "0c45b8037b5239188eb3d8ffc9b55c0013f107bb858a2a87aa863f57c9359484",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 5,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -0.9734052442003949
+      ],
+      "b_coeffs": [
+        0.0403734824060533
+      ],
+      "c_coeffs": [
+        -0.48614127636107607
+      ],
+      "d": 5,
+      "iterations": 200,
+      "n_samples": 894,
+      "r_squared": 0.9998330419933963,
+      "residual_var": 0.17115582106427063
+    },
+    "sequence": 19,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_019_u",
+      "sha256": "acb6db570336d3e10e50fb947e54b5b62f96cae8fa9e985faf088a5f41f7ca1d",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_019_y",
+      "sha256": "016bfeda8cd0ecf4642abb53849fbfc9017962cc25c9276665dcb97c9a35debe",
+      "shape": [
+        900
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 61,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0021075750593953
+      ],
+      "b_coeffs": [
+        -0.0004633885444457644
+      ],
+      "c_coeffs": [
+        -0.1004397119595098
+      ],
+      "d": 61,
+      "iterations": 4,
+      "n_samples": 418,
+      "r_squared": 0.9966742590655683,
+      "residual_var": 0.0288818376493132
+    },
+    "sequence": 20,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_020_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_020_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 62,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0020581850852346
+      ],
+      "b_coeffs": [
+        -0.00043503124633134134
+      ],
+      "c_coeffs": [
+        -0.1077340882477981
+      ],
+      "d": 62,
+      "iterations": 4,
+      "n_samples": 417,
+      "r_squared": 0.9965840838390849,
+      "residual_var": 0.02868836842525544
+    },
+    "sequence": 21,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_021_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_021_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 60,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0021579576327166
+      ],
+      "b_coeffs": [
+        -0.0004921262319042831
+      ],
+      "c_coeffs": [
+        -0.09530714101521448
+      ],
+      "d": 60,
+      "iterations": 4,
+      "n_samples": 419,
+      "r_squared": 0.9967647312536797,
+      "residual_var": 0.0291271500693586
+    },
+    "sequence": 22,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_022_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_022_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 63,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.002008943253324
+      ],
+      "b_coeffs": [
+        -0.00041499607713607573
+      ],
+      "c_coeffs": [
+        -0.10958378781070345
+      ],
+      "d": 63,
+      "iterations": 4,
+      "n_samples": 416,
+      "r_squared": 0.9964915096208687,
+      "residual_var": 0.02855234241880786
+    },
+    "sequence": 23,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_023_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_023_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 59,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0022054889448007
+      ],
+      "b_coeffs": [
+        -0.0005434035616048945
+      ],
+      "c_coeffs": [
+        -0.07771231323650175
+      ],
+      "d": 59,
+      "iterations": 4,
+      "n_samples": 420,
+      "r_squared": 0.9968285308009216,
+      "residual_var": 0.029675440937064847
+    },
+    "sequence": 24,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_024_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_024_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 64,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0019593635301725
+      ],
+      "b_coeffs": [
+        -0.0003838464446437948
+      ],
+      "c_coeffs": [
+        -0.1203266522624009
+      ],
+      "d": 64,
+      "iterations": 4,
+      "n_samples": 415,
+      "r_squared": 0.9963697721667132,
+      "residual_var": 0.02868623952116901
+    },
+    "sequence": 25,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_025_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_025_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  },
+  {
+    "parameters": {
+      "d": 58,
+      "max_iter": 200,
+      "na": 1,
+      "nb": 1,
+      "nc": 1,
+      "tol": 1e-06
+    },
+    "result": {
+      "a_coeffs": [
+        -1.0022411172529078
+      ],
+      "b_coeffs": [
+        -0.0005826667860295616
+      ],
+      "c_coeffs": [
+        -0.0588892392524869
+      ],
+      "d": 58,
+      "iterations": 4,
+      "n_samples": 421,
+      "r_squared": 0.9968814953629777,
+      "residual_var": 0.030451837802042726
+    },
+    "sequence": 26,
+    "u": {
+      "dtype": "<f8",
+      "npzKey": "call_026_u",
+      "sha256": "30c63e0816e83f7882c98308b69df16ccf42f7f30fdadb1f67542b65c34647b1",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    },
+    "y": {
+      "dtype": "<f8",
+      "npzKey": "call_026_y",
+      "sha256": "a73e2d0e623a8dd3d7466f07c02606ddf316aca35b477699056455c8c9c77b1c",
+      "shape": [
+        480
+      ],
+      "strides": [
+        8
+      ]
+    }
+  }
+]

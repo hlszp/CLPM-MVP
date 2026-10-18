@@ -1,0 +1,66 @@
+{
+  "createdAt": "2026-10-17T11:14:43.050144+00:00",
+  "status": "PASS",
+  "imports": {
+    "independent_support.py": [
+      "__future__",
+      "datetime",
+      "hashlib",
+      "json",
+      "math",
+      "pathlib"
+    ],
+    "verify_capacity_series.py": [
+      "__future__",
+      "argparse",
+      "collections",
+      "independent_support",
+      "json",
+      "pathlib",
+      "re"
+    ],
+    "independent_kpi_oracle.py": [
+      "__future__",
+      "argparse",
+      "ast",
+      "bisect",
+      "datetime",
+      "hashlib",
+      "independent_support",
+      "json",
+      "math",
+      "numpy",
+      "pathlib",
+      "re",
+      "statistics"
+    ],
+    "test_independent_tools.py": [
+      "__future__",
+      "copy",
+      "datetime",
+      "hashlib",
+      "independent_kpi_oracle",
+      "independent_support",
+      "json",
+      "math",
+      "numpy",
+      "pathlib",
+      "tempfile",
+      "unittest",
+      "verify_capacity_series"
+    ]
+  },
+  "criterion": "No product, network, database, queue or process client imports; tools only read evidence files and exclusively create new outputs",
+  "reviewOnly": true,
+  "cleanupOwnGeneratedBytecode": [
+    "f02-collector-review/sources-v3/__pycache__/collect_capacity_evidence.cpython-312.pyc",
+    "f02-collector-review/sources-v3/__pycache__/test_evidence_tools.cpython-312-pytest-9.1.1.pyc",
+    "f02-collector-review/sources-v3/__pycache__/test_input_counterexamples.cpython-312-pytest-9.1.1.pyc",
+    "f02-collector-review/sources-v3/__pycache__/audit_capacity_inputs.cpython-312.pyc",
+    "f02-collector-review/sources-v1/__pycache__/audit_capacity_inputs.cpython-312.pyc",
+    "__pycache__/independent_support.cpython-312.pyc",
+    "__pycache__/independent_kpi_oracle.cpython-312.pyc",
+    "__pycache__/test_independent_tools.cpython-312.pyc",
+    "__pycache__/verify_capacity_series.cpython-312.pyc"
+  ]
+}

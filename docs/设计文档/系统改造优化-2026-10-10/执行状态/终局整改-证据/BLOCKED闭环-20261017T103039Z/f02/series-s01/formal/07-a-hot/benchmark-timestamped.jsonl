@@ -1,0 +1,7 @@
+{"observedAt": "2026-10-17T22:49:21.951570+00:00", "line": "[preflight] \u4e09\u6761\u4ef6\u53c2\u8bc4\u56de\u8def\u6570\u68c0\u67e5\uff08DB \u6743\u5a01\u53e3\u5f84\uff09\n"}
+{"observedAt": "2026-10-17T22:49:21.951691+00:00", "line": "  window: 2026-10-15T18:00:00 ~ 2026-10-15T19:00:00 (naive UTC)\n"}
+{"observedAt": "2026-10-17T22:49:21.951709+00:00", "line": "  barrier_loop_prefix: PERF-T\n"}
+{"observedAt": "2026-10-17T22:49:21.951726+00:00", "line": "  manifest: /Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101518.json (scenario=a, totalLoops=1000)\n"}
+{"observedAt": "2026-10-17T22:49:22.509645+00:00", "line": "  eligible(is_active+READY+include_in_evaluation): 1000\n"}
+{"observedAt": "2026-10-17T22:49:22.509836+00:00", "line": "  excluded(\u4e0d\u53ef\u53c2\u8bc4\uff0c\u5355\u5217\u4e0d\u7f29\u5206\u6bcd): 0\n"}
+{"observedAt": "2026-10-17T22:49:22.509879+00:00", "line": "  \u72ec\u7acb loopId \u65ad\u8a00: 1000 unique = expect \u2713\uff08\u4e0e manifest \u8eab\u4efd\u4e00\u81f4 \u2713\uff09\n"}

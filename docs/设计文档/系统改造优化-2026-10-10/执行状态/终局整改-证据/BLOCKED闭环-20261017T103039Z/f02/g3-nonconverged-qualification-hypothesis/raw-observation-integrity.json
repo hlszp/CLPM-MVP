@@ -1,0 +1,15 @@
+{
+  "armaxCount": 34,
+  "iterationsHistogram": {
+    "200": 34
+  },
+  "tolValues": [
+    1e-06
+  ],
+  "maxIterValues": [
+    200
+  ],
+  "observedAllNonconverged": true,
+  "inputArtifactsHashVerified": 4,
+  "candidateBoundaryRejectionsInCompletedRaw": 0
+}

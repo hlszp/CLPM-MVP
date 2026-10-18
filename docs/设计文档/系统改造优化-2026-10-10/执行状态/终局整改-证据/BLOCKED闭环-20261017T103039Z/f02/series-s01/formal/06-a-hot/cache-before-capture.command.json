@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/capture_capacity_cache.py",
+    "--env-file",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+    "--ts-start",
+    "2026-10-15T17:00:00",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/06-a-hot/cache-before"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend",
+  "startedAt": "2026-10-17T21:05:05.386778+00:00",
+  "finishedAt": "2026-10-17T21:05:49.452767+00:00",
+  "rc": 0,
+  "stdout": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/06-a-hot/cache-before-capture.stdout.log",
+    "sha256": "0b64ce696c7dc412b4287416796cc9556e51ad40ca0ff996322a917f4680fb9e"
+  },
+  "stderr": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/06-a-hot/cache-before-capture.stderr.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  }
+}

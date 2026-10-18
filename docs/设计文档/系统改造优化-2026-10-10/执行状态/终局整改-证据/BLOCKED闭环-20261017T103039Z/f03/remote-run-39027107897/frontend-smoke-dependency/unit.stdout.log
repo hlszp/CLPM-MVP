@@ -1,0 +1,13 @@
+
+> vben-admin-monorepo@5.7.0 test:unit /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+> vitest run --dom
+
+
+ RUN  v4.1.9 /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+
+
+ Test Files  106 passed (106)
+      Tests  1021 passed (1021)
+   Start at  19:12:52
+   Duration  14.82s (transform 40.47s, setup 0ms, import 146.98s, tests 10.61s, environment 35.90s)
+

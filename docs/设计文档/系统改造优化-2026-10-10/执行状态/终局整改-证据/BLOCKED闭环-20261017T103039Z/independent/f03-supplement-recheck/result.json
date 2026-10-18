@@ -1,0 +1,40 @@
+{
+  "localSupplementVerdict": "PASS",
+  "checks": {
+    "exactThreeJobs": true,
+    "allJobsIndependentAndBlocking": true,
+    "criticalAndFrontendAllStepsBlocking": true,
+    "onlyUnchangedMypyException": true,
+    "threadsExplicitlyOneBothJobs": true,
+    "criticalOwnThreeServices": true,
+    "backendOwnPGRedis": true,
+    "criticalAllIndependentPrerequisites": true,
+    "criticalRealModeAndExclusiveDB": true,
+    "criticalAlwaysArtifactsAndMissingError": true,
+    "criticalFailingGateCommandUnchanged": true,
+    "onlyAuthorizedWorkflowSemanticChanges": true,
+    "explicitCatalogPlaywrightDependency": true,
+    "noOtherPackageChange": true,
+    "lockedVersion160": true,
+    "noOtherLockChange": true,
+    "existingResolutionUnchanged": true,
+    "allGateBusinessTimeoutAlgorithmInputsUnchanged": true,
+    "timeout30AndCoverage60": true,
+    "independentActionlintRC0": true,
+    "diagnosticRealExecutionsAndArtifact": true,
+    "installedAppPlaywright160": true,
+    "originalTwoSmokeCollectedNotExecuted": true,
+    "sourceUnchangedDuringIndependentCheck": true
+  },
+  "existingNonBlockingException": [
+    [
+      "backend-ci",
+      "Mypy type check"
+    ]
+  ],
+  "sourceManifestSha256": "5d4c04f8161252b4f1e9ad5bb70c63233ee32321b13841532ff77222e65e1fdc",
+  "actualLinuxCI": "NOT_EXECUTED",
+  "actualSmokeBusinessCases": "NOT_EXECUTED",
+  "independentNumericKPI": "NOT_EXECUTED",
+  "boundary": "Source/CI structure + diagnostics + collection only; not overall F03 acceptance"
+}

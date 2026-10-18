@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "/usr/bin/psql",
+    "--version"
+  ],
+  "startedAtUtc": "2026-10-17T15:19:40.982322+00:00",
+  "rc": 0,
+  "finishedAtUtc": "2026-10-17T15:19:41.191263+00:00",
+  "stdoutSha256": "4f23a24c04e495ea42ba6e2f21615862eb1aeaaa5f7e88fd859831403fd9663d",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/original-logs/p703_drill_output.txt",
+    "restored_path": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/manifest-restore/original-logs/p703_drill_output.txt",
+    "sha256": "01182d610abc0c2f3cc91aa0ae5d05315270fcf44392aa925b525b480117344d",
+    "match": true,
+    "bytes": 3049,
+    "persistent_backup_created": false
+  },
+  {
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/full-pytest-f01-candidate.log",
+    "restored_path": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/manifest-restore/full-pytest-f01-candidate.log",
+    "sha256": "ffcfded6f3228eac14c37230a04b0126796b7bd936e3ed7f1f363d55f87fad84",
+    "match": true,
+    "bytes": 60791,
+    "persistent_backup_created": false
+  },
+  {
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/f03/run-critical-e2e.sh",
+    "restored_path": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/manifest-restore/f03/run-critical-e2e.sh",
+    "sha256": "ea99dd609f6fab3435d8a4bc2c0fe32ec7f610027dbccdda24e8d9f1386406dd",
+    "match": true,
+    "bytes": 2835,
+    "persistent_backup_created": false
+  },
+  {
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch4-report.json",
+    "restored_path": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/manifest-restore/G5-D01-04-实证-20261015/D02-batches/batch4-report.json",
+    "sha256": "4f0c9be8971b9fa8b8308e7471aeb898bd4ed603cec2d5542ee8d0d44e3d493b",
+    "match": true,
+    "bytes": 3457,
+    "persistent_backup_created": false
+  },
+  {
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/observed.json",
+    "restored_path": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/manifest-restore/G5接管-20261014/b1000-real/observed.json",
+    "sha256": "ba97ba29da5c97b7fcfb8df93d68b980ed6835280724816e59f060f9244b23e5",
+    "match": true,
+    "bytes": 44268996,
+    "persistent_backup_created": false
+  }
+]

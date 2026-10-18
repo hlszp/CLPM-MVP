@@ -1,0 +1,878 @@
+[
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-01-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-01-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 1,
+    "nb": 1,
+    "nc": 1,
+    "d": 5,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.6817248174077513,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -1.0978365030301707
+    ],
+    "b": [
+      0.05016680755288824
+    ],
+    "c": [
+      -0.12034243302338768
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -1.0978365030301707
+      ],
+      "b_coeffs": [
+        0.05016680755288824
+      ],
+      "c_coeffs": [
+        -0.12034243302338768
+      ],
+      "d": 5,
+      "residual_var": 4.5302201947138885,
+      "n_samples": 414,
+      "r_squared": -0.4614366332582842,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-02-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-02-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 5,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.5110743603524919,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.010357256663901906,
+      -0.35153893237790146
+    ],
+    "b": [
+      0.054888749128222336
+    ],
+    "c": [
+      -0.5564479588039167
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.010357256663901906,
+        -0.35153893237790146
+      ],
+      "b_coeffs": [
+        0.054888749128222336
+      ],
+      "c_coeffs": [
+        -0.5564479588039167
+      ],
+      "d": 5,
+      "residual_var": 2.786045516903959,
+      "n_samples": 414,
+      "r_squared": 0.10127267348992686,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-03-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-03-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 6,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.0573783553984788,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.2560586031539699,
+      -0.45197282135872857
+    ],
+    "b": [
+      0.05734263453801665
+    ],
+    "c": [
+      -0.45033581965862496
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        0.2560586031539699,
+        -0.45197282135872857
+      ],
+      "b_coeffs": [
+        0.05734263453801665
+      ],
+      "c_coeffs": [
+        -0.45033581965862496
+      ],
+      "d": 6,
+      "residual_var": 3.325991283093378,
+      "n_samples": 413,
+      "r_squared": -0.07428922123289272,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-04-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-04-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 4,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.8865763780398497,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.050187876322315444,
+      -0.37851799822878784
+    ],
+    "b": [
+      0.036809967371703604
+    ],
+    "c": [
+      -0.26982556306185107
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        0.050187876322315444,
+        -0.37851799822878784
+      ],
+      "b_coeffs": [
+        0.036809967371703604
+      ],
+      "c_coeffs": [
+        -0.26982556306185107
+      ],
+      "d": 4,
+      "residual_var": 2.952548847239096,
+      "n_samples": 415,
+      "r_squared": 0.04923072513026472,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-05-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-05-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 7,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.0373294864117177,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.31499382454822994,
+      -0.500832380662533
+    ],
+    "b": [
+      0.011033981760997074
+    ],
+    "c": [
+      -0.3779118401265179
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        0.31499382454822994,
+        -0.500832380662533
+      ],
+      "b_coeffs": [
+        0.011033981760997074
+      ],
+      "c_coeffs": [
+        -0.3779118401265179
+      ],
+      "d": 7,
+      "residual_var": 3.6320165207081088,
+      "n_samples": 412,
+      "r_squared": -0.18216975184454087,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-06-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-06-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 3,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.4712414338396816,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.8810350202030799,
+      -0.006373711456115055
+    ],
+    "b": [
+      0.004328630124084118
+    ],
+    "c": [
+      -0.2299768584944787
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.8810350202030799,
+        -0.006373711456115055
+      ],
+      "b_coeffs": [
+        0.004328630124084118
+      ],
+      "c_coeffs": [
+        -0.2299768584944787
+      ],
+      "d": 3,
+      "residual_var": 3.6537937134306326,
+      "n_samples": 416,
+      "r_squared": -0.17921558812992444,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-07-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-07-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 8,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 1.1424229068323761,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.2060509385065338,
+      0.3837008357518482
+    ],
+    "b": [
+      0.02811028076360982
+    ],
+    "c": [
+      0.02278996003783008
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        0.2060509385065338,
+        0.3837008357518482
+      ],
+      "b_coeffs": [
+        0.02811028076360982
+      ],
+      "c_coeffs": [
+        0.02278996003783008
+      ],
+      "d": 8,
+      "residual_var": 4.740670433459875,
+      "n_samples": 411,
+      "r_squared": -0.5397116346209183,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-08-u.npy",
+        "bytes": 3488,
+        "sha256": "76034e9409e20f277647a8b5abe60cc8ca749993c6de1f3347f8128fab647d1e",
+        "rawSha256": "30078d0e70ec931844349e773214eeadb4f20f17976ff489e4de3b3c1096f275"
+      },
+      {
+        "role": "y",
+        "file": "armax-08-y.npy",
+        "bytes": 3488,
+        "sha256": "889dc6dea4f00bc5dfbd29a42b5d331eba2ef5f4bf3bc97cde0708294a59923e",
+        "rawSha256": "396e56dc9c0c4bfec2b32d3205abfb7f73994cf62818a869d6d745900c31f142"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 2,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.30147297748688434,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.2728962877604287,
+      -0.31257208176874995
+    ],
+    "b": [
+      -0.0010696106857514323
+    ],
+    "c": [
+      0.6641820071382103
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        0.2728962877604287,
+        -0.31257208176874995
+      ],
+      "b_coeffs": [
+        -0.0010696106857514323
+      ],
+      "c_coeffs": [
+        0.6641820071382103
+      ],
+      "d": 2,
+      "residual_var": 3.4903957815071402,
+      "n_samples": 417,
+      "r_squared": -0.12886343405210998,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-09-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-09-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 1,
+    "nb": 1,
+    "nc": 1,
+    "d": 6,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.4481158405826559,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.49512510429636886
+    ],
+    "b": [
+      0.05816179522157526
+    ],
+    "c": [
+      -0.5593036190137134
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.49512510429636886
+      ],
+      "b_coeffs": [
+        0.05816179522157526
+      ],
+      "c_coeffs": [
+        -0.5593036190137134
+      ],
+      "d": 6,
+      "residual_var": 2.5657465285542442,
+      "n_samples": 413,
+      "r_squared": 0.05936643261568675,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-10-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-10-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 6,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.5980926691517284,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.6170637303001826,
+      0.24048566865249163
+    ],
+    "b": [
+      0.060828442736043535
+    ],
+    "c": [
+      -0.23464581377578772
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.6170637303001826,
+        0.24048566865249163
+      ],
+      "b_coeffs": [
+        0.060828442736043535
+      ],
+      "c_coeffs": [
+        -0.23464581377578772
+      ],
+      "d": 6,
+      "residual_var": 3.033312275715952,
+      "n_samples": 413,
+      "r_squared": -0.1168534441658764,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-11-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-11-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 7,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.5437165233858043,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -1.281971781635003,
+      0.4417011083994494
+    ],
+    "b": [
+      0.02949493253947956
+    ],
+    "c": [
+      -0.5172401503093081
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -1.281971781635003,
+        0.4417011083994494
+      ],
+      "b_coeffs": [
+        0.02949493253947956
+      ],
+      "c_coeffs": [
+        -0.5172401503093081
+      ],
+      "d": 7,
+      "residual_var": 5.693829328828939,
+      "n_samples": 412,
+      "r_squared": -1.0561423559966614,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-12-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-12-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 5,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.7176498164134271,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.8330538448818192,
+      -0.22754769619841414
+    ],
+    "b": [
+      0.03124115780660248
+    ],
+    "c": [
+      0.02052283158111656
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.8330538448818192,
+        -0.22754769619841414
+      ],
+      "b_coeffs": [
+        0.03124115780660248
+      ],
+      "c_coeffs": [
+        0.02052283158111656
+      ],
+      "d": 5,
+      "residual_var": 3.455378654967306,
+      "n_samples": 414,
+      "r_squared": -0.2527598890911664,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-13-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-13-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 8,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.44393490116732204,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.23858947631914415,
+      -0.23714401733435142
+    ],
+    "b": [
+      0.015890660373964118
+    ],
+    "c": [
+      -4.183949371025278e-07
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.23858947631914415,
+        -0.23714401733435142
+      ],
+      "b_coeffs": [
+        0.015890660373964118
+      ],
+      "c_coeffs": [
+        -4.183949371025278e-07
+      ],
+      "d": 8,
+      "residual_var": 2.4139622240351466,
+      "n_samples": 411,
+      "r_squared": 0.11526128277267567,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-14-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-14-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 4,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.5840448020504695,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.6251565175143293,
+      0.24174402362204675
+    ],
+    "b": [
+      0.05014452100762988
+    ],
+    "c": [
+      -0.25497787942562855
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.6251565175143293,
+        0.24174402362204675
+      ],
+      "b_coeffs": [
+        0.05014452100762988
+      ],
+      "c_coeffs": [
+        -0.25497787942562855
+      ],
+      "d": 4,
+      "residual_var": 3.08482723291773,
+      "n_samples": 415,
+      "r_squared": -0.14052320213051894,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-15-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-15-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 9,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.500073768679241,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      0.15897754779350998,
+      -0.46436977166567606
+    ],
+    "b": [
+      0.01866511412487534
+    ],
+    "c": [
+      -0.12685608716206467
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        0.15897754779350998,
+        -0.46436977166567606
+      ],
+      "b_coeffs": [
+        0.01866511412487534
+      ],
+      "c_coeffs": [
+        -0.12685608716206467
+      ],
+      "d": 9,
+      "residual_var": 2.803895968019634,
+      "n_samples": 410,
+      "r_squared": -0.04369674439559046,
+      "iterations": 200
+    }
+  },
+  {
+    "sourceSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+    "inputs": [
+      {
+        "role": "u",
+        "file": "armax-16-u.npy",
+        "bytes": 3488,
+        "sha256": "6ffa0255fbafd568deaf64ed00dd4637f5970b0a213fd220ea534ff321bfeb61",
+        "rawSha256": "82695ac34c4c7b4077fa4f7666772de0753858639b598478c1bcd174cdb78baf"
+      },
+      {
+        "role": "y",
+        "file": "armax-16-y.npy",
+        "bytes": 3488,
+        "sha256": "d8ac5f39cbf5cc8f1889c8ce738abd6881be0a1005bb01fb24064c8ee1dba4b5",
+        "rawSha256": "27a28aa618fe07ffa3d089014e899cc2f422899e8064429a1afdab8cac4bc5d7"
+      }
+    ],
+    "na": 2,
+    "nb": 1,
+    "nc": 1,
+    "d": 3,
+    "maxIter": 200,
+    "tol": 1e-06,
+    "iterationsDone": 200,
+    "lastMaxDiff": 0.8039012279781188,
+    "metActualConvergenceCriterion": false,
+    "a": [
+      -0.00927855718900798,
+      -0.18097889070129686
+    ],
+    "b": [
+      0.00222568978997762
+    ],
+    "c": [
+      0.7663172701211745
+    ],
+    "returnedResult": {
+      "a_coeffs": [
+        -0.00927855718900798,
+        -0.18097889070129686
+      ],
+      "b_coeffs": [
+        0.00222568978997762
+      ],
+      "c_coeffs": [
+        0.7663172701211745
+      ],
+      "d": 3,
+      "residual_var": 2.556998735273252,
+      "n_samples": 416,
+      "r_squared": 0.04228482278482004,
+      "iterations": 200
+    }
+  }
+]

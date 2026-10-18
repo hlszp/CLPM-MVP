@@ -1,0 +1,14 @@
+test_memory_summary_cannot_override_overbudget_raw_current (test_resource_gate_independent.ResourceGateCounterexamples.test_memory_summary_cannot_override_overbudget_raw_current) ... FAIL
+
+======================================================================
+FAIL: test_memory_summary_cannot_override_overbudget_raw_current (test_resource_gate_independent.ResourceGateCounterexamples.test_memory_summary_cannot_override_overbudget_raw_current)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/keeper-validator-review-v2/test_resource_gate_independent.py", line 126, in test_memory_summary_cannot_override_overbudget_raw_current
+    self.assertNotEqual(self.validate()["status"], "LOCAL_CHECKS_PASS")
+AssertionError: 'LOCAL_CHECKS_PASS' == 'LOCAL_CHECKS_PASS'
+
+----------------------------------------------------------------------
+Ran 1 test in 0.008s
+
+FAILED (failures=1)

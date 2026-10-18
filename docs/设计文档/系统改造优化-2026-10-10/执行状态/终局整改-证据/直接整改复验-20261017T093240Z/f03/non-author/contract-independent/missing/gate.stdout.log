@@ -1,0 +1,49 @@
+base_url=http://127.0.0.1:63266
+api_url=http://127.0.0.1:63266/api/v1
+artifacts=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f03/non-author/contract-independent/missing
+PLAYWRIGHT_COLLECT_EXIT=0
+{
+  "mode": "collect",
+  "passed": false,
+  "exitCode": 3,
+  "required": 4,
+  "collected": 3,
+  "stats": {
+    "startTime": "2026-10-17T09:47:19.557Z",
+    "duration": 40.752999999999986,
+    "expected": 0,
+    "skipped": 3,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    }
+  ],
+  "violations": [
+    "missing case: CRITICAL-EVIDENCE-001",
+    "denominator=3, required=4"
+  ]
+}

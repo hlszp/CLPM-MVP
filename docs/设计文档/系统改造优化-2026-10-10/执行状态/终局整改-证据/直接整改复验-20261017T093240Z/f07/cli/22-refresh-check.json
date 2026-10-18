@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T09:46:09.260598+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "find",
+    "取消关注"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.5095556250016671,
+  "stdout": "### Result\nFound 1 match for \"取消关注\":\n\n- generic [ref=f7e4]:\n  - generic [ref=f7e100]:\n    - main [ref=f7e263]:\n      - generic [ref=f7e266]:\n        - generic [ref=f7e267]:\n          - generic [ref=f7e275]:\n            ...\n            - generic [ref=f7e278]: OP -- %\n            - generic [ref=f7e279]: ● 等待实时数据…\n            - generic \"适用性（fitness）数据出口待后端 G1 补齐，暂无法展示等级\" [ref=f7e280]: 适用性待接\n          - button \"取消关注该回路\" [pressed] [ref=f7e282] [cursor=pointer]: ★\n          - button \"打开本回路关注抽屉\" [ref=f7e283] [cursor=pointer]: 🔔\n          - button \"切换到深色主题\" [ref=f7e284] [cursor=pointer]: ◐\n        - main [ref=f7e286]:\n### Page\n- Page URL: http://127.0.0.1:17266/loop/workbench360?mode=single&loopId=a0d17000-0000-4000-8000-000000000001&from=/my-work\n- Page Title: 回路工作台 - iCLPM 系统\n- Console: 0 errors, 1 warnings\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T09-39-34-092Z.log#L8-L9\n",
+  "stderr": ""
+}

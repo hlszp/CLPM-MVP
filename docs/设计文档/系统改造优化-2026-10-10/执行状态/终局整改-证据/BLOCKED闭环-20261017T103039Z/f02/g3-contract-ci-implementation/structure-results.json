@@ -1,0 +1,62 @@
+{
+  "scope": "SERIALIZATION_AST_YAML_GUARD_ONLY_NO_ALGORITHM_RUN",
+  "checks": [
+    {
+      "name": "full_numeric_arrays_not_repr_or_truncated",
+      "status": "PASS"
+    },
+    {
+      "name": "precision_zero_and_boolean_preserved",
+      "status": "PASS"
+    },
+    {
+      "name": "dataclass_and_enum_complete",
+      "status": "PASS"
+    },
+    {
+      "name": "nonfinite_explicit_not_fake_numbers",
+      "status": "PASS"
+    },
+    {
+      "name": "unknown_types_refuse_instead_of_default_str",
+      "status": "PASS"
+    },
+    {
+      "name": "no_default_str_array_escape",
+      "status": "PASS"
+    },
+    {
+      "name": "network_and_main_guard_no_argument_leak",
+      "status": "PASS"
+    },
+    {
+      "name": "original_pytest_command_and_environment_identical",
+      "status": "PASS"
+    },
+    {
+      "name": "post_test_same_job_and_always_upload",
+      "status": "PASS"
+    },
+    {
+      "name": "no_new_continue_on_error_or_swallowed_rc",
+      "status": "PASS"
+    },
+    {
+      "name": "only_diagnostic_job_wall_budget_extended",
+      "status": "PASS"
+    },
+    {
+      "name": "all_other_workflow_jobs_settings_identical",
+      "status": "PASS"
+    },
+    {
+      "name": "diagnostic_shell_parses",
+      "status": "PASS"
+    },
+    {
+      "name": "no_algorithm_or_app_main_imported",
+      "status": "PASS"
+    }
+  ],
+  "passed": 14
+}

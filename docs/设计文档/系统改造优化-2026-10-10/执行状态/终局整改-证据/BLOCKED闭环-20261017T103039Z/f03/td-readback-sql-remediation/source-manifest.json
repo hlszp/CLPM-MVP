@@ -1,0 +1,14 @@
+{
+  "capturedAt": "2026-10-17T13:54:30.219635+00:00",
+  "candidateHeadObserved": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+  "sourcePath": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py",
+  "beforeSha256": "0e1fc40d5e79a85992c4c99f1c60e09ed38dceb00f57ab366c2b2ab8de00edb7",
+  "afterSha256": "431e8df1763f0b847e8e8d2ef0d29d87f699b5310186091157eb4f7cf1b8becc",
+  "afterBytes": 28015,
+  "change": "Exactly two backticks around SQL value identifier, one literal replacement",
+  "e2eProtectionTestSha256Unchanged": "55f507d8dd6bff5b48b45d8770dd5815c8f24a25bf92e80d0b87526356890110",
+  "independentBusinessSpecSha256Unchanged": "d8aa48efd47f95ed1d7e1c8c895a3347b5e33f578f0f7a97eb2fca8c330b486c",
+  "rootActualReadOnlyBodiesAllHashesVerified": true,
+  "generatedInputValuesAndSqlLiteralsUnchanged": true,
+  "scope": "SQL syntax remediation only; no actual business E2E executed by this author"
+}

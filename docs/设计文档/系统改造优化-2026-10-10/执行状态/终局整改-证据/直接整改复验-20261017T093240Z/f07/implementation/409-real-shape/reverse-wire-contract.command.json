@@ -1,0 +1,18 @@
+{
+  "argv": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--config",
+    "apps/web-antd/vitest.config.ts",
+    "apps/web-antd/src/__tests__/personal-work-conflict.test.ts",
+    "--maxWorkers",
+    "1"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "startedAt": "2026-10-17T10:04:34.893517+00:00",
+  "finishedAt": "2026-10-17T10:04:36.461934+00:00",
+  "returncode": 1,
+  "sourceSha256": "695caa12a5b431dfaed9039815ac3fa4d3884e2030896f9002205a6ff5fa525b"
+}

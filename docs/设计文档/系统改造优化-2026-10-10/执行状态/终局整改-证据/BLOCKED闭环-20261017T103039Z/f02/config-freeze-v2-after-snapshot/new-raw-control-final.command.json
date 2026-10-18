@@ -1,0 +1,32 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-s",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_freeze_configuration_after_snapshot.py",
+    "--basetemp",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-new-originals"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot",
+  "startedAt": "2026-10-17T13:47:28.952375+00:00",
+  "elapsedSeconds": 3.853769667010056,
+  "rc": 0,
+  "environment": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02"
+  },
+  "subjectOverride": {},
+  "sourceSha256Before": {
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/freeze_capacity_configuration.py": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/freeze_capacity_configuration_v2.py": "2688732523d3f9300c9d11e2dbf9194248a7be195c18cbfa313f5bbf020e66e5",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_freeze_configuration_after_snapshot.py": "4ebc7fe9b943a212a1542331f21f19ada8d0b2801ff32a289e3b4b1b16a70fc5"
+  },
+  "stdoutSha256": "695ed38543cd5c13dd49ad692a7f9c1e1e9a2b48ddc3eb33f2511e6c1e9593a4",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "evidenceRole": "OFFLINE_FAKE_DB_HTTP_GIT_TOOL_CONTROL_ONLY",
+  "noActualNetworkOrBusinessServices": true
+}

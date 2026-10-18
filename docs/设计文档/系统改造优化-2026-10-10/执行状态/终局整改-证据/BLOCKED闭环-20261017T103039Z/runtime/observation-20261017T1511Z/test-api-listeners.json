@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "lsof",
+    "-nP",
+    "-iTCP:17101",
+    "-iTCP:17261",
+    "-iTCP:17266",
+    "-sTCP:LISTEN"
+  ],
+  "startedAtUtc": "2026-10-17T15:10:52.534598+00:00",
+  "finishedAtUtc": "2026-10-17T15:10:52.708345+00:00",
+  "rc": 1,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

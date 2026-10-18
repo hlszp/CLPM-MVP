@@ -1,0 +1,120 @@
+{
+  "version": "v2",
+  "frozenAt": "2026-10-17T12:52:42.788424+00:00",
+  "scope": "Disk-only lossless adapter. NULL/malformed frozen identity and version-source mismatch refuse admission; conserved node summary explicitly includes cancelled=0. External original native birth/launch/cwd/interpreter observations are mandatory and enclose task plus actual PG barrier span. No actual normal20 adaptation and no capacity acceptance.",
+  "files": [
+    {
+      "file": "adapt_capacity_artifacts.py",
+      "bytes": 84981,
+      "sha256": "102197849aa80dcb76da80908ff86600f4c57f96a5359f2c99e16184dc210d28"
+    },
+    {
+      "file": "test_adapt_capacity_artifacts.py",
+      "bytes": 21083,
+      "sha256": "938d0f06cb2e19fab3ec268643746379c485b4ccb56a53e795744f8589a58634"
+    },
+    {
+      "file": "test_adapt_capacity_full_shape.py",
+      "bytes": 18970,
+      "sha256": "a2437a52c4c07058cdd2b9dc6384b296b6dcde27f249ab9c2ba45d5588f736d2"
+    },
+    {
+      "file": "test_adapt_capacity_identity.py",
+      "bytes": 6123,
+      "sha256": "9dc0b22ff8d48146782cf9d009230fba65d362b4f313396e625930f508d93684"
+    },
+    {
+      "file": "test_adapt_capacity_native.py",
+      "bytes": 12499,
+      "sha256": "5534284198ba2f60c0a05851bb63b084437df55065442c1892ce84fe83f193f5"
+    },
+    {
+      "file": "probe_adapter_identity_contract.py",
+      "bytes": 3201,
+      "sha256": "88f315390b8e66568cf9077c2eb2d5724658529433dbd662868a902798f02efd"
+    }
+  ],
+  "dependencies": [
+    {
+      "file": "../independent/independent_support.py",
+      "bytes": 3959,
+      "sha256": "19c67efd3d33f3cf77d86303921b57eb4be16f5e5ce619dc62c2367ff13848df"
+    },
+    {
+      "file": "../observe_capacity_native_identity.py",
+      "bytes": 9844,
+      "sha256": "f9ef43b64c5b3deeed24d8429f6a5d2eaaf96ccd40c3e41a99ddceff26a245f4"
+    }
+  ],
+  "originalV1Preservation": {
+    "file": "adapter-sources-v1/preservation-manifest.json",
+    "bytes": 1079,
+    "sha256": "ad34c1108f2f36d38e1924e0229dad1cfa175f1915a4dc076a9a6af92d1d2d45"
+  },
+  "originalFixedCounterexamples": [
+    {
+      "file": "../independent/f02-adapter-review-v1/test_independent_node_cancelled.py",
+      "bytes": 1280,
+      "sha256": "42ee297c8a1e4c742f2216d74fab273dd711dcb9d15ad20819fee8ad31edcd7e"
+    },
+    {
+      "file": "../independent/f02-adapter-review-v1/positive-zero.json",
+      "bytes": 5957,
+      "sha256": "2ac615250e303816d442b70c0acf89b545570e21467a45f1561072042dbdabcd"
+    },
+    {
+      "file": "../independent/f02-adapter-review-v1/negative-one.json",
+      "bytes": 5957,
+      "sha256": "6f227de7b97b465be1cf9086fe9d21c3564a6c71af6f12e5bca14a7806b79984"
+    }
+  ],
+  "installedCeleryEventSources": {
+    "capturedAt": "2026-10-17T12:16:33.192057+00:00",
+    "scope": "Read-only copy of actual runtime installed Celery event/request source; no application import or service operation",
+    "versionLiteral": "5.6.3",
+    "celeryInitSha256": "84a164d3862145db4ac21717f808ceeeb289ae885b873978b5df234cd831d16b",
+    "files": [
+      {
+        "originalRuntimePath": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/celery/worker/request.py",
+        "resolvedPath": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/celery/worker/request.py",
+        "file": "request.py",
+        "bytes": 27979,
+        "sha256": "0513b4bd259ec65ac6ff7bfddea7bf03955b431ff07f38a12f142008043e6577"
+      },
+      {
+        "originalRuntimePath": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/celery/events/dispatcher.py",
+        "resolvedPath": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/celery/events/dispatcher.py",
+        "file": "dispatcher.py",
+        "bytes": 8987,
+        "sha256": "edbdfedddffaba4bd135a8f27e21cc5f562fa16348cda07acd2dfecc4510846e"
+      }
+    ],
+    "interpretation": "Request.on_accepted invokes send_event(task-started) without executor pid. EventDispatcher emits pid=self.pid (master producer). Do not claim prefork executor PID from event.pid."
+  },
+  "priorFrozenToolsUnchanged": [
+    {
+      "file": "collect_capacity_evidence.py",
+      "bytes": 33820,
+      "sha256": "d0b78c19a8c285e0bf34eb8cf22d140548f44e900e3e0cd592536393f7db031c"
+    },
+    {
+      "file": "capture_closed_window_endpoints.py",
+      "bytes": 24424,
+      "sha256": "d518fccb36b4e0f841fc920632f173c81b5d9422dcf81aa9ce319d6dbec3bcfe"
+    },
+    {
+      "file": "freeze_capacity_configuration.py",
+      "bytes": 29547,
+      "sha256": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e"
+    }
+  ],
+  "authorVerification": {
+    "suite": "adapter-selftest-frozen-v2.command.json",
+    "fixedOriginalForward": "adapter-fixed-counterexamples-forward-v2.command.json",
+    "enhancedCompleteIdentityOld": "adapter-complete-identity-reverse-v1-bound-source.command.json",
+    "enhancedCompleteIdentityForward": "adapter-complete-identity-forward-v2.command.json",
+    "ruff": "adapter-ruff-frozen-v2.command.json",
+    "format": "adapter-format-frozen-v2.command.json"
+  },
+  "independentAcceptance": "PENDING F04 original counterexample and full native source-contract review; actual 20 business batches still required."
+}

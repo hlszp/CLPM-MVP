@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "docker",
+    "exec",
+    "clpm-mvp-postgres",
+    "pg_dump",
+    "-Fc",
+    "-U",
+    "clpm",
+    "clpm_critical_20261017_local"
+  ],
+  "startedAt": "2026-10-17T14:18:31.902825+00:00",
+  "finishedAt": "2026-10-17T14:18:32.027964+00:00",
+  "rc": 0,
+  "stdoutSha256": "79ae1b77aeacf02733bca70de202032211f95174ea3e42c1a0b07ca7d41507b4",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

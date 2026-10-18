@@ -1,0 +1,477 @@
+[
+  {
+    "batch": "1",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch1-report.json",
+    "sha256": "6fa1a0ce4c51b8a870a6651ad8fdd1fd36d32faf79cf96c046e92d29352f5dd0",
+    "task_id": "132702fb-ff7f-4402-bcf2-6e5dfe4972a4",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 763.6083723340053,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 850,
+        "INCONCLUSIVE": 150
+      },
+      "expectedHistogram": {
+        "EVALUATED": 800,
+        "INCONCLUSIVE(DATA_INSUFFICIENT)": 100,
+        "EVALUATED(ELIGIBLE内终态; MODE=MANUAL, auto表现照常评估)": 50,
+        "INCONCLUSIVE(窗口覆盖不足——缺口段按 held/coverage 语义)": 50
+      },
+      "success": 850,
+      "inconclusive": 150,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "2",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch2-report.json",
+    "sha256": "d068ecc35cf324446b5f8020835d95f52fff0303e3870091a7b1cec5db1322a3",
+    "task_id": "501be977-aae5-4a10-9d8a-f61e22d2475d",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 763.2854546660019,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "3",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch3-report.json",
+    "sha256": "577a53cdd8128b817608048f5e70a6209877d9e6a0de019fc06b26a3ceb1b45d",
+    "task_id": "5dfd8bfb-a145-4d0d-89b0-98a299f49a6d",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 759.0351412500022,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "4",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch4-report.json",
+    "sha256": "4f0c9be8971b9fa8b8308e7471aeb898bd4ed603cec2d5542ee8d0d44e3d493b",
+    "task_id": "4886b5f5-d41f-4269-bb2c-9e1ab0ccc62a",
+    "completionReason": "TERMINAL_MISMATCH",
+    "seconds": 755.2127027079987,
+    "gate_ok": false,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 999,
+        "INCONCLUSIVE": 1
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 999,
+      "inconclusive": 1,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 1,
+      "expectedStatus": 1,
+      "latestMissing": 0,
+      "latestBad": 1,
+      "nodeMissing": 16,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "5",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch5-report.json",
+    "sha256": "bdbe302a69372390758ad2f380d2686f36056a9cef26cc484f399ad6498500e8",
+    "task_id": "61a81336-3260-4033-b347-7284eee89171",
+    "completionReason": "TERMINAL_MISMATCH",
+    "seconds": 754.9834517920026,
+    "gate_ok": false,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 978,
+        "INCONCLUSIVE": 22
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 978,
+      "inconclusive": 22,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 22,
+      "expectedStatus": 22,
+      "latestMissing": 0,
+      "latestBad": 22,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "6",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch6-report.json",
+    "sha256": "11662361e40ce0ea3ed216090e84c9b2857f0d77f9636841a9fd133d610d281d",
+    "task_id": "0b2f2dfb-848e-4594-81be-4731235e46e1",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 773.2376287079969,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "7",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch7-report.json",
+    "sha256": "97b0ec60e15864088db95b9d53be00692bbe92feaee17561bd86c8ff70d4853b",
+    "task_id": "905f70a6-665e-4761-92a1-4d082331c075",
+    "completionReason": "TERMINAL_MISMATCH",
+    "seconds": 748.5466860830056,
+    "gate_ok": false,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 999,
+        "INCONCLUSIVE": 1
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 999,
+      "inconclusive": 1,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 1,
+      "expectedStatus": 1,
+      "latestMissing": 0,
+      "latestBad": 1,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "9pp",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch9pp-report.json",
+    "sha256": "3d0eaa1d470ef51b3bf6b2a6d6c94aef15f34d7075fafde3497c84049867039c",
+    "task_id": "3dd354e5-39c9-4135-a6d6-2fc1c2d65980",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 1373.897584499995,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "10",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch10-report.json",
+    "sha256": "2018aaaa346c3c09eb990a316e9b6bff62433901e09cd79bd601d03b06cdef9c",
+    "task_id": "ac8b2bca-da8c-4f56-9520-ac20787c65f0",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 1421.9036038329941,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": true
+  },
+  {
+    "batch": "8",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch8-report.json",
+    "sha256": "c149e6688064cfa82f83218dff0947f300f8371c85aee0e791bb663bb409a01a",
+    "task_id": "220180f0-a9e8-4157-8e34-9aecc5992278",
+    "completionReason": "TERMINAL_MISMATCH",
+    "seconds": 1415.6421756670024,
+    "gate_ok": false,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 999,
+        "INCONCLUSIVE": 1
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 999,
+      "inconclusive": 1,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 1,
+      "expectedStatus": 1,
+      "latestMissing": 0,
+      "latestBad": 1,
+      "nodeMissing": 20,
+      "nodeBadVersion": 0
+    },
+    "selected": false
+  },
+  {
+    "batch": "8p",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch8p-report.json",
+    "sha256": "f463a5fd8baf87aae4f2ae5c6c0011bcda58a5188046d770daa437b81acc06e7",
+    "task_id": "0da7dea9-9153-41b4-a2bd-a7872ee3f24e",
+    "completionReason": "RUNNING",
+    "seconds": 254.39038112500566,
+    "gate_ok": false,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 0,
+      "snapshotStatusCounts": {},
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 0,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 1000,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 1000,
+      "latestBad": 0,
+      "nodeMissing": 20,
+      "nodeBadVersion": 0
+    },
+    "selected": false
+  },
+  {
+    "batch": "9",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch9-report.json",
+    "sha256": "d781c151325cda01a9d7edba81d1d7c1f78033cc46d5679c24a42ff8bdb7526b",
+    "task_id": "1fcec425-b2a6-435f-a86b-62d8c2b0f1b4",
+    "completionReason": "RUNNING",
+    "seconds": 760.6837514999934,
+    "gate_ok": false,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 210,
+      "snapshotStatusCounts": {
+        "INCONCLUSIVE": 11,
+        "SUCCESS": 199
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 199,
+      "inconclusive": 11,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 790,
+      "foreignSource": 0,
+      "runBinding": 1,
+      "algorithmVersion": 11,
+      "expectedStatus": 11,
+      "latestMissing": 790,
+      "latestBad": 12,
+      "nodeMissing": 20,
+      "nodeBadVersion": 0
+    },
+    "selected": false
+  },
+  {
+    "batch": "9p",
+    "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5-D01-04-实证-20261015/D02-batches/batch9p-report.json",
+    "sha256": "de3faa3c39bac235ba3cf4c30cff844833bdeb9ced54accb0cfece5e4e67b8ed",
+    "task_id": "7f78a916-8c44-43e7-97c6-74af026eebdf",
+    "completionReason": "BARRIER_PASSED",
+    "seconds": 1822.8031039159978,
+    "gate_ok": true,
+    "denominators": {
+      "frozenEligible": 1000,
+      "excluded": 0,
+      "ledgerRows": 1000,
+      "snapshotStatusCounts": {
+        "SUCCESS": 1000
+      },
+      "expectedHistogram": {
+        "EVALUATED": 1000
+      },
+      "success": 1000,
+      "inconclusive": 0,
+      "partial": 0,
+      "skipped": 0
+    },
+    "violations": {
+      "missingLedger": 0,
+      "foreignSource": 0,
+      "runBinding": 0,
+      "algorithmVersion": 0,
+      "expectedStatus": 0,
+      "latestMissing": 0,
+      "latestBad": 0,
+      "nodeMissing": 0,
+      "nodeBadVersion": 0
+    },
+    "selected": false
+  }
+]

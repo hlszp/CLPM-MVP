@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-10-17T10:34:31.999905+00:00",
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "feat(batch): add immutable restore snapshots",
+    "-m",
+    "Preserve failed evidence and enforce audited semantics before live acceptance.\nThe complete candidate is independently tested; production is out of scope."
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "parent": "96e0b06cfa2bd378ba7cc6e0a0c76b6f90730827",
+  "exit_code": 0,
+  "subject": "feat(batch): add immutable restore snapshots",
+  "changed_lines": 482,
+  "numstat": "51\t0\tbackend/app/schemas/loop_batch.py\n431\t0\tbackend/app/services/loop_batch_restore.py\n",
+  "stdout_sha256": "408d7c4b62bd42865ac203f71c3f09c631f69ebee164eae49c8c2f7d691e11b8",
+  "stderr_sha256": "24f6d9e02963e1e247232463a6ec8a5eb79e460cf1db258235638d411a7c9481",
+  "commit": "cfa44913ec549b8108f8fb23fa4473566323836a"
+}

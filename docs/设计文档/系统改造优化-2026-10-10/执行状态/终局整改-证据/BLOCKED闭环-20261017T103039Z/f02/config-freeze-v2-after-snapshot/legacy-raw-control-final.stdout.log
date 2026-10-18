@@ -1,0 +1,176 @@
+{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
+F{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
+F{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
+F{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
+F
+=================================== FAILURES ===================================
+_____ test_before_after_originals_preserved_even_when_blocked[False-False] _____
+
+tmp_path = PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr0')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a768470>
+different_mvcc = False, changed = False
+
+    @pytest.mark.parametrize("different_mvcc", [False, True])
+    @pytest.mark.parametrize("changed", [False, True])
+    @pytest.mark.asyncio
+    async def test_before_after_originals_preserved_even_when_blocked(
+        tmp_path, monkeypatch, different_mvcc, changed
+    ):
+        module = load(Path(os.environ.get("CLPM_FREEZE_TOOL_SOURCE", NEW)))
+        args, db = prepare(
+            module,
+            tmp_path / "case",
+            monkeypatch,
+            different_mvcc=different_mvcc,
+            changed=changed,
+        )
+        rc = await module.run(args)
+        out = Path(args.out)
+        report = json.loads((out / "config-freeze.json").read_bytes())
+        assert rc == (2 if changed else 0)
+        assert report["status"] == ("BLOCKED" if changed else "FROZEN")
+        assert db.closed and db.phase == 1
+        for phase, raw_dir, canonical_dir in [
+            (0, "pg-raw", "pg-canonical"),
+            (1, "pg-after-raw", "pg-after-canonical"),
+        ]:
+>           assert len(list((out / raw_dir).glob("*.json"))) == 25, (
+                "actual after table bytes were not archived"
+            )
+E           AssertionError: actual after table bytes were not archived
+E           assert 0 == 25
+E            +  where 0 = len([])
+E            +    where [] = list(<generator object Path.glob at 0x10b61cae0>)
+E            +      where <generator object Path.glob at 0x10b61cae0> = glob('*.json')
+E            +        where glob = (PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr0/case/output') / 'pg-after-raw').glob
+
+../test_freeze_configuration_after_snapshot.py:272: AssertionError
+_____ test_before_after_originals_preserved_even_when_blocked[False-True] ______
+
+tmp_path = PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr1')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10a76b6e0>
+different_mvcc = True, changed = False
+
+    @pytest.mark.parametrize("different_mvcc", [False, True])
+    @pytest.mark.parametrize("changed", [False, True])
+    @pytest.mark.asyncio
+    async def test_before_after_originals_preserved_even_when_blocked(
+        tmp_path, monkeypatch, different_mvcc, changed
+    ):
+        module = load(Path(os.environ.get("CLPM_FREEZE_TOOL_SOURCE", NEW)))
+        args, db = prepare(
+            module,
+            tmp_path / "case",
+            monkeypatch,
+            different_mvcc=different_mvcc,
+            changed=changed,
+        )
+        rc = await module.run(args)
+        out = Path(args.out)
+        report = json.loads((out / "config-freeze.json").read_bytes())
+        assert rc == (2 if changed else 0)
+        assert report["status"] == ("BLOCKED" if changed else "FROZEN")
+        assert db.closed and db.phase == 1
+        for phase, raw_dir, canonical_dir in [
+            (0, "pg-raw", "pg-canonical"),
+            (1, "pg-after-raw", "pg-after-canonical"),
+        ]:
+>           assert len(list((out / raw_dir).glob("*.json"))) == 25, (
+                "actual after table bytes were not archived"
+            )
+E           AssertionError: actual after table bytes were not archived
+E           assert 0 == 25
+E            +  where 0 = len([])
+E            +    where [] = list(<generator object Path.glob at 0x10a7ecbf0>)
+E            +      where <generator object Path.glob at 0x10a7ecbf0> = glob('*.json')
+E            +        where glob = (PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr1/case/output') / 'pg-after-raw').glob
+
+../test_freeze_configuration_after_snapshot.py:272: AssertionError
+_____ test_before_after_originals_preserved_even_when_blocked[True-False] ______
+
+tmp_path = PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr2')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10b2276b0>
+different_mvcc = False, changed = True
+
+    @pytest.mark.parametrize("different_mvcc", [False, True])
+    @pytest.mark.parametrize("changed", [False, True])
+    @pytest.mark.asyncio
+    async def test_before_after_originals_preserved_even_when_blocked(
+        tmp_path, monkeypatch, different_mvcc, changed
+    ):
+        module = load(Path(os.environ.get("CLPM_FREEZE_TOOL_SOURCE", NEW)))
+        args, db = prepare(
+            module,
+            tmp_path / "case",
+            monkeypatch,
+            different_mvcc=different_mvcc,
+            changed=changed,
+        )
+        rc = await module.run(args)
+        out = Path(args.out)
+        report = json.loads((out / "config-freeze.json").read_bytes())
+        assert rc == (2 if changed else 0)
+        assert report["status"] == ("BLOCKED" if changed else "FROZEN")
+        assert db.closed and db.phase == 1
+        for phase, raw_dir, canonical_dir in [
+            (0, "pg-raw", "pg-canonical"),
+            (1, "pg-after-raw", "pg-after-canonical"),
+        ]:
+>           assert len(list((out / raw_dir).glob("*.json"))) == 25, (
+                "actual after table bytes were not archived"
+            )
+E           AssertionError: actual after table bytes were not archived
+E           assert 0 == 25
+E            +  where 0 = len([])
+E            +    where [] = list(<generator object Path.glob at 0x10b61c8c0>)
+E            +      where <generator object Path.glob at 0x10b61c8c0> = glob('*.json')
+E            +        where glob = (PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr2/case/output') / 'pg-after-raw').glob
+
+../test_freeze_configuration_after_snapshot.py:272: AssertionError
+______ test_before_after_originals_preserved_even_when_blocked[True-True] ______
+
+tmp_path = PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr3')
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x10d3fed50>
+different_mvcc = True, changed = True
+
+    @pytest.mark.parametrize("different_mvcc", [False, True])
+    @pytest.mark.parametrize("changed", [False, True])
+    @pytest.mark.asyncio
+    async def test_before_after_originals_preserved_even_when_blocked(
+        tmp_path, monkeypatch, different_mvcc, changed
+    ):
+        module = load(Path(os.environ.get("CLPM_FREEZE_TOOL_SOURCE", NEW)))
+        args, db = prepare(
+            module,
+            tmp_path / "case",
+            monkeypatch,
+            different_mvcc=different_mvcc,
+            changed=changed,
+        )
+        rc = await module.run(args)
+        out = Path(args.out)
+        report = json.loads((out / "config-freeze.json").read_bytes())
+        assert rc == (2 if changed else 0)
+        assert report["status"] == ("BLOCKED" if changed else "FROZEN")
+        assert db.closed and db.phase == 1
+        for phase, raw_dir, canonical_dir in [
+            (0, "pg-raw", "pg-canonical"),
+            (1, "pg-after-raw", "pg-after-canonical"),
+        ]:
+>           assert len(list((out / raw_dir).glob("*.json"))) == 25, (
+                "actual after table bytes were not archived"
+            )
+E           AssertionError: actual after table bytes were not archived
+E           assert 0 == 25
+E            +  where 0 = len([])
+E            +    where [] = list(<generator object Path.glob at 0x10b61ebd0>)
+E            +      where <generator object Path.glob at 0x10b61ebd0> = glob('*.json')
+E            +        where glob = (PosixPath('/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/config-freeze-v2-after-snapshot/offline-legacy-originals/test_before_after_originals_pr3/case/output') / 'pg-after-raw').glob
+
+../test_freeze_configuration_after_snapshot.py:272: AssertionError
+=========================== short test summary info ============================
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[False-False]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[False-True]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[True-False]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[True-True]
+4 failed, 3 deselected in 1.95s

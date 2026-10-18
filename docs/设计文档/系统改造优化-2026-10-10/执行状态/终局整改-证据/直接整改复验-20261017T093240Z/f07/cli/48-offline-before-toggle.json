@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:01:52.650310+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "network-state-set",
+    "offline"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.4745298750058282,
+  "stdout": "### Result\nNetwork is now offline\n### Ran Playwright code\n```js\nawait page.context().setOffline(true);\n```\n",
+  "stderr": ""
+}

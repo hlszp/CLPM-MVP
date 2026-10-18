@@ -1,0 +1,12 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 204, in <module>
+    main(parser.parse_args())
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 166, in main
+    collector_rc = collector.wait(timeout=720)  # SLO 600s + post 30s + margin
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/subprocess.py", line 1264, in wait
+    return self._wait(timeout=timeout)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/subprocess.py", line 2045, in _wait
+    raise TimeoutExpired(self.args, timeout)
+subprocess.TimeoutExpired: Command '['/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python', '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py', '--env-file', '/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env', '--ts-start', '2026-10-15T18:00:00', '--report', '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/07-a-hot/product-report.json', '--out', '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/07-a-hot/raw', '--worker-log', '/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celery-worker.log', '--interval', '2', '--post-seconds', '30', '--max-seconds', '3100', '--containers', 'clpm-mvp-postgres', 'clpm-mvp-tdengine', 'clpm-f02-redis-20261017-s01', '--td-container', 'clpm-mvp-tdengine']' timed out after 720 seconds

@@ -1,0 +1,343 @@
+{
+  "synthetic": true,
+  "inputOnly": true,
+  "committed": true,
+  "loopId": "ef9052ab-4db7-4e8e-8cab-050255c1e554",
+  "loopTagName": "CRITICAL-E2E-39037226096-1-FLOW001",
+  "validFrom": "2026-10-17T11:00:00+00:00",
+  "validTo": null,
+  "basis": "SYNTHETIC_FIXTURE",
+  "statements": [
+    {
+      "sql": "UPDATE loop_tag_binding_history SET valid_from=$2,basis='SYNTHETIC_FIXTURE' WHERE loop_id=$1 AND id=ANY($3::uuid[]) AND mapping_version=1 AND basis='MVP_INIT' AND valid_to IS NULL",
+      "parameters": [
+        "ef9052ab-4db7-4e8e-8cab-050255c1e554",
+        "2026-10-17 11:00:00+00:00",
+        [
+          "70f38a67-ffdf-4d06-be8a-99adb73641a1",
+          "db773a77-2c56-4e92-9a75-538a307886e5",
+          "5b0250cc-7204-493b-adff-30ea07f7c4fc",
+          "2300ab13-2f39-4c7f-8ae2-3eeb160aba6d",
+          "0d20fa6d-1b4f-473c-9d84-a1a1516590bd",
+          "35f3b387-d6a0-4812-b029-eff8c26520d0",
+          "c802cc0f-5a81-4707-a8c8-05deb7db3d19"
+        ]
+      ],
+      "status": "UPDATE 7"
+    }
+  ],
+  "actualDatabase": "clpm_critical_e2e",
+  "before": {
+    "loop": {
+      "id": "ef9052ab-4db7-4e8e-8cab-050255c1e554",
+      "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001",
+      "description": "synthetic CI INPUT: real algorithm, disposable runner only",
+      "created_at": "2026-10-17 13:38:32.077908",
+      "raw_row": "{\"id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001\",\"description\":\"synthetic CI INPUT: real algorithm, disposable runner only\",\"unit_id\":\"98970a2e-6af4-4a4f-8fbd-1cd54ca9b67a\",\"score_weight\":null,\"is_active\":true,\"last_aas_sync_at\":null,\"status\":\"READY\",\"loop_type\":\"FLOW\",\"control_type\":\"STABLE\",\"created_at\":\"2026-10-17T13:38:32.077908\",\"updated_at\":\"2026-10-17T13:38:32.077908\",\"created_by\":\"admin\",\"score_weights\":null,\"remark\":\"synthetic=true; critical E2E INPUT, never field evidence\",\"updated_by\":\"admin\",\"importance_level\":2,\"include_in_evaluation\":true,\"modeattr_tag_id\":null,\"data_retention_days\":null,\"op_output_lower_limit\":null,\"op_output_upper_limit\":null,\"dcs_model_id\":null,\"ideal_settling_time\":null,\"complex_loop_group_id\":null,\"complex_role\":null,\"control_action_direction\":\"UNKNOWN\",\"engineering_template_id\":null,\"engineering_template_version\":null}"
+    },
+    "mappings": [
+      {
+        "tag_role": "MODE",
+        "point_id": "a2332017-9305-410f-8cf3-7301ab35f52c",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_MODE",
+        "tag_description": "synthetic CI INPUT MODE",
+        "mapping_raw": "{\"id\":\"5939ec78-4a3e-4b7f-a811-c594bfe779aa\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"a2332017-9305-410f-8cf3-7301ab35f52c\",\"tag_role\":\"MODE\",\"is_required\":true,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"a2332017-9305-410f-8cf3-7301ab35f52c\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_MODE\",\"tag_description\":\"synthetic CI INPUT MODE\",\"tag_type\":\"MODE\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.026157\",\"is_linked\":true,\"range_min\":null,\"range_max\":null,\"unit\":null,\"measure_type\":\"OTHER\",\"tdengine_tag_id\":null}"
+      },
+      {
+        "tag_role": "OP",
+        "point_id": "ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_OP",
+        "tag_description": "synthetic CI INPUT OP",
+        "mapping_raw": "{\"id\":\"e2e6bd6e-c0d9-4bc4-8e59-d9c73ee6d219\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5\",\"tag_role\":\"OP\",\"is_required\":true,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_OP\",\"tag_description\":\"synthetic CI INPUT OP\",\"tag_type\":\"OP\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.022912\",\"is_linked\":true,\"range_min\":0,\"range_max\":100,\"unit\":\"%\",\"measure_type\":\"OTHER\",\"tdengine_tag_id\":null}"
+      },
+      {
+        "tag_role": "PID_D",
+        "point_id": "a89e0a28-2a3b-436b-aded-f243489dd475",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_PID_D",
+        "tag_description": "synthetic CI INPUT PID_D",
+        "mapping_raw": "{\"id\":\"16e641ca-b9ae-498f-858c-8346c514639b\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"a89e0a28-2a3b-436b-aded-f243489dd475\",\"tag_role\":\"PID_D\",\"is_required\":false,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"a89e0a28-2a3b-436b-aded-f243489dd475\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_PID_D\",\"tag_description\":\"synthetic CI INPUT PID_D\",\"tag_type\":\"PID_D\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.03526\",\"is_linked\":true,\"range_min\":null,\"range_max\":null,\"unit\":null,\"measure_type\":\"OTHER\",\"tdengine_tag_id\":null}"
+      },
+      {
+        "tag_role": "PID_I",
+        "point_id": "2e170872-e22a-44cb-b00a-de86216cf683",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_PID_I",
+        "tag_description": "synthetic CI INPUT PID_I",
+        "mapping_raw": "{\"id\":\"77596202-6d40-40ea-a601-54f5b2dd8740\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"2e170872-e22a-44cb-b00a-de86216cf683\",\"tag_role\":\"PID_I\",\"is_required\":false,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"2e170872-e22a-44cb-b00a-de86216cf683\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_PID_I\",\"tag_description\":\"synthetic CI INPUT PID_I\",\"tag_type\":\"PID_I\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.032187\",\"is_linked\":true,\"range_min\":null,\"range_max\":null,\"unit\":null,\"measure_type\":\"OTHER\",\"tdengine_tag_id\":null}"
+      },
+      {
+        "tag_role": "PID_P",
+        "point_id": "266a04ac-1eed-42d6-a65d-8dd703988691",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_PID_P",
+        "tag_description": "synthetic CI INPUT PID_P",
+        "mapping_raw": "{\"id\":\"1f83d433-1b34-4331-8637-8dd1eac9e19c\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"266a04ac-1eed-42d6-a65d-8dd703988691\",\"tag_role\":\"PID_P\",\"is_required\":false,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"266a04ac-1eed-42d6-a65d-8dd703988691\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_PID_P\",\"tag_description\":\"synthetic CI INPUT PID_P\",\"tag_type\":\"PID_P\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.029122\",\"is_linked\":true,\"range_min\":null,\"range_max\":null,\"unit\":null,\"measure_type\":\"OTHER\",\"tdengine_tag_id\":null}"
+      },
+      {
+        "tag_role": "PV",
+        "point_id": "855724f2-da33-493b-b753-4e55987c710c",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_PV",
+        "tag_description": "synthetic CI INPUT PV",
+        "mapping_raw": "{\"id\":\"6f46aa06-4a3a-4b26-8613-296cda7b4e21\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"855724f2-da33-493b-b753-4e55987c710c\",\"tag_role\":\"PV\",\"is_required\":true,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"855724f2-da33-493b-b753-4e55987c710c\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_PV\",\"tag_description\":\"synthetic CI INPUT PV\",\"tag_type\":\"PV\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.014576\",\"is_linked\":true,\"range_min\":0,\"range_max\":100,\"unit\":\"%\",\"measure_type\":\"FLOW\",\"tdengine_tag_id\":null}"
+      },
+      {
+        "tag_role": "SP",
+        "point_id": "78edc872-9031-48a7-860f-afb3a485ddca",
+        "tag_name": "CRITICAL-E2E-39037226096-1-FLOW001_SP",
+        "tag_description": "synthetic CI INPUT SP",
+        "mapping_raw": "{\"id\":\"7b8596f9-716d-4fe7-86b0-4771da6a8441\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_id\":\"78edc872-9031-48a7-860f-afb3a485ddca\",\"tag_role\":\"SP\",\"is_required\":true,\"created_at\":\"2026-10-17T13:38:32.077908\"}",
+        "point_raw": "{\"id\":\"78edc872-9031-48a7-860f-afb3a485ddca\",\"tag_name\":\"CRITICAL-E2E-39037226096-1-FLOW001_SP\",\"tag_description\":\"synthetic CI INPUT SP\",\"tag_type\":\"SP\",\"current_value\":null,\"quality\":null,\"last_sync_at\":\"2026-10-17T13:38:32.019721\",\"is_linked\":true,\"range_min\":0,\"range_max\":100,\"unit\":\"%\",\"measure_type\":\"FLOW\",\"tdengine_tag_id\":null}"
+      }
+    ],
+    "histories": [
+      {
+        "id": "70f38a67-ffdf-4d06-be8a-99adb73641a1",
+        "tag_role": "MODE",
+        "tag_id": "a2332017-9305-410f-8cf3-7301ab35f52c",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.129922+00:00",
+        "raw_row": "{\"id\":\"70f38a67-ffdf-4d06-be8a-99adb73641a1\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"MODE\",\"tag_id\":\"a2332017-9305-410f-8cf3-7301ab35f52c\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.129922+00:00\"}"
+      },
+      {
+        "id": "db773a77-2c56-4e92-9a75-538a307886e5",
+        "tag_role": "OP",
+        "tag_id": "ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.132105+00:00",
+        "raw_row": "{\"id\":\"db773a77-2c56-4e92-9a75-538a307886e5\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"OP\",\"tag_id\":\"ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.132105+00:00\"}"
+      },
+      {
+        "id": "5b0250cc-7204-493b-adff-30ea07f7c4fc",
+        "tag_role": "PID_D",
+        "tag_id": "a89e0a28-2a3b-436b-aded-f243489dd475",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.125472+00:00",
+        "raw_row": "{\"id\":\"5b0250cc-7204-493b-adff-30ea07f7c4fc\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_D\",\"tag_id\":\"a89e0a28-2a3b-436b-aded-f243489dd475\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.125472+00:00\"}"
+      },
+      {
+        "id": "2300ab13-2f39-4c7f-8ae2-3eeb160aba6d",
+        "tag_role": "PID_I",
+        "tag_id": "2e170872-e22a-44cb-b00a-de86216cf683",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.117902+00:00",
+        "raw_row": "{\"id\":\"2300ab13-2f39-4c7f-8ae2-3eeb160aba6d\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_I\",\"tag_id\":\"2e170872-e22a-44cb-b00a-de86216cf683\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.117902+00:00\"}"
+      },
+      {
+        "id": "0d20fa6d-1b4f-473c-9d84-a1a1516590bd",
+        "tag_role": "PID_P",
+        "tag_id": "266a04ac-1eed-42d6-a65d-8dd703988691",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.134108+00:00",
+        "raw_row": "{\"id\":\"0d20fa6d-1b4f-473c-9d84-a1a1516590bd\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_P\",\"tag_id\":\"266a04ac-1eed-42d6-a65d-8dd703988691\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.134108+00:00\"}"
+      },
+      {
+        "id": "35f3b387-d6a0-4812-b029-eff8c26520d0",
+        "tag_role": "PV",
+        "tag_id": "855724f2-da33-493b-b753-4e55987c710c",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.123193+00:00",
+        "raw_row": "{\"id\":\"35f3b387-d6a0-4812-b029-eff8c26520d0\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PV\",\"tag_id\":\"855724f2-da33-493b-b753-4e55987c710c\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.123193+00:00\"}"
+      },
+      {
+        "id": "c802cc0f-5a81-4707-a8c8-05deb7db3d19",
+        "tag_role": "SP",
+        "tag_id": "78edc872-9031-48a7-860f-afb3a485ddca",
+        "valid_from": "2026-10-17 13:38:32.109308+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:38:32.127702+00:00",
+        "raw_row": "{\"id\":\"c802cc0f-5a81-4707-a8c8-05deb7db3d19\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"SP\",\"tag_id\":\"78edc872-9031-48a7-860f-afb3a485ddca\",\"valid_from\":\"2026-10-17T13:38:32.109308+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"MVP_INIT\",\"created_at\":\"2026-10-17T13:38:32.127702+00:00\"}"
+      }
+    ],
+    "foreignMappings": [],
+    "foreignHistory": []
+  },
+  "readQueries": [
+    "SELECT id::text,tag_name,description,created_at,row_to_json(l)::text AS raw_row FROM loop_ledger l WHERE id=$1 FOR UPDATE",
+    "SELECT m.tag_role,t.id::text AS point_id,t.tag_name,t.tag_description,row_to_json(m)::text AS mapping_raw,row_to_json(t)::text AS point_raw FROM loop_tag_mapping m JOIN tag_registry t ON t.id=m.tag_id WHERE m.loop_id=$1 ORDER BY m.tag_role FOR UPDATE OF m,t",
+    "SELECT id::text,tag_role,tag_id::text,valid_from,valid_to,mapping_version,basis,created_at,row_to_json(h)::text AS raw_row FROM loop_tag_binding_history h WHERE loop_id=$1 ORDER BY tag_role"
+  ],
+  "errors": [],
+  "afterInTransaction": [
+    {
+      "id": "70f38a67-ffdf-4d06-be8a-99adb73641a1",
+      "tag_role": "MODE",
+      "tag_id": "a2332017-9305-410f-8cf3-7301ab35f52c",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.129922+00:00",
+      "raw_row": "{\"id\":\"70f38a67-ffdf-4d06-be8a-99adb73641a1\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"MODE\",\"tag_id\":\"a2332017-9305-410f-8cf3-7301ab35f52c\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.129922+00:00\"}"
+    },
+    {
+      "id": "db773a77-2c56-4e92-9a75-538a307886e5",
+      "tag_role": "OP",
+      "tag_id": "ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.132105+00:00",
+      "raw_row": "{\"id\":\"db773a77-2c56-4e92-9a75-538a307886e5\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"OP\",\"tag_id\":\"ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.132105+00:00\"}"
+    },
+    {
+      "id": "5b0250cc-7204-493b-adff-30ea07f7c4fc",
+      "tag_role": "PID_D",
+      "tag_id": "a89e0a28-2a3b-436b-aded-f243489dd475",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.125472+00:00",
+      "raw_row": "{\"id\":\"5b0250cc-7204-493b-adff-30ea07f7c4fc\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_D\",\"tag_id\":\"a89e0a28-2a3b-436b-aded-f243489dd475\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.125472+00:00\"}"
+    },
+    {
+      "id": "2300ab13-2f39-4c7f-8ae2-3eeb160aba6d",
+      "tag_role": "PID_I",
+      "tag_id": "2e170872-e22a-44cb-b00a-de86216cf683",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.117902+00:00",
+      "raw_row": "{\"id\":\"2300ab13-2f39-4c7f-8ae2-3eeb160aba6d\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_I\",\"tag_id\":\"2e170872-e22a-44cb-b00a-de86216cf683\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.117902+00:00\"}"
+    },
+    {
+      "id": "0d20fa6d-1b4f-473c-9d84-a1a1516590bd",
+      "tag_role": "PID_P",
+      "tag_id": "266a04ac-1eed-42d6-a65d-8dd703988691",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.134108+00:00",
+      "raw_row": "{\"id\":\"0d20fa6d-1b4f-473c-9d84-a1a1516590bd\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_P\",\"tag_id\":\"266a04ac-1eed-42d6-a65d-8dd703988691\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.134108+00:00\"}"
+    },
+    {
+      "id": "35f3b387-d6a0-4812-b029-eff8c26520d0",
+      "tag_role": "PV",
+      "tag_id": "855724f2-da33-493b-b753-4e55987c710c",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.123193+00:00",
+      "raw_row": "{\"id\":\"35f3b387-d6a0-4812-b029-eff8c26520d0\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PV\",\"tag_id\":\"855724f2-da33-493b-b753-4e55987c710c\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.123193+00:00\"}"
+    },
+    {
+      "id": "c802cc0f-5a81-4707-a8c8-05deb7db3d19",
+      "tag_role": "SP",
+      "tag_id": "78edc872-9031-48a7-860f-afb3a485ddca",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.127702+00:00",
+      "raw_row": "{\"id\":\"c802cc0f-5a81-4707-a8c8-05deb7db3d19\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"SP\",\"tag_id\":\"78edc872-9031-48a7-860f-afb3a485ddca\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.127702+00:00\"}"
+    }
+  ],
+  "persistedReadback": [
+    {
+      "id": "70f38a67-ffdf-4d06-be8a-99adb73641a1",
+      "tag_role": "MODE",
+      "tag_id": "a2332017-9305-410f-8cf3-7301ab35f52c",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.129922+00:00",
+      "raw_row": "{\"id\":\"70f38a67-ffdf-4d06-be8a-99adb73641a1\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"MODE\",\"tag_id\":\"a2332017-9305-410f-8cf3-7301ab35f52c\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.129922+00:00\"}"
+    },
+    {
+      "id": "db773a77-2c56-4e92-9a75-538a307886e5",
+      "tag_role": "OP",
+      "tag_id": "ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.132105+00:00",
+      "raw_row": "{\"id\":\"db773a77-2c56-4e92-9a75-538a307886e5\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"OP\",\"tag_id\":\"ee775d3d-7f23-4c2c-ab6b-ba347bac6ca5\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.132105+00:00\"}"
+    },
+    {
+      "id": "5b0250cc-7204-493b-adff-30ea07f7c4fc",
+      "tag_role": "PID_D",
+      "tag_id": "a89e0a28-2a3b-436b-aded-f243489dd475",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.125472+00:00",
+      "raw_row": "{\"id\":\"5b0250cc-7204-493b-adff-30ea07f7c4fc\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_D\",\"tag_id\":\"a89e0a28-2a3b-436b-aded-f243489dd475\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.125472+00:00\"}"
+    },
+    {
+      "id": "2300ab13-2f39-4c7f-8ae2-3eeb160aba6d",
+      "tag_role": "PID_I",
+      "tag_id": "2e170872-e22a-44cb-b00a-de86216cf683",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.117902+00:00",
+      "raw_row": "{\"id\":\"2300ab13-2f39-4c7f-8ae2-3eeb160aba6d\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_I\",\"tag_id\":\"2e170872-e22a-44cb-b00a-de86216cf683\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.117902+00:00\"}"
+    },
+    {
+      "id": "0d20fa6d-1b4f-473c-9d84-a1a1516590bd",
+      "tag_role": "PID_P",
+      "tag_id": "266a04ac-1eed-42d6-a65d-8dd703988691",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.134108+00:00",
+      "raw_row": "{\"id\":\"0d20fa6d-1b4f-473c-9d84-a1a1516590bd\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PID_P\",\"tag_id\":\"266a04ac-1eed-42d6-a65d-8dd703988691\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.134108+00:00\"}"
+    },
+    {
+      "id": "35f3b387-d6a0-4812-b029-eff8c26520d0",
+      "tag_role": "PV",
+      "tag_id": "855724f2-da33-493b-b753-4e55987c710c",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.123193+00:00",
+      "raw_row": "{\"id\":\"35f3b387-d6a0-4812-b029-eff8c26520d0\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"PV\",\"tag_id\":\"855724f2-da33-493b-b753-4e55987c710c\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.123193+00:00\"}"
+    },
+    {
+      "id": "c802cc0f-5a81-4707-a8c8-05deb7db3d19",
+      "tag_role": "SP",
+      "tag_id": "78edc872-9031-48a7-860f-afb3a485ddca",
+      "valid_from": "2026-10-17 11:00:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:38:32.127702+00:00",
+      "raw_row": "{\"id\":\"c802cc0f-5a81-4707-a8c8-05deb7db3d19\",\"loop_id\":\"ef9052ab-4db7-4e8e-8cab-050255c1e554\",\"tag_role\":\"SP\",\"tag_id\":\"78edc872-9031-48a7-860f-afb3a485ddca\",\"valid_from\":\"2026-10-17T11:00:00+00:00\",\"valid_to\":null,\"mapping_version\":1,\"basis\":\"SYNTHETIC_FIXTURE\",\"created_at\":\"2026-10-17T13:38:32.127702+00:00\"}"
+    }
+  ],
+  "affectedRows": 7
+}

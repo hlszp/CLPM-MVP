@@ -1,0 +1,13 @@
+{
+  "checkedAt": "2026-10-17T14:33:01.017932+00:00",
+  "sourceSha256": "e64653a2bc83143378e3dbbcc73141d409b846e4a5f168d22f4c02e18cf7e8a9",
+  "testSha256": "00e05abf55f60c1a5efce3e996d78a8816daccba6eb07a959283d05a1751dacf",
+  "onlyThreeDefinitionsAndTwoImportsChanged": true,
+  "originalTestsUnchanged": true,
+  "authorEvidenceManifestSha256": "78e94608bb4cae9ac65f11548faf162ab4fadf265a613db08153b8c022a25feb",
+  "authorEvidenceFilesIndependentlyRehashed": 1880,
+  "authorEvidenceBytesIndependentlyRehashed": 39473121,
+  "legacyWholeInputHashIndependentlyRecomputed": "144024c8585c54b57ea7f8055ac419be9af563e6cf0e4d1e2da60c13b2e5cc7f",
+  "legacyCompleteReplayContextUnchanged": true,
+  "legacyCompleteEffectiveParamsUnchanged": true
+}

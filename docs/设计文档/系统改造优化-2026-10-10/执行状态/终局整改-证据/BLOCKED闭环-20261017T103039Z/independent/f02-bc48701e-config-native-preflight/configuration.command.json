@@ -1,0 +1,24 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/verify_configuration_freeze_raw.py",
+    "--freeze",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/config-freeze-bc48701e",
+    "--manifest-sha256",
+    "e4f0adcacf9f0d2f8e06227b1522d4d91cf19f5f3b1a87989332fe92c9e28592",
+    "--candidate-sha",
+    "bc48701efe90e2a27555a4f8794f0965e82b0902",
+    "--catalog",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/runtime/deploy-bc48701e-root/source-tracked-catalog.json",
+    "--repo",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-bc48701e-config-native-preflight/configuration-independent.json"
+  ],
+  "startedAtUtc": "2026-10-17T15:33:40.923338+00:00",
+  "finishedAtUtc": "2026-10-17T15:33:41.930043+00:00",
+  "rc": 0,
+  "sourceSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355",
+  "onlyGitAndFileReads": true
+}

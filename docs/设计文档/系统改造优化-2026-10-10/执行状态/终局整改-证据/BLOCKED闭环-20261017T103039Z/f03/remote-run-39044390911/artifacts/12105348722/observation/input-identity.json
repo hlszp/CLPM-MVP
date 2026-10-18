@@ -1,0 +1,19 @@
+{
+  "fixtureSourceSha256": "c35c250a2e0b1b855d1e0f7b2352d36f8d23d7d4f7642a01a1b73daf8d8ae6a7",
+  "helperAstSha256": "27233b9ab855bb2369a193df1aac149ecf33e346fceace0aec755c0c00c0f73c",
+  "noise": 1.4,
+  "seed": 521,
+  "segmentPoints": 700,
+  "op": {
+    "file": "op.npy",
+    "bytes": 12928,
+    "sha256": "9e49611274b6cec28b5f44d3d4bb57e9fb43f3043fdacc0e7e23e6a7bc33f426"
+  },
+  "pv": {
+    "file": "pv.npy",
+    "bytes": 12928,
+    "sha256": "70192dc7be3a55bbf5e21acdf7aa803ba84e2230538f37d84dac76c43b9a3110"
+  },
+  "opRawSha256": "76b781eced87b5e188fc9aabd171d2f88342a6771c39a3097c66baafdf1e4f4e",
+  "pvRawSha256": "ba4a74db7e62052774c544b13fb32878aac5a4662e6d6f98a0c32b47fccd69b9"
+}

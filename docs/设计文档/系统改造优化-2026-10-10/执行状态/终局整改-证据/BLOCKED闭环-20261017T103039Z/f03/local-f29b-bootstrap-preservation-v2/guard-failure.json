@@ -1,0 +1,6 @@
+{
+  "rc": 1,
+  "mutationReached": false,
+  "reason": "bootstrap writes current state file; existence does not imply API start",
+  "sourceSha256": "54349545468bd746e609c7482bfb3be75ae82e14b691e7c3da5053089959d3aa"
+}

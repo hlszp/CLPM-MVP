@@ -1,0 +1,14 @@
+
+ RUN  v4.1.9 /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+
+ ✓ apps/web-antd/src/__tests__/store.test.ts (10 tests) 10ms
+ ✓ apps/web-antd/src/__tests__/loop-follow.test.ts (21 tests) 129ms
+ ✓ apps/web-antd/src/__tests__/my-work.test.ts (20 tests) 133ms
+ ✓ apps/web-antd/src/__tests__/loop-fleet-view.test.ts (6 tests) 39ms
+
+ Test Files  4 passed (4)
+      Tests  57 passed (57)
+   Start at  17:54:10
+   Duration  2.02s (transform 1.47s, setup 0ms, import 5.25s, tests 311ms, environment 582ms)
+
+JSON report written to /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f07/implementation/related-forward-tests-final.results.json

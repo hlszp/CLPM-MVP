@@ -1,0 +1,105 @@
+DOMException [AbortError]: The operation was aborted.
+    at Fetch.onAsyncTaskManagerAbort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+    at Object.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+    at AsyncTaskManager.abortAll (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+    at AsyncTaskManager.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+    at DetachedBrowserFrame.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+    at DetachedWindowAPI.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+    at teardownWindow (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+    at Object.teardown (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+    at file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+    at Traces.$ (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+GET http://localhost:3000/me/workspace-preferences 404 ()
+GET http://localhost:3000/me/workspace-preferences 404 ()
+GET http://localhost:3000/me/workspace-preferences 404 ()
+DOMException [AbortError]: The operation was aborted.
+    at Fetch.onAsyncTaskManagerAbort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+    at Object.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+    at AsyncTaskManager.abortAll (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+    at AsyncTaskManager.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+    at DetachedBrowserFrame.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+    at DetachedWindowAPI.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+    at teardownWindow (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+    at Object.teardown (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+    at file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+    at Traces.$ (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+DOMException [AbortError]: The operation was aborted.
+    at Fetch.onAsyncTaskManagerAbort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+    at Object.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+    at AsyncTaskManager.abortAll (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+    at AsyncTaskManager.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+    at DetachedBrowserFrame.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+    at DetachedWindowAPI.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+    at teardownWindow (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+    at Object.teardown (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+    at file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+    at Traces.$ (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+DOMException [AbortError]: The operation was aborted.
+    at Fetch.onAsyncTaskManagerAbort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+    at Object.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+    at AsyncTaskManager.abortAll (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+    at AsyncTaskManager.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+    at DetachedBrowserFrame.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+    at DetachedWindowAPI.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+    at teardownWindow (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+    at Object.teardown (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+    at file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+    at Traces.$ (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+[vitest-pool]: Timeout terminating forks worker for test files /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/p6-01ba-nav-groups.test.ts.
+DOMException [AbortError]: The operation was aborted.
+    at Fetch.onAsyncTaskManagerAbort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:546:23)
+    at Object.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/fetch/Fetch.js:416:101)
+    at AsyncTaskManager.abortAll (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:292:30)
+    at AsyncTaskManager.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/async-task-manager/AsyncTaskManager.js:52:21)
+    at DetachedBrowserFrame.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/browser/detached-browser/DetachedBrowserFrame.js:112:58)
+    at DetachedWindowAPI.abort (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/happy-dom@20.9.0/node_modules/happy-dom/lib/window/DetachedWindowAPI.js:51:35)
+    at teardownWindow (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:331:22)
+    at Object.teardown (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/index.DC7d2Pf8.js:392:10)
+    at file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/base.BE3cXZj3.js:168:65
+    at Traces.$ (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/traces.DT5aQ62U.js:142:27)
+Warning: A vi.mock("sortablejs/modular/sortable.complete.esm.js") call in "/Users/zhangping/DEV/clpm-remediation-20261017/frontend/packages/@core/composables/src/__tests__/use-sortable.test.ts" is not at the top level of the module. Although it appears nested, it will be hoisted and executed before any tests run. Move it to the top level to reflect its actual execution order. This will become an error in a future version.
+See: https://vitest.dev/guide/mocking/modules#how-it-works
+[vitest-pool]: Timeout terminating forks worker for test files /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/metric/components/__tests__/loop-performance-detail-semantic.test.ts.
+[vitest-pool]: Timeout terminating forks worker for test files /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/metrics-panel.test.ts.
+[vitest-pool]: Failed to terminate forks worker for test files /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/p6-01ba-nav-groups.test.ts. Error: [vitest-pool-runner]: Timeout waiting for worker to respond
+    at Timeout.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/cli-api.24X8XwN1.js:3041:58)
+    at listOnTimeout (node:internal/timers:585:17)
+    at processTimers (node:internal/timers:521:7)
+[vitest-pool]: Failed to terminate forks worker for test files /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/metric/components/__tests__/loop-performance-detail-semantic.test.ts. Error: [vitest-pool-runner]: Timeout waiting for worker to respond
+    at Timeout.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/cli-api.24X8XwN1.js:3041:58)
+    at listOnTimeout (node:internal/timers:585:17)
+    at processTimers (node:internal/timers:521:7)
+[vitest-pool]: Failed to terminate forks worker for test files /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/__tests__/metrics-panel.test.ts. Error: [vitest-pool-runner]: Timeout waiting for worker to respond
+    at Timeout.<anonymous> (file:///Users/zhangping/DEV/clpm-remediation-20261017/frontend/node_modules/.pnpm/vitest@4.1.9_@types+node@25.9.1_@vitest+coverage-v8@4.1.9_happy-dom@20.9.0_jsdom@25.0.1_083298bb045cd0a184ad4497d2425a71/node_modules/vitest/dist/chunks/cli-api.24X8XwN1.js:3041:58)
+    at listOnTimeout (node:internal/timers:585:17)
+    at processTimers (node:internal/timers:521:7)
+AggregateError: 
+    at internalConnectMultiple (node:net:1134:18)
+    at afterConnectMultiple (node:net:1715:7) {
+  code: 'ETIMEDOUT',
+  [errors]: [
+    Error: connect ETIMEDOUT 2a03:2880:f10c:283:face:b00c:0:25de:443
+        at createConnectionError (node:net:1678:14)
+        at Timeout.internalConnectMultipleTimeout (node:net:1737:38)
+        at listOnTimeout (node:internal/timers:587:11)
+        at processTimers (node:internal/timers:521:7) {
+      errno: -60,
+      code: 'ETIMEDOUT',
+      syscall: 'connect',
+      address: '2a03:2880:f10c:283:face:b00c:0:25de',
+      port: 443
+    },
+    Error: connect ETIMEDOUT 199.193.116.105:443
+        at createConnectionError (node:net:1678:14)
+        at afterConnectMultiple (node:net:1708:16) {
+      errno: -60,
+      code: 'ETIMEDOUT',
+      syscall: 'connect',
+      address: '199.193.116.105',
+      port: 443
+    }
+  ]
+}
+close timed out after 10000ms
+Tests closed successfully but something prevents Vite server from exiting
+You can try to identify the cause by enabling "hanging-process" reporter. See https://vitest.dev/guide/reporters.html#hanging-process-reporter

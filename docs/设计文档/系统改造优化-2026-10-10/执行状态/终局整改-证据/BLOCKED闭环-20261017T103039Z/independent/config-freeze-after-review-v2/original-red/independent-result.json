@@ -1,0 +1,137 @@
+{
+  "sourcePath": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/freeze_capacity_configuration.py",
+  "sourceSha256": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e",
+  "counterexampleSha256": "8b146b3ef75504632e093d7fe049445ca888dd39ab9b3225172b526c9b3b06e6",
+  "productImports": 0,
+  "networkCalls": 0,
+  "signals": 0,
+  "allPassed": false,
+  "cases": [
+    {
+      "differentMvcc": false,
+      "changedDigest": false,
+      "apiRevision": 1,
+      "actualRc": 0,
+      "expectedRc": 0,
+      "checks": {
+        "originalRejectionSemantics": true,
+        "connectionClosedTwoActualReadOnlySnapshots": true,
+        "beforeArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "afterArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "allOutputManifestHashes": true
+      },
+      "errors": [
+        "[Errno 2] No such file or directory: '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/original-red/mvcc-0-changed-0-api-1/output/pg-before-identity.json'",
+        "after: original table count 0 !=25"
+      ],
+      "status": "FROZEN",
+      "sqlTranscriptSha256": "90a196ff45ac0dca562f8ec2b4c0720d5485961c7ab4eb9708ac446ddbbbf8ed",
+      "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4"
+    },
+    {
+      "differentMvcc": true,
+      "changedDigest": false,
+      "apiRevision": 1,
+      "actualRc": 0,
+      "expectedRc": 0,
+      "checks": {
+        "originalRejectionSemantics": true,
+        "connectionClosedTwoActualReadOnlySnapshots": true,
+        "beforeArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "afterArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "allOutputManifestHashes": true
+      },
+      "errors": [
+        "[Errno 2] No such file or directory: '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/original-red/mvcc-1-changed-0-api-1/output/pg-before-identity.json'",
+        "after: original table count 0 !=25"
+      ],
+      "status": "FROZEN",
+      "sqlTranscriptSha256": "90a196ff45ac0dca562f8ec2b4c0720d5485961c7ab4eb9708ac446ddbbbf8ed",
+      "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4"
+    },
+    {
+      "differentMvcc": false,
+      "changedDigest": true,
+      "apiRevision": 1,
+      "actualRc": 2,
+      "expectedRc": 2,
+      "checks": {
+        "originalRejectionSemantics": true,
+        "connectionClosedTwoActualReadOnlySnapshots": true,
+        "beforeArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "afterArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "allOutputManifestHashes": true
+      },
+      "errors": [
+        "[Errno 2] No such file or directory: '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/original-red/mvcc-0-changed-1-api-1/output/pg-before-identity.json'",
+        "after: original table count 0 !=25"
+      ],
+      "status": "BLOCKED",
+      "sqlTranscriptSha256": "90a196ff45ac0dca562f8ec2b4c0720d5485961c7ab4eb9708ac446ddbbbf8ed",
+      "configDigest": null
+    },
+    {
+      "differentMvcc": true,
+      "changedDigest": true,
+      "apiRevision": 1,
+      "actualRc": 2,
+      "expectedRc": 2,
+      "checks": {
+        "originalRejectionSemantics": true,
+        "connectionClosedTwoActualReadOnlySnapshots": true,
+        "beforeArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "afterArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "allOutputManifestHashes": true
+      },
+      "errors": [
+        "[Errno 2] No such file or directory: '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/original-red/mvcc-1-changed-1-api-1/output/pg-before-identity.json'",
+        "after: original table count 0 !=25"
+      ],
+      "status": "BLOCKED",
+      "sqlTranscriptSha256": "90a196ff45ac0dca562f8ec2b4c0720d5485961c7ab4eb9708ac446ddbbbf8ed",
+      "configDigest": null
+    },
+    {
+      "differentMvcc": false,
+      "changedDigest": false,
+      "apiRevision": 2,
+      "actualRc": 2,
+      "expectedRc": 2,
+      "checks": {
+        "originalRejectionSemantics": true,
+        "connectionClosedTwoActualReadOnlySnapshots": true,
+        "beforeArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "afterArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "allOutputManifestHashes": true
+      },
+      "errors": [
+        "[Errno 2] No such file or directory: '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/original-red/mvcc-0-changed-0-api-2/output/pg-before-identity.json'",
+        "after: original table count 0 !=25"
+      ],
+      "status": "BLOCKED",
+      "sqlTranscriptSha256": "90a196ff45ac0dca562f8ec2b4c0720d5485961c7ab4eb9708ac446ddbbbf8ed",
+      "configDigest": null
+    },
+    {
+      "differentMvcc": true,
+      "changedDigest": false,
+      "apiRevision": 2,
+      "actualRc": 2,
+      "expectedRc": 2,
+      "checks": {
+        "originalRejectionSemantics": true,
+        "connectionClosedTwoActualReadOnlySnapshots": true,
+        "beforeArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "afterArchiveRestoresAllOriginalBytesAnd51Hashes": false,
+        "allOutputManifestHashes": true
+      },
+      "errors": [
+        "[Errno 2] No such file or directory: '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/config-freeze-after-review-v2/original-red/mvcc-1-changed-0-api-2/output/pg-before-identity.json'",
+        "after: original table count 0 !=25"
+      ],
+      "status": "BLOCKED",
+      "sqlTranscriptSha256": "90a196ff45ac0dca562f8ec2b4c0720d5485961c7ab4eb9708ac446ddbbbf8ed",
+      "configDigest": null
+    }
+  ]
+}

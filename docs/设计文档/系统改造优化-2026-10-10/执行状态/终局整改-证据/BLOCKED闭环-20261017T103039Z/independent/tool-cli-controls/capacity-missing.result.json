@@ -1,0 +1,19 @@
+{
+  "artifactContractVerdict": "BLOCKED",
+  "issues": [
+    {
+      "level": "BLOCKED",
+      "code": "series.sha",
+      "batch": null,
+      "detail": null
+    },
+    {
+      "level": "BLOCKED",
+      "code": "series.evidence-incomplete",
+      "batch": null,
+      "detail": "series.configDigest missing"
+    }
+  ],
+  "readSet": [],
+  "networkOrBusinessOperations": false
+}

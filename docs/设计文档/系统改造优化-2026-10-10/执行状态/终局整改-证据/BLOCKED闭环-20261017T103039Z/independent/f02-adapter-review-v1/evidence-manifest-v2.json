@@ -1,0 +1,110 @@
+{
+  "status": "REWORK_ADMISSION_AND_NATIVE_PROVENANCE_PENDING",
+  "files": [
+    {
+      "file": "adapter.before.py",
+      "bytes": 59873,
+      "sha256": "3e0d800713218d2b5c80ec9bf631ca2ea514964ea776de3dcbb8e67f74b4e4d4"
+    },
+    {
+      "file": "cancelled-original-red-v2.command.json",
+      "bytes": 910,
+      "sha256": "0c91d9b786f279dacaa2ece05baf3433a570cf99b34744811d18f09cbebc241d"
+    },
+    {
+      "file": "cancelled-original-red-v2.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "cancelled-original-red-v2.stdout.log",
+      "bytes": 876,
+      "sha256": "323436f02ff7b8a7a7fdada718dca137f945c86895097fa4af0f80e982949e42"
+    },
+    {
+      "file": "cancelled-original-red.command.json",
+      "bytes": 910,
+      "sha256": "26e364794a1660d45a683eb35ee892e0e4ae42eaf1c3ab22acce8166b0eccb03"
+    },
+    {
+      "file": "cancelled-original-red.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "cancelled-original-red.stdout.log",
+      "bytes": 1224,
+      "sha256": "354c00a8d46566dd680222ddb1bf7372d1a3f2399b80e73912f70807b2beb31e"
+    },
+    {
+      "file": "negative-one.json",
+      "bytes": 5957,
+      "sha256": "6f227de7b97b465be1cf9086fe9d21c3564a6c71af6f12e5bca14a7806b79984"
+    },
+    {
+      "file": "null-identity-original-red.command.json",
+      "bytes": 880,
+      "sha256": "22d8c20600841e1244eb4c61e340318ef3f41077609b733ee2d7b2923db63339"
+    },
+    {
+      "file": "null-identity-original-red.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "null-identity-original-red.stdout.log",
+      "bytes": 6685,
+      "sha256": "59b206d1459eb2603b7c6c9bd59e3f7031fd1d0225248ea64e3e6f13c81722db"
+    },
+    {
+      "file": "original-author-identity-probe/adapt_capacity_artifacts.py",
+      "bytes": 59873,
+      "sha256": "3e0d800713218d2b5c80ec9bf631ca2ea514964ea776de3dcbb8e67f74b4e4d4"
+    },
+    {
+      "file": "original-author-identity-probe/adapter-source-sha256-v1.json",
+      "bytes": 2896,
+      "sha256": "026f08a1037ccc414130f91f332f0883fc9071cf86fbc8334a0c1ca42121c105"
+    },
+    {
+      "file": "original-author-identity-probe/preservation-manifest.json",
+      "bytes": 1079,
+      "sha256": "ad34c1108f2f36d38e1924e0229dad1cfa175f1915a4dc076a9a6af92d1d2d45"
+    },
+    {
+      "file": "original-author-identity-probe/probe_adapter_identity_contract.py",
+      "bytes": 3201,
+      "sha256": "88f315390b8e66568cf9077c2eb2d5724658529433dbd662868a902798f02efd"
+    },
+    {
+      "file": "original-author-identity-probe/test_adapt_capacity_artifacts.py",
+      "bytes": 18166,
+      "sha256": "09e3843de5a1a337fb6a4da7e71d212a811af45742ebfc2c6ecf1132798d35d3"
+    },
+    {
+      "file": "original-author-identity-probe/test_adapt_capacity_full_shape.py",
+      "bytes": 17180,
+      "sha256": "359fa9a4122dab20a2b637eab83dd3da7f336899962f70a678358a8c28d45506"
+    },
+    {
+      "file": "positive-zero.json",
+      "bytes": 5957,
+      "sha256": "2ac615250e303816d442b70c0acf89b545570e21467a45f1561072042dbdabcd"
+    },
+    {
+      "file": "receipt.md",
+      "bytes": 2412,
+      "sha256": "52b7b3738d168a6d08029d761ff89a85e027ebc5aa2ef687d9035cb2ac45cb3c"
+    },
+    {
+      "file": "reviewer-corrections.md",
+      "bytes": 905,
+      "sha256": "4a95c5043fe91c7d1a1cf5695d156ba743e377fdfc439c60656f3c21989d229d"
+    },
+    {
+      "file": "test_independent_node_cancelled.py",
+      "bytes": 1280,
+      "sha256": "42ee297c8a1e4c742f2216d74fab273dd711dcb9d15ad20819fee8ad31edcd7e"
+    }
+  ]
+}

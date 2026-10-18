@@ -1,0 +1,377 @@
+{
+  "command": [
+    "rg",
+    "--json",
+    "--fixed-strings",
+    "-e",
+    "DataPlanner 取数失败",
+    "-e",
+    "4886b5f5-d41f-4269-bb2c-9e1ab0ccc62a",
+    "-e",
+    "61a81336-3260-4033-b347-7284eee89171",
+    "-e",
+    "905f70a6-665e-4761-92a1-4d082331c075",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celery-worker.log"
+  ],
+  "rc": 0,
+  "elapsed": 0.7946407794952393,
+  "sourcePath": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celery-worker.log",
+  "sourceSizeAtSampling": 3524109160,
+  "samplingRule": "selected warning/task lines in three known local UTC+08 run intervals; each warning plus next 99 source lines copied by byte offset; the live source may append, no whole-file immutable hash claimed",
+  "selectedLines": 59,
+  "exceptionTraces": [
+    {
+      "file": "worker-exception-01.log",
+      "sourceStartOffset": 2282488625,
+      "sourceEndOffsetExclusive": 2282500753,
+      "sourceStartLine": 7739832,
+      "bytes": 12128,
+      "sha256": "a31e1d7c648565b336953e8616853c266f9aef1a9e66def1578c466f919a83e5"
+    },
+    {
+      "file": "worker-exception-02.log",
+      "sourceStartOffset": 2301559800,
+      "sourceEndOffsetExclusive": 2301572234,
+      "sourceStartLine": 7853287,
+      "bytes": 12434,
+      "sha256": "c82ece1205ece264f3c5aba2841cbfb07ab6859b0df3073e7ab913a8a12d06d7"
+    },
+    {
+      "file": "worker-exception-03.log",
+      "sourceStartOffset": 2301578900,
+      "sourceEndOffsetExclusive": 2301586410,
+      "sourceStartLine": 7853419,
+      "bytes": 7510,
+      "sha256": "b830723b4238ee1e2f4b170f30b6792f2e70fdd758db704e15caba0c0b16e813"
+    },
+    {
+      "file": "worker-exception-04.log",
+      "sourceStartOffset": 2301583456,
+      "sourceEndOffsetExclusive": 2301590966,
+      "sourceStartLine": 7853480,
+      "bytes": 7510,
+      "sha256": "c48dffa94972f63b525e3d9f6f378363cce3d663ccb74d656ca4b0cb547ae7a4"
+    },
+    {
+      "file": "worker-exception-05.log",
+      "sourceStartOffset": 2301588012,
+      "sourceEndOffsetExclusive": 2301597130,
+      "sourceStartLine": 7853541,
+      "bytes": 9118,
+      "sha256": "ccabc7ab2d407f37070841ae2ad106a53f183e3dba00024b087a37c92d48bad0"
+    },
+    {
+      "file": "worker-exception-06.log",
+      "sourceStartOffset": 2301595299,
+      "sourceEndOffsetExclusive": 2301607479,
+      "sourceStartLine": 7853617,
+      "bytes": 12180,
+      "sha256": "cc4828676c9eb23128d65f09f9e0c774a5d0e09c41a9a914a0a848bcd6680251"
+    },
+    {
+      "file": "worker-exception-07.log",
+      "sourceStartOffset": 2302140191,
+      "sourceEndOffsetExclusive": 2302152117,
+      "sourceStartLine": 7856878,
+      "bytes": 11926,
+      "sha256": "00dac517cdfe926569c48db8349ccb6bf660253f001f815901bb5879b8fccdf1"
+    },
+    {
+      "file": "worker-exception-08.log",
+      "sourceStartOffset": 2304389872,
+      "sourceEndOffsetExclusive": 2304397690,
+      "sourceStartLine": 7870392,
+      "bytes": 7818,
+      "sha256": "53329355b0e91df1ff1d53e1090314f1ba700d0d0a4b390eff5f2c20b3338d15"
+    },
+    {
+      "file": "worker-exception-09.log",
+      "sourceStartOffset": 2304395050,
+      "sourceEndOffsetExclusive": 2304406609,
+      "sourceStartLine": 7870457,
+      "bytes": 11559,
+      "sha256": "faa47a8254bac9d16e61864862657641516bc19335ccff4a99970b0f5eb338e8"
+    },
+    {
+      "file": "worker-exception-10.log",
+      "sourceStartOffset": 2304414199,
+      "sourceEndOffsetExclusive": 2304425789,
+      "sourceStartLine": 7870596,
+      "bytes": 11590,
+      "sha256": "726d059ec6d03350c648ea347176149b84ee20abb6cbfd5f1115958c9e833a55"
+    },
+    {
+      "file": "worker-exception-11.log",
+      "sourceStartOffset": 2304425289,
+      "sourceEndOffsetExclusive": 2304434109,
+      "sourceStartLine": 7870690,
+      "bytes": 8820,
+      "sha256": "8d6e30f3d0663aa236e8ae8cd418cb41021efef747a7f9b56feef3caab5f4a3f"
+    },
+    {
+      "file": "worker-exception-12.log",
+      "sourceStartOffset": 2304431762,
+      "sourceEndOffsetExclusive": 2304443358,
+      "sourceStartLine": 7870760,
+      "bytes": 11596,
+      "sha256": "5e1c5767a92da7cbe737b52de69a74cb54a9367d5350bbb3b92c57591009ee63"
+    },
+    {
+      "file": "worker-exception-13.log",
+      "sourceStartOffset": 2304454548,
+      "sourceEndOffsetExclusive": 2304467298,
+      "sourceStartLine": 7870934,
+      "bytes": 12750,
+      "sha256": "847a58d5d3ada1d7cefce6e2918fc16fff4466b7e3555d83ef9d3e96d5d1b837"
+    },
+    {
+      "file": "worker-exception-14.log",
+      "sourceStartOffset": 2304616644,
+      "sourceEndOffsetExclusive": 2304627506,
+      "sourceStartLine": 7871825,
+      "bytes": 10862,
+      "sha256": "55a9abbd9d6e6b3cb907b65b790490c8c9f87af82912f88e528ddc8629038e4d"
+    },
+    {
+      "file": "worker-exception-15.log",
+      "sourceStartOffset": 2305237276,
+      "sourceEndOffsetExclusive": 2305248398,
+      "sourceStartLine": 7875658,
+      "bytes": 11122,
+      "sha256": "b6d8c41c5e89eae0cac89466c7d87f5f7e10105c8042552944983c317fbb97d9"
+    },
+    {
+      "file": "worker-exception-16.log",
+      "sourceStartOffset": 2309923816,
+      "sourceEndOffsetExclusive": 2309931674,
+      "sourceStartLine": 7903693,
+      "bytes": 7858,
+      "sha256": "e4a910de582297333bd308c19d27a706b5b15781a7bb7eb00a789171b40b362e"
+    },
+    {
+      "file": "worker-exception-17.log",
+      "sourceStartOffset": 2309928928,
+      "sourceEndOffsetExclusive": 2309936430,
+      "sourceStartLine": 7903757,
+      "bytes": 7502,
+      "sha256": "9859a771cd6c4e140ff11a02489b1272a5a1135c62aa1f472fd2eddd0e9bf54e"
+    },
+    {
+      "file": "worker-exception-18.log",
+      "sourceStartOffset": 2309933630,
+      "sourceEndOffsetExclusive": 2309945895,
+      "sourceStartLine": 7903819,
+      "bytes": 12265,
+      "sha256": "6031f9eb7d029771bddba900099b6e66e1294be80d07aaad34fcbfbe17cf5a8f"
+    },
+    {
+      "file": "worker-exception-19.log",
+      "sourceStartOffset": 2310220622,
+      "sourceEndOffsetExclusive": 2310228293,
+      "sourceStartLine": 7905570,
+      "bytes": 7671,
+      "sha256": "762979e3d5e1178cef0febcf463990454985f725a876dc79dc330aadf6aa08e0"
+    },
+    {
+      "file": "worker-exception-20.log",
+      "sourceStartOffset": 2310225520,
+      "sourceEndOffsetExclusive": 2310236850,
+      "sourceStartLine": 7905633,
+      "bytes": 11330,
+      "sha256": "f46289db757ad384a4a79eaa9520259fafcbc1516e41852854992ce974ed05cb"
+    },
+    {
+      "file": "worker-exception-21.log",
+      "sourceStartOffset": 2310236350,
+      "sourceEndOffsetExclusive": 2310246517,
+      "sourceStartLine": 7905727,
+      "bytes": 10167,
+      "sha256": "ef596948166504560d88d6268f11e49cf21c947ea948595433096649ff493f3a"
+    },
+    {
+      "file": "worker-exception-22.log",
+      "sourceStartOffset": 2310573355,
+      "sourceEndOffsetExclusive": 2310585938,
+      "sourceStartLine": 7907755,
+      "bytes": 12583,
+      "sha256": "144586d94af31cfb35a39e5be12c7e2675c0d570230325f3ddcfb9f718cb32f6"
+    },
+    {
+      "file": "worker-exception-23.log",
+      "sourceStartOffset": 2310608066,
+      "sourceEndOffsetExclusive": 2310620018,
+      "sourceStartLine": 7908000,
+      "bytes": 11952,
+      "sha256": "a81a72483540ed43950de1309e3e886764f44952ea94c40abeadc7e2e993c1a5"
+    },
+    {
+      "file": "worker-exception-24.log",
+      "sourceStartOffset": 2310786030,
+      "sourceEndOffsetExclusive": 2310797442,
+      "sourceStartLine": 7909000,
+      "bytes": 11412,
+      "sha256": "c79f9593b4c31e3cbeeb0e053f8da75d4c028a8519c7450ca765da3934dab7aa"
+    },
+    {
+      "file": "worker-exception-25.log",
+      "sourceStartOffset": 2310984929,
+      "sourceEndOffsetExclusive": 2310992439,
+      "sourceStartLine": 7910319,
+      "bytes": 7510,
+      "sha256": "168dd156bd6295eb5d01a47380b55aafb3453a05e63fa66eaf37e77c276d35bc"
+    },
+    {
+      "file": "worker-exception-26.log",
+      "sourceStartOffset": 2310989485,
+      "sourceEndOffsetExclusive": 2310996995,
+      "sourceStartLine": 7910380,
+      "bytes": 7510,
+      "sha256": "2938f580e481d846f6b9aaf11bb4f6933c34759123eb88ba9e44b6ee988dcb85"
+    },
+    {
+      "file": "worker-exception-27.log",
+      "sourceStartOffset": 2310994041,
+      "sourceEndOffsetExclusive": 2311006145,
+      "sourceStartLine": 7910441,
+      "bytes": 12104,
+      "sha256": "5883b9e63b7e47d9bf26e51cec555f69d16f949f68b1c93dd5a4ee34a7345f27"
+    },
+    {
+      "file": "worker-exception-28.log",
+      "sourceStartOffset": 2313785651,
+      "sourceEndOffsetExclusive": 2313797666,
+      "sourceStartLine": 7926974,
+      "bytes": 12015,
+      "sha256": "c54ce6752b0af4a3826956b4888549d826e0971cc9ace081795f521bbf19e19f"
+    },
+    {
+      "file": "worker-exception-29.log",
+      "sourceStartOffset": 2316794241,
+      "sourceEndOffsetExclusive": 2316805014,
+      "sourceStartLine": 7944849,
+      "bytes": 10773,
+      "sha256": "3789547a61d1482fa1b04a527dff701baa9afa4314ebcae42e2dbe32a9d23a2a"
+    },
+    {
+      "file": "worker-exception-30.log",
+      "sourceStartOffset": 2316804268,
+      "sourceEndOffsetExclusive": 2316815756,
+      "sourceStartLine": 7944939,
+      "bytes": 11488,
+      "sha256": "27c85ed0612b3fd95982818c7e189d18ac299e4f34fe42eb69fbd3377e84eed4"
+    },
+    {
+      "file": "worker-exception-31.log",
+      "sourceStartOffset": 2319673968,
+      "sourceEndOffsetExclusive": 2319681639,
+      "sourceStartLine": 7962044,
+      "bytes": 7671,
+      "sha256": "ad59479e37f69467c7f941e825904afb8641d3ea93bbb1549fe2f73db429fc39"
+    },
+    {
+      "file": "worker-exception-32.log",
+      "sourceStartOffset": 2319678866,
+      "sourceEndOffsetExclusive": 2319689122,
+      "sourceStartLine": 7962107,
+      "bytes": 10256,
+      "sha256": "51565506aacf1476a119e7e84d7ef08e44cf3df94b38d75670fb06e60fbbf71f"
+    },
+    {
+      "file": "worker-exception-33.log",
+      "sourceStartOffset": 2319688376,
+      "sourceEndOffsetExclusive": 2319696070,
+      "sourceStartLine": 7962197,
+      "bytes": 7694,
+      "sha256": "afb71875a065fedc48a2a715b69dfc420c39ed0561e85c8022b6de9ac7101a0d"
+    },
+    {
+      "file": "worker-exception-34.log",
+      "sourceStartOffset": 2319693297,
+      "sourceEndOffsetExclusive": 2319706049,
+      "sourceStartLine": 7962260,
+      "bytes": 12752,
+      "sha256": "1ff50cca3af640ae63f43404e957a71b54ead8b5f626b90b51fc086d0b993913"
+    },
+    {
+      "file": "worker-exception-35.log",
+      "sourceStartOffset": 2322628329,
+      "sourceEndOffsetExclusive": 2322635819,
+      "sourceStartLine": 7979811,
+      "bytes": 7490,
+      "sha256": "adebad78fae39e81ce733cfecc1705c6994f58cef1d84714adb49efcff545590"
+    },
+    {
+      "file": "worker-exception-36.log",
+      "sourceStartOffset": 2322632875,
+      "sourceEndOffsetExclusive": 2322640408,
+      "sourceStartLine": 7979872,
+      "bytes": 7533,
+      "sha256": "17481e8d2a88d7b2aab33bf88af0c142a175935cac70fbe4ecbea9171aa82e74"
+    },
+    {
+      "file": "worker-exception-37.log",
+      "sourceStartOffset": 2322637600,
+      "sourceEndOffsetExclusive": 2322645289,
+      "sourceStartLine": 7979934,
+      "bytes": 7689,
+      "sha256": "3e27c1e778f638b7f746eb11613d44a2676eac88ecec02d4ae0dddfa36cb29c6"
+    },
+    {
+      "file": "worker-exception-38.log",
+      "sourceStartOffset": 2322642489,
+      "sourceEndOffsetExclusive": 2322651073,
+      "sourceStartLine": 7979996,
+      "bytes": 8584,
+      "sha256": "d9da5047ec68e0db4b89e0f0025753a9600624bdbd4420ef83d9bfd3b604a8b4"
+    },
+    {
+      "file": "worker-exception-39.log",
+      "sourceStartOffset": 2322648466,
+      "sourceEndOffsetExclusive": 2322655962,
+      "sourceStartLine": 7980062,
+      "bytes": 7496,
+      "sha256": "77cd4a79807a16dd2ff4b458d57d2fa06ece197c736216f1a5815365588cee06"
+    },
+    {
+      "file": "worker-exception-40.log",
+      "sourceStartOffset": 2322653018,
+      "sourceEndOffsetExclusive": 2322664704,
+      "sourceStartLine": 7980123,
+      "bytes": 11686,
+      "sha256": "c5592ac24b1648adbaa4809f72d2caea00e0689ca6a320ef9994d319156eed4e"
+    },
+    {
+      "file": "worker-exception-41.log",
+      "sourceStartOffset": 2322880617,
+      "sourceEndOffsetExclusive": 2322892369,
+      "sourceStartLine": 7981439,
+      "bytes": 11752,
+      "sha256": "1753db01065ea4d91b74e41c9269d90d3264636f3a44f49ae3989fdc9edb0db3"
+    },
+    {
+      "file": "worker-exception-42.log",
+      "sourceStartOffset": 2323239568,
+      "sourceEndOffsetExclusive": 2323248535,
+      "sourceStartLine": 7983600,
+      "bytes": 8967,
+      "sha256": "3087a8efd9aaadc456844dfbe7eb2d5b02d759900d55f2dddff2f72d4a16bd77"
+    },
+    {
+      "file": "worker-exception-43.log",
+      "sourceStartOffset": 2323246664,
+      "sourceEndOffsetExclusive": 2323259086,
+      "sourceStartLine": 7983675,
+      "bytes": 12422,
+      "sha256": "c21503441356a7e794d5a9dfbc535817336c940df0d2798ab9a8fa276f9df1a8"
+    },
+    {
+      "file": "worker-exception-44.log",
+      "sourceStartOffset": 2496527659,
+      "sourceEndOffsetExclusive": 2496539027,
+      "sourceStartLine": 9014022,
+      "bytes": 11368,
+      "sha256": "06cf6626f6933f295c8b065dd958ed901ce915950a631ba4b251afd73ccbf701"
+    }
+  ],
+  "stdoutSha256": "449378fc21b5d5a8308840a28d2a70e2b7c7ae9e0d747e2d840615120f31c7a2"
+}

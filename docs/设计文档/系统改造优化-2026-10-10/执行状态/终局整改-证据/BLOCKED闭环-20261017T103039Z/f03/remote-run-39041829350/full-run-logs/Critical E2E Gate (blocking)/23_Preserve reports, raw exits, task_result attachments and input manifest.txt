@@ -1,0 +1,66 @@
+﻿2026-10-17T14:45:02.3992088Z ##[group]Run actions/upload-artifact@v4
+2026-10-17T14:45:02.3992404Z with:
+2026-10-17T14:45:02.3992678Z   name: critical-e2e-645241e983856d3012f9ca2310af260ab988646f
+2026-10-17T14:45:02.3993381Z   path: /home/runner/work/_temp/critical-e2e
+/tmp/critical-backend.log
+/tmp/critical-frontend.log
+/tmp/critical-td-bootstrap.json
+backend/logs/
+
+2026-10-17T14:45:02.3994008Z   if-no-files-found: error
+2026-10-17T14:45:02.3994245Z   compression-level: 6
+2026-10-17T14:45:02.3994455Z   overwrite: false
+2026-10-17T14:45:02.3994665Z   include-hidden-files: false
+2026-10-17T14:45:02.3994892Z env:
+2026-10-17T14:45:02.3995069Z   CI: true
+2026-10-17T14:45:02.3995250Z   ENV: development
+2026-10-17T14:45:02.3995442Z   CLPM_TEST_MODE: 0
+2026-10-17T14:45:02.3995642Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T14:45:02.3995858Z   OMP_NUM_THREADS: 1
+2026-10-17T14:45:02.3996063Z   MKL_NUM_THREADS: 1
+2026-10-17T14:45:02.3996280Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T14:45:02.3996499Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T14:45:02.3996730Z   POSTGRES_HOST: localhost
+2026-10-17T14:45:02.3996982Z   POSTGRES_PORT: 5432
+2026-10-17T14:45:02.3997187Z   POSTGRES_USER: clpm
+2026-10-17T14:45:02.3997722Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T14:45:02.3998023Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T14:45:02.3998263Z   REDIS_HOST: localhost
+2026-10-17T14:45:02.3998468Z   REDIS_PORT: 6379
+2026-10-17T14:45:02.3998660Z   REDIS_PASSWORD: 
+2026-10-17T14:45:02.3998863Z   TDENGINE_HOST: localhost
+2026-10-17T14:45:02.3999080Z   TDENGINE_PORT: 6030
+2026-10-17T14:45:02.3999278Z   TDENGINE_USER: root
+2026-10-17T14:45:02.3999488Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T14:45:02.3999731Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T14:45:02.4000019Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T14:45:02.4000401Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T14:45:02.4000827Z   CLPM_BUILD_CODE_SHA: 645241e983856d3012f9ca2310af260ab988646f
+2026-10-17T14:45:02.4001272Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T14:45:02.4001710Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T14:45:02.4002143Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T14:45:02.4002587Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:45:02.4003018Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T14:45:02.4003432Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:45:02.4003800Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:45:02.4004184Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:45:02.4004562Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T14:45:02.4004926Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T14:45:02.4005264Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T14:45:02.4005758Z ##[endgroup]
+2026-10-17T14:45:02.6013108Z (node:7512) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-17T14:45:02.6029582Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T14:45:02.6547139Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-10-17T14:45:02.6549114Z The least common ancestor is /. This will be the root directory of the artifact
+2026-10-17T14:45:02.6549648Z With the provided path, there will be 91 files uploaded
+2026-10-17T14:45:02.6550145Z Artifact name is valid!
+2026-10-17T14:45:02.6550423Z Root directory input is valid!
+2026-10-17T14:45:02.9123050Z Beginning upload of artifact content to blob storage
+2026-10-17T14:45:03.1322589Z (node:7512) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-17T14:45:03.3938944Z Uploaded bytes 1465097
+2026-10-17T14:45:03.4259534Z Finished uploading artifact content to blob storage!
+2026-10-17T14:45:03.4261358Z SHA256 digest of uploaded artifact zip is b29ea6de7fac2f2bf8c10c7a9a7ce254c0b47f2414231371a5b018116fda0dde
+2026-10-17T14:45:03.4263187Z Finalizing artifact upload
+2026-10-17T14:45:03.6443589Z Artifact critical-e2e-645241e983856d3012f9ca2310af260ab988646f.zip successfully finalized. Artifact ID 12104885530
+2026-10-17T14:45:03.6445457Z Artifact critical-e2e-645241e983856d3012f9ca2310af260ab988646f has been successfully uploaded! Final size is 1465097 bytes. Artifact ID is 12104885530
+2026-10-17T14:45:03.6450544Z Artifact download URL: https://github.com/hlszp/CLPM-MVP/actions/runs/39041829350/artifacts/12104885530

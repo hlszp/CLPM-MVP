@@ -1,0 +1,35 @@
+{
+  "kind": "independent-kpi-numeric-comparison",
+  "verdict": "REWORK",
+  "rows": [
+    {
+      "field": "goodValueRate",
+      "expected": 100,
+      "actual": 100,
+      "absoluteDifference": 0,
+      "tolerance": 0.005,
+      "pass": true
+    },
+    {
+      "field": "autoModeRate",
+      "expected": 100,
+      "actual": 100,
+      "absoluteDifference": 0,
+      "tolerance": 0.005,
+      "pass": true
+    },
+    {
+      "field": "steadyRate",
+      "expected": 80,
+      "actual": 79,
+      "absoluteDifference": 1,
+      "tolerance": 0.005,
+      "pass": false
+    }
+  ],
+  "expectationModified": false,
+  "businessOperations": false,
+  "boundary": "Numerics only; not task, permission, lineage or remote CI acceptance",
+  "expectationSha256": "a5c11619c7842b82bb739019a173ea5e1d9bcfd70217fd06e89bdd9b047e2880",
+  "actualSha256": "52ac42019eaeac33159ee49ea150a5a102c5346ebd5de8a99c1136fe356e9218"
+}

@@ -1,0 +1,14 @@
+test_finished_other_pid_is_not_our_process (__main__.IndependentCleanTerm.test_finished_other_pid_is_not_our_process) ... ok
+test_independently_observed_graceful_minus15 (__main__.IndependentCleanTerm.test_independently_observed_graceful_minus15) ... ok
+test_missing_complete_is_rejected (__main__.IndependentCleanTerm.test_missing_complete_is_rejected) ... ok
+test_missing_finished_is_rejected (__main__.IndependentCleanTerm.test_missing_finished_is_rejected) ... ok
+test_missing_waiting_is_rejected (__main__.IndependentCleanTerm.test_missing_waiting_is_rejected) ... ok
+test_old_chain_before_requested_signal_is_rejected (__main__.IndependentCleanTerm.test_old_chain_before_requested_signal_is_rejected) ... ok
+test_only_finished_atexit_line_is_rejected (__main__.IndependentCleanTerm.test_only_finished_atexit_line_is_rejected) ... ok
+test_out_of_order_complete_is_rejected (__main__.IndependentCleanTerm.test_out_of_order_complete_is_rejected) ... ok
+test_partial_finished_line_is_not_complete (__main__.IndependentCleanTerm.test_partial_finished_line_is_not_complete) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.044s
+
+OK

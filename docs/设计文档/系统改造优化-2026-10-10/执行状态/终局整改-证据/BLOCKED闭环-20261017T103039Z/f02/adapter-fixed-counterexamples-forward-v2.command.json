@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "../independent/f02-adapter-review-v1/test_independent_node_cancelled.py",
+    "probe_adapter_identity_contract.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+  "startedAt": "2026-10-17T12:52:24.255098+00:00",
+  "elapsedSeconds": 0.4471892500005197,
+  "rc": 0,
+  "stdoutSha256": "2038a3dfdca696465e2ddac167fde1b9ffea555e42f99a02c9dc908d34afefb8",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

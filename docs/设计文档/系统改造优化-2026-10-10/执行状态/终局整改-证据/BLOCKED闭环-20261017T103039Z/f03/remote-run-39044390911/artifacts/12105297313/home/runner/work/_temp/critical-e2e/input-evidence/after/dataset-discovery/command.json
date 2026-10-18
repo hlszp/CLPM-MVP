@@ -1,0 +1,31 @@
+{
+  "argv": [
+    "/usr/bin/psql",
+    "-X",
+    "--no-password",
+    "-A",
+    "-t",
+    "-h",
+    "localhost",
+    "-p",
+    "5432",
+    "-U",
+    "clpm",
+    "-d",
+    "clpm_critical_e2e",
+    "-v",
+    "loop_id=f352b903-a2a0-4cb9-a57b-fb5a139294d8",
+    "-v",
+    "ts_start=2026-10-17T13:00:00",
+    "-v",
+    "ts_end=2026-10-17T14:00:00",
+    "-f",
+    "/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery.sql"
+  ],
+  "startedAtUtc": "2026-10-17T15:20:10.398999+00:00",
+  "rc": 0,
+  "finishedAtUtc": "2026-10-17T15:20:10.430781+00:00",
+  "stdoutSha256": "17071f94cffba71e61a0d7b2fbb23b111c63871e8b4dedf568cd3c3836986446",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "executedSqlSha256": "509fe715a9e3faea66267d0ec5a9edf21542345d7813017c914a8a4dfb734e91"
+}

@@ -1,0 +1,16 @@
+{
+  "errors": [
+    {
+      "phase": "api-stop",
+      "error": "psutil.NoSuchProcess(pid=70527, msg='process PID not found')"
+    },
+    {
+      "phase": "process-check",
+      "error": "owned process remains; no force kill"
+    }
+  ],
+  "watchdogBarrierObserved": false,
+  "beatReleasedAfterBarrier": false,
+  "actualApiExit": null,
+  "at": "2026-10-17T13:45:58.386974+00:00"
+}

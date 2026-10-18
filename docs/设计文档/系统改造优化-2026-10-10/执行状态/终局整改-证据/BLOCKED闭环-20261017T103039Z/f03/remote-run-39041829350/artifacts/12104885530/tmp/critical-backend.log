@@ -1,0 +1,182 @@
+INFO:     Started server process [3804]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-10-17T14:42:35.288571+00:00", "level": "INFO", "logger": "app.main", "message": "Starting CLPM v7.1.0"}
+{"timestamp": "2026-10-17T14:42:35.288657+00:00", "level": "INFO", "logger": "app.main", "message": "数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用"}
+{"timestamp": "2026-10-17T14:42:35.305287+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Beat 调度进程已启动 (PID=3908)，定时任务将自动执行，日志: logs/celery-beat.log"}
+{"timestamp": "2026-10-17T14:42:35.319196+00:00", "level": "INFO", "logger": "app.main", "message": "Celery Worker 进程已启动 (PID=3910)，任务队列开始消费，日志: logs/celery-worker.log"}
+{"timestamp": "2026-10-17T14:42:35.387078+00:00", "level": "INFO", "logger": "app.main", "message": "数据源配置已从 sys_config 预载（network_mode=lan, signalr_enabled=False, history_api_url=已配置, signalr_hub_url=已配置）"}
+{"timestamp": "2026-10-17T14:42:35.446508+00:00", "level": "INFO", "logger": "app.main", "message": "模块启用状态已预载: assess, config, diagnosis, handling, monitor, reports, system, tuning"}
+{"timestamp": "2026-10-17T14:42:35.498396+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T14:42:35.498538+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T14:42:35.498631+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T14:42:35.559401+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T14:42:35.639801+00:00", "level": "INFO", "logger": "app.services.alert_rule_engine.service", "message": "预制预警规则已补建 ALL 订阅 12 条"}
+{"timestamp": "2026-10-17T14:42:35.640694+00:00", "level": "INFO", "logger": "app.services.alert_rule_engine.service", "message": "预制预警规则已创建 12 条"}
+{"timestamp": "2026-10-17T14:42:35.645345+00:00", "level": "INFO", "logger": "app.main", "message": "预警预制规则已初始化（新建 12 条）"}
+{"timestamp": "2026-10-17T14:42:35.699230+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=3804] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T14:42:35.699366+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=3804] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T14:42:35.699461+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=3804] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T14:42:35.704481+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=3804] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T14:42:35.708356+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=3804] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T14:42:35.751839+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T14:42:35.754664+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=3804] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T14:42:35.755370+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=3804] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T14:42:35.759360+00:00", "level": "INFO", "logger": "app.services.data_source.realtime_subscriber", "message": "实时数据订阅已禁用（SIGNALR_ENABLED=False）"}
+INFO:     Application startup complete.
+{"timestamp": "2026-10-17T14:42:35.760247+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=3804] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+INFO:     Uvicorn running on http://0.0.0.0:17101 (Press CTRL+C to quit)
+INFO:     127.0.0.1:52418 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52434 - "GET /health HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:18.264723+00:00", "level": "INFO", "logger": "app.services.authz_runtime", "message": "授权矩阵缓存已重载: revision=4 roles=5", "request_id": "90352188-1da9-4c56-bb5f-a7eed83ca8bd"}
+INFO:     127.0.0.1:49612 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49612 - "POST /api/v1/plant-nodes HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49612 - "POST /api/v1/plant-nodes HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49612 - "POST /api/v1/plant-nodes HTTP/1.1" 201 Created
+INFO:     127.0.0.1:49612 - "POST /api/v1/tags/import HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49612 - "POST /api/v1/loops/import HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39172 - "GET /health HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39178 - "GET /api/v1/site/basic-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39186 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39202 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39212 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39216 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39222 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39226 - "GET /api/v1/system/modules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39240 - "GET /api/v1/cockpit/backend-access-roles HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39250 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39270 - "GET /api/v1/dashboard/board/trend?timeWindow=last_24_hours HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39278 - "GET /api/v1/workbench/diagnosis?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39294 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39298 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39260 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39244 - "GET /api/v1/cockpit/overview?window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39308 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39320 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39350 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39334 - "WebSocket /api/v1/ws/realtime?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkyMjQ4Mjc5LCJleHAiOjE3OTIyNTAwNzksImp0aSI6Ijg4MTEwZmZiLWJjYmEtNDcxMi1iYTM1LWRmNTBmNmFlYjAwMiIsInVzZXJuYW1lIjoiYWRtaW4iLCJyb2xlIjoiQURNSU4ifQ.JtnVtAfRg7vdnh5hzVl-eV_gmQekVE64UAs8VOVDcwI" [accepted]
+{"timestamp": "2026-10-17T14:44:41.716328+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "WebSocket 客户端已连接: 127.0.0.1:39334 (user=00000000-0000-0000-0000-000000000001, role=ADMIN, authorized=ALL)"}
+{"timestamp": "2026-10-17T14:44:41.716973+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "共享 Pub/Sub 消费任务已启动 (channel=realtime:updates)"}
+INFO:     connection open
+INFO:     127.0.0.1:39336 - "GET /api/v1/auth/effective-access HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39372 - "GET /api/v1/dicts/LOOP_TYPE/items?enabledOnly=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39340 - "GET /api/v1/plant-nodes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39388 - "WebSocket /api/v1/ws/alerts?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkyMjQ4Mjc5LCJleHAiOjE3OTIyNTAwNzksImp0aSI6Ijg4MTEwZmZiLWJjYmEtNDcxMi1iYTM1LWRmNTBmNmFlYjAwMiIsInVzZXJuYW1lIjoiYWRtaW4iLCJyb2xlIjoiQURNSU4ifQ.JtnVtAfRg7vdnh5hzVl-eV_gmQekVE64UAs8VOVDcwI" [accepted]
+{"timestamp": "2026-10-17T14:44:41.773721+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_alert", "message": "预警 WebSocket 客户端已连接: 127.0.0.1:39388 (user=00000000-0000-0000-0000-000000000001, role=ADMIN)"}
+INFO:     connection open
+INFO:     127.0.0.1:39394 - "GET /api/v1/dicts/LOOP_TYPE/items?enabledOnly=true HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39356 - "GET /api/v1/loops?page=1&pageSize=20 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39410 - "GET /api/v1/configs/site HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39360 - "GET /api/v1/loops?page=1&pageSize=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39432 - "GET /api/v1/plant-nodes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:39420 - "GET /api/v1/alert/events?limit=10&status=ACTIVE HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+{"timestamp": "2026-10-17T14:44:42.796917+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "共享 Pub/Sub 引用计数归零，已关闭"}
+{"timestamp": "2026-10-17T14:44:42.797113+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "WebSocket 客户端已断开: 127.0.0.1:39334 (revoked=False, slow=False, merged=0, merged_dropped=0)"}
+INFO:     127.0.0.1:52538 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52538 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52538 - "POST /api/v1/tasks/custom/evaluate HTTP/1.1" 403 Forbidden
+INFO:     127.0.0.1:52550 - "GET /api/v1/site/basic-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52564 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52578 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52588 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52596 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52606 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52608 - "GET /api/v1/system/modules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52616 - "GET /api/v1/cockpit/backend-access-roles HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52646 - "GET /api/v1/dashboard/board/trend?timeWindow=last_24_hours HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52658 - "GET /api/v1/workbench/diagnosis?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52618 - "GET /api/v1/cockpit/overview?window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52628 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52632 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52670 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52672 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52682 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52684 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52692 - "GET /api/v1/site/basic-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52702 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52716 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52722 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52736 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52748 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52760 - "GET /api/v1/system/modules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52774 - "GET /api/v1/cockpit/backend-access-roles HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52808 - "GET /api/v1/dashboard/board/trend?timeWindow=last_24_hours HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52818 - "GET /api/v1/workbench/diagnosis?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52788 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52784 - "GET /api/v1/cockpit/overview?window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52798 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52828 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52840 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52856 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52862 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52868 - "WebSocket /api/v1/ws/realtime?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkyMjQ4Mjg3LCJleHAiOjE3OTIyNTAwODcsImp0aSI6IjE5Y2NmMTg0LWYxYTYtNDIxMS1iM2U4LWMxYzM3MWJlNTk4OSIsInVzZXJuYW1lIjoiYWRtaW4iLCJyb2xlIjoiQURNSU4ifQ.uTJIZ2JotEd-tV7_0C4dimwQuZ-3blhd351Pn17LfPA" [accepted]
+{"timestamp": "2026-10-17T14:44:49.512494+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "WebSocket 客户端已连接: 127.0.0.1:52868 (user=00000000-0000-0000-0000-000000000001, role=ADMIN, authorized=ALL)"}
+{"timestamp": "2026-10-17T14:44:49.512820+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "共享 Pub/Sub 消费任务已启动 (channel=realtime:updates)"}
+INFO:     connection open
+{"timestamp": "2026-10-17T14:44:49.693929+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "客户端订阅生效: 0 个 tag / 0 个回路（拒绝 0 项）"}
+INFO:     127.0.0.1:52896 - "GET /api/v1/loops/d325604d-3745-43fc-b42e-2f8874e6be93/mode-mapping HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52874 - "GET /api/v1/auth/effective-access HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52904 - "GET /api/v1/me/loop-follows?page=1&pageSize=100 HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:49.845337+00:00", "level": "INFO", "logger": "app.services.trend_service", "message": "趋势查询开始: loop=d325604d-3745-43fc-b42e-2f8874e6be93, range=2026-10-16T14:44:49.836Z~2026-10-17T14:44:49.836Z (86400s), targetPoints=1800 → sampleInterval=48s (计算: 86400s / 1800 = 48s)", "request_id": "4bf22757-6f0f-4818-9eca-49fcca8e14a4"}
+INFO:     127.0.0.1:52912 - "GET /api/v1/configs/site HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52924 - "WebSocket /api/v1/ws/alerts?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkyMjQ4Mjg3LCJleHAiOjE3OTIyNTAwODcsImp0aSI6IjE5Y2NmMTg0LWYxYTYtNDIxMS1iM2U4LWMxYzM3MWJlNTk4OSIsInVzZXJuYW1lIjoiYWRtaW4iLCJyb2xlIjoiQURNSU4ifQ.uTJIZ2JotEd-tV7_0C4dimwQuZ-3blhd351Pn17LfPA" [accepted]
+{"timestamp": "2026-10-17T14:44:49.856472+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_alert", "message": "预警 WebSocket 客户端已连接: 127.0.0.1:52924 (user=00000000-0000-0000-0000-000000000001, role=ADMIN)"}
+INFO:     connection open
+INFO:     127.0.0.1:52876 - "GET /api/v1/loops/d325604d-3745-43fc-b42e-2f8874e6be93 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52936 - "GET /api/v1/alert/events?limit=10&status=ACTIVE HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:50.076859+00:00", "level": "WARNING", "logger": "app.services.trend_service", "message": "趋势缺口附加失败（loop=d325604d-3745-43fc-b42e-2f8874e6be93，返回空缺口）: timestamps[0] 不是合法 ISO 8601 时间: 1792238400000", "request_id": "4bf22757-6f0f-4818-9eca-49fcca8e14a4"}
+INFO:     127.0.0.1:52892 - "GET /api/v1/loops/d325604d-3745-43fc-b42e-2f8874e6be93/monitor?trendWindow=last_24_hours HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+{"timestamp": "2026-10-17T14:44:50.353777+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "共享 Pub/Sub 引用计数归零，已关闭"}
+{"timestamp": "2026-10-17T14:44:50.353998+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "WebSocket 客户端已断开: 127.0.0.1:52868 (revoked=False, slow=False, merged=0, merged_dropped=0)"}
+INFO:     127.0.0.1:53004 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:51.249880+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.tasks", "message": "自定义评估任务已触发: task_id=1fdbee8e-37d6-43e1-b532-7955cca5a2f5, loops=1, celery_id=bb91e96c-d07d-4062-81d8-ff43978e6f91, user=admin", "request_id": "bbdf862c-dabd-4f75-a7d4-5beb7c7f6ad9"}
+INFO:     127.0.0.1:53004 - "POST /api/v1/tasks/custom/evaluate HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:51.316178+00:00", "level": "INFO", "logger": "app.services.task_tracker", "message": "任务状态更新: task_id=1fdbee8e-37d6-43e1-b532-7955cca5a2f5, RUNNING→RUNNING", "request_id": "65442ba2-0f6a-4361-a16e-9e4f4145ab69"}
+INFO:     127.0.0.1:53004 - "GET /api/v1/tasks/1fdbee8e-37d6-43e1-b532-7955cca5a2f5 HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:52.373889+00:00", "level": "INFO", "logger": "app.services.task_tracker", "message": "任务状态更新: task_id=1fdbee8e-37d6-43e1-b532-7955cca5a2f5, RUNNING→RUNNING", "request_id": "8e07c7a8-6bf3-4c0e-9563-fb245b87a096"}
+INFO:     127.0.0.1:53004 - "GET /api/v1/tasks/1fdbee8e-37d6-43e1-b532-7955cca5a2f5 HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:54.428679+00:00", "level": "INFO", "logger": "app.services.task_tracker", "message": "任务状态更新: task_id=1fdbee8e-37d6-43e1-b532-7955cca5a2f5, RUNNING→RUNNING", "request_id": "42de490b-2d68-4f27-8ca6-880c30fbd532"}
+INFO:     127.0.0.1:53004 - "GET /api/v1/tasks/1fdbee8e-37d6-43e1-b532-7955cca5a2f5 HTTP/1.1" 200 OK
+{"timestamp": "2026-10-17T14:44:56.475649+00:00", "level": "INFO", "logger": "app.services.task_tracker", "message": "任务通知已发送: task_id=1fdbee8e-37d6-43e1-b532-7955cca5a2f5, status=SUCCESS, user=00000000-0000-0000-0000-000000000001", "request_id": "f3b9515f-6b76-41bc-9194-da6b2d9596b0"}
+{"timestamp": "2026-10-17T14:44:56.475770+00:00", "level": "INFO", "logger": "app.services.task_tracker", "message": "任务状态更新: task_id=1fdbee8e-37d6-43e1-b532-7955cca5a2f5, RUNNING→SUCCESS", "request_id": "f3b9515f-6b76-41bc-9194-da6b2d9596b0"}
+INFO:     127.0.0.1:53004 - "GET /api/v1/tasks/1fdbee8e-37d6-43e1-b532-7955cca5a2f5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53004 - "GET /api/v1/performance/loops/snapshots?latestOnly=false&taskId=1fdbee8e-37d6-43e1-b532-7955cca5a2f5&loopId=d325604d-3745-43fc-b42e-2f8874e6be93 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53004 - "GET /api/v1/performance/loops/result-records/fc6755e3-7663-44ea-b113-d81f50a47db3 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40230 - "GET /api/v1/site/basic-info HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40240 - "POST /api/v1/auth/login HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40246 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40254 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40270 - "GET /api/v1/auth/me HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40284 - "GET /api/v1/me/workspace-preferences HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40298 - "GET /api/v1/system/modules HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40346 - "GET /api/v1/dashboard/board/trend?timeWindow=last_24_hours HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40306 - "GET /api/v1/cockpit/backend-access-roles HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40362 - "GET /api/v1/workbench/diagnosis?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40324 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40312 - "GET /api/v1/cockpit/overview?window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40338 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40376 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40380 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40392 - "GET /api/v1/cockpit/node-tree HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40396 - "GET /api/v1/workbench/overview?scopeType=GLOBAL&window=24h HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40398 - "WebSocket /api/v1/ws/realtime?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkyMjQ4Mjk4LCJleHAiOjE3OTIyNTAwOTgsImp0aSI6ImRmM2UyMmY1LTM4NGUtNDViZC04NmQyLTY4N2YyOTZjMzVjNyIsInVzZXJuYW1lIjoiYWRtaW4iLCJyb2xlIjoiQURNSU4ifQ.3EM2IK-trW-VP5HmGdh9xqOy7WjGGlMueQri7MvzCec" [accepted]
+{"timestamp": "2026-10-17T14:44:59.862995+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "WebSocket 客户端已连接: 127.0.0.1:40398 (user=00000000-0000-0000-0000-000000000001, role=ADMIN, authorized=ALL)"}
+{"timestamp": "2026-10-17T14:44:59.863687+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "共享 Pub/Sub 消费任务已启动 (channel=realtime:updates)"}
+INFO:     connection open
+INFO:     127.0.0.1:40410 - "GET /api/v1/auth/effective-access HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40412 - "GET /api/v1/configs/site HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40426 - "GET /api/v1/alert/events?limit=10&status=ACTIVE HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40436 - "WebSocket /api/v1/ws/alerts?token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiLCJ0eXBlIjoiYWNjZXNzIiwiaWF0IjoxNzkyMjQ4Mjk4LCJleHAiOjE3OTIyNTAwOTgsImp0aSI6ImRmM2UyMmY1LTM4NGUtNDViZC04NmQyLTY4N2YyOTZjMzVjNyIsInVzZXJuYW1lIjoiYWRtaW4iLCJyb2xlIjoiQURNSU4ifQ.3EM2IK-trW-VP5HmGdh9xqOy7WjGGlMueQri7MvzCec" [accepted]
+{"timestamp": "2026-10-17T14:45:00.608021+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_alert", "message": "预警 WebSocket 客户端已连接: 127.0.0.1:40436 (user=00000000-0000-0000-0000-000000000001, role=ADMIN)"}
+INFO:     connection open
+INFO:     127.0.0.1:40452 - "GET /api/v1/plant-nodes HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40474 - "GET /api/v1/performance/loops/snapshots?page=1&pageSize=20&latestOnly=false&source=MANUAL_CUSTOM&taskId=1fdbee8e-37d6-43e1-b532-7955cca5a2f5 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40462 - "GET /api/v1/loops?page=1&pageSize=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:40476 - "GET /api/v1/performance/loops/snapshots?loopId=d325604d-3745-43fc-b42e-2f8874e6be93&page=1&pageSize=24&latestOnly=false HTTP/1.1" 200 OK
+INFO:     connection closed
+INFO:     connection closed
+{"timestamp": "2026-10-17T14:45:01.717261+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "共享 Pub/Sub 引用计数归零，已关闭"}
+{"timestamp": "2026-10-17T14:45:01.717432+00:00", "level": "INFO", "logger": "app.api.v1.endpoints.ws_realtime", "message": "WebSocket 客户端已断开: 127.0.0.1:40398 (revoked=False, slow=False, merged=0, merged_dropped=0)"}

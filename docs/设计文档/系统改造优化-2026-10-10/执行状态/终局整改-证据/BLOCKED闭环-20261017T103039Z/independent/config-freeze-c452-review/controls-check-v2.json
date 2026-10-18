@@ -1,0 +1,128 @@
+{
+  "commands": [
+    {
+      "argv": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+        "format",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent",
+      "startedAt": "2026-10-17T12:21:44.199772+00:00",
+      "endedAt": "2026-10-17T12:21:44.215671+00:00",
+      "rc": 0,
+      "expectedRc": 0,
+      "toolSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+        "check",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent",
+      "startedAt": "2026-10-17T12:21:44.215927+00:00",
+      "endedAt": "2026-10-17T12:21:44.227866+00:00",
+      "rc": 0,
+      "expectedRc": 0,
+      "toolSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py",
+        "--candidate-sha",
+        "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+        "--catalog",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/tracked-source-catalog.json",
+        "--repo",
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "--freeze",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/series-s01/config-freeze-c452",
+        "--manifest-sha256",
+        "536aa75493ae1a9f3932c43af7d43f0f2dde6e1adbbbfcc4bc8bd0178f0d0277",
+        "--out",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/config-freeze-c452-review/reconstruction-v2.json"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent",
+      "startedAt": "2026-10-17T12:21:44.228119+00:00",
+      "endedAt": "2026-10-17T12:21:44.952465+00:00",
+      "rc": 0,
+      "expectedRc": 0,
+      "toolSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py",
+        "--candidate-sha",
+        "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+        "--catalog",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/tracked-source-catalog.json",
+        "--repo",
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "--freeze",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/series-s01/config-freeze-c452",
+        "--manifest-sha256",
+        "0000000000000000000000000000000000000000000000000000000000000000",
+        "--out",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/config-freeze-c452-review/wrong-manifest-result.json"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent",
+      "startedAt": "2026-10-17T12:21:44.952689+00:00",
+      "endedAt": "2026-10-17T12:21:44.996465+00:00",
+      "rc": 1,
+      "expectedRc": 1,
+      "toolSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py",
+        "--candidate-sha",
+        "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+        "--catalog",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/tracked-source-catalog.json",
+        "--repo",
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "--freeze",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/config-freeze-c452-review/controls/different-snapshot-no-after",
+        "--manifest-sha256",
+        "2f73f2af958cba1577170097572c7fd22392b99965d37bc2b9b325d2f2c3f54e",
+        "--out",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/config-freeze-c452-review/different-snapshot-no-after-result.json"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent",
+      "startedAt": "2026-10-17T12:21:44.996676+00:00",
+      "endedAt": "2026-10-17T12:21:45.610916+00:00",
+      "rc": 2,
+      "expectedRc": 2,
+      "toolSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    },
+    {
+      "argv": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py",
+        "--candidate-sha",
+        "c452ea7fa913a7fffc721de81470ef0874b6bc46",
+        "--catalog",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-c452-deployment/tracked-source-catalog.json",
+        "--repo",
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "--freeze",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/config-freeze-c452-review/controls/last-loop-parameter-forgery",
+        "--manifest-sha256",
+        "dc34fdec294e5732967d68efc1f6cc8e32eb6ee9677bd777d262b5affeb7b33c",
+        "--out",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/config-freeze-c452-review/last-loop-parameter-forgery-result.json"
+      ],
+      "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent",
+      "startedAt": "2026-10-17T12:21:45.611188+00:00",
+      "endedAt": "2026-10-17T12:21:46.339650+00:00",
+      "rc": 1,
+      "expectedRc": 1,
+      "toolSha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    }
+  ],
+  "allExpected": true,
+  "boundary": "All controlled forgeries are new copies of saved evidence; actual source evidence never modified."
+}

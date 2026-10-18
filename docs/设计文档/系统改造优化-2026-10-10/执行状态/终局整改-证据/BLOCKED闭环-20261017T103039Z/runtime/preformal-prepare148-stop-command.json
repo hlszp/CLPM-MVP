@@ -1,0 +1,23 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/capacity_lifecycle.py",
+    "stop",
+    "preformal-prepare148-stop"
+  ],
+  "startedAt": "2026-10-17T12:05:32.429214+00:00",
+  "finishedAt": "2026-10-17T12:05:51.959333+00:00",
+  "seconds": 19.529911583,
+  "rc": 0,
+  "scope": "Stop solely isolated capacity preparation API and its owned lifespan workers/beat; no production",
+  "stdout": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-prepare148-stop-command.stdout.log",
+    "sha256": "228fe443d2aca37df8ff2266a44d62392053b5c716d0076a55a3042a470a53e3",
+    "bytes": 304
+  },
+  "stderr": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/preformal-prepare148-stop-command.stderr.log",
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "bytes": 0
+  }
+}

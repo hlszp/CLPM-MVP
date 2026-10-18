@@ -1,0 +1,100 @@
+2026-10-16 07:09:54,541 | WARNING  | app.tasks.kpi_calc | DataPlanner 取数失败（回路 PERF-T0781）: [0x073a]: Query memory exhausted
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/tasks/kpi_calc.py", line 2497, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 387, in request_bundles
+    data_blocks = await self._execute_query_plan(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 659, in _execute_query_plan
+    results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 638, in _process_non_reuse
+    data_block = await self._query_and_preprocess(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 722, in _query_and_preprocess
+    raw = await self._query_fn(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 128, in _query_fn_point
+    return await _point_or_mixed_query(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 202, in _point_or_mixed_query
+    raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/logical_wide_builder.py", line 315, in build_logical_wide
+    per_point = await asyncio.gather(
+                ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 117, in awaited
+    return await operation
+           ^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/point_history_repository.py", line 263, in read_events
+    rows = await execute_native(sql)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 182, in execute_native
+    return await asyncio.wait_for(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 143, in threaded
+    return await asyncio.get_running_loop().run_in_executor(executor, fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 166, in _execute
+    cursor.execute(sql)
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/cursor.py", line 55, in execute
+    self._response = self._c.sql(operation, req_id=req_id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/restclient.py", line 129, in sql
+    raise ConnectError(resp["desc"], resp["code"])
+taosrest.errors.ConnectError: [0x073a]: Query memory exhausted
+2026-10-16 07:09:54,542 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-16 07:09:54,562 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=15, reasons={541: ['FROZEN'], 542: ['FROZEN'], 543: ['FROZEN'], 544: ['FROZEN'], 545: ['FROZEN']}
+2026-10-16 07:09:54,568 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-16 07:09:54,572 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=13359] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-16 07:09:54,579 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_810353c7-1162-400b-aa75-0ce80c114c46_PVOP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-16 07:09:54,580 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=43f11220-fa56-4dda-ba4c-d36255d3f5ed, tagGroup=BASE, points=3601, controlType=FC
+2026-10-16 07:09:54,584 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=4eb5406f-0ffd-4909-9b90-d8ba0efd8d89, tagGroup=BASE, points=3601, query=5.020s, preprocess=0.190s
+2026-10-16 07:09:54,585 | DEBUG    | app.services.data_planner | 预处理完成: loop=4eb5406f-0ffd-4909-9b90-d8ba0efd8d89, tagGroup=BASE, points=3601, valid_rate=1.0000
+2026-10-16 07:09:54,644 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,647 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,652 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=810353c7-1162-400b-aa75-0ce80c114c46, tagGroup=PVOP_HF, points=3601, query=5.134s, preprocess=0.118s
+2026-10-16 07:09:54,652 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,652 | DEBUG    | app.services.data_planner | 预处理完成: loop=810353c7-1162-400b-aa75-0ce80c114c46, tagGroup=PVOP_HF, points=3601, valid_rate=1.0000
+2026-10-16 07:09:54,654 | DEBUG    | app.services.data_planner | 从 BASE 派生 MODE_HF: tags=['mode', 'op', 'pv', 'sp'], points=3601
+2026-10-16 07:09:54,655 | DEBUG    | app.services.data_planner | 从 BASE 派生 OP_HF: tags=['op'], points=3601
+2026-10-16 07:09:54,659 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-16 07:09:54,664 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,668 | DEBUG    | app.services.data_planner | 从 BASE 派生 PVOP_HF: tags=['op', 'pv'], points=3601
+2026-10-16 07:09:54,668 | DEBUG    | app.services.data_planner | 从 BASE 派生 QUALITY_HF: tags=['pv_quality'], points=3601
+2026-10-16 07:09:54,674 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-16 07:09:54,681 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1776] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-16 07:09:54,682 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_43f11220-fa56-4dda-ba4c-d36255d3f5ed_BASE_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-16 07:09:54,684 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=43f11220-fa56-4dda-ba4c-d36255d3f5ed, tagGroup=BASE, points=3601, query=4.275s, preprocess=0.105s
+2026-10-16 07:09:54,685 | DEBUG    | app.services.data_planner | 预处理完成: loop=43f11220-fa56-4dda-ba4c-d36255d3f5ed, tagGroup=BASE, points=3601, valid_rate=1.0000
+2026-10-16 07:09:54,707 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=c7482dfc-72a6-4a12-bb70-5bcd2f05d673, tagGroup=PVOP_HF, points=3601, controlType=TC
+2026-10-16 07:09:54,713 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=c7482dfc-72a6-4a12-bb70-5bcd2f05d673, tagGroup=QUALITY_HF, points=3601, controlType=TC
+2026-10-16 07:09:54,723 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=8a2cf3ad-4b0c-447b-b1ec-ee30bfcbc8af, tagGroup=BASE, points=3601, controlType=FC
+2026-10-16 07:09:54,724 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=c7482dfc-72a6-4a12-bb70-5bcd2f05d673, tagGroup=BASE, points=721, controlType=TC
+2026-10-16 07:09:54,725 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=6dc0a74e-11bd-4d9e-9dc4-67738c3b4d2d, tagGroup=QUALITY_HF, points=3601, controlType=PC
+2026-10-16 07:09:54,741 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,752 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,735 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=c7482dfc-72a6-4a12-bb70-5bcd2f05d673, tagGroup=OP_HF, points=3601, controlType=TC
+2026-10-16 07:09:54,750 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=c7482dfc-72a6-4a12-bb70-5bcd2f05d673, tagGroup=MODE_HF, points=3601, controlType=TC
+2026-10-16 07:09:54,750 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=18, reasons={821: ['JUMP'], 900: ['JUMP'], 1074: ['JUMP'], 2056: ['JUMP'], 2087: ['JUMP']}
+2026-10-16 07:09:54,755 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=6dc0a74e-11bd-4d9e-9dc4-67738c3b4d2d, tagGroup=OP_HF, points=3601, controlType=PC
+2026-10-16 07:09:54,760 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=721, anomalous=0, reasons={}
+2026-10-16 07:09:54,768 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=18, reasons={821: ['JUMP'], 900: ['JUMP'], 1074: ['JUMP'], 2056: ['JUMP'], 2087: ['JUMP']}
+2026-10-16 07:09:54,768 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=mode, points=3601, anomalous=0, reasons={}
+2026-10-16 07:09:54,774 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=721, anomalous=0, reasons={}

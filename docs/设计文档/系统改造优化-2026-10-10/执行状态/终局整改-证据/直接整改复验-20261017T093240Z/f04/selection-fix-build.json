@@ -1,0 +1,10 @@
+{
+  "name": "selection-fix-build",
+  "command": [
+    "pnpm",
+    "run",
+    "build:antd"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 6.857863708
+}

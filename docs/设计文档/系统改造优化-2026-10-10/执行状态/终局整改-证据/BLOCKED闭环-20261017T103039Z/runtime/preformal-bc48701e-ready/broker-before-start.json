@@ -1,0 +1,19 @@
+{
+  "observedAt": "2026-10-17T15:27:41.484206+00:00",
+  "redisPort": 17123,
+  "brokerDb": 1,
+  "queues": {
+    "default": 0,
+    "default\u0006\u00163": 0,
+    "default\u0006\u00166": 0,
+    "default\u0006\u00169": 0,
+    "dead_letter": 0,
+    "dead_letter\u0006\u00163": 0,
+    "dead_letter\u0006\u00166": 0,
+    "dead_letter\u0006\u00169": 0
+  },
+  "unacked": [],
+  "taskRecords": {},
+  "nonterminalTaskRecords": {},
+  "quiescent": true
+}

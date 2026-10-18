@@ -1,0 +1,57 @@
+{
+  "startedAtUtc": "2026-10-17T15:09:06.955230+00:00",
+  "commandFile": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-root-apply-command-v1.json",
+  "commandFileSha256": "6d4d8df9e812fdcd0a40b8694ae706840878389c098bbb28882bf6da4d285113",
+  "executed": true,
+  "verifiedSourcePins": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/redis-url-guard-v2/prepare_bindings.py",
+      "sha256": "e213f27d9abc631ad3cb11233366e6f631a9fb4d88bcbf3b81cdf0d60464650b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/pg_dump_test_container.py",
+      "sha256": "c27d789a2c8308cfbeebc692d4565d2460b6c65fe2f3bc295fc72f51469fb3c8"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-synthetic-binding-preparation-review/receipt.md",
+      "sha256": "14428de424cce1f1201926e37da3a931128c54a05d7ce624fe456ef0c3526d89"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-pgdump-adapter-review/evidence-manifest.json",
+      "sha256": "9671b7d1fcef6c9ff81008c0f5da5d6ccfada3ff75ec2215992e8c7b615aa394"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+      "sha256": "27d6fc10cc68376b056d1c7803f1b6361e48c11bc3de46c4e8a46cc4b2abe04b"
+    }
+  ],
+  "actualServicePreflight": {
+    "startedAtUtc": "2026-10-17T15:09:06.955916+00:00",
+    "argv": [
+      "lsof",
+      "-nP",
+      "-iTCP:17101",
+      "-iTCP:17261",
+      "-iTCP:17266",
+      "-sTCP:LISTEN"
+    ],
+    "rc": 1,
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "commandFilePreflightTimestampIsInformalOnly": "The exact new observation above is authoritative; command-file preflight timestamp was a handoff label.",
+  "rc": 0,
+  "durationSeconds": 5.19971583300503,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stateSha256": "1c321d652a9d3987ecb8f548d5d2742b3d7d3839d3d582e8524aef9205fc72d7",
+  "stateSummary": {
+    "committed": true,
+    "persistedReadbackVerified": true,
+    "commitAttempted": true,
+    "rows": 7000,
+    "database": "clpm_capacity_20261017_s01",
+    "error": null
+  },
+  "finishedAtUtc": "2026-10-17T15:09:12.238027+00:00"
+}

@@ -1,0 +1,76 @@
+{
+  "frozenAt": "2026-10-17T14:42:07.524443+00:00",
+  "intendedLocalHead": "c6fa2b489af66da392ea72fa387629f1607ba613",
+  "runId": "20261017223757",
+  "sourceHeadMustBeMeasuredNotCallerLabel": true,
+  "execution": "Root Keeper only; psql RR READ ONLY; loopId from this fixture",
+  "actualMetricsRead": false,
+  "databaseOperationsByReviewer": false,
+  "oracleSourceSha256": "3e7f74a511db0abac0b1c49dc8e1f9c9ee7b04011774f6dfc283fcba4ff4b42a",
+  "outputDirectory": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6",
+  "observedCandidateTrackedCountBeforeRun": 4046,
+  "files": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-input-only-pre-gate.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-input-only-dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/F03-input-only-freeze-plan.md",
+      "bytes": 5171,
+      "sha256": "914bc901ba0d872fae09b18966f84a62ce19ee2b2a88808de713cc7b1b5209a5"
+    }
+  ],
+  "previousPlan": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-input-only-freeze-plan-v2.json",
+    "bytes": 1834,
+    "sha256": "0fe19975dcd177f935f35b380eb1c33d0440a8b9ad53b57055f1d86d56d049bd"
+  },
+  "continuation": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/F03-input-only-freeze-plan-v3.md",
+    "bytes": 2793,
+    "sha256": "c3e445f3883389146466f5d04aa8fd0c240038083000f2c2b9c868fae5f15d58"
+  },
+  "runConfig": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-decimal-fix-root-run.json",
+    "bytes": 950,
+    "sha256": "1bd928a868a4b3f85fca09d5b414157341ae2728493af6eb14a76da038cd8135"
+  },
+  "driver": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-startup-v6/keeper-local-f03-v6.py",
+    "bytes": 49015,
+    "sha256": "87c985f311f804c80a3beb84d78e342143e277fe18d8f5041c5fcb54c81e405f"
+  },
+  "wrapper": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/run_local_phase_decimal_fix_root.py",
+    "bytes": 2148,
+    "sha256": "e2946ac1f649942b9b6a6695fc6ad0ab4d21d913fd2e590719b876beb3dbef7c"
+  },
+  "inputPolicyHelper": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/capture_f03_input_policy_decimal_fix_root.py",
+    "bytes": 4652,
+    "sha256": "65986282db0aef3b7e508a1d2fb055659f73f83ec0f6e9b6b05344de8d247abb"
+  },
+  "inputManifestFreezer": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/freeze_local_f03_input_manifest_root.py",
+    "bytes": 2713,
+    "sha256": "0de792ae43818fb041915c5fc3a5cd8aa181230de230b1a71165460d085ff985"
+  },
+  "independentInputAuditor": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/audit_f03_input_only_v2.py",
+    "bytes": 9307,
+    "sha256": "bfb397c2bbbf5be71664847e8d6f472fcbf30cd1c8f1345f687158bda3785546"
+  },
+  "immutableEnvironmentRelativePath": "input-only-before-gate/environment-before-gate.json",
+  "immutableStartedStateRelativePath": "input-only-before-gate/started-state.json",
+  "requiredInputManifestFlag": {
+    "mutablePhaseFilesCopiedBeforeHashing": true
+  },
+  "noOriginalPlanOrSqlChanged": true,
+  "noNumericalFormulaOrToleranceChanged": true
+}

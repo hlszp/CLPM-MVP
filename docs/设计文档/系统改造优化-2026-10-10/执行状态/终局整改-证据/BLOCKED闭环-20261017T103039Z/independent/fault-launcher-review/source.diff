@@ -1,0 +1,19 @@
+--- start_capacity_api_formal.py
++++ start_capacity_api_fault.py
+@@ -17,7 +17,15 @@
+ assert env["TDENGINE_DB"]==env["POSTGRES_DB"]
+ assert env["POSTGRES_HOST"] in ("localhost","127.0.0.1") and env["POSTGRES_PORT"]=="17102"
+ assert env["REDIS_HOST"] in ("localhost","127.0.0.1")
+-assert env["TDENGINE_HOST"] in ("localhost","127.0.0.1") and env["TDENGINE_PORT"]=="17104"
++assert env["TDENGINE_HOST"] in ("localhost","127.0.0.1") and env["TDENGINE_PORT"]=="17114"
++policy_path=ROOT/"f02/fault-integration/policy-current.json"
++policy_bytes=policy_path.read_bytes();policy=json.loads(policy_bytes)
++assert policy["candidateSha"]==sha and policy["database"]==env["POSTGRES_DB"] and policy["armed"] is False
++with httpx.Client(timeout=3,trust_env=False) as proxy_client:
++ proxy_response=proxy_client.get("http://127.0.0.1:17125/__audit_proxy_health")
++ proxy_health=proxy_response.json()
++ assert proxy_response.status_code==200 and proxy_health["status"]=="READY" and proxy_health["armed"] is False and proxy_health["inFlight"]==0 and proxy_health["policySha256"]==hashlib.sha256(policy_bytes).hexdigest()
++(out/"disarmed-proxy-prestart.json").write_text(json.dumps({"policyPath":str(policy_path),"policySha256":hashlib.sha256(policy_bytes).hexdigest(),"health":proxy_health},indent=2)+"\n")
+ broker_before_start=private_broker_snapshot()
+ (out/"broker-before-start.json").write_text(json.dumps(broker_before_start,indent=2)+"\n")
+ assert broker_before_start['quiescent'], "Pending private messages retained; refusing startup"

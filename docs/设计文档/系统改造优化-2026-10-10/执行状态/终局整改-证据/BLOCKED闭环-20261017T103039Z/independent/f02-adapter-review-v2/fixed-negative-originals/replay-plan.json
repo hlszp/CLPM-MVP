@@ -1,0 +1,29 @@
+{
+  "syntheticOnly": true,
+  "runtime": {
+    "path": "runtime.json",
+    "size": 2583,
+    "sha256": "8be4eaec53feb880b09fcdc58ab6f8c8df4162340cb10d2aabfc35ec673b32f5"
+  },
+  "summary": {
+    "path": "native/summary.json",
+    "size": 573,
+    "sha256": "feb9aaec1f670e3c6e6a0ee5b2155cb71a572f730162caab5b81e6b60c911841"
+  },
+  "sampler": {
+    "path": "synthetic-native-tool.json",
+    "sha256": "61fa062515e019d9b7d347595492810d3b9ef2a583bd92fd90f29885b7ee162f",
+    "size": 26
+  },
+  "interpreter": {
+    "path": "native-interpreter.json",
+    "sha256": "84dd75696432a97b550906d49fcf06dbd4be9c006e40f5fc46bd6ac3faa7649f",
+    "size": 260
+  },
+  "span": [
+    "2026-10-17T08:00:01+00:00",
+    "2026-10-17T08:00:21+00:00"
+  ],
+  "originalSubjectSha256": "102197849aa80dcb76da80908ff86600f4c57f96a5359f2c99e16184dc210d28",
+  "purpose": "Last ps query spans20.5..22 seconds while business ends21; no query starts after end. Native bundle file/hash admission is complete."
+}

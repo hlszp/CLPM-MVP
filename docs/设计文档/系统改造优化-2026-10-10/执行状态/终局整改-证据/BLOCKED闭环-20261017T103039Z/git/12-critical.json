@@ -1,0 +1,18 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "test(e2e): enforce exact critical case results",
+    "-m",
+    "Execute the four required cases against isolated real services; preserve failures and full input evidence."
+  ],
+  "elapsed_seconds": 0.19115304946899414,
+  "exit_code": 0,
+  "subject": "test(e2e): enforce exact critical case results",
+  "changed_lines": 427,
+  "numstat": "10\t0\te2e/critical-cases.json\n1\t0\te2e/package.json\n13\t0\te2e/playwright.critical.config.ts\n173\t0\te2e/scripts/test-critical-gate.mjs\n96\t0\te2e/scripts/validate-critical-results.mjs\n1\t0\te2e/tsconfig.json\n57\t76\tscripts/run-critical-e2e.sh\n",
+  "stdout_sha256": "d79b40ee92011d72a62a45eb00623e9fb76845b4e0a6c6b71763bf253c818cc9",
+  "stderr_sha256": "76c58f29f9e7ad07179222530ca119203f2074163903bf68d850fef8469183c3",
+  "commit": "5e5bcf8fc510394f1a3d528da587cae2d9e024cc"
+}

@@ -1,0 +1,12 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "repos/hlszp/CLPM-MVP/actions/runs/39027107897"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+  "rc": 0,
+  "observedAt": "2026-10-17T11:02:39.346860+00:00",
+  "stdout_sha256": "e5c2eb244318af24980f81fa04d86edb7306bd2de636be8e99011a95c71937e8",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

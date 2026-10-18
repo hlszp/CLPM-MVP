@@ -1,0 +1,21 @@
+{
+  "command": [
+    "/usr/bin/env",
+    "CLPM_ADAPTER_IDENTITY_SOURCE=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapter-sources-v1/adapt_capacity_artifacts.py",
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-p",
+    "no:cacheprovider",
+    "test_adapt_capacity_identity.py",
+    "-k",
+    "complete_valid or null_single"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+  "startedAt": "2026-10-17T12:38:12.952581+00:00",
+  "elapsedSeconds": 0.6438295420084614,
+  "rc": 1,
+  "stdoutSha256": "5f3d7fc3174314ca7fba3a020f0c6bc33f3461f19e698ca3fbf52e7e2e12a4c1",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

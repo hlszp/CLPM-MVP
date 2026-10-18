@@ -1,0 +1,14 @@
+{
+  "kpi_snapshot_hourly": 1,
+  "kpi_snapshot_custom": 1,
+  "loop_confidence_latest": 1,
+  "kpi_node_snapshot_hourly": 1,
+  "kpi_node_snapshot_daily": 1,
+  "kpi_node_snapshot_monthly": 1,
+  "calculation_result_record": 1,
+  "calculation_result_attempt": 1,
+  "calculation_result_legacy_map": 1,
+  "calculation_dataset_snapshot": 1,
+  "workbench_loop_latest": 1,
+  "unit_kpi_summary": 1
+}

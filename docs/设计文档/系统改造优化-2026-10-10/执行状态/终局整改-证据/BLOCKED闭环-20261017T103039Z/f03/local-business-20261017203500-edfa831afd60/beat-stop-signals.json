@@ -1,0 +1,10 @@
+{
+  "pid": 17154,
+  "parent": 17116,
+  "createTime": 1792240969.090744,
+  "signalsInOrder": [
+    "SIGTERM",
+    "SIGCONT"
+  ],
+  "at": "2026-10-17T12:46:13.223846+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "observedAt": "2026-10-17T10:00:28.997068+00:00",
+  "workerMasters": 1,
+  "poolChildren": 4,
+  "beat": 1,
+  "schema": "p702perm01",
+  "configRows": 27,
+  "configSha256": "f49ad24a8cb3d479e6f154b86bf33f1a3dc5c015be47a799c52c1f28a96dd130",
+  "protectedHashesMatch": true
+}

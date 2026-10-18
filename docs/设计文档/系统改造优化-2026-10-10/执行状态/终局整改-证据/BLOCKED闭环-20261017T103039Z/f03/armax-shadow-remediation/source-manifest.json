@@ -1,0 +1,47 @@
+{
+  "frozenAt": "2026-10-17T13:16:12.292217+00:00",
+  "candidateEdited": false,
+  "baseHead": "edfa831afd6069963e7f6f73c2721637d6a199b5",
+  "originalProtectedSha256": "22cc3ddf0aee6339a91b4e54c02b2a9d907273dc585bfa31debc6227224dc11b",
+  "files": {
+    "armax.prototype.py": {
+      "bytes": 5810,
+      "sha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d"
+    },
+    "test_armax_vectorized_equivalence.py": {
+      "bytes": 4202,
+      "sha256": "e200f79b09a7074ceb2102957bd2d502a67112e2cc7345426fe2bca7f4f36eb6"
+    },
+    "profile_shadow.py": {
+      "bytes": 5146,
+      "sha256": "580197ae8cda7f2c7ed37750c7127685a6c848795985392642e333b761f13739"
+    },
+    "check_shadow_boundaries.py": {
+      "bytes": 5000,
+      "sha256": "272646542b95e9c1e94c6da67969295d0334b0b58fa219a7287c1a82617fb57d"
+    },
+    "run_unit_draft.py": {
+      "bytes": 1059,
+      "sha256": "3ca93bba93e543bf8cdc1d5a8c719a0cff9600764b22973ac3be9a1ba2addf5d"
+    }
+  },
+  "actualProof": {
+    "fullOriginalCases": 22,
+    "completeResultObjects": 22,
+    "armaxInvocations": 27,
+    "lstsqMatrixInputsByteIdentical": 4676,
+    "fullOutputsByteIdentical": true,
+    "fullCoreAccuracy": "16/18=88.9% unchanged",
+    "boundaryParity": "51/51",
+    "proposedUnitDraft": "original13/0,prototype13/0",
+    "originalProfileSeconds": 6.458727042016108,
+    "prototypeProfileSeconds": 4.741483249992598,
+    "profileIsPytestTimeoutPass": false,
+    "candidateCoverageAndLinuxPending": true
+  },
+  "preservedToolFailures": [
+    "unit-original ImportError",
+    "unit-v2-original same import alias bug"
+  ],
+  "formatOnlyTransition": "format-transition.json AST exact; exact profiled source preserved"
+}

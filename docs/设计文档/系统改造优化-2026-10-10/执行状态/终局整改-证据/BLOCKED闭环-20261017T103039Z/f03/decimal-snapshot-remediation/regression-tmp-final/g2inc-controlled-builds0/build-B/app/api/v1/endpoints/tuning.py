@@ -1,0 +1,998 @@
+"""Tuning center endpoints (IDS v3.2 §2.5 — S7-TUNE-006).
+
+路由清单：
+- GET    /api/v1/tuning/methods                — 获取整定方法信息
+- GET    /api/v1/tuning/tasks                  — 整定任务列表（分页 + 筛选）
+- GET    /api/v1/tuning/tasks/{taskId}         — 整定任务详情
+- POST   /api/v1/tuning/tasks                  — 保存整定任务
+- POST   /api/v1/tuning/identify               — 模型辨识（阶跃实验路径，同步）
+- POST   /api/v1/tuning/identify/history        — 历史数据辨识（Phase 2，异步）
+- POST   /api/v1/tuning/identify/segments       — 可辨识片段预览（Phase 2）
+- GET    /api/v1/tuning/tasks/{taskId}/status   — 异步任务进度查询（Phase 2）
+- POST   /api/v1/tuning/tasks/{taskId}/cancel   — 取消异步任务（Phase 2）
+- POST   /api/v1/tuning/tune                   — PID 整定
+- POST   /api/v1/tuning/simulate               — 闭环仿真（支持多 PID 对比）
+- POST   /api/v1/tuning/compare                — 多 PID 对比仿真（Phase 2）
+- GET    /api/v1/tuning/history                — 整定历史统计
+- GET    /api/v1/tuning/batches                — 整定批次列表（分页 + 筛选，GAP-2a）
+- GET    /api/v1/tuning/batches/{batchId}      — 整定批次详情（GAP-2a）
+"""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from datetime import UTC, datetime, timedelta
+from typing import Any
+from uuid import uuid4
+
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_scope_ctx, require_perms
+from app.core.db import get_db
+from app.core.exceptions import BizError
+from app.models.audit import SysAuditLog
+from app.models.sys_user import SysUser
+from app.schemas.common import ApiResponse, success
+from app.schemas.tuning import (
+    CompareRequest,
+    CreateTuningTaskRequest,
+    IdentifyHistoryAsyncResponse,
+    IdentifySegmentsRequest,
+    IdentifySegmentsResult,
+    ModelIdentifyHistoryRequest,
+    ModelIdentifyRequest,
+    ModelIdentifyResult,
+    RobustVerifyRequest,
+    SimulateRequest,
+    SimulationResult,
+    TaskProgress,
+    TuneMatrixRequest,
+    TuneRequest,
+    TuneResult,
+    TuningHistoryStats,
+    TuningMethodInfo,
+    TuningTaskDetail,
+)
+from app.schemas.tuning_knowledge import (
+    TuningKnowledgeEntryItem,
+    TuningKnowledgeListData,
+    TuningKnowledgeListStats,
+    TuningKnowledgeSimilarData,
+)
+from app.services.authz_scope import ScopeContext, ensure_loop_in_scope
+from app.services.kpi_snapshot import (
+    iso_z,
+    window_avg_summary,
+)
+from app.services.loop_fitness import get_latest_fitness_per_loop
+from app.services.tuning import (
+    authorize_tuning_model,
+    create_tuning_task,
+    get_tuning_history_stats,
+    get_tuning_methods,
+    get_tuning_task_detail,
+    identify_model,
+    list_tuning_tasks,
+    persist_step_identification_record,
+    preview_identify_segments,
+    run_simulation,
+    tune_pid,
+    verify_tuning_robustness,
+)
+from app.services.tuning_batch import (
+    get_tuning_batch_detail,
+    list_tuning_batches,
+)
+from app.services.tuning_knowledge import (
+    get_knowledge_entry,
+    list_knowledge_entries,
+    recommend_similar,
+)
+from app.services.waveform import get_waveform
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(prefix="/tuning", tags=["tuning"])
+
+# P1-04/AUTH-06：历史辨识高级参数（thetaEstimate/candidateModelTypes）的
+# 后端字段级守卫白名单，与前端 composables/use-clpm-roles.ts 的
+# ADVANCED_PARAM_ROLES（ADMIN/EXPERT）同口径——前端隐藏不构成后端约束，
+# IC/PE 直接 POST 携带高级参数时在端点层显式拒绝（403），不静默忽略：
+# 忽略会让调用方误以为自定义 θ/候选阶次已生效，结果不可解释也不可复现。
+_TUNING_ADVANCED_PARAM_ROLES = ("ADMIN", "EXPERT")
+_TUNING_ADVANCED_PARAM_FIELDS = ("candidateModelTypes", "thetaEstimate")
+
+
+# ---------------------------------------------------------------------------
+# P2 IA优化：整定 fitness 门禁辅助
+# ---------------------------------------------------------------------------
+
+
+async def _ensure_tuning_fitness(db: AsyncSession, loop_id: str) -> None:
+    """整定写端点 fitness 门禁：L2 以下（L0/L1）→ 阻断并抛出错误码.
+
+    区别于 ERR_TUNING_DATA_INSUFFICIENT（波形不足），本错误码语义为
+    "回路适用性分层不足"（手动主导/数据严重不足等）。
+    fitness=None（首次尚未计算快照）→ 放行不阻断。
+
+    2026-10-01 三模块审查裁决：L2（OP 饱和/SP-PV 偏离）从阻断改为放行
+    ——OP 饱和只影响部分时段，辨识管线自带激励检测与分段，数学上可行；
+    与前端"L2 警告不禁止"口径统一（原前后端矛盾：前端放行后端 400）。
+    L3 不在阻断集：无激励回路过门禁但辨识大概率失败，由前端前置提示。
+    """
+    try:
+        fitness_map = await get_latest_fitness_per_loop(db, [loop_id])
+    except Exception:  # noqa: BLE001
+        return  # 查询异常 → 放行
+    fit = fitness_map.get(str(loop_id))
+    # 三性分离（R5）：整定门禁读 tune_level（旧快照 NULL 回退综合 level）
+    tune_lv = fit.tune_level_effective if fit is not None else None
+    if fit is None or tune_lv is None:
+        return  # 无 fitness 数据 → 暂放过
+    BLOCK_LEVELS = {"L0", "L1"}
+    if tune_lv in BLOCK_LEVELS:
+        reasons = fit.human_readable_tags or ["适用性分层不足"]
+        raise BizError(
+            code="ERR_TUNING_FITNESS_INSUFFICIENT",
+            message=(
+                f"回路适用性等级为 {fit.level}，不满足整定要求（需要 L2+）。"
+                f"请先处理控制状态（{'；'.join(reasons)}），或在诊断后再尝试整定。"
+            ),
+            status_code=400,
+            data={
+                "loopId": str(loop_id),
+                "fitnessLevel": tune_lv,
+                "reasons": reasons,
+                "requiredMinimum": "L2",
+            },
+        )
+
+
+# ---------------------------------------------------------------------------
+# 整定方法信息
+# ---------------------------------------------------------------------------
+
+
+@router.get("/methods", response_model=ApiResponse[list[TuningMethodInfo]])
+async def get_methods_endpoint(
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """获取整定方法信息（所有角色可查看）。"""
+    data = get_tuning_methods()
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 模型辨识
+# ---------------------------------------------------------------------------
+
+
+# P4-02 尾批（动作码接入）：tuning.py 全部写端点原 require_roles("ADMIN",
+# "IC_ENGINEER", "EXPERT", "PE_ENGINEER") == 四角色白名单，与目录码种子逐一
+# 核对为**等价替换**（tuning:identify/tune/simulate/task-create/task-manage
+# 种子均 A/I/P/E == 原白名单；种子核对见 tests/test_p4_02t_authz_tail.py）——
+# require_perms 纯码接管，DB 矩阵可收紧；SPONSOR 零写红线由 require_perms
+# 结构性拒绝（不依赖矩阵纪律）。fitness L0/L1 门禁仍在服务层独立执行（AND）。
+
+
+@router.post("/identify", response_model=ApiResponse[ModelIdentifyResult])
+async def identify_model_endpoint(
+    body: ModelIdentifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:identify")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """模型辨识（阶跃实验路径，同步；ADMIN/IC_ENGINEER/EXPERT）。
+
+    从 TDengine 拉取波形数据，执行 FOPDT/SOPDT/IPDT 模型辨识。
+    """
+    # P2: fitness 门禁（L3 以下阻断）
+    await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
+    data = await identify_model(
+        db=db,
+        loop_id=body.loopId,
+        start_time=body.startTime,
+        end_time=body.endTime,
+        model_type=body.modelType,
+        method=body.method,
+    )
+    record_id = await persist_step_identification_record(
+        db=db,
+        loop_id=body.loopId,
+        result=data,
+        created_by=user.username,
+        requested_method=body.method,
+    )
+    data = {**data, "recordId": record_id}
+    return success(data=data)
+
+
+@router.post("/identify/history", response_model=ApiResponse[dict])
+async def identify_history_endpoint(
+    body: ModelIdentifyHistoryRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:identify")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """历史数据辨识（Phase 2，异步任务；ADMIN/IC_ENGINEER/EXPERT）。
+
+    提交异步 Celery 任务，返回 taskId 供前端轮询进度。
+    辨识策略 AUTO=优先历史,失败兜底阶跃（任务内自动降级并标注
+    dataSource=fallback_step）/ HISTORY_ONLY / STEP_ONLY。
+
+    V62-P1-012: 响应使用 typed model 构造——
+    - STEP_ONLY → ``ModelIdentifyResult``（同步辨识结果）
+    - AUTO/HISTORY_ONLY → ``IdentifyHistoryAsyncResponse``（异步任务提交）
+    """
+    from app.tasks.tuning import identify_model_task
+
+    # P1-04/AUTH-06：高级参数字段级守卫——非 ADMIN/EXPERT 携带
+    # thetaEstimate/candidateModelTypes 时拒绝（与前端 ADVANCED_PARAM_ROLES
+    # 隐藏策略一致；SPONSOR 无权 POST 本端点，由 require_perms 先行拦截）。
+    if user.role not in _TUNING_ADVANCED_PARAM_ROLES and (
+        body.candidateModelTypes is not None or body.thetaEstimate is not None
+    ):
+        raise BizError(
+            code="ERR_PERMISSION_DENIED",
+            message=(
+                f"高级参数（{'/'.join(_TUNING_ADVANCED_PARAM_FIELDS)}）"
+                "仅 ADMIN/EXPERT 可用，请移除后使用默认值提交"
+            ),
+            status_code=403,
+        )
+
+    # P2: fitness 门禁（L3 以下阻断；作用于 STEP_ONLY 同步分支和 AUTO/HISTORY_ONLY 异步分支前）
+    await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
+
+    # STEP_ONLY 策略走同步阶跃路径（向后兼容）
+    if body.identifyStrategy == "STEP_ONLY":
+        data = await identify_model(
+            db=db,
+            loop_id=body.loopId,
+            start_time=body.startTime,
+            end_time=body.endTime,
+            model_type="FOPDT",
+            method=None,
+        )
+        record_id = await persist_step_identification_record(
+            db=db,
+            loop_id=body.loopId,
+            result=data,
+            created_by=user.username,
+            requested_method=None,
+        )
+        # V62-P1-012: 使用 typed model 构造响应，确保 contract 一致
+        typed = ModelIdentifyResult.model_validate({**data, "recordId": record_id})
+        return success(data=typed.model_dump(by_alias=True, exclude_none=True))
+
+    # AUTO / HISTORY_ONLY → 异步任务
+    # AUTO 策略由任务侧在历史辨识失败/数据不足时自动降级阶跃实验路径（P1-6）
+    # V62-P1-013: 传递 created_by_id 桥接 TaskTracker
+    # P4-03：人工任务主体绑定（policyRevision 快照随任务传递）
+    from app.services.authz_task_fence import snapshot_task_subject
+
+    _subject = await snapshot_task_subject(
+        db,
+        user_id=str(user.id),
+        role=str(user.role),
+        action="tuning:identify",
+        loop_ids=[str(body.loopId)],
+    )
+    task = identify_model_task.delay(
+        loop_id=body.loopId,
+        start_time=body.startTime,
+        end_time=body.endTime,
+        candidate_model_types=body.candidateModelTypes,
+        theta_estimate=body.thetaEstimate,
+        created_by=user.username,
+        identify_strategy=body.identifyStrategy,
+        created_by_id=str(user.id),
+        subject_role=_subject.subject_role,
+        policy_revision=_subject.policy_revision,
+    )
+    # V62-P1-012: 使用 typed model 构造响应
+    typed = IdentifyHistoryAsyncResponse(
+        taskId=task.id,
+        status="PENDING",
+        identifyStrategy=body.identifyStrategy,
+    )
+    return success(data=typed.model_dump(by_alias=True, exclude_none=True))
+
+
+@router.post("/identify/segments", response_model=ApiResponse[IdentifySegmentsResult])
+async def identify_segments_endpoint(
+    body: IdentifySegmentsRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:identify")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """可辨识片段预览（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    对数据窗口执行激励检测，返回可辨识片段列表（不执行辨识）。
+    """
+    await ensure_loop_in_scope(db, scope, body.loopId)
+    data = await preview_identify_segments(
+        db=db,
+        loop_id=body.loopId,
+        start_time=body.startTime,
+        end_time=body.endTime,
+    )
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# PID 整定
+# ---------------------------------------------------------------------------
+
+
+@router.post("/tune", response_model=ApiResponse[TuneResult])
+async def tune_pid_endpoint(
+    body: TuneRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:tune")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """PID 整定（ADMIN/IC_ENGINEER/EXPERT）。
+
+    基于模型参数，使用 IMC/Lambda/ZN/Cohen-Coon/SIMC 算法计算推荐 PID 参数。
+    """
+    # P2: fitness 门禁（L3 以下阻断）
+    await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    data = await tune_pid(
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
+        algorithm=body.algorithm,
+        algorithm_params=body.algorithmParams,
+        current_pid=body.currentPid.model_dump() if body.currentPid else None,
+        loop_id=source_context.loop_id,
+        source_context=source_context,
+    )
+    # 审计日志（S1-B7）
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="TUNE_PID",
+        target_type="Loop",
+        target_id=source_context.loop_id,
+        after_value=(
+            f"algorithm={body.algorithm}, modelType={source_context.model_type}, "
+            f"source={source_context.model_source}, "
+            f"record={source_context.source_record_id or '-'}, "
+            f"riskConfirmed={str(source_context.risk_confirmed).lower()}"
+        ),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
+    return success(data=data)
+
+
+@router.post("/tune/matrix", response_model=ApiResponse[dict])
+async def tune_matrix_endpoint(
+    body: TuneMatrixRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:tune")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """全算法矩阵整定（09 设计方案 §4.2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    适用算法一次全算（P3-07 起注册表驱动：FOPDT=IMC/LAMBDA/ZN/
+    COHEN_COON/SIMC 五法；IPDT=IPDT_PI；SOPDT=SOPDT_IMC）；单算法失败
+    不阻断，该行返回 {"ok": False, "error": ...} 由前端置灰。不写审计
+    日志——审计由单行 /tune 微调与最终保存方案（POST /tasks）承担。
+    """
+    # T4 修复：矩阵端点原漏装 fitness 门禁（/tune 有），补齐口径
+    await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    # P3-07：矩阵算法清单注册表驱动——按模型结构取适用方法
+    # （FOPDT=五法；IPDT=IPDT_PI；SOPDT=SOPDT_IMC）
+    from app.services.tuning_algorithms import TUNING_METHODS_INFO as _METHODS
+
+    _model_u = str(source_context.model_type).upper()
+    algorithms = tuple(m["code"] for m in _METHODS if m.get("applicableModel") == _model_u) or (
+        "IMC",
+        "LAMBDA",
+        "ZN",
+        "COHEN_COON",
+        "SIMC",
+    )
+    rows: list[dict[str, Any]] = []
+    for algo in algorithms:
+        try:
+            result = await tune_pid(
+                model_type=source_context.model_type,
+                model_params=source_context.model_params,
+                algorithm=algo,
+                algorithm_params=body.algorithmParams,
+                current_pid=body.currentPid.model_dump() if body.currentPid else None,
+                loop_id=source_context.loop_id,
+                source_context=source_context,
+            )
+            rows.append({"algorithm": algo, "ok": True, "result": result})
+        except BizError as exc:
+            rows.append({"algorithm": algo, "ok": False, "error": exc.message})
+        except Exception as exc:  # noqa: BLE001  # 单算法异常不阻断矩阵其余行
+            logger.warning("整定矩阵 %s 算法计算失败: %s", algo, exc)
+            rows.append({"algorithm": algo, "ok": False, "error": str(exc)})
+    return success(data={"rows": rows})
+
+
+# 路径命名对齐 test_security_dcs_pid_no_write 计算类白名单（含 "tune"，
+# 与 /tune、/tune/matrix 同族；REWORK D1-① 修复，原 /robustness/verify）
+@router.post("/tune/robustness", response_model=ApiResponse[dict])
+async def robustness_verify_endpoint(
+    body: RobustVerifyRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:tune")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """整定建议鲁棒性验证（P3-07 R15 冻结指标；ADMIN/IC_ENGINEER/EXPERT）。
+
+    在可信模型集合（终验通过模型 ± 参数 95% CI 采样，≤64 成员）上验证
+    同一建议：GM≥2.0 / PM≥30° / 超调≤20% / OP 实际限幅；含噪声/负载
+    扰动响应证据与 DCS 表示转换。未知 DCS 表示、未核实 OP 限位、终验
+    未通过模型明确拒绝（O-D6/P-34）。
+    """
+    await _ensure_tuning_fitness(db, body.loopId)
+    await ensure_loop_in_scope(db, scope, body.loopId)
+    data = await verify_tuning_robustness(
+        db,
+        loop_id=body.loopId,
+        model_type=body.modelType,
+        model_params=body.modelParams.model_dump(exclude_none=True),
+        algorithm=body.algorithm,
+        algorithm_params=body.algorithmParams,
+        recommended_pid=body.recommendedPid.model_dump() if body.recommendedPid else None,
+        sim_duration=body.simDuration,
+        sim_step=body.simStep,
+        setpoint_step=body.setpointStep,
+        noise_std=body.noiseStd,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="TUNE_ROBUSTNESS_VERIFY",
+        target_type="Loop",
+        target_id=str(body.loopId),
+        after_value=(
+            f"algorithm={body.algorithm}, modelType={data.get('modelType')}, "
+            f"overallPass={str(data.get('overallPass')).lower()}, "
+            f"setMembers={data.get('setBasis', {}).get('memberCount')}"
+        ),
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 闭环仿真
+# ---------------------------------------------------------------------------
+
+
+@router.post("/simulate", response_model=ApiResponse[SimulationResult])
+async def simulate_endpoint(
+    body: SimulateRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:simulate")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """闭环仿真（ADMIN/IC_ENGINEER/EXPERT）。
+
+    对比当前 PID 与推荐 PID 的阶跃响应（Phase 2 支持多 PID 候选对比）。
+    """
+    await ensure_loop_in_scope(db, scope, body.loopId)
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+
+    # Phase 2：pid_candidates 转为 dict 列表透传
+    pid_candidates_dicts: list[dict] | None = None
+    if body.pidCandidates:
+        pid_candidates_dicts = [c.model_dump() for c in body.pidCandidates]
+
+    data = await run_simulation(
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
+        current_pid=body.currentPid.model_dump(),
+        recommended_pid=body.recommendedPid.model_dump(),
+        sim_duration=body.simDuration,
+        sim_step=body.simStep,
+        setpoint_step=body.setpointStep,
+        disturbance_type=body.disturbanceType,
+        pid_candidates=pid_candidates_dicts,
+        disturbance_amplitude=body.disturbanceAmplitude,
+        disturbance_time=body.disturbanceTime,
+    )
+    return success(data=data)
+
+
+@router.post("/compare", response_model=ApiResponse[SimulationResult])
+async def compare_pids_endpoint(
+    body: CompareRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:simulate")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """多 PID 对比仿真（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    使用独立 ``CompareRequest``（V62-P0-030）：``pidCandidates`` 必填且 ≥2 组，
+    ``currentPid`` 可选，不接受 ``recommendedPid``（端点从不消费该字段）。
+    返回 candidateResponses 含每组 PID 的响应曲线与指标。
+    """
+    if not body.pidCandidates or len(body.pidCandidates) < 2:
+        from app.core.exceptions import BizError
+
+        raise BizError(
+            code="ERR_INVALID_REQUEST",
+            message="多 PID 对比至少需要 2 组候选 PID 参数",
+            status_code=400,
+        )
+    await ensure_loop_in_scope(db, scope, body.loopId)
+
+    source_context = await authorize_tuning_model(
+        db=db,
+        requested_model_type=body.modelType,
+        requested_model_params=body.modelParams.model_dump(exclude_none=True),
+        loop_id=body.loopId,
+        source_record_id=body.sourceRecordId,
+        model_source=body.modelSource,
+        risk_confirmed=body.riskConfirmed,
+    )
+
+    from app.services.tuning import _simulate_multi_pid
+
+    candidates_dicts = [c.model_dump() for c in body.pidCandidates]
+    data = _simulate_multi_pid(
+        model_type=source_context.model_type,
+        model_params=source_context.model_params,
+        current_pid=body.currentPid.model_dump() if body.currentPid else None,
+        pid_candidates=candidates_dicts,
+        sim_duration=body.simDuration,
+        sim_step=body.simStep,
+        setpoint_step=body.setpointStep,
+        disturbance_type=body.disturbanceType,
+        disturbance_amplitude=body.disturbanceAmplitude,
+        disturbance_time=body.disturbanceTime,
+    )
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 效果验证（09 设计方案 §4.5）
+# ---------------------------------------------------------------------------
+
+
+def _parse_point_time(s: str) -> datetime:
+    """ISO 8601 → naive UTC（aware 输入归一化，禁止 aware/naive 混入库查询）。"""
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    except ValueError:
+        raise BizError(
+            code="ERR_PARAM",
+            message=f"pointTime 不是合法 ISO 8601 时间: {s}",
+            status_code=400,
+        ) from None
+    if dt.tzinfo is not None:
+        dt = dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
+def _to_naive_utc(dt: datetime) -> datetime:
+    """aware datetime（Query 参数带 Z/+08:00）→ naive UTC（同处置模块口径）。"""
+    if dt.tzinfo is not None:
+        return dt.astimezone(UTC).replace(tzinfo=None)
+    return dt
+
+
+@router.get("/verification/data", response_model=ApiResponse[dict])
+async def verification_data_endpoint(
+    loopId: str = Query(..., description="回路 ID"),
+    pointTime: str = Query(..., description="对比时点 ISO 8601（naive UTC 或带时区）"),
+    windowHours: int = Query(..., description="窗口小时数：1/2/4/8/24/72/168"),
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """效果验证前后窗曲线数据（五角色只读——tuning:view 种子即五角色，零行为变化；实时拉取不落库）。
+
+    前窗 [pointTime−window, pointTime] 与后窗 [pointTime, pointTime+window]
+    各拉一次 SP/PV/OP 波形 + 窗口 KPI 均值摘要（2026-10-04 B2：由"窗口内
+    最新单条"改为"窗口均值"，口径对齐 tracker 自动验证；等级取窗口内最新
+    一条快照）。后窗超出当前时刻时 afterTruncated=true；后窗有效快照数不足
+    （< min(24, windowHours)）时 dataInsufficient=true，前端显式提示。
+    """
+    if windowHours not in (1, 2, 4, 8, 24, 72, 168):
+        raise BizError(
+            code="ERR_PARAM",
+            message="windowHours 仅支持 1/2/4/8/24/72/168",
+            status_code=400,
+        )
+    point = _parse_point_time(pointTime)
+    delta = timedelta(hours=windowHours)
+    before = await get_waveform(db, loopId, start_time=iso_z(point - delta), end_time=iso_z(point))
+    after = await get_waveform(db, loopId, start_time=iso_z(point), end_time=iso_z(point + delta))
+    kpi_before = await window_avg_summary(db, loopId, point - delta, point)
+    kpi_after = await window_avg_summary(db, loopId, point, point + delta)
+    now_naive = datetime.now(UTC).replace(tzinfo=None)
+    after_count = kpi_after.get("snapshotCount", 0) if kpi_after else 0
+    return success(
+        data={
+            "loopId": loopId,
+            "pointTime": iso_z(point),
+            "windowHours": windowHours,
+            "before": before,
+            "after": after,
+            "kpiBefore": kpi_before,
+            "kpiAfter": kpi_after,
+            "afterTruncated": (point + delta) > now_naive,
+            "beforeSnapshotCount": kpi_before.get("snapshotCount", 0) if kpi_before else 0,
+            "afterSnapshotCount": after_count,
+            "dataInsufficient": after_count < min(24, windowHours),
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# 整定任务管理
+# ---------------------------------------------------------------------------
+
+
+@router.get("/tasks", response_model=ApiResponse[dict])
+async def list_tasks_endpoint(
+    loopId: uuid.UUID | None = Query(None, description="回路 ID 筛选"),
+    algorithm: str | None = Query(None, description="算法筛选"),
+    status: str | None = Query(None, description="状态筛选（支持逗号分隔多值，如 DRAFT,PENDING）"),
+    startTime: datetime | None = Query(None, description="创建时间起（ISO，按 created_at 过滤）"),
+    endTime: datetime | None = Query(None, description="创建时间止（ISO，按 created_at 过滤）"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定任务列表（分页 + 筛选）。
+
+    筛选口径：loopId/algorithm 精确匹配；status 支持逗号分隔多值（单值向后兼容）；
+    startTime/endTime 按 created_at 闭区间过滤（startTime <= created_at <= endTime，
+    aware 输入归一化为 naive UTC）。
+    """
+    data = await list_tuning_tasks(
+        db=db,
+        loop_id=str(loopId) if loopId else None,
+        algorithm=algorithm,
+        status=status,
+        start_time=_to_naive_utc(startTime) if startTime else None,
+        end_time=_to_naive_utc(endTime) if endTime else None,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
+@router.get("/tasks/{task_id}", response_model=ApiResponse[TuningTaskDetail])
+async def get_task_detail_endpoint(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定任务详情。"""
+    data = await get_tuning_task_detail(db=db, task_id=str(task_id))
+    return success(data=data)
+
+
+@router.get("/tasks/{task_id}/status", response_model=ApiResponse[TaskProgress])
+async def get_task_status_endpoint(
+    task_id: str,
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """异步任务进度查询（Phase 2；需 tuning:view 权限码）。
+
+    task_id 为 Celery 任务 ID（字符串），非 TuningRecord UUID。
+    """
+    from app.services.tuning_progress import get_progress
+
+    data = await get_progress(task_id)
+    if data is None:
+        from app.core.exceptions import BizError
+
+        raise BizError(
+            code="ERR_TUNING_TASK_NOT_FOUND",
+            message="任务进度记录不存在",
+            status_code=404,
+        )
+    return success(data=data)
+
+
+@router.post("/tasks/{task_id}/cancel", response_model=ApiResponse[dict])
+async def cancel_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:task-manage")),
+) -> dict:
+    """取消异步整定任务（Phase 2；ADMIN/IC_ENGINEER/EXPERT）。
+
+    task_id 为 Celery 任务 ID。仅 PENDING/RUNNING 状态可取消。
+    V62-P1-013: 同步 tuning_progress 和 TaskTracker 状态为 CANCELLED。
+    P3-04：委托 ``cancel_tuning_task``——记录侧同步落定 RUNNING→INCONCLUSIVE
+    （原因"用户主动取消"），取消语义端到端明确。
+    """
+    from app.services.tuning import cancel_tuning_task
+
+    data = await cancel_tuning_task(task_id, db=db)
+    return success(data=data)
+
+
+@router.post("/tasks", status_code=201, response_model=ApiResponse[dict])
+async def create_task_endpoint(
+    body: CreateTuningTaskRequest,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("tuning:task-create")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """保存整定任务（ADMIN/IC_ENGINEER/EXPERT；P3-B2 W4 服务端校验冻结；P4-03 越界拒绝）.
+
+    新协议：``modelSource`` 必填（缺省=旧协议显式拒绝）；来源/模型/参数/窗口/
+    currentPid 快照全部由服务端权威派生（详见 ``create_tuning_task``）。
+    """
+    await ensure_loop_in_scope(db, scope, str(body.loopId))
+    # P3-B2 W4：新协议下客户端申报的来源元数据一律拒绝（服务端权威派生，
+    # 不静默忽略——伪造来源身份在此显式拦截）
+    _legacy_fields = (
+        "currentPid",
+        "fittingScore",
+        "identifyMethod",
+        "dataSource",
+        "confidenceLevel",
+        "confidenceReason",
+        "excitationScore",
+        "residualTestPassed",
+        "pidCandidates",
+        "candidateResults",
+        "rollbackPid",
+    )
+    if body.modelSource is not None:
+        provided = [f for f in _legacy_fields if getattr(body, f, None) is not None]
+        if provided:
+            raise BizError(
+                code="ERR_TUNING_PROVENANCE_CONFLICT",
+                message=(
+                    "最终方案保存链的来源元数据由服务端从来源记录权威派生，"
+                    f"不接受客户端申报：{', '.join(provided)}（请移除后重试）"
+                ),
+                status_code=400,
+            )
+    data = await create_tuning_task(
+        db=db,
+        loop_id=body.loopId,
+        model_type=body.modelType,
+        model_params=body.modelParams.model_dump(exclude_none=True),
+        algorithm=body.algorithm,
+        recommended_pid=body.recommendedPid.model_dump(),
+        model_source=body.modelSource,
+        source_record_id=body.sourceRecordId,
+        risk_confirmed=body.riskConfirmed,
+        simulation_result=body.simulationResult,
+        status=body.status,
+        created_by=user.username,
+        risk_assessment=body.riskAssessment,
+    )
+    # 审计日志（S1-B7）
+    log = SysAuditLog(
+        id=str(uuid4()),
+        operator=user.username,
+        operation_type="CREATE_TUNING_TASK",
+        target_type="TuningTask",
+        target_id=data.get("taskId"),
+        after_value=f"algorithm={body.algorithm}, status={body.status}",
+        operated_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(log)
+    await db.commit()
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 整定批次（追溯矩阵 docs/MVP设计/13 §6.2 GAP-2a）
+# ---------------------------------------------------------------------------
+
+
+@router.get("/batches", response_model=ApiResponse[dict])
+async def list_batches_endpoint(
+    status: str | None = Query(
+        None,
+        description="批次状态筛选（BLOCKED/PENDING/READY/RUNNING/COMPLETED/CANCELLED）",
+    ),
+    startTime: datetime | None = Query(None, description="创建时间起（ISO，按 created_at 过滤）"),
+    endTime: datetime | None = Query(None, description="创建时间止（ISO，按 created_at 过滤）"),
+    page: int = Query(1, ge=1),
+    pageSize: int = Query(20, ge=1, le=100),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定批次列表（分页 + 筛选）。
+
+    返回批次摘要：batchNo/title/scope/status（B-06 动态阻塞判定后的有效状态）
+    /记录数/前置工单阻塞状态/创建时间。status 过滤按库存储状态精确匹配。
+    """
+    data = await list_tuning_batches(
+        db=db,
+        status=status,
+        start_time=_to_naive_utc(startTime) if startTime else None,
+        end_time=_to_naive_utc(endTime) if endTime else None,
+        page=page,
+        page_size=pageSize,
+    )
+    return success(data=data)
+
+
+@router.get("/batches/{batch_id}", response_model=ApiResponse[dict])
+async def get_batch_detail_endpoint(
+    batch_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定批次详情：全字段 + 关联整定记录（N:M）+ 前置工单摘要 + scatters 原样返回。"""
+    data = await get_tuning_batch_detail(db=db, batch_id=batch_id)
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# 整定历史统计
+# ---------------------------------------------------------------------------
+
+
+@router.get("/history", response_model=ApiResponse[TuningHistoryStats])
+async def get_history_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """整定历史统计。"""
+    data = await get_tuning_history_stats(db=db)
+    return success(data=data)
+
+
+# ---------------------------------------------------------------------------
+# P3-01: 整定知识库 API
+# ---------------------------------------------------------------------------
+
+
+def _entry_to_item(entry) -> TuningKnowledgeEntryItem:
+    """将 TuningKnowledgeEntry ORM 模型转换为 schema（datetime → ISO 字符串）。"""
+
+    def _iso(dt) -> str | None:
+        return dt.isoformat() if dt else None
+
+    return TuningKnowledgeEntryItem(
+        id=str(entry.id),
+        trackerId=str(entry.tracker_id),
+        tuningRecordId=str(entry.tuning_record_id) if entry.tuning_record_id else None,
+        loopId=str(entry.loop_id),
+        loopType=entry.loop_type,
+        controlType=entry.control_type,
+        tagName=entry.tag_name,
+        diagnosisLabel=entry.diagnosis_label,
+        severity=entry.severity,
+        modelType=entry.model_type,
+        algorithm=entry.algorithm,
+        identifyMethod=entry.identify_method,
+        confidenceLevel=entry.confidence_level,
+        pidBefore=entry.pid_before,
+        pidAfter=entry.pid_after,
+        kpiSummary=entry.kpi_summary,
+        effectVerified=entry.effect_verified,
+        improvedCount=entry.improved_count,
+        deterioratedCount=entry.deteriorated_count,
+        matchSource=entry.match_source,
+        implementedAt=_iso(entry.implemented_at),
+        verifiedAt=_iso(entry.verified_at),
+        createdAt=_iso(entry.created_at),
+    )
+
+
+@router.get("/knowledge-base", response_model=ApiResponse[TuningKnowledgeListData])
+async def list_knowledge_base_endpoint(
+    loopType: str | None = Query(None, description="控制类型筛选"),
+    diagnosisLabel: str | None = Query(None, description="问题类型筛选"),
+    algorithm: str | None = Query(None, description="算法筛选"),
+    effectVerified: bool | None = Query(None, description="效果筛选：True=改善/False=恶化"),
+    page: int = Query(1, ge=1, description="页码"),
+    pageSize: int = Query(20, ge=1, le=100, description="每页条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """知识库列表（支持筛选+分页，权限 tuning:view）。"""
+    result = await list_knowledge_entries(
+        db,
+        loop_type=loopType,
+        diagnosis_label=diagnosisLabel,
+        algorithm=algorithm,
+        effect_verified=effectVerified,
+        page=page,
+        page_size=pageSize,
+    )
+    data = TuningKnowledgeListData(
+        items=[_entry_to_item(e) for e in result["items"]],
+        total=result["total"],
+        page=result["page"],
+        pageSize=result["pageSize"],
+        stats=TuningKnowledgeListStats(**result["stats"]) if result.get("stats") else None,
+    )
+    return success(data=data)
+
+
+@router.get("/knowledge-base/similar", response_model=ApiResponse[TuningKnowledgeSimilarData])
+async def recommend_similar_endpoint(
+    loopId: str | None = Query(None, description="当前回路 ID（排除自身）"),
+    loopType: str | None = Query(None, description="控制类型（loopId 为空时用此匹配）"),
+    diagnosisLabel: str | None = Query(None, description="问题类型（loopId 为空时用此匹配）"),
+    limit: int = Query(5, ge=1, le=20, description="返回条数"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """相似案例推荐（优先 label 相同 > loop_type 相同，改善案例优先）。"""
+    items = await recommend_similar(
+        db,
+        loop_id=loopId,
+        loop_type=loopType,
+        diagnosis_label=diagnosisLabel,
+        limit=limit,
+    )
+    data = TuningKnowledgeSimilarData(
+        items=[_entry_to_item(e) for e in items],
+        total=len(items),
+    )
+    return success(data=data)
+
+
+@router.get(
+    "/knowledge-base/{entry_id}",
+    response_model=ApiResponse[TuningKnowledgeEntryItem],
+)
+async def get_knowledge_base_entry_endpoint(
+    entry_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("tuning:view")),
+) -> dict:
+    """知识库条目详情。"""
+    entry = await get_knowledge_entry(db, entry_id)
+    if entry is None:
+        from app.core.exceptions import BizError
+
+        raise BizError(
+            code="ERR_NOT_FOUND",
+            message="知识库条目不存在",
+            status_code=404,
+        )
+    return success(data=_entry_to_item(entry))

@@ -1,0 +1,11 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+┃  ruff staged ❯ 
+All checks passed!
+
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.13 seconds)
+✓ ruff staged (0.09 seconds)
+[fix/final-audit-remediation c6fa2b48] ci(backend): 补齐数值诊断网禁事件
+ 1 file changed, 9 insertions(+), 1 deletion(-)

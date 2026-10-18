@@ -1,0 +1,67 @@
+{
+  "observed_at": "2026-10-17T08:58:34.310438+00:00",
+  "processes": [
+    " 7361 57326 57326 六 10月/17 16:54:01 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "57292     1 57233 六 10月/17 10:50:42 2026   uv run uvicorn app.main:app --host 0.0.0.0 --port 17101",
+    "57294 57292 57233 六 10月/17 10:50:42 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 17101",
+    "57324 57294 57324 六 10月/17 10:50:44 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule",
+    "57326 57294 57326 六 10月/17 10:50:44 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "57651 57631 57233 六 10月/17 10:51:01 2026   node /Users/zhangping/DEV/CLPM-MVP/frontend/node_modules/.bin/../vite/bin/vite.js --mode development",
+    "79522 57326 57326 六 10月/17 16:19:04 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "95649 57326 57326 六 10月/17 16:40:04 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "97253 57326 57326 六 10月/17 16:41:04 2026   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+  ],
+  "details": [
+    {
+      "pid": "57294",
+      "cwd": "p57294\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "exit": 0
+    },
+    {
+      "pid": "57651",
+      "cwd": "p57651\nfcwd\nn/Users/zhangping/DEV/CLPM-MVP/frontend/apps/web-antd\n",
+      "exit": 0
+    },
+    {
+      "pid": "46521",
+      "cwd": "",
+      "exit": 1
+    },
+    {
+      "pid": "42615",
+      "cwd": "",
+      "exit": 1
+    },
+    {
+      "pid": "35795",
+      "cwd": "",
+      "exit": 1
+    },
+    {
+      "pid": "9300",
+      "cwd": "",
+      "exit": 1
+    }
+  ],
+  "main": {
+    "sha": "b676ea59158aa4d1e106579017a85860add60293",
+    "tracked_status": ""
+  },
+  "candidate": {
+    "sha": "dbb1de314ae50e7373c6559ab746b690909bf1b0",
+    "tracked_status": ""
+  },
+  "runtime": {
+    "sha": "c9e01f5d85294f5ad403fac7ae2e571ee472e9ad",
+    "tracked_status": ""
+  },
+  "health": {
+    "exit": 0,
+    "stdout": "{\"status\":\"ok\",\"version\":\"7.1.0\"}"
+  },
+  "database": {
+    "exit": 0,
+    "stdout": "BEGIN\np702perm01\nCOMMIT\n",
+    "stderr": ""
+  }
+}

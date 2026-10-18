@@ -1,0 +1,23 @@
+{
+  "started_at": "2026-10-17T10:00:51.629625+00:00",
+  "elapsed_seconds": 81.7030250839889,
+  "command": [
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--dom",
+    "--no-cache",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/verification/frontend-full-v2.results.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "exit_code": 0,
+  "source_identity_before": "226d29405c7bedb6b878e0a2502f7bb41b3b7b916c5de01f6001f216de57da40",
+  "source_identity_after": "226d29405c7bedb6b878e0a2502f7bb41b3b7b916c5de01f6001f216de57da40",
+  "source_stable": true,
+  "stdout_sha256": "14a05f211db4a522ef1706d49a0adc1f3a26ade3af9a971c7550bfe83cb64fe6",
+  "stderr_sha256": "4f9fae3a3b8ba756ae0536c3aab30cde472c6f1987a806a1600cca8139077f30",
+  "environment_boundary": "backend test mode; PG/Redis/TD unreachable ports; no real integration DSN"
+}

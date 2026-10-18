@@ -1,0 +1,32 @@
+
+ RUN  v4.1.9 /Users/zhangping/DEV/clpm-remediation-20261017/frontend
+
+ ❯ apps/web-antd/src/__tests__/loop-follow.test.ts (21 tests | 2 failed | 19 skipped) 7ms
+     ↓ refreshFollows：分页拉全量（跨页合并）；就绪后重复调用零请求
+     ↓ 首次关注：expectedRevision=0 + isFollowed=true + requestId；成功后以服务端 revision 收敛
+     ↓ 取消关注：携带已知 revision 的设定语义；成功后从关注集移除
+     ↓ 409 幂等收敛：服务端已是目标状态（他处已操作）→ 按成功口径对齐，零重试
+     ↓ 409 版本失配（本地 revision 过期）：以 currentRevision 重试一次成功；两次 requestId 不同
+     ↓ 409 重试仍冲突：按服务端真实状态回滚（不保留乐观假态）+ 如实提示
+     ↓ 网络/5xx 失败：回滚操作前状态 + 错误提示（不冒充成功）
+     ↓ busy 防重入：在途期间同回路二次点击直接失败且不新增请求
+     × A 已加载的星标在换 B 时同步清空；B 不复用 A 的 ready 缓存 5ms
+     ↓ A 的晚到读取不写入 B，也不清掉 B 在途 promise 的去重所有权
+     ↓ A 的晚到读取失败不能把 B 已加载的状态改成 error
+     ↓ A 的分页读取在换账号后停止，不用 B 的令牌继续读取下一页
+     ↓ A 取消关注的晚到成功不能取消 B 的乐观关注或解除 B 的 busy 锁
+     ↓ A 关注失败不能回滚 B 已从服务端加载的关注，也不弹旧账户失败提示
+     × A 的晚到 409 不得使用 B 的令牌重试写入 1ms
+     ↓ A 已发出的冲突重试晚到 resolve 也不能改写 B
+     ↓ A 已发出的冲突重试晚到 reject 也不能改写 B
+     ↓ 退出立即失效；同 userId 重新登录也不能接收旧 session 的结果
+     ↓ 匿名状态不读取、不写入关注，也不复用上一个账号的内容
+     ↓ 未关注渲染 ☆（aria-pressed=false）；已关注渲染实心金色 ★
+     ↓ 点击星标 emit toggleFollow；在途（followBusy）禁点
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 19 skipped (21)
+   Start at  17:51:05
+   Duration  2.10s (transform 445ms, setup 0ms, import 1.83s, tests 7ms, environment 166ms)
+
+JSON report written to /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f07/implementation/reverse-account-tests.results.json

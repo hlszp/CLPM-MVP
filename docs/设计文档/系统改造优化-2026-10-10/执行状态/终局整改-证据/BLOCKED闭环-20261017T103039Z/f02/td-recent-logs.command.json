@@ -1,0 +1,17 @@
+{
+  "command": [
+    "docker",
+    "logs",
+    "--since",
+    "30m",
+    "--tail",
+    "150",
+    "clpm-mvp-tdengine"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T10:33:09.235817+00:00",
+  "elapsedSeconds": 0.045118500000000006,
+  "rc": 0,
+  "stdoutSha256": "d8447048cad6b4c9e628c8a63f60934f1dd9cd0fc5a1bce78e38b7e14b5be2fc",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

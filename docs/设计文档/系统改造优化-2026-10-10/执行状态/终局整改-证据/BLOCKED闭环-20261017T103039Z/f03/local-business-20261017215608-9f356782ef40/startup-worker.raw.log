@@ -1,0 +1,121 @@
+ 
+ -------------- clpm-remediation-20261017@zhangpingdeMacBook-Pro v5.6.3 (recovery)
+--- ***** ----- 
+-- ******* ---- macOS-27.0.1-arm64-arm-64bit 2026-10-17 21:59:28
+- *** --- * --- 
+- ** ---------- [config]
+- ** ---------- .> app:         clpm:0x10b80d3a0
+- ** ---------- .> transport:   redis://127.0.0.1:17124/1
+- ** ---------- .> results:     redis://127.0.0.1:17124/2
+- *** --- * --- .> concurrency: 4 (prefork)
+-- ******* ---- .> task events: OFF (enable -E to monitor tasks in this worker)
+--- ***** ----- 
+ -------------- [queues]
+                .> dead_letter      exchange=default(direct) key=dead_letter
+                .> default          exchange=default(direct) key=default
+
+[tasks]
+  . app.tasks.alert_patrol.cleanup_suppressions
+  . app.tasks.alert_patrol.run_alert_patrol
+  . app.tasks.calc_snapshot_cleanup.cleanup_calc_snapshots
+  . app.tasks.config_probe.probe_config_snapshot
+  . app.tasks.data_link_monitor.run_data_link_check
+  . app.tasks.data_link_monitor.sweep_import_tasks
+  . app.tasks.dead_letter.record
+  . app.tasks.diagnosis_maintenance.cleanup_evidence
+  . app.tasks.diagnosis_schedule.run_daily
+  . app.tasks.diagnosis_schedule.run_weekly
+  . app.tasks.diagnosis_v2.run_diagnosis_batch
+  . app.tasks.kpi_calc._backfill_chord_error
+  . app.tasks.kpi_calc._backfill_window_batch
+  . app.tasks.kpi_calc._finalize_backfill
+  . app.tasks.kpi_calc.backfill_kpi_range
+  . app.tasks.kpi_calc.calculate_custom_batch_kpi
+  . app.tasks.kpi_calc.calculate_custom_loop_kpi
+  . app.tasks.kpi_calc.calculate_daily_kpi
+  . app.tasks.kpi_calc.calculate_hourly_kpi
+  . app.tasks.kpi_calc.calculate_loop_kpi
+  . app.tasks.kpi_calc.calculate_monthly_kpi
+  . app.tasks.kpi_calc.calculate_node_kpi
+  . app.tasks.kpi_calc.calculate_node_kpi_hourly
+  . app.tasks.kpi_calc.import_history_data
+  . app.tasks.kpi_calc.prewarm_cache
+  . app.tasks.lowfreq_anchor.run_lowfreq_anchor
+  . app.tasks.report_generator.export_diagnosis_statistics
+  . app.tasks.report_generator.generate_diagnosis_pdf_task
+  . app.tasks.report_generator.generate_report_task
+  . app.tasks.tuning.identify_model_task
+  . app.tasks.tuning.tune_and_simulate_task
+  . app.tasks.workbench.alert_event_archive
+  . app.tasks.workbench.event_archive
+  . app.tasks.workbench.refresh_workbench_mv
+  . app.tasks.workbench.wb_cache_cleanup
+  . app.tasks.workbench.workbench_loop_latest_refresh
+  . app.tasks.workbench.workbench_precalc
+  . audit_archive
+
+{"timestamp": "2026-10-17T13:59:28.718302+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[worker-pool] 父进程看门狗已启动（监视 PID=91079）"}
+{"timestamp": "2026-10-17T13:59:28.776179+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[worker-pool] 父进程看门狗已启动（监视 PID=91079）"}
+{"timestamp": "2026-10-17T13:59:28.802237+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T13:59:28.802441+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T13:59:28.802480+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T13:59:28.806460+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T13:59:28.807032+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91086] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.807079+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91086] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.807191+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91086] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T13:59:28.807728+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91086] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.809366+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T13:59:28.810351+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91086] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T13:59:28.811327+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91086] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T13:59:28.811616+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91086] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.812722+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91086] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+{"timestamp": "2026-10-17T13:59:28.813739+00:00", "level": "INFO", "logger": "app.tasks.celery_app", "message": "worker 子进程已从 sys_config 预载数据源配置"}
+{"timestamp": "2026-10-17T13:59:28.832989+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[worker-pool] 父进程看门狗已启动（监视 PID=91079）"}
+{"timestamp": "2026-10-17T13:59:28.856779+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T13:59:28.856966+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T13:59:28.857005+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T13:59:28.860699+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T13:59:28.861477+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91087] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.861538+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91087] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.861644+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91087] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T13:59:28.862174+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91087] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.864708+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T13:59:28.865737+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91087] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T13:59:28.866711+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91087] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T13:59:28.867072+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91087] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.869306+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91087] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+{"timestamp": "2026-10-17T13:59:28.869735+00:00", "level": "INFO", "logger": "app.tasks.celery_app", "message": "worker 子进程已从 sys_config 预载数据源配置"}
+{"timestamp": "2026-10-17T13:59:28.890279+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[worker-pool] 父进程看门狗已启动（监视 PID=91079）"}
+{"timestamp": "2026-10-17T13:59:28.894920+00:00", "level": "INFO", "logger": "celery.worker.consumer.connection", "message": "Connected to redis://127.0.0.1:17124/1"}
+{"timestamp": "2026-10-17T13:59:28.897436+00:00", "level": "INFO", "logger": "celery.worker.consumer.mingle", "message": "mingle: searching for neighbors"}
+{"timestamp": "2026-10-17T13:59:28.914206+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T13:59:28.914413+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T13:59:28.914451+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T13:59:28.917783+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T13:59:28.918352+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91088] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.918399+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91088] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.918483+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91088] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T13:59:28.918958+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91088] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.921065+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T13:59:28.921956+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91088] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T13:59:28.922809+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91088] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T13:59:28.923099+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91088] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.924104+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91088] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+{"timestamp": "2026-10-17T13:59:28.925560+00:00", "level": "INFO", "logger": "app.tasks.celery_app", "message": "worker 子进程已从 sys_config 预载数据源配置"}
+{"timestamp": "2026-10-17T13:59:28.971986+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测阈值覆盖已更新: overridden_types=[]"}
+{"timestamp": "2026-10-17T13:59:28.972128+00:00", "level": "INFO", "logger": "app.services.preprocessing.thresholds", "message": "异常值检测开关已更新: disabled=无（全部启用）"}
+{"timestamp": "2026-10-17T13:59:28.972164+00:00", "level": "INFO", "logger": "app.services.preprocessing.outlier_params", "message": "异常值检测参数已预载: 无配置，使用算法默认"}
+{"timestamp": "2026-10-17T13:59:28.974835+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]"}
+{"timestamp": "2026-10-17T13:59:28.975340+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91089] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.975390+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91089] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}"}
+{"timestamp": "2026-10-17T13:59:28.975467+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91089] 阈值预载：sys_config 无配置，使用算法默认值"}
+{"timestamp": "2026-10-17T13:59:28.975987+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91089] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.977918+00:00", "level": "INFO", "logger": "app.services.algorithm_config", "message": "算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合"}
+{"timestamp": "2026-10-17T13:59:28.979308+00:00", "level": "INFO", "logger": "app.services.confidence_evaluator", "message": "[confidence-sync pid=91089] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated"}
+{"timestamp": "2026-10-17T13:59:28.980051+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91089] 运行时缓存已同步至 revision=0"}
+{"timestamp": "2026-10-17T13:59:28.980443+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91089] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)"}
+{"timestamp": "2026-10-17T13:59:28.981456+00:00", "level": "INFO", "logger": "app.services.config_publish", "message": "[config-publish pid=91089] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated"}
+{"timestamp": "2026-10-17T13:59:28.982882+00:00", "level": "INFO", "logger": "app.tasks.celery_app", "message": "worker 子进程已从 sys_config 预载数据源配置"}
+{"timestamp": "2026-10-17T13:59:29.907127+00:00", "level": "INFO", "logger": "celery.worker.consumer.mingle", "message": "mingle: all alone"}
+{"timestamp": "2026-10-17T13:59:29.920886+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[worker] 父进程看门狗已启动（监视 PID=91036）"}
+{"timestamp": "2026-10-17T13:59:29.920982+00:00", "level": "INFO", "logger": "celery.apps.worker", "message": "clpm-remediation-20261017@zhangpingdeMacBook-Pro ready."}

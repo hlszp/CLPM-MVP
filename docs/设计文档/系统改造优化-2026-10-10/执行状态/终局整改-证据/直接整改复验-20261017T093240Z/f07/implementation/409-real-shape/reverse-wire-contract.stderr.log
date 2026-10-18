@@ -1,0 +1,6 @@
+No test files found, exiting with code 1
+
+filter: apps/web-antd/src/__tests__/personal-work-conflict.test.ts
+include: src/**/*.{test,spec}.ts
+exclude:  **/node_modules/**, **/.git/**, **/e2e/**, **/dist/**, **/node_modules/**
+

@@ -1,0 +1,87 @@
+{
+  "createdAt": "2026-10-17T12:23:17.720474+00:00",
+  "originalFourSourcesUnchanged": true,
+  "scope": "Independent local readers and frozen method supplements only; no actual business acceptance",
+  "files": [
+    {
+      "file": "independent_support.py",
+      "bytes": 3959,
+      "sha256": "19c67efd3d33f3cf77d86303921b57eb4be16f5e5ce619dc62c2367ff13848df"
+    },
+    {
+      "file": "verify_capacity_series.py",
+      "bytes": 38063,
+      "sha256": "785921c0d9c4dab274cd82135db83783cebb2e49204d3459a9b079c241169326"
+    },
+    {
+      "file": "independent_kpi_oracle.py",
+      "bytes": 30288,
+      "sha256": "3e7f74a511db0abac0b1c49dc8e1f9c9ee7b04011774f6dfc283fcba4ff4b42a"
+    },
+    {
+      "file": "test_independent_tools.py",
+      "bytes": 28047,
+      "sha256": "4d112894c5f7c41114de16a899bc1d873799e6c2262adfaf985d5c95ce8798b5"
+    },
+    {
+      "file": "recover_collector_artifacts.py",
+      "bytes": 8117,
+      "sha256": "a189a479701345eafbe0f7116912ca93e5a9e981e7879bfb2036f4cd5fdeac74"
+    },
+    {
+      "file": "test_recover_collector_artifacts.py",
+      "bytes": 5020,
+      "sha256": "afbdf718c3eed00f5e4dd8aa2fedeac942efbf4ed5395cdbb090b02a2e3a01c1"
+    },
+    {
+      "file": "independent_resource_accounting.py",
+      "bytes": 12349,
+      "sha256": "1714e33f451a1ba6fda899fba1b3a038a6b87b19cff1c1fc0fc07a3b0079dfcc"
+    },
+    {
+      "file": "verify_capacity_series_frozen_profile.py",
+      "bytes": 3724,
+      "sha256": "640003f15c213d009114ed2494a8e31823255bf60353ddd50e999f3f295225a7"
+    },
+    {
+      "file": "test_resource_accounting.py",
+      "bytes": 8354,
+      "sha256": "d57aa9bc16deb1376c942bd878bbc6b59c16dd32e1fee5beb3110827b4a4fd8c"
+    },
+    {
+      "file": "verify_closed_endpoints_raw.py",
+      "bytes": 13125,
+      "sha256": "de59ddc57fdcc9b1b3b9a3417e38453f9386a8140553b73a5023dd4dff83919a"
+    },
+    {
+      "file": "test_verify_closed_endpoints_raw.py",
+      "bytes": 3890,
+      "sha256": "6ad056818f8658834f2a63d1e46a4036dde1e6032f37de6d71726227c616ebb3"
+    },
+    {
+      "file": "verify_configuration_freeze_raw.py",
+      "bytes": 15441,
+      "sha256": "964172bf9db953091ab0e23eac48481a53f190abee766381b48eaec34a4e2355"
+    },
+    {
+      "file": "协议方法补充-02-资源与版本身份.md",
+      "bytes": 3905,
+      "sha256": "d34b6277eeda543949b3d1ec8517085585ddb07d1dd646d36bfb790bb8684b02"
+    },
+    {
+      "file": "协议方法补充-03-节点作用域与进程时间来源.md",
+      "bytes": 4615,
+      "sha256": "dce0d31ffe3b4726e300eb7cab25ee8fe4b207351f34720134a1202cb8cdeff8"
+    },
+    {
+      "file": "协议方法补充-04-事件PID与闭合进程集合.md",
+      "bytes": 3147,
+      "sha256": "105a2c6ff83d664d2d4e2675f52ebe2a8c6d42b54249980762f78739a04592d4"
+    },
+    {
+      "file": "独立复跑协议-B冷热两组.md",
+      "bytes": 4530,
+      "sha256": "2de7f530108c997227ce9af482a82c32a56d9dc932691dcd0433099030c3802f"
+    }
+  ]
+}

@@ -1,0 +1,6062 @@
+"""Celery tasks for KPI performance calculation (IDS v3.2 §2.3 — S3-METRIC-003).
+
+v4.0 三层架构：
+- DataPlanner 统一取数（L1/L2 缓存 + 8 步预处理 + 查询计划合并）
+- 12 个 MetricCalculator 指标计算器（3 核心 + 1 综合 + 8 辅助）
+- ConfidenceEvaluator 可信度评估 + 综合评分（P = (A·a+F·f+S·s)/(a+f+s) × R）
+
+设计要点：
+- Celery Beat 定时任务（每小时触发全量计算）
+- 通过 DataPlanner 获取预处理后的 MetricDataBundle
+- 三层计算编排：Layer1（无依赖指标）→ Layer2（有依赖指标）→ Layer3（综合评分）
+- 计算结果通过 UPSERT 写入 kpi_snapshot_hourly（含 7 个数据血缘字段）
+- 任务幂等（相同 loop_id + ts_start 的 UPSERT 覆盖更新）
+- 失败自动重试 3 次
+- 数据不足返回 INCONCLUSIVE 状态
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+from bisect import bisect_left
+from datetime import UTC, datetime, timedelta, timezone
+from decimal import Decimal
+from typing import Any
+from uuid import NAMESPACE_URL, uuid4, uuid5
+
+from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+from app.contracts.data_types import (
+    ControlType,
+    DataBlock,
+    DataLineage,
+    MetricDataBundle,
+    MetricResult,
+    QualitySummary,
+    TagGroup,
+    TimeWindow,
+)
+from app.core import g5_trace
+from app.core.timeparse import to_naive_utc
+from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.metric import (
+    KpiSnapshotCustom,
+    KpiSnapshotHourly,
+    LoopConfidenceLatest,
+    MetricConfig,
+)
+from app.models.tag import TagRegistry
+from app.services import result_ledger
+from app.services.confidence_evaluator import ConfidenceEvaluator
+from app.services.diagnosis_operators.gate import evaluate_gate
+from app.services.loop_fitness import compute_fitness
+from app.services.metric_calculator import get_calculator
+from app.services.preprocessing.data_quality_assessor import DataQualityAssessor
+from app.tasks.celery_app import PRIORITY_NIGHTLY, AsyncTask, celery_app
+
+logger = logging.getLogger(__name__)
+
+# 算法版本号
+ALGORITHM_VERSION = "KPI_CALC_v2.0"
+ALGORITHM_VERSION_V1 = "KPI_CALC_v1.0"  # 向后兼容回退
+
+# 单个 KPI 任务的数据库并发预算。Celery 可同时运行多个任务，且 FastAPI
+# 也需要连接余量，因此不能把 PostgreSQL 的连接上限全部交给单次批处理。
+# 2026-09-28：5 → 12。961 回路/小时的墙钟时间 ~15min → ~6min（用户口径的
+# 提效诉求）；PG 引擎为 NullPool 按需建连（本机建连 <1ms），12 并发 +
+# FastAPI 余量远低于 max_connections=100；TDengine REST 池同步扩至 16
+# （tdengine_native._max_size）。
+CONCURRENCY = 12
+
+# P5-02（批 β）：KPI 写链暂态重试上限对齐 P0-02 冻结 v2 §2.2 推荐默认——
+# 同 logicalRunId 最多 3 次 attempt（首跑 + 2 重试；DEC-10 用户裁决"全部按
+# 推荐"）。原 max_retries=3（合计 4 次）超出冻结口径，收口为 2。第 3 次
+# attempt 仍失败 → 追加 status=FAILED 不可变终态 record（本文件接线）。
+KPI_MAX_RETRIES = 2
+
+# ---------------------------------------------------------------------------
+# v4.0 指标代码映射（DB 列名 ↔ Calculator 代码）
+# ---------------------------------------------------------------------------
+
+# DB 列名 → Calculator 代码
+# 唯一历史差异：steady_rate → stability_rate
+# Phase 1 新增 14 个指标（HiaMonitor 借鉴，2026-07-23）：DB 列名与 Calculator 代码一致，
+# 其中 valve_operating_range 为虚拟条目（无单一 DB 列，结果存 details，
+# Task 6 从 details 提取 op_min/op_max 写入 valve_op_min/valve_op_max 列）
+_DB_TO_CALCULATOR_METRIC_CODE: dict[str, str] = {
+    "accuracy_rate": "accuracy_rate",
+    "fast_rate": "fast_rate",
+    "steady_rate": "stability_rate",  # DB 列名 steady_rate → Calculator stability_rate
+    "effective_auto_rate": "effective_auto_rate",
+    "good_value_rate": "good_value_rate",
+    "oscillation_rate": "oscillation_rate",
+    "saturation_rate": "saturation_rate",
+    "stiction_index": "stiction_index",
+    "output_trip_index": "output_trip_index",
+    "auto_mode_rate": "auto_mode_rate",
+    "settling_time": "settling_time",
+    "ideal_settling_time": "ideal_settling_time",
+    # Phase 1 新增（HiaMonitor 借鉴，2026-07-23）
+    "instrument_fault_rate": "instrument_fault_rate",
+    "pv_mean": "pv_mean",
+    "pv_std": "pv_std",
+    "sp_mean": "sp_mean",
+    "sp_std": "sp_std",
+    "op_mean": "op_mean",
+    "op_std": "op_std",
+    "error_mean": "error_mean",
+    "error_std": "error_std",
+    "valve_linearity": "valve_linearity",
+    "valve_nonlinearity": "valve_nonlinearity",
+    "valve_operating_range": "valve_operating_range",  # 虚拟条目（见上方注释）
+    "setpoint_crossing_count": "setpoint_crossing_count",
+    "oscillation_amplitude": "oscillation_amplitude",
+    # F5：时间常数（L1 DISPLAY_ONLY，复用 tuning_identification 相关分析）
+    "time_constant": "time_constant",
+}
+
+# Calculator 代码 → DB 列名（反向映射）
+_CALCULATOR_TO_DB_METRIC_CODE: dict[str, str] = {
+    v: k for k, v in _DB_TO_CALCULATOR_METRIC_CODE.items()
+}
+
+# 所有 DB 列名指标代码列表（传递给 DataPlanner.request_bundles 的 metrics 参数）
+_ALL_METRIC_CODES_DB: list[str] = list(_DB_TO_CALCULATOR_METRIC_CODE.keys())
+
+# Layer2 依赖关系：Calculator 代码 → 依赖的 Calculator 代码列表
+_LAYER2_DEPENDENCIES: dict[str, list[str]] = {
+    "stability_rate": ["oscillation_rate"],
+    "fast_rate": ["settling_time", "ideal_settling_time"],
+    # nonlinearity = 1 - |r|，复用 valve_linearity 的 r，避免重复计算皮尔逊相关系数
+    "valve_nonlinearity": ["valve_linearity"],
+}
+
+
+# ---------------------------------------------------------------------------
+# Celery Beat 定时任务
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_hourly_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    # P5-02：max_retries 3→2（合计 3 次 attempt，P0-02 冻结 v2 §2.2 推荐
+    # 默认，DEC-10 裁决）；移除固定 countdown=60 使 retry_backoff 真正生效
+    # （原固定 countdown 恒 60s，指数退避配置形同虚设——批 β"退避"项收口）。
+    # 装饰器级 max_retries（Task 类属性）：retry() 未显式传参时按类属性判
+    # 定耗尽，与 attempt_no/final_attempt 判定（is_final_attempt）同一数值源。
+    max_retries=KPI_MAX_RETRIES,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+    # 0921 修复：961 回路在 2.3 亿行点表上单回路 0.3~113s，全局硬超时
+    # 1800s 每轮只算完前 ~222 个回路即被杀（连续 13+ 轮，后 739 回路
+    # 永远轮不到→无评估得分）。显式放宽到 4h 保完整轮次；轮次堆积由
+    # Beat 小时节奏自然串行消化（worker 单任务串行，不并发）。后续
+    # TD 压缩回收墓碑行后单轮回落，可回调。守门同口径：import 任务
+    # 先例（time_limit=86400）。
+    time_limit=14400,
+    soft_time_limit=13800,
+)
+def calculate_hourly_kpi(
+    self: AsyncTask, ts_start: str | None = None, task_id: str | None = None
+) -> dict:
+    """每小时全量计算所有 ACTIVE 回路的 KPI 快照。
+
+    失败自动重试（合计 3 次 attempt，指数退避）；每次 attempt 落
+    ``calculation_result_attempt`` 日志行，终末尝试的失败回路追加
+    ``status=FAILED`` 终态 record（P5-02，G2 遗留③）。
+    Beat 自动触发（task_id=None）时创建 TaskRecord（triggered_by=system），
+    使定时任务也出现在「自动任务」页面；API 手动触发（task_id 非 None）
+    时复用 API 层已创建的记录，避免同一计算产生两条任务记录。
+    同一小时窗口通过 Redis SETNX 锁互斥（手动与 Beat 不会并发计算）。
+
+    若 task_tracker 不可用（Redis 异常），回退到直接调用 _do_calculate。
+
+    Args:
+        ts_start: 可选，指定计算时间窗起始（ISO 格式），None 时取上一个完整小时
+        task_id: 可选，API 手动触发时传入的已创建任务记录 ID
+    """
+    import os
+
+    logger.info(
+        "KPI 计算任务开始, celery_id=%s, ts_start=%s, task_id=%s",
+        self.request.id,
+        ts_start,
+        task_id,
+    )
+    attempt_no = result_ledger.derive_attempt_no(self.request)
+    final_attempt = result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES)
+
+    async def _body() -> dict:
+        try:
+            return await _do_hourly_with_tracking(
+                ts_start=ts_start,
+                task_id=task_id,
+                logical_run_id=self.request.id,
+                attempt_no=attempt_no,
+                final_attempt=final_attempt,
+            )
+        except HourlyWindowBusy:
+            # 互斥锁抢占失败必须原样抛出（2026-09-24 修复）：
+            # 旧实现把它当普通异常吞掉并立刻"回退直接计算"，等于在同一窗口
+            # 无锁并发重跑全量批次，与持锁者互相覆盖 UPSERT 结果，
+            # 同时 TaskRecord=FAILED 而 Celery=SUCCESS，G30 的整改意图被绕过。
+            raise
+        except BatchSystemicFailure:
+            # 止血③（2026-10-13 连接风暴）：G29 熔断=系统性故障信号，必须
+            # 原样抛出走 Celery 退避重试——旧实现落入下方通用 except 触发
+            # "回退到直接计算"，导致系统性故障后整批第二次全量重跑（风暴中
+            # 每小时复现，回退再撞墙再失败）。与 HourlyWindowBusy 同语义。
+            raise
+        except Exception as exc:
+            # task_tracker 不可用时回退到直接计算（无任务跟踪）
+            logger.warning("KPI 计算任务跟踪失败，回退到直接计算: %s", exc)
+            ts_start_dt = _parse_ts_start(ts_start)
+            return await _do_calculate(
+                ts_start=ts_start_dt,
+                source="MANUAL_STANDARD" if task_id else "SCHEDULED",
+                source_task_id=task_id,
+                logical_run_id=self.request.id,
+                final_attempt=final_attempt,
+            )
+
+    # P5-02：整任务体包 attempt 日志（开始/收尾各一行；busy/回退路径同覆盖）
+    result = self.run_async(
+        _attempt_log_wrap(
+            _body, logical_run_id=self.request.id, attempt_no=attempt_no, worker_pid=os.getpid()
+        )
+    )
+    logger.info("KPI 计算任务完成: %s", result)
+    return result
+
+
+async def _attempt_log_wrap(coro_fn, *, logical_run_id, attempt_no: int, worker_pid=None):
+    """P5-02 attempt 日志包装：开始/收尾各一行（best-effort，不阻断主链）.
+
+    成功 → finish（error=None）；异常 → finish（错误摘要）后原样抛出。
+    logical_run_id 为空（无账本身份的调用方）时直接透传，不落日志。
+    """
+    if logical_run_id:
+        await result_ledger.start_calculation_attempt(
+            str(logical_run_id), attempt_no, worker_pid=worker_pid
+        )
+    try:
+        result = await coro_fn()
+    except asyncio.CancelledError as exc:
+        # G-c B3（裁决书 §1.3，2026-10-16 修复）：CancelledError 不被
+        # except Exception 捕获 → attempt 行只落 start 不落 finish
+        # （calculation_result_attempt 悬挂 STARTED）。落 finish（错误
+        # 摘要=CancelledError）后原样 raise——不吞取消语义、不触发回退。
+        if logical_run_id:
+            await result_ledger.finish_calculation_attempt(
+                str(logical_run_id), attempt_no, error=exc
+            )
+        raise
+    except Exception as exc:
+        if logical_run_id:
+            await result_ledger.finish_calculation_attempt(
+                str(logical_run_id), attempt_no, error=exc
+            )
+        raise
+    if logical_run_id:
+        await result_ledger.finish_calculation_attempt(str(logical_run_id), attempt_no)
+    return result
+
+
+def _parse_ts_start(ts_start: str | None) -> datetime | None:
+    """将 ISO 格式字符串解析为 datetime，None 时返回 None。"""
+    if not ts_start:
+        return None
+    try:
+        return datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+    except ValueError:
+        return datetime.fromisoformat(ts_start)
+
+
+class HourlyWindowBusy(RuntimeError):
+    """同一小时窗已有计算在持锁执行（互斥锁抢占失败）.
+
+    必须与"跟踪器故障"区分：把它当作可回退的异常会让失败触发立刻在同一窗口
+    无锁重跑，破坏互斥语义（见 calculate_hourly_kpi 的 except 分支）。
+    """
+
+
+# 小时窗计算互斥锁（手动触发与整点 Beat 对同一窗口互斥，SETNX + TTL）
+_HOURLY_CALC_LOCK_PREFIX = "task:hourly_calc_lock"
+# 整改 G30 + 2026-09-24 修正：TTL 必须覆盖**本任务自身的硬超时**，且只留小缓冲。
+#
+# 原注释的依据是全局 celery_app.task_time_limit=1800，但 0921 已把本任务显式
+# 放宽到 time_limit=14400（见上方装饰器注释），而 TTL 仍留 1740s —— 于是锁在
+# 计算进行到约 29 分钟时就过期，下一个触发（次小时 Beat 或手动）能取到锁并
+# 启动**第二个并发全量轮次**，与持锁者互相覆盖同一 (loop_id, ts_start) 的
+# UPSERT 结果。这正是互斥锁要防的事。
+#
+# 取 15000 = time_limit(14400) + 600s 缓冲：任务正常跑完锁仍有效；
+# 被硬超时 SIGKILL 时，锁最多残留 10 分钟即自动释放（对比原 7200 残留 5400s
+# 的老问题已是同量级收敛），重投副本随后可取锁重跑。
+_HOURLY_CALC_LOCK_TTL_SECONDS = 15000
+
+
+def _eval_loop_selection_stmt(loop_ids: list[str] | None):
+    """评估计算的回路选路（2026-10-10 参评口径统一）。
+
+    全量扫描（loop_ids=None，小时 Beat/全量 backfill）：仅取**参评**回路
+    （include_in_evaluation=True）——不参评回路不再产出评估快照，切换参评
+    状态后全站评分/统计随之同步（读方各 latest 查询同批过滤）。
+    显式指定回路（手动单回路/自定义批量/backfill 精准重算）：不滤参评，
+    尊重显式意图（读方仍按参评过滤展示）。
+    """
+    stmt = select(LoopLedger).where(
+        LoopLedger.is_active.is_(True),
+        LoopLedger.status == "READY",
+    )
+    if loop_ids is None:
+        stmt = stmt.where(LoopLedger.include_in_evaluation.is_(True))
+    else:
+        stmt = stmt.where(LoopLedger.id.in_(loop_ids))
+    return stmt
+
+
+def _hourly_window_lock_key(ts_start: str | None) -> str:
+    """计算小时窗口互斥锁 Redis key（默认窗口口径与 _do_calculate 一致）."""
+    ts_start_dt = _parse_ts_start(ts_start)
+    if ts_start_dt is None:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        ts_start_dt = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+    elif ts_start_dt.tzinfo is not None:
+        # 与 _do_calculate 的 naive 化口径一致（直接剥离 tzinfo）
+        ts_start_dt = ts_start_dt.replace(tzinfo=None)
+    return f"{_HOURLY_CALC_LOCK_PREFIX}:{ts_start_dt.strftime('%Y%m%d%H')}"
+
+
+async def _do_hourly_with_tracking(
+    ts_start: str | None = None,
+    task_id: str | None = None,
+    logical_run_id: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
+) -> dict:
+    """执行每小时 KPI 计算并维护任务跟踪记录.
+
+    task_id 为 None（Beat 自动触发）时创建 TaskRecord（STANDARD /
+    triggered_by=system）；task_id 非 None（API 手动触发）时复用 API 层
+    已创建的记录（避免双写，其进度/终态由本函数推进）。
+
+    同一小时窗口通过 Redis SETNX 锁互斥（手动触发与整点 Beat 不会并发
+    _do_calculate）；锁带 TTL 兜底，持有者在 finally 中按 token 释放。
+
+    logical_run_id（P1-05 结果账本）：Celery 任务级逻辑运行身份，重试
+    复用同一 task id → 同一 logicalRunId → 账本 record 幂等复用。
+
+    P5-02 attempt 日志与 FAILED 终态：attempt 日志由 Celery 壳层
+    ``_attempt_log_wrap`` 统一落（本函数自身不写 attempt 行）；
+    attempt_no/final_attempt 透传 ``_do_calculate``，终末尝试的失败回路
+    在批内追加 status=FAILED 终态 record。
+    """
+    from app.core.redis import redis_client
+    from app.schemas.task import TaskStatus, TaskType
+    from app.services import task_tracker
+
+    # 来源判定必须在 Beat 路径创建 TaskRecord 之前（G5 前置立卡项1，2026-10-13）：
+    # 下方 ``if task_id is None`` 分支会把新建任务记录 ID 赋给 task_id，此后再按
+    # ``"MANUAL_STANDARD" if task_id else "SCHEDULED"`` 判定恒走 MANUAL_STANDARD
+    # ——Beat 整点路径来源被错标（曾登记"判定顺序问题"，批 1' 现场复现）。
+    # 语义：API 手动触发（带既有任务记录）=MANUAL_STANDARD；无记录触发
+    # （Beat 整点 / 工具 .delay 直投，两者在 Celery 入口不可区分）=SCHEDULED。
+    manual_triggered = task_id is not None
+
+    lock_key = _hourly_window_lock_key(ts_start)
+    lock_token = task_id or str(uuid4())
+    acquired = await redis_client.set(
+        lock_key, lock_token, nx=True, ex=_HOURLY_CALC_LOCK_TTL_SECONDS
+    )
+    if not acquired:
+        logger.warning(
+            "同一小时窗口已有评估任务在执行，跳过本次计算: lock=%s, task_id=%s",
+            lock_key,
+            task_id,
+        )
+        if task_id:
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                error_message="同一时间窗已有评估任务在执行，本次触发已跳过",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+        # 整改 G30：必须**抛错**而不是正常返回。
+        # 返回 dict 会让 Celery 把这次触发记成 SUCCESS——与已写入的 TaskRecord
+        # FAILED 自相矛盾，监控侧也看不到"有一小时没算"。
+        # Beat 自动触发路径更严重：它连 TaskRecord 都不创建，返回 dict 等于
+        # 静默丢失一小时快照。抛错后任务进入 FAILED 终态并触发 autoretry。
+        raise HourlyWindowBusy(
+            f"同一时间窗已有评估任务在执行，本次触发未执行: lock={lock_key}, task_id={task_id}"
+        )
+
+    try:
+        if task_id is None:
+            # Beat 自动触发：创建系统任务记录
+            # 生成标题：自动评估-YYMMDDHH（Shanghai 时区）
+            _SHANGHAI = timezone(timedelta(hours=8))
+            title = f"自动评估-{datetime.now(_SHANGHAI).strftime('%y%m%d%H')}"
+            # 任务时间窗（2026-10-03 修复：此前 ts_start=None 不落 hash，
+            # 任务列表"时间窗口"列恒空）。窗口口径与 _do_calculate 一致：
+            # 指定 ts_start 用之；缺省=上一个完整小时，[start, start+1h)
+            _win_start = _parse_ts_start(ts_start)
+            if _win_start is None:
+                _now = datetime.now(UTC).replace(tzinfo=None)
+                _win_start = _now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+            _win_start = _win_start.replace(tzinfo=None) if _win_start.tzinfo else _win_start
+            task_id = await task_tracker.create_task(
+                task_type=TaskType.STANDARD,
+                created_by="system",
+                created_by_id="",
+                ts_start=_win_start.isoformat(),
+                ts_end=(_win_start + timedelta(hours=1)).isoformat(),
+                triggered_by="system",
+                title=title,
+            )
+
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            started_at=datetime.now(UTC).isoformat(),
+            current_stage="开始计算",
+        )
+
+        # 修 D（2026-10-13 连接风暴）：attempt 边界重置进度计数。重试复用同一
+        # TaskRecord（API 手动路径 task_id 恒定；Beat 路径每 attempt 新建记录
+        # 天然为零），旧口径下 backfill_done 等 HINCRBY 累加器跨 attempt 与
+        # 回退双跑累加不重置（现场「回路[2109/1030]」超总分显示）。
+        if attempt_no is not None and attempt_no > 1:
+            try:
+                await task_tracker.reset_task_progress(task_id)
+            except Exception:  # noqa: BLE001 — 进度重置失败不阻断计算主链
+                logger.warning(
+                    "attempt %d 进度重置失败 task_id=%s", attempt_no, task_id, exc_info=True
+                )
+
+        try:
+            result = await _do_calculate(
+                ts_start=_parse_ts_start(ts_start),
+                task_id=task_id,
+                window_index=1,
+                total_windows=1,
+                source="MANUAL_STANDARD" if manual_triggered else "SCHEDULED",
+                source_task_id=task_id,
+                logical_run_id=logical_run_id,
+                final_attempt=final_attempt,
+            )
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.SUCCESS,
+                progress=1.0,
+                current_stage="完成",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            return result
+        except asyncio.CancelledError:
+            # G-c B3（裁决书 §1.3，2026-10-16 修复）：外层取消不被
+            # except Exception 捕获 → TaskRecord 停在 RUNNING 永不终态
+            # （自动任务页"一直在跑"假相）。落 CANCELLED 终态后原样
+            # raise——壳层 217 的 except Exception 同样不捕 CancelledError，
+            # 不触发"回退直接计算"双跑（行为保持）；Celery
+            # autoretry_for=(Exception,) 亦不匹配，不自动重试。
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.CANCELLED,
+                error_message="任务被取消（CancelledError）",
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            raise
+        except Exception as exc:
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                error_message=str(exc),
+                finished_at=datetime.now(UTC).isoformat(),
+            )
+            raise
+    finally:
+        # 仅持锁者释放（token 校验，避免误删 TTL 超时后他人重获的锁）
+        try:
+            if await redis_client.get(lock_key) == lock_token:
+                await redis_client.delete(lock_key)
+        except Exception:  # noqa: BLE001
+            logger.warning("释放小时窗计算锁失败: %s", lock_key, exc_info=True)
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_loop_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    # P5-02：3 次 attempt 上限（P0-02 冻结 v2 §2.2）+ 真指数退避（去固定 countdown）
+    max_retries=KPI_MAX_RETRIES,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_loop_kpi(self: AsyncTask, loop_id: str, ts_start: str | None = None) -> dict:
+    """单回路 KPI 计算（可手动触发）。"""
+    logger.info("单回路 KPI 计算, loop_id=%s", loop_id)
+    return AsyncTask().run_async(
+        _do_calculate_single_loop(
+            loop_id,
+            ts_start,
+            attempt_no=result_ledger.derive_attempt_no(self.request),
+            final_attempt=result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES),
+            celery_task_id=self.request.id,
+        )
+    )
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_custom_loop_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    # P5-02：3 次 attempt 上限（P0-02 冻结 v2 §2.2）+ 真指数退避（去固定 countdown）
+    max_retries=KPI_MAX_RETRIES,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_custom_loop_kpi(
+    self: AsyncTask,
+    task_id: str,
+    loop_id: str,
+    ts_start: str,
+    ts_end: str | None = None,
+) -> dict:
+    """自定义任务单回路 KPI 计算（Celery 入口，P1 #12）。"""
+    logger.info(
+        "自定义任务单回路 KPI 计算, task_id=%s, loop_id=%s, ts_start=%s, ts_end=%s",
+        task_id,
+        loop_id,
+        ts_start,
+        ts_end,
+    )
+    return AsyncTask().run_async(
+        _do_calculate_custom_loop(
+            task_id,
+            loop_id,
+            ts_start,
+            ts_end,
+            attempt_no=result_ledger.derive_attempt_no(self.request),
+            final_attempt=result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES),
+        )
+    )
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_custom_batch_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    # P5-02：3 次 attempt 上限（P0-02 冻结 v2 §2.2）+ 真指数退避（去固定 countdown）
+    max_retries=KPI_MAX_RETRIES,
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_custom_batch_kpi(
+    self: AsyncTask,
+    task_id: str,
+    loop_ids: list[str],
+    ts_start: str,
+    ts_end: str | None = None,
+) -> dict:
+    """自定义任务批量 KPI 计算（批量预加载 + 并发处理，优化性能）。"""
+    logger.info(
+        "自定义任务批量 KPI 计算, task_id=%s, loop_count=%d, ts_start=%s, ts_end=%s",
+        task_id,
+        len(loop_ids),
+        ts_start,
+        ts_end,
+    )
+    return AsyncTask().run_async(
+        _do_calculate_custom_batch(
+            task_id,
+            loop_ids,
+            ts_start,
+            ts_end,
+            attempt_no=result_ledger.derive_attempt_no(self.request),
+            final_attempt=result_ledger.is_final_attempt(self.request, KPI_MAX_RETRIES),
+        )
+    )
+
+
+def _on_prewarm_failure(
+    exc: Exception,
+    task_id: str,
+    args: tuple,
+    kwargs: dict,
+    einfo,
+) -> None:
+    """prewarm_cache 任务失败回调。
+
+    记录详细错误日志，便于监控和告警。
+    """
+    logger.error(
+        "缓存预热任务失败: task_id=%s, args=%s, kwargs=%s, error=%s",
+        task_id,
+        args,
+        kwargs,
+        exc,
+        exc_info=True,
+    )
+    try:
+        import asyncio
+
+        from app.core.redis import redis_client
+
+        asyncio.run(
+            redis_client.incr("clpm:metrics:prewarm_failure_count"),
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning("预热失败指标记录失败", exc_info=True)
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.prewarm_cache",
+    on_failure=_on_prewarm_failure,
+)
+def prewarm_cache(ts_start: str | None = None) -> dict:
+    """预热 L1/L2 缓存（仅供手工/运维调用，定时预热策略已废止）。
+
+    原"每小时 55 分"定时预热已废止：其预热窗口与整点任务窗口错位一小时，
+    从未命中。整点任务数据来源为 realtime 滚动 1 小时缓存 + TDengine 回源。
+    本任务保留用于运维场景（如大规模重算前手工预热指定窗口）。
+
+    Args:
+        ts_start: 可选，指定预热的时间窗起始（ISO 格式），None 时取上一个完整小时
+    """
+    logger.info("缓存预热任务开始, ts_start=%s", ts_start)
+    return AsyncTask().run_async(_do_prewarm(ts_start))
+
+
+async def _do_prewarm(ts_start: str | None = None) -> dict:
+    """执行缓存预热的实际逻辑。"""
+    from app.core.db import AsyncSessionLocal
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+    else:
+        ts_end_dt = now.replace(minute=0, second=0, microsecond=0)
+        ts_start_dt = ts_end_dt - timedelta(hours=1)
+    ts_end_dt = ts_start_dt + timedelta(hours=1)
+
+    async with AsyncSessionLocal() as db:
+        stmt = select(LoopLedger).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+        result = await db.execute(stmt)
+        loops = list(result.scalars().all())
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+    if not loops:
+        return {"total": 0, "succeeded": 0, "failed": 0, "errors": [], "elapsed": 0.0}
+
+    t_start = time.perf_counter()
+    prewarm_result = await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
+    elapsed = time.perf_counter() - t_start
+    prewarm_result["elapsed"] = elapsed
+    logger.info(
+        "缓存预热完成: total=%d, succeeded=%d, failed=%d, elapsed=%.3fs",
+        prewarm_result["total"],
+        prewarm_result["succeeded"],
+        prewarm_result["failed"],
+        elapsed,
+    )
+    if prewarm_result["succeeded"] == 0:
+        raise RuntimeError("缓存预热失败：没有任何回路完成")
+    return prewarm_result
+
+
+# ---------------------------------------------------------------------------
+# Beat 调度配置：每小时执行一次 + 每日 00:05 + 每月 1 日 00:10
+# ---------------------------------------------------------------------------
+
+from celery import chord, group  # noqa: E402
+from celery.schedules import crontab  # noqa: E402
+
+# 默认计算周期（秒）— 可被 EngineRule EVAL_CALC_CYCLE 覆盖
+_DEFAULT_CALC_CYCLE_SECONDS = 3600.0
+
+# P5-02：定时批量走夜间优先级（options.priority，Redis broker 分桶消费）
+_beat_entry = {
+    "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
+    "schedule": crontab(minute=0, hour="*"),  # 每小时 0 分触发（默认值，beat_init 时从 DB 覆盖）
+    "options": {"priority": PRIORITY_NIGHTLY},
+}
+
+# 合并到 celery_app 的 beat_schedule（与 aas_sync 的 beat 共存）
+_existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
+_existing_beat["kpi-calc-hourly"] = _beat_entry
+# 注：原 "prewarm-cache"（每小时 55 分）预热已废止 —— 其预热窗口为
+# [floor(now)-1h, floor(now))，与下一整点任务需要的窗口错位一小时，从未命中；
+# 且未闭合窗口预热会产生不完整数据。整点任务的数据来源统一为
+# realtime 滚动 1 小时缓存（provider 自动探测）+ TDengine 回源。
+# 节点级日聚合：每日 00:05 执行（聚合前一天的数据）
+_existing_beat["node-kpi-daily"] = {
+    "task": "app.tasks.kpi_calc.calculate_daily_kpi",
+    "schedule": crontab(hour=0, minute=5),
+    "options": {"priority": PRIORITY_NIGHTLY},
+}
+# 节点级月聚合：每月 1 日 00:10 执行（聚合上一个月的数据）
+_existing_beat["node-kpi-monthly"] = {
+    "task": "app.tasks.kpi_calc.calculate_monthly_kpi",
+    "schedule": crontab(hour=0, minute=10, day_of_month=1),
+    "options": {"priority": PRIORITY_NIGHTLY},
+}
+celery_app.conf.beat_schedule = _existing_beat
+celery_app.conf.timezone = "Asia/Shanghai"
+
+
+# ---------------------------------------------------------------------------
+# beat_init 信号：Beat 启动时从 EngineRule 读取策略配置，动态更新调度周期
+# + Redis Pub/Sub 监听线程：策略配置变更后即时重载（无需重启 Beat）
+# ---------------------------------------------------------------------------
+
+from celery.signals import beat_init  # noqa: E402
+
+# Redis pub/sub 频道：API 更新 EngineRule 后发布通知，Beat 订阅后即时重载
+BEAT_RELOAD_CHANNEL = "clpm:beat:reload"
+
+
+def _apply_rules_to_schedule(rules: dict, sender: object = None) -> None:
+    """将 EngineRule 配置应用到 celery_app.conf.beat_schedule。
+
+    支持 EngineRule：
+    - EVAL_CALC_CYCLE (cycle_minutes): KPI 计算周期，覆盖 kpi-calc-hourly 的 schedule
+    - EVAL_CALC_CYCLE.is_enabled=False: 禁用自动计算（从 beat_schedule 删除条目）
+    """
+    if not rules:
+        return
+
+    calc_cycle = rules.get("EVAL_CALC_CYCLE")
+    if not calc_cycle:
+        return
+
+    is_enabled = calc_cycle.get("is_enabled", True)
+    cycle_minutes = calc_cycle.get("cycle_minutes", 60)
+
+    # G28：改运行中的 scheduler.schedule（就地），而非 conf 副本。
+    # 惰性导入：beat_registry 与 kpi_calc 相互引用，模块级导入会循环。
+    from app.tasks.beat_registry import live_beat_schedule
+
+    current_schedule, _sched = live_beat_schedule(sender)
+
+    # 0920 修复：live schedule 的值必须是 ScheduleEntry 对象——此前直接把
+    # 裸配置 dict 塞进 scheduler.schedule，populate_heap 调 entry.is_due()
+    # 时 AttributeError，Beat 崩溃循环（0920 zpdev 实测：EngineRule 保存
+    # 触发重载即崩，每 ~30s 重启一次）。与 celery Scheduler._maybe_entry
+    # 同法构造 Entry 再入表；应用失败保持原调度，绝不炸 Beat。
+    try:
+        if not is_enabled:
+            current_schedule.pop("kpi-calc-hourly", None)
+            logger.info("beat_schedule: EVAL_CALC_CYCLE 已禁用，kpi-calc-hourly 调度已移除")
+        else:
+            if int(cycle_minutes) == 60:
+                schedule_expr = crontab(minute=0, hour="*")
+            elif int(cycle_minutes) > 0 and int(cycle_minutes) < 60:
+                schedule_expr = crontab(minute=f"*/{int(cycle_minutes)}")
+            else:
+                schedule_expr = float(cycle_minutes) * 60.0
+
+            entry_conf = {
+                "task": "app.tasks.kpi_calc.calculate_hourly_kpi",
+                "schedule": schedule_expr,
+                # P5-02：定时批量夜间优先级（与静态 _beat_entry 同口径）
+                "options": {"priority": PRIORITY_NIGHTLY},
+            }
+            if _sched is not None:
+                # Scheduler.Entry 即 ScheduleEntry 类（首参就是 name，无 self
+                # 绑定——0921 误传 _sched 作位置参数致每次启动 TypeError，
+                # EVAL 应用失败）
+                entry = _sched.Entry(
+                    name="kpi-calc-hourly",
+                    app=celery_app,
+                    **entry_conf,
+                )
+                current_schedule["kpi-calc-hourly"] = entry
+            else:
+                current_schedule["kpi-calc-hourly"] = entry_conf
+            logger.info(
+                "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = %s 分钟",
+                cycle_minutes,
+            )
+    except Exception:  # noqa: BLE001 — 调度应用失败不得炸 Beat
+        logger.exception("beat_schedule: EVAL_CALC_CYCLE 应用失败（保持原调度）")
+        return
+
+    if _sched is None:
+        celery_app.conf.beat_schedule = current_schedule
+    else:
+        from app.tasks.beat_registry import sync_live_schedule
+
+        sync_live_schedule(_sched)
+
+
+def _reload_beat_schedule_from_db(sender: object = None) -> None:
+    """从 DB 读取 EngineRule 并更新 beat_schedule（同步包装，可在子线程调用）."""
+    try:
+        rules = asyncio.run(_load_engine_rules_from_db())
+    except Exception as exc:
+        logger.warning("reload_beat: 从 DB 读取 EngineRule 失败，保持当前调度周期: %s", exc)
+        return
+    _apply_rules_to_schedule(rules, sender=sender)
+
+
+def _start_beat_reload_listener() -> None:
+    """启动 Redis pub/sub 监听线程，收到通知后动态重载 beat_schedule。
+
+    API 端 update_engine_rule() 更新 EVAL_CALC_CYCLE 后会向
+    ``BEAT_RELOAD_CHANNEL`` 发布消息，本线程订阅后即时调用
+    ``_reload_beat_schedule_from_db()`` 完成热重载，无需重启 Beat 进程。
+    """
+    import threading
+
+    import redis as sync_redis
+
+    from app.core.config import settings
+
+    def _listener() -> None:
+        try:
+            client = sync_redis.from_url(settings.redis_url)
+            pubsub = client.pubsub()
+            pubsub.subscribe(BEAT_RELOAD_CHANNEL)
+            logger.info("Beat reload listener 已启动，订阅频道=%s", BEAT_RELOAD_CHANNEL)
+            for message in pubsub.listen():
+                if message["type"] == "message":
+                    logger.info("收到 Beat 重载通知: %s", message["data"])
+                    _reload_beat_schedule_from_db()
+        except Exception as exc:
+            logger.warning("Beat reload listener 异常: %s", exc)
+
+    thread = threading.Thread(target=_listener, daemon=True, name="beat-reload-listener")
+    thread.start()
+
+
+@beat_init.connect
+def _apply_engine_rules(sender=None, **kwargs):
+    """Beat 启动时从 DB 读取 EngineRule，动态更新调度周期。
+
+    同时启动 Redis pub/sub 监听线程，支持策略配置变更后即时生效（无需重启 Beat）。
+    """
+    # G28：绑定运行中的 Scheduler，否则改的是 conf 副本（运行中的 Beat 读 scheduler.schedule）。
+    from app.tasks.beat_registry import bind_live_scheduler
+
+    bind_live_scheduler(sender)
+    _reload_beat_schedule_from_db(sender=sender)
+    _start_beat_reload_listener()
+
+
+async def _load_engine_rules_from_db() -> dict:
+    """从 DB 读取 EngineRule 配置，返回 {rule_code: {params, is_enabled}} 字典。"""
+    from sqlalchemy import select
+
+    from app.core.db import AsyncSessionLocal
+    from app.models.engine import EngineRule
+
+    result = {}
+    async with AsyncSessionLocal() as db:
+        stmt = select(EngineRule).where(
+            EngineRule.rule_code.in_(
+                [
+                    "EVAL_CALC_CYCLE",
+                    "DATA_FETCH_WINDOW",
+                    "SCHEDULE_CONCURRENCY",
+                ]
+            )
+        )
+        rows = await db.execute(stmt)
+        for rule in rows.scalars().all():
+            cycle_minutes = None
+            if rule.rule_code == "EVAL_CALC_CYCLE":
+                cycle_minutes = (rule.params or {}).get("cycle_minutes", 60)
+            result[rule.rule_code] = {
+                "params": rule.params or {},
+                "is_enabled": rule.is_enabled if rule.is_enabled is not None else True,
+                "cycle_minutes": cycle_minutes,
+            }
+    return result
+
+
+# ---------------------------------------------------------------------------
+# 异步计算逻辑
+# ---------------------------------------------------------------------------
+
+# 预热阶段仍会为每个回路创建独立 DB session；必须纳入 PostgreSQL
+# 连接预算，不能按当前回路总数无界扩张。
+_PREWARM_CONCURRENCY = 5
+
+
+async def _prewarm_cache_for_loops(
+    loops: list[LoopLedger],
+    ts_start: datetime,
+    ts_end: datetime,
+    loop_configs: dict[str, dict],
+) -> dict[str, Any]:
+    """预热 L1/L2 缓存：并行调用 DataPlanner.request_bundles 取数并缓存。
+
+    两阶段计算的核心：将 I/O 密集的取数+预处理与 CPU 密集的指标计算分离。
+    本函数仅负责取数+预处理+写缓存，不做指标计算和 DB UPSERT；但每个
+    回路仍会占用独立 DB session，因此与计算阶段共用保守的连接预算。
+
+    完成后，后续计算阶段调用 request_bundles 将全部命中 L2 缓存（~0.04s/loop）。
+
+    Args:
+        loops: 待计算的回路列表
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+        loop_configs: 批量预加载的回路配置（OP 限位 + PV 量程 + config_version）
+    """
+    from app.core.db import AsyncSessionLocal
+
+    sem = asyncio.Semaphore(_PREWARM_CONCURRENCY)
+    op_limits_map = {
+        str(lid): (cfg["op_lower"], cfg["op_upper"]) for lid, cfg in loop_configs.items()
+    }
+    # O2（H2a，2026-10-16）：data_version 批级一次预载——预热阶段全部回路
+    # 共享同一版本（原每回路 request_bundles 内独立解析）；与计算阶段口径
+    # 同源（同一 resolve_data_version）。
+    from app.services.data_planner import resolve_data_version
+
+    batch_data_version = await resolve_data_version()
+
+    async def _prewarm_one(loop: LoopLedger) -> str | None:
+        async with sem:
+            async with AsyncSessionLocal() as warm_db:
+                try:
+                    loop_cfg = loop_configs.get(str(loop.id))
+                    config_loader = _make_config_loader(loop_cfg)
+                    data_planner = _build_data_planner(
+                        warm_db,
+                        bundle_cache=_get_shared_bundle_cache(),
+                    )
+                    data_planner._config_loader = config_loader
+                    data_planner._preloaded_op_limits = op_limits_map
+                    data_planner._preloaded_data_version = batch_data_version
+                    control_type = _loop_type_to_control_type(loop.loop_type)
+                    time_window = TimeWindow(start=ts_start, end=ts_end)
+                    await data_planner.request_bundles(
+                        loop_id=str(loop.id),
+                        metrics=_ALL_METRIC_CODES_DB,
+                        time_window=time_window,
+                        control_type=control_type,
+                    )
+                    return None
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "缓存预热失败: loop=%s",
+                        loop.tag_name,
+                        exc_info=True,
+                    )
+                    return f"{loop.id}: {exc}"
+
+    errors = [
+        error
+        for error in await asyncio.gather(*[_prewarm_one(loop) for loop in loops])
+        if error is not None
+    ]
+    return {
+        "total": len(loops),
+        "succeeded": len(loops) - len(errors),
+        "failed": len(errors),
+        "errors": errors,
+    }
+
+
+async def _run_batch_loop_calculations(
+    *,
+    loops: list[LoopLedger],
+    loop_configs: dict[str, dict],
+    metric_configs: dict[str, MetricConfig],
+    ts_start: datetime,
+    ts_end: datetime,
+    type_weights: dict[str, dict] | None,
+    custom_task_id: str | None = None,
+    source: str | None = None,
+    source_task_id: str | None = None,
+    logical_run_id: str | None = None,
+    on_completed=None,
+    bundle_cache=None,
+    concurrency: int = CONCURRENCY,
+    save_input_snapshot: bool = False,
+    pinned_config: dict | None = None,
+    release_context: dict | None = None,
+    runtime_overrides: dict | None = None,
+    template_keys: dict[str, str] | None = None,
+    failed_source_ids: set[str] | None = None,
+    final_attempt: bool = False,
+) -> list[dict | None | Exception]:
+    """Run loop KPI calculations with shared bounded-concurrency orchestration.
+
+    Each loop receives an independent database session. Standard and custom
+    batches differ only in snapshot destination and optional progress callback.
+
+    Args:
+        bundle_cache: L2 Bundle 缓存实例。None=使用共享缓存（标准/自定义评估），
+            False=禁用 L1/L2 缓存（backfill 场景，避免无用的缓存读写 I/O）。
+        logical_run_id: P1-05 结果账本批次级逻辑运行身份（None=由
+            _calculate_loop_kpi 按运行上下文确定性推导）。
+        save_input_snapshot: P2-03 是否保存不可变输入包（DEC-10：小时例行
+            KPI 不落包；custom 人工评估=显式人工请求类落包）。
+        pinned_config: P2-03 任务边界固定的完整配置快照（P2-02
+            ``pin_config_snapshot``；G2-INC-a：快照含五层参数，批内逐回路
+            解析注入算子。None=未固定，沿用内容摘要口径+当前缓存）。
+        release_context: P3-08a 任务边界固定的评估发布上下文（上线清单
+            六要素；None=未解析，不写 manifest 发布节/assessmentContext）。
+        runtime_overrides: P5-02 批级共享运行时阈值（fitness/KPI 观测覆盖
+            率）；批内回路级元数据 IO 归零（入口一次预载，全批共享）。
+        template_keys: P5-02 批级预载模板键映射（TEMPLATE 层五层解析）。
+        final_attempt: P5-02 终末尝试（Celery 重试耗尽前的最后一跑）——
+            True 时失败回路追加 status=FAILED 不可变终态 record（G2 遗留③
+            重试终点）；False 时暂态失败只留 attempt 日志，等待 Celery 重试。
+    """
+    from app.core.db import AsyncSessionLocal, close_session_guarded
+
+    sem = asyncio.Semaphore(concurrency)
+    op_limits_map = {
+        str(loop_id): (cfg["op_lower"], cfg["op_upper"]) for loop_id, cfg in loop_configs.items()
+    }
+    # O2（H2a，2026-10-16）：data_version 批级一次预载——原每回路
+    # request_bundles 内独立解析（1030 回路=1030 次解析调用，manifest 60s
+    # TTL 进程缓存到期即触发独立短会话回源）；现批级 1 次，全批 DataPlanner
+    # 注入共享（同 _preloaded_op_limits 注入模式，参照 P5-02 批级预载纪律）。
+    # 批内固定消费与 G2-INC-a"任务边界固定快照"一致；语义差异（批中途
+    # manifest 变更不再于批中途换缓存键，原逐回路路径受 60s TTL 约束最多
+    # 每 60s 可感知变更）已登记 D01 优化批交接文档，待评审不擅自定。
+    from app.services.data_planner import resolve_data_version
+
+    batch_data_version = await resolve_data_version()
+    # 终末失败回路的 FAILED record configRevision（与同批 COMPLETED record
+    # 同输入同 digest：批级共享 runtime_overrides 后两分支值恒等）
+    failed_record_revision = _batch_runtime_config_revision(
+        runtime_overrides, type_weights, pinned_config
+    )
+
+    async def _calculate_one(loop: LoopLedger) -> dict | None:
+        # F02：PG 连接耗尽、TD 0x073a 查询内存耗尽均为基础设施失败。
+        # 有界退避期间释放回路 semaphore/session；未知异常和取消不重试。
+        try:
+            for attempt in range(3):
+                try:
+                    return await _calculate_once(loop, attempt)
+                except Exception as exc:
+                    if attempt < 2 and _is_resource_exhausted(exc):
+                        logger.warning(
+                            "回路 %s 资源暂时耗尽，%ss 后第 %s 次重试: %s",
+                            loop.tag_name,
+                            2 * (attempt + 1),
+                            attempt + 2,
+                            exc,
+                        )
+                        await asyncio.sleep(2 * (attempt + 1))
+                        continue
+                    raise
+
+            raise AssertionError("unreachable")
+        finally:
+            # 重试是同一回路的内部尝试，不可重复推进已完成回路分母。
+            if on_completed is not None:
+                try:
+                    await on_completed(str(loop.id))
+                except Exception:  # noqa: BLE001
+                    logger.warning("批量 KPI 进度更新失败", exc_info=True)
+
+    async def _calculate_once(loop: LoopLedger, local_attempt: int) -> dict | None:
+        # 止血①（2026-10-13 连接风暴）：不用 ``async with``——session 被并发
+        # 毒化后其 ``__aexit__`` 的 close 会抛 InvalidRequestError（覆盖/掩盖
+        # 原始异常），且被弃 session 的 asyncpg 连接永不归还（NullPool 泄漏，
+        # 现场挂满 100 连接）。显式 finally 走 ``close_session_guarded``
+        # （延迟重试 close → 耗尽则 terminate 底层连接，全程不抛出）。
+        _sem_requested_ns = time.perf_counter_ns() if g5_trace.enabled() else None
+        async with sem:
+            g5_trace.completed_interval(
+                "kpi.semaphore_wait",
+                _sem_requested_ns,
+                taskId=logical_run_id,
+                loopId=str(loop.id),
+                windowStart=ts_start,
+                windowEnd=ts_end,
+            )
+            worker_db = AsyncSessionLocal()
+            try:
+                config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
+                data_planner = _build_data_planner(
+                    worker_db,
+                    bundle_cache=False if bundle_cache is False else _get_shared_bundle_cache(),
+                )
+                data_planner._config_loader = config_loader
+                data_planner._preloaded_op_limits = op_limits_map
+                data_planner._preloaded_data_version = batch_data_version
+                result = await _calculate_loop_kpi(
+                    db=worker_db,
+                    loop=loop,
+                    metric_configs=metric_configs,
+                    ts_start=ts_start,
+                    ts_end=ts_end,
+                    data_planner=data_planner,
+                    type_weights=type_weights,
+                    custom_task_id=custom_task_id,
+                    loop_cfg=loop_configs.get(str(loop.id)),
+                    source=source,
+                    source_task_id=source_task_id,
+                    logical_run_id=logical_run_id,
+                    save_input_snapshot=save_input_snapshot,
+                    pinned_config=pinned_config,
+                    release_context=release_context,
+                    runtime_overrides=runtime_overrides,
+                    template_keys=template_keys,
+                    failed_source_ids=failed_source_ids,
+                )
+                await g5_trace.awaited(
+                    "pg.commit",
+                    worker_db.commit(),
+                    taskId=logical_run_id,
+                    loopId=str(loop.id),
+                    windowStart=ts_start,
+                    windowEnd=ts_end,
+                )
+                return result
+            except Exception as exc:
+                try:
+                    await worker_db.rollback()
+                except Exception:  # noqa: BLE001 — 毒化态 rollback 可失败，不掩盖原异常
+                    logger.warning(
+                        "回路 %s 回退 rollback 失败（session 可能已毒化）",
+                        loop.tag_name,
+                        exc_info=True,
+                    )
+                if final_attempt and not (local_attempt < 2 and _is_resource_exhausted(exc)):
+                    # P5-02（G2 遗留③）终末尝试仍失败 → 追加 status=FAILED
+                    # 不可变终态 record（payload 含最终错误摘要）。暂态尝试
+                    # （final_attempt=False）或尚可局部重试时不落终态，防止
+                    # 后续恢复成功被同键不可变 FAILED record 遮蔽；
+                    # 同键已有 record（此前尝试成功）时复用不重写（幂等）。
+                    try:
+                        await result_ledger.append_failed_result_record(
+                            worker_db,
+                            logical_run_id=logical_run_id
+                            or result_ledger.derive_loop_logical_run_id(
+                                ts_start,
+                                custom_task_id=custom_task_id,
+                                source=source,
+                                source_task_id=source_task_id,
+                            ),
+                            object_kind=result_ledger.OBJECT_KIND_LOOP,
+                            object_id=str(loop.id),
+                            ts_start=ts_start,
+                            ts_end=ts_end,
+                            algorithm_version=ALGORITHM_VERSION,
+                            config_revision=failed_record_revision,
+                            error=exc,
+                        )
+                        await worker_db.commit()
+                    except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                        logger.warning(
+                            "终末失败 record 追加失败（回路 %s 窗口 %s~%s）",
+                            loop.tag_name,
+                            ts_start,
+                            ts_end,
+                            exc_info=True,
+                        )
+                raise
+            finally:
+                await g5_trace.awaited(
+                    "pg.close",
+                    close_session_guarded(worker_db, label=f"kpi-worker-session[{loop.tag_name}]"),
+                    taskId=logical_run_id,
+                    loopId=str(loop.id),
+                    windowStart=ts_start,
+                    windowEnd=ts_end,
+                )
+
+    _batch_results = await asyncio.gather(
+        *[_calculate_one(loop) for loop in loops], return_exceptions=True
+    )
+    _log_batch_phase_timings(_batch_results, ts_start)
+    # F02：一条未恢复的资源失败也不能让父任务 SUCCESS，否则低于 G29
+    # 50% 阈值时不触发 Celery 最终尝试，失败回路永远没有终态 record。
+    # 标准/custom 共用这一边界；G29 的一般业务错误阈值保持不变。
+    _assert_batch_resources(_batch_results)
+    return _batch_results
+
+
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """简单百分位（已排序列表；空列表返回 0）。"""
+    if not sorted_values:
+        return 0.0
+    idx = min(int(round(pct / 100 * (len(sorted_values) - 1))), len(sorted_values) - 1)
+    return sorted_values[idx]
+
+
+def _log_batch_phase_timings(results: list, ts_start: datetime) -> None:
+    """批量级分段耗时聚合（每窗口一行）：read/persist/compute 的 p50/p95/max。
+
+    数据来自 _calculate_loop_kpi 结果 dict 的 _timing 键（2026-10-08 评估
+    吞吐优化观测——生产回填慢的大头定位依据，避免逐回路日志刷屏）。
+    """
+    timings: list[dict] = [r["_timing"] for r in results if isinstance(r, dict) and "_timing" in r]
+    if not timings:
+        return
+    parts = []
+    for phase in ("read", "compute", "persist"):
+        vals = sorted(float(t.get(phase, 0)) for t in timings)
+        parts.append(
+            f"{phase} p50={_percentile(vals, 50):.2f}s p95={_percentile(vals, 95):.2f}s "
+            f"max={vals[-1]:.2f}s sum={sum(vals):.1f}s"
+        )
+    logger.info(
+        "[批量计时] 窗口=%s 回路=%d/%d | %s",
+        ts_start.strftime("%m-%d %H:00"),
+        len(timings),
+        len(results),
+        " | ".join(parts),
+    )
+
+
+_BATCH_FAILURE_ABORT_RATIO = 0.5
+
+
+class BatchSystemicFailure(RuntimeError):
+    """批量失败熔断（整改 G29）：失败占比达阈值，判定为系统性故障并中止。
+
+    PG 连接风暴止血③（2026-10-13）：此前熔断抛裸 RuntimeError，被
+    ``calculate_hourly_kpi`` 壳层的 ``except Exception``（task_tracker 回退
+    兜底）捕获后触发"回退到直接计算"——等于系统性故障后**整批第二次全量
+    重跑**，在故障窗内再撞墙并放大风暴。专用类型使壳层能把它与真正的
+    task_tracker 故障区分开：熔断即中止（由 Celery 以 ≥30s 退避重试），
+    不回退直算。继承 RuntimeError：既有按 RuntimeError 捕获/断言的语义
+    全部保持（G29 原始整改语义不变）。
+    """
+
+
+class BatchResourceFailure(BatchSystemicFailure):
+    """未恢复的 PG/TD 资源错误；独立于 G29 失败率阈值触发任务重试。"""
+
+
+def _is_resource_exhausted(exc: Exception) -> bool:
+    """只重试已知 PG/TD 资源瞬态错误，不把取数失败判为数据不足。"""
+    message = str(exc).lower()
+    return "too many clients" in message or (
+        "0x073a" in message and "query memory exhausted" in message
+    )
+
+
+def _assert_batch_resources(results: list) -> None:
+    failures = [r for r in results if isinstance(r, Exception) and _is_resource_exhausted(r)]
+    if failures:
+        # 同 BatchSystemicFailure，壳层不得误作 tracker 故障立即回退重跑。
+        # final_attempt=True 时批内已写 FAILED；此前只留 attempt，等待重试。
+        raise BatchResourceFailure(
+            f"批量 KPI 资源失败尚未恢复（{len(failures)}/{len(results)}），"
+            f"本次任务不能标为成功: {failures[0]}"
+        ) from failures[0]
+
+
+def _assert_batch_health(summary: dict[str, int], total: int) -> None:
+    """批量失败熔断（整改 G29）。
+
+    asyncio.gather(return_exceptions=True) 把异常收集为返回值，
+    _summarize_batch_results 将其计入 failed，但批量入口仍**正常返回**，
+    跟踪包装随即无条件写 SUCCESS。于是 DB 断连、TDengine 全站不可达、表结构
+    漂移这类系统性故障在自动任务页表现为**成功**：autoretry_for 永不触发、
+    死信不产生、监控侧也无信号。
+
+    失败占比达到阈值即抛 ``BatchSystemicFailure``，使任务进入可观测的
+    失败终态（并可被壳层与 tracker 故障区分，不触发回退直算——止血③）。
+    """
+    if total <= 0:
+        return
+    failed = int(summary.get("failed", 0))
+    ratio = failed / total
+    if ratio >= _BATCH_FAILURE_ABORT_RATIO:
+        raise BatchSystemicFailure(
+            f"批量 KPI 计算失败率 {ratio:.0%}（{failed}/{total}）达到阈值 "
+            f"{_BATCH_FAILURE_ABORT_RATIO:.0%}，判定为系统性故障并中止；summary={summary}"
+        )
+
+
+def _summarize_batch_results(
+    results: list[dict | None | Exception],
+    *,
+    loops: list[LoopLedger] | None = None,
+) -> dict[str, int | list[str]]:
+    """Classify completed loop calculations consistently across batch entrypoints.
+
+    loops 与 results 等长同序（gather 保序）时，失败明细带回路位号——
+    2026-10-10 生产排查依赖翻 worker 日志且日志不带回路标识的缺口补齐。
+    """
+    summary: dict[str, int | list[str]] = {
+        "success": 0,
+        "inconclusive": 0,
+        "failed": 0,
+        # G-c B2（2026-10-14 裁决 / 2026-10-16 修复）：取消单列（诚实计数）
+        "cancelled": 0,
+        "failed_detail": [],
+    }
+    for index, result in enumerate(results):
+        tag = (
+            (loops[index].tag_name or str(loops[index].id))
+            if loops is not None and index < len(loops)
+            else f"#{index}"
+        )
+        if isinstance(result, asyncio.CancelledError):
+            # G-c B2（裁决书 §1.1）：CancelledError 继承 BaseException（非
+            # Exception），原分类链不命中 1247 的 Exception 分支、在
+            # result.get 处撞 AttributeError 崩溃——hourly 链 TaskRecord=
+            # FAILED 与 Celery=SUCCESS 双终态矛盾 + 壳层 217 回退整批双跑；
+            # backfill 链整窗（含已 commit 成功回路）误计 failed。现单列
+            # cancelled 并计入 failed（熔断器口径覆盖取消：批量级取消=
+            # 系统性事件应可观测可重试，不静默不崩溃），留 failed_detail。
+            summary["cancelled"] += 1
+            summary["failed"] += 1
+            summary["failed_detail"].append(f"{tag}: (CancelledError 任务取消)")  # type: ignore[union-attr]
+            logger.warning("回路计算被取消 [%s]: %r", tag, result)
+        elif isinstance(result, Exception):
+            summary["failed"] += 1
+            detail_line = f"{tag}: {str(result)[:80]}"
+            summary["failed_detail"].append(detail_line)  # type: ignore[union-attr]
+            # ⑤（2026-10-13 连接风暴）：批量收尾的逐回路失败也带堆栈，
+            # 与"DataPlanner 取数失败"同因（首发点钉死的日志缺口）。
+            logger.warning("回路计算失败 [%s]: %s", tag, result, exc_info=result)
+        elif result is None:
+            summary["failed"] += 1
+            summary["failed_detail"].append(f"{tag}: (无返回)")  # type: ignore[union-attr]
+        elif result.get("status") == "INCONCLUSIVE":
+            summary["inconclusive"] += 1
+        else:
+            summary["success"] += 1
+    return summary
+
+
+async def _do_calculate(
+    ts_start: str | datetime | None = None,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+    window_index: int = 0,
+    total_windows: int = 0,
+    source: str = "SCHEDULED",
+    source_task_id: str | None = None,
+    logical_run_id: str | None = None,
+    final_attempt: bool = False,
+) -> dict:
+    """执行全量 KPI 计算的实际 async 逻辑。
+
+    Args:
+        ts_start: 时间窗起始（ISO 8601 字符串或 datetime）；None 时取上一个完整计算周期
+        loop_ids: 回路 ID 过滤列表。None=全量；非空列表=仅这些回路；
+            空列表=直接返回 0 结果（用于 backfill 精准重算）。
+        task_id: Redis 任务跟踪 ID（backfill 调用时传入，用于逐回路进度更新）。
+        window_index: 当前窗口序号（1-based），用于细粒度进度计算。
+        total_windows: 总窗口数，用于细粒度进度计算。
+        logical_run_id: P1-05 结果账本逻辑运行身份；None 时按
+            (source, source_task_id, 窗口) 确定性推导（兜底，保持重试幂等）。
+        final_attempt: P5-02 终末尝试标记（终末失败回路追加 FAILED 终态
+            record；暂态失败只留 attempt 日志等 Celery 重试）。
+    """
+    from app.core.db import AsyncSessionLocal
+
+    # 空列表提前返回（backfill 调用时明确不需要计算任何回路）
+    if loop_ids is not None and len(loop_ids) == 0:
+        return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+
+    # 计算时间窗 — naive UTC，对齐 DB TIMESTAMP WITHOUT TIME ZONE
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if ts_start:
+        if isinstance(ts_start, datetime):
+            ts_start_dt = ts_start.replace(tzinfo=None) if ts_start.tzinfo else ts_start
+        else:
+            try:
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                    tzinfo=None
+                )
+            except ValueError:
+                ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
+    else:
+        ts_end_dt = now.replace(minute=0, second=0, microsecond=0)
+        ts_start_dt = ts_end_dt - timedelta(hours=1)
+
+    # P1-05 结果账本：批次级 logicalRunId（缺省按运行上下文确定性推导）
+    if not logical_run_id:
+        logical_run_id = result_ledger.derive_loop_logical_run_id(
+            ts_start_dt, source=source, source_task_id=source_task_id
+        )
+
+    # 主 session 仅用于查询回路列表和指标配置（只读，无并发）
+    async with AsyncSessionLocal() as db:
+        # 1. 查询待评估回路（参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
+        stmt = _eval_loop_selection_stmt(loop_ids)
+        loop_result = await db.execute(stmt)
+        loops = list(loop_result.scalars().all())
+        logger.info("待计算回路数: %d", len(loops))
+
+        if not loops:
+            return {"total": 0, "success": 0, "inconclusive": 0, "failed": 0}
+
+        # 2. 加载指标配置
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        # 2.1 批量加载回路类型权重（v2 算法用）
+        from app.services.loop_config import get_loop_type_weights_map
+
+        type_weights = await get_loop_type_weights_map(db)
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+        logger.info("已加载回路类型权重: %s", list(type_weights.keys()))
+
+        # P2-03/G2-INC-a：任务边界固定完整配置快照（标准小时链；批内所有 record 共用，
+        # 五层参数任务中不换参——G2-INC-a 起不只固定 revision 号）
+        pinned_config = await _pin_task_config(db)
+        # P3-08a：任务边界固定评估发布上下文（六要素；批内所有 record/包共用）
+        release_ctx = await _resolve_task_release_context(db)
+
+        # P5-02 批量元信息预载（批级 3 次查询，回路级 0 次）：fitness 阈值 +
+        # KPI 观测覆盖率阈值 + TEMPLATE 层模板键，全批共享同一快照。
+        # 原逐回路口径：1000 回路 × (fitness LIKE 查询 + 单键查询 [+ 模板键
+        # 查询]) = 2000~3000 次同参数重复 IO；现批级常数 2~3 次。
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        template_keys = await _batch_load_template_keys(db, pinned_config, loops)
+        # P5-02 显式重评链门：一次窗口级查询判定本窗 FAILED 前身对象集
+        # （常见空集 → 逐 record 落库零 sourceRecordId 解析查询）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[str(lp.id) for lp in loops]
+        )
+        logger.info(
+            "[批量元信息预载] 回路=%d fitness键=%d 观测阈值=%s 模板键=%d"
+            "（批级共享，回路级元数据 IO=0）",
+            len(loops),
+            len(runtime_overrides.get("fitness") or {}),
+            runtime_overrides.get("kpiMinObservedRatio"),
+            len(template_keys or {}),
+        )
+
+    loops_count = len(loops)
+
+    # 注：原 L2 命中率检查 + 兜底预热已废止。计算阶段由 DataPlanner 按需取数：
+    # 最近 1 小时窗口自动命中 realtime 滚动缓存，否则回源 TDengine（见 provider）。
+    completed_in_window = 0
+
+    async def _on_completed(_loop_id: str) -> None:
+        nonlocal completed_in_window
+        completed_in_window += 1
+        if task_id and total_windows > 0 and loops_count > 0:
+            await _update_backfill_progress(
+                task_id,
+                window_index,
+                total_windows,
+                completed_in_window,
+                loops_count,
+            )
+
+    t_calc_start = time.perf_counter()
+    results = await _run_batch_loop_calculations(
+        loops=loops,
+        loop_configs=loop_configs,
+        metric_configs=metric_configs,
+        ts_start=ts_start_dt,
+        ts_end=ts_end_dt,
+        type_weights=type_weights,
+        source=source,
+        source_task_id=source_task_id,
+        logical_run_id=logical_run_id,
+        on_completed=_on_completed if task_id else None,
+        pinned_config=pinned_config,
+        release_context=release_ctx,
+        runtime_overrides=runtime_overrides,
+        template_keys=template_keys,
+        failed_source_ids=failed_source_ids,
+        final_attempt=final_attempt,
+    )
+    t_calc_elapsed = time.perf_counter() - t_calc_start
+    logger.info(
+        "并发计算完成: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+        loops_count,
+        CONCURRENCY,
+        t_calc_elapsed,
+        t_calc_elapsed / max(loops_count, 1),
+    )
+    summary = _summarize_batch_results(results)
+    # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+    _assert_batch_health(summary, len(results))
+
+    # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
+    # CAL-05（2026-10-10）：级联显式传原窗——历史回算/迟到窗口的节点聚合
+    # 不再落到"当前系统时间上一小时"（原无参 delay() 固定当前窗，
+    # 与回路级窗口不一致）。
+    try:
+        # P5-02：级联聚合走夜间优先级（批量类；事件/人工优先级高于本类）
+        calculate_node_kpi_hourly.apply_async(
+            kwargs={"ts_start": ts_start_dt.isoformat(), "ts_end": ts_end_dt.isoformat()},
+            priority=PRIORITY_NIGHTLY,
+        )
+        logger.info(
+            "已触发节点级 KPI 聚合任务（回路级计算完成后级联，窗口 %s~%s）",
+            ts_start_dt,
+            ts_end_dt,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("触发节点级 KPI 聚合任务失败: %s", exc)
+
+    return {
+        "total": len(loops),
+        "success": summary["success"],
+        "inconclusive": summary["inconclusive"],
+        "failed": summary["failed"],
+        "ts_start": ts_start_dt.isoformat(),
+        "ts_end": ts_end_dt.isoformat(),
+    }
+
+
+async def _do_calculate_single_loop(
+    loop_id: str,
+    ts_start: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
+    celery_task_id: str | None = None,
+) -> dict:
+    """单回路 KPI 计算。
+
+    P5-02：celery_task_id 非空时 logicalRunId 由其确定性推导（Celery retry
+    复用同一 task id → 重试幂等，与 P1-05 契约"Celery 任务链路用 task id"
+    对齐；此前每次调用（含重试）新 uuid4，重试不幂等）。attempt_no/
+    final_attempt 为 attempt 日志与终末 FAILED 终态接线参数。
+    """
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
+        loop = result.scalar_one_or_none()
+        if loop is None:
+            return {"loopId": loop_id, "status": "FAILED", "error": "回路不存在"}
+        if loop.is_active is False:
+            # 2026-10-10 停用裁决：停用回路不参与任何计算（显式拒绝而非静默）
+            return {"loopId": loop_id, "status": "FAILED", "error": "回路已停用，不参与计算"}
+
+        # 时间窗（保持 tzinfo：带 Z → aware UTC，不带 Z → naive）
+        now = datetime.now(UTC).replace(tzinfo=None)
+        if ts_start:
+            try:
+                ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+            except ValueError:
+                ts_start_dt = datetime.fromisoformat(ts_start)
+        else:
+            ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        # 加载回路类型权重（v2 算法用）
+        from app.services.loop_config import get_loop_type_weights_map
+
+        type_weights = await get_loop_type_weights_map(db)
+
+        # P5-02 批级（此处=任务级）共享运行时阈值；无 celery 身份的直调方
+        # （benchmark 等）传 attempt_no=None → 不落 attempt 日志，行为不变
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        # P1-05/P5-02：Celery 链路 task id 推导（重试幂等）；直调方每次新 uuid4
+        logical_run_id = (
+            result_ledger.derive_loop_logical_run_id(ts_start_dt, celery_task_id=celery_task_id)
+            if celery_task_id
+            else str(uuid4())
+        )
+        # P5-02 显式重评链门（REWORK-D1 补接）：单回路手动重算恰是显式重评
+        # 最典型入口（FAILED 后手动重算）——对象域 1 次门查询判定本回路是否
+        # 存在 FAILED 前身（空集 → 落库零 sourceRecordId 解析查询），对齐
+        # 批路径与 custom_loop 门控口径（P0-02 冻结 v2 §2.2）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[loop_id]
+        )
+
+        async def _compute() -> dict | None:
+            data_planner = _build_data_planner(db)
+            return await _calculate_loop_kpi(
+                db=db,
+                loop=loop,
+                metric_configs=metric_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                data_planner=data_planner,
+                type_weights=type_weights,
+                source="MANUAL_STANDARD",
+                logical_run_id=logical_run_id,
+                runtime_overrides=runtime_overrides,
+                failed_source_ids=failed_source_ids,
+            )
+
+        try:
+            if attempt_no is not None:
+                snap = await _attempt_log_wrap(
+                    _compute, logical_run_id=logical_run_id, attempt_no=attempt_no
+                )
+            else:
+                snap = await _compute()
+        except Exception as exc:
+            await db.rollback()
+            if final_attempt:
+                # P5-02（G2 遗留③）：终末尝试失败 → FAILED 不可变终态 record
+                try:
+                    await result_ledger.append_failed_result_record(
+                        db,
+                        logical_run_id=logical_run_id,
+                        object_kind=result_ledger.OBJECT_KIND_LOOP,
+                        object_id=loop_id,
+                        ts_start=ts_start_dt,
+                        ts_end=ts_end_dt,
+                        algorithm_version=ALGORITHM_VERSION,
+                        config_revision=_batch_runtime_config_revision(
+                            runtime_overrides, type_weights, None
+                        ),
+                        error=exc,
+                    )
+                    await db.commit()
+                except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                    logger.warning("终末失败 record 追加失败（回路 %s）", loop_id, exc_info=True)
+            raise
+        await db.commit()
+        return snap or {"loopId": loop_id, "status": "FAILED"}
+
+
+async def _do_calculate_custom_loop(
+    task_id: str,
+    loop_id: str,
+    ts_start: str,
+    ts_end: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
+) -> dict:
+    """自定义任务单回路 KPI 计算（支持用户指定时间窗，P1 #12）。
+
+    与 _do_calculate_single_loop 的差异：
+    - 支持用户指定 ts_end（非默认 1 小时窗口）
+    - ts_end 为 None 时使用 EngineRule 的 cycle_minutes
+    - 写入 kpi_snapshot_custom（通过 custom_task_id 参数路由）
+
+    P5-02：attempt_no/final_attempt 为 attempt 日志与终末 FAILED 终态接线
+    参数（同 logicalRunId=custom task id 推导，Celery 重试幂等）。
+
+    Args:
+        task_id: 自定义任务 ID
+        loop_id: 回路 ID
+        ts_start: 时间窗起始（ISO 8601）
+        ts_end: 时间窗结束（ISO 8601），None 时使用 EngineRule 的 cycle_minutes
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.services.engine_rule_loader import get_engine_rule_loader
+    from app.services.loop_config import get_loop_type_weights_map
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(LoopLedger).where(LoopLedger.id == loop_id))
+        loop = result.scalar_one_or_none()
+        if loop is None:
+            return {"loopId": loop_id, "taskId": task_id, "status": "FAILED", "error": "回路不存在"}
+        if loop.is_active is False:
+            # 2026-10-10 停用裁决：停用回路不参与任何计算（显式拒绝而非静默）
+            return {
+                "loopId": loop_id,
+                "taskId": task_id,
+                "status": "FAILED",
+                "error": "回路已停用，不参与计算",
+            }
+
+        # 解析 ts_start（保持 tzinfo：带 Z → aware UTC，不带 Z → naive）
+        ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00"))
+
+        # ts_end：用户提供 → 解析；未提供 → ts_start + cycle_minutes
+        if ts_end is not None:
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00"))
+        else:
+            engine = get_engine_rule_loader()
+            cycle_minutes = await engine.get_calc_cycle_minutes()
+            ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        type_weights = await get_loop_type_weights_map(db)
+
+        # P2-03/G2-INC-a：任务边界固定完整配置快照 + 显式人工评估落包（DEC-10 类别③）
+        pinned_config = await _pin_task_config(db)
+        release_ctx = await _resolve_task_release_context(db)
+        # P5-02 任务级共享运行时阈值 + 模板键（单回路=批次规模 1，同批口径）
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        template_keys = await _batch_load_template_keys(db, pinned_config, [loop])
+        # P1-05：同一自定义任务重跑幂等复用 record；新任务=新逻辑运行
+        logical_run_id = result_ledger.derive_loop_logical_run_id(
+            ts_start_dt, custom_task_id=task_id
+        )
+        # P5-02 显式重评链门（对象域 1 次查询；空集零逐 record 查询）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[loop_id]
+        )
+
+        async def _compute() -> dict | None:
+            data_planner = _build_data_planner(db)
+            return await _calculate_loop_kpi(
+                db=db,
+                loop=loop,
+                metric_configs=metric_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                data_planner=data_planner,
+                type_weights=type_weights,
+                custom_task_id=task_id,
+                logical_run_id=logical_run_id,
+                save_input_snapshot=True,
+                pinned_config=pinned_config,
+                release_context=release_ctx,
+                runtime_overrides=runtime_overrides,
+                template_keys=template_keys,
+                failed_source_ids=failed_source_ids,
+            )
+
+        try:
+            if attempt_no is not None:
+                snap = await _attempt_log_wrap(
+                    _compute, logical_run_id=logical_run_id, attempt_no=attempt_no
+                )
+            else:
+                snap = await _compute()
+        except Exception as exc:
+            await db.rollback()
+            if final_attempt:
+                # P5-02（G2 遗留③）：终末尝试失败 → FAILED 不可变终态 record
+                try:
+                    await result_ledger.append_failed_result_record(
+                        db,
+                        logical_run_id=logical_run_id,
+                        object_kind=result_ledger.OBJECT_KIND_LOOP,
+                        object_id=loop_id,
+                        ts_start=ts_start_dt,
+                        ts_end=ts_end_dt,
+                        algorithm_version=ALGORITHM_VERSION,
+                        config_revision=_batch_runtime_config_revision(
+                            runtime_overrides, type_weights, pinned_config
+                        ),
+                        error=exc,
+                    )
+                    await db.commit()
+                except Exception:  # noqa: BLE001 — 终态留痕失败不吞原始异常
+                    logger.warning(
+                        "终末失败 record 追加失败（回路 %s 任务 %s）",
+                        loop_id,
+                        task_id,
+                        exc_info=True,
+                    )
+            raise
+        await db.commit()
+        return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
+
+
+async def _do_calculate_custom_batch(
+    task_id: str,
+    loop_ids: list[str],
+    ts_start: str,
+    ts_end: str | None = None,
+    attempt_no: int | None = None,
+    final_attempt: bool = False,
+) -> dict:
+    """批量自定义评估任务（复用标准任务的批量预加载 + 并发处理）。
+
+    P5-02：attempt_no/final_attempt 为 attempt 日志与终末 FAILED 终态接线
+    参数（logicalRunId=custom task id 推导，Celery 重试幂等）。
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+    from app.services.engine_rule_loader import get_engine_rule_loader
+    from app.services.loop_config import get_loop_type_weights_map
+
+    if not loop_ids:
+        return {"total": 0, "success": 0, "failed": 0}
+
+    # 统一转 naive UTC：kpi_snapshot_custom 时间列为 TIMESTAMP WITHOUT TIME ZONE，
+    # aware 入参（ISO 带 Z/offset）直接透传会触发 asyncpg
+    # "can't subtract offset-naive and offset-aware datetimes"（2026-10-03 实证：
+    # 自定义评估计算成功但落库 100% 失败的根因）
+    from app.core.timeparse import to_naive_utc
+
+    ts_start_dt = to_naive_utc(datetime.fromisoformat(ts_start.replace("Z", "+00:00")))
+    if ts_end is not None:
+        ts_end_dt = to_naive_utc(datetime.fromisoformat(ts_end.replace("Z", "+00:00")))
+    else:
+        engine = get_engine_rule_loader()
+        cycle_minutes = await engine.get_calc_cycle_minutes()
+        ts_end_dt = ts_start_dt + timedelta(minutes=cycle_minutes)
+
+    async with AsyncSessionLocal() as db:
+        stmt = select(LoopLedger).where(
+            LoopLedger.id.in_(loop_ids),
+            LoopLedger.is_active.is_(True),
+        )
+        loop_result = await db.execute(stmt)
+        loops = list(loop_result.scalars().all())
+        logger.info("待计算回路数: %d", len(loops))
+
+        if not loops:
+            return {"total": 0, "success": 0, "failed": 0}
+
+        if attempt_no is not None and attempt_no > 1:
+            await task_tracker.reset_task_progress(task_id)
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            loops_total=len(loops),
+            current_stage="取数",
+            started_at=datetime.now(UTC).isoformat(),
+        )
+
+        metric_result = await db.execute(select(MetricConfig))
+        metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+        type_weights = await get_loop_type_weights_map(db)
+
+        loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+        # P2-03/G2-INC-a：显式人工批量评估任务边界固定完整配置快照（DEC-10 类别③）
+        pinned_config = await _pin_task_config(db)
+        # P5-02 批量元信息预载（批级 2~3 次查询，回路级 0 次；口径同 _do_calculate）
+        runtime_overrides = await _load_batch_runtime_overrides(db)
+        template_keys = await _batch_load_template_keys(db, pinned_config, loops)
+        # P5-02 显式重评链门（同标准批口径）
+        failed_source_ids = await result_ledger.loop_ids_with_failed_records(
+            db, ts_start_dt, ts_end_dt, object_ids=[str(lp.id) for lp in loops]
+        )
+        # P1-05：同一自定义任务（含 Celery 重试）幂等复用 record
+        batch_logical_run_id = result_ledger.derive_loop_logical_run_id(
+            ts_start_dt, custom_task_id=task_id
+        )
+
+        t_prewarm_start = time.perf_counter()
+        prewarm_result = await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
+        t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
+        logger.info(
+            "自定义批量缓存预热完成: total=%d, succeeded=%d, failed=%d, elapsed=%.3fs",
+            prewarm_result["total"],
+            prewarm_result["succeeded"],
+            prewarm_result["failed"],
+            t_prewarm_elapsed,
+        )
+
+        completed = 0
+
+        async def _on_completed(_loop_id: str) -> None:
+            nonlocal completed
+            completed += 1
+            # 完成的是实际处理的回路；INCONCLUSIVE 不变成评估成功。
+            await _update_backfill_progress(task_id, 1, 1, completed, len(loops))
+
+        async def _run_batch() -> list:
+            t0 = time.perf_counter()
+            r = await _run_batch_loop_calculations(
+                loops=loops,
+                loop_configs=loop_configs,
+                metric_configs=metric_configs,
+                ts_start=ts_start_dt,
+                ts_end=ts_end_dt,
+                type_weights=type_weights,
+                custom_task_id=task_id,
+                logical_run_id=batch_logical_run_id,
+                on_completed=_on_completed,
+                save_input_snapshot=True,
+                pinned_config=pinned_config,
+                release_context=await _resolve_task_release_context(db),
+                runtime_overrides=runtime_overrides,
+                template_keys=template_keys,
+                failed_source_ids=failed_source_ids,
+                final_attempt=final_attempt,
+            )
+            logger.info(
+                "自定义批量计算: loops=%d, concurrency=%d, elapsed=%.3fs, avg=%.3fs/loop",
+                len(loops),
+                CONCURRENCY,
+                time.perf_counter() - t0,
+                (time.perf_counter() - t0) / max(len(loops), 1),
+            )
+            return r
+
+        t_calc_start = time.perf_counter()
+        if attempt_no is not None:
+            results = await _attempt_log_wrap(
+                _run_batch, logical_run_id=batch_logical_run_id, attempt_no=attempt_no
+            )
+        else:
+            results = await _run_batch()
+        t_calc_elapsed = time.perf_counter() - t_calc_start
+        logger.info(
+            "自定义批量计算完成(含 attempt 日志): loops=%d, elapsed=%.3fs",
+            len(loops),
+            t_calc_elapsed,
+        )
+        summary = _summarize_batch_results(results)
+        # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+        _assert_batch_health(summary, len(results))
+
+        await task_tracker.update_status(
+            task_id,
+            TaskStatus.RUNNING,
+            loops_done=completed,
+            current_stage="完成",
+        )
+
+        return {
+            "total": len(loops),
+            "success": summary["success"],
+            "inconclusive": summary["inconclusive"],
+            "failed": summary["failed"],
+            "prewarm": prewarm_result,
+            "ts_start": ts_start_dt.isoformat(),
+            "ts_end": ts_end_dt.isoformat(),
+        }
+
+
+def _extract_base_series(
+    bundles: list[MetricDataBundle],
+) -> tuple[list[float] | None, list[float] | None, list[float] | None, list[int] | None, int]:
+    """从 MetricDataBundle 列表中提取 BASE 块的 PV/SP/OP/MODE 时序.
+
+    Returns:
+        (op_series, sp_series, pv_series, mode_series, base_point_count)
+    """
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group != TagGroup.BASE.value:
+            continue
+        sigs = block.signals
+        op_raw = sigs.get("op") if isinstance(sigs, dict) else None
+        sp_raw = sigs.get("sp") if isinstance(sigs, dict) else None
+        pv_raw = sigs.get("pv") if isinstance(sigs, dict) else None
+        mode_raw = sigs.get("mode") if isinstance(sigs, dict) else None
+
+        def _clean_floats(raw: Any) -> list[float] | None:
+            if not raw:
+                return None
+            out: list[float] = []
+            for v in raw:
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    continue
+                out.append(f)
+            return out or None
+
+        def _clean_ints(raw: Any) -> list[int] | None:
+            if not raw:
+                return None
+            out: list[int] = []
+            for v in raw:
+                try:
+                    out.append(int(v))
+                except (TypeError, ValueError):
+                    continue
+            return out or None
+
+        return (
+            _clean_floats(op_raw),
+            _clean_floats(sp_raw),
+            _clean_floats(pv_raw),
+            _clean_ints(mode_raw),
+            block.point_count,
+        )
+    return None, None, None, None, 0
+
+
+def _resolve_op_pv_ranges(
+    loop: LoopLedger,
+    loop_cfg: dict | None,
+    pv_series: list[float] | None,
+    sp_series: list[float] | None,
+    bundles: list[MetricDataBundle] | None = None,
+) -> tuple[tuple[float, float] | None, tuple[float, float] | None]:
+    """解析 OP 输出限位和 PV 量程 (P2 fitness 用).
+
+    P4 修复（2026-08-22）：BASE 块的 PV/SP/OP 序列经 PreprocessingPipeline
+    _step3_normalize 已归一化为 0~100 百分比量纲（工程量程 ×100），因此
+    fitness 的判定量程必须与序列量纲一致，恒用归一化量程 (0, 100)。
+    此前传原始工程量程（如 0~1 kmol/s）导致 |SP-PV| 阈值被缩小 100 倍，
+    SP_PV_DEVIATION 大面积误报（P4 真实数据验证发现）。
+
+    2026-10-10 饱和口径统一裁决：OP 界限改为从 bundle CONFIG 信号读
+    ``op_low``/``op_high``——与 saturation_rate/effective_auto 完全同源
+    （DataPlanner 灌入，优先级 回路限位 > OP tag 量程 > 不灌，且已归一化
+    到与 OP 序列同尺度）。此前恒用 (0,100) 导致两套口径分裂：回路限位
+    20~80 的回路 OP 贴 78~80（真饱和）不判 OP_SATURATED，而限位 0~100
+    的回路 OP 正常工作在 2% 开度反被判饱和。信号缺失（限位未配且 tag
+    量程缺失）时回退 (0,100)，与指标侧兜底一致。
+    """
+    del loop, loop_cfg, pv_series, sp_series
+    op_range: tuple[float, float] | None = None
+    for bundle in bundles or []:
+        signals = getattr(bundle.data_block, "signals", {}) or {}
+        low = signals.get("op_low")
+        high = signals.get("op_high")
+        try:
+            low_f = float(low[0]) if isinstance(low, (list, tuple)) and low else None
+            high_f = float(high[0]) if isinstance(high, (list, tuple)) and high else None
+        except (TypeError, ValueError):
+            low_f = high_f = None
+        if low_f is not None and high_f is not None and high_f > low_f:
+            op_range = (low_f, high_f)
+            break
+    return (op_range or (0.0, 100.0)), (0.0, 100.0)
+
+
+def _point_context_from_bundles(bundles: list[MetricDataBundle]) -> Any:
+    """AD03：从 BASE bundle 提取 point 上下文（无/legacy → None）。"""
+    for bundle in bundles:
+        block = bundle.data_block
+        if block is not None and block.tag_group == TagGroup.BASE.value:
+            ctx = getattr(block, "series_context", None)
+            if ctx is not None and getattr(ctx, "is_point", False):
+                return ctx
+            return None
+    return None
+
+
+KPI_MIN_OBSERVED_RATIO_KEY = "kpi.min_observed_ratio"
+
+
+async def _load_kpi_min_observed_ratio(db) -> float | None:
+    """读取 KPI 观测覆盖率阈值（sys_config: kpi.min_observed_ratio）.
+
+    缺失 / 空 / 非法 → None = **不启用**（保持现行为）。开关默认不存在，
+    因此升级本身不改变任何既有结果（2026-09-25）。
+    """
+    try:
+        from app.models.sys_config import SysConfig
+
+        row = (
+            (await db.execute(select(SysConfig).where(SysConfig.key == KPI_MIN_OBSERVED_RATIO_KEY)))
+            .scalars()
+            .first()
+        )
+        raw = getattr(row, "value", None) if row is not None else None
+        if raw is None or str(raw).strip() == "":
+            return None
+        ratio = float(str(raw).strip())
+    except Exception as exc:  # noqa: BLE001 — 配置异常按不启用处理
+        logger.debug("读取 %s 失败（按不启用处理）: %s", KPI_MIN_OBSERVED_RATIO_KEY, exc)
+        return None
+    if ratio <= 0 or ratio > 1:
+        logger.warning(
+            "%s=%s 非法（应满足 0 < ratio <= 1），按不启用处理",
+            KPI_MIN_OBSERVED_RATIO_KEY,
+            ratio,
+        )
+        return None
+    return ratio
+
+
+def _observed_ratio_from_bundles(bundles: list[MetricDataBundle]) -> float | None:
+    """PV 观测覆盖率（known_slots / expected_slots）；非点表布局 → None.
+
+    复用 SeriesContext.source_coverage_ratio("pv")：R2 之后「保持过久」的槽位
+    已计入 unknown，故该比值≈真实观测率（缺口越多越低）。
+    """
+    ctx = _point_context_from_bundles(bundles)
+    if ctx is None:
+        return None
+    try:
+        return float(ctx.source_coverage_ratio("pv"))
+    except Exception as exc:  # noqa: BLE001 — 无法判定时返回 None（不改结论）
+        logger.debug("计算 PV 观测覆盖率失败（不判定）: %s", exc)
+        return None
+
+
+def _derive_expected_points(
+    bundles: list[MetricDataBundle],
+    ts_start: datetime,
+    ts_end: datetime,
+    expected_interval_s: int | None = None,
+) -> int:
+    """从契约采样间隔 + 时间窗口长度估算 expected_points（门禁 evaluate_gate 用）.
+
+    R14-1（2026-09-06）后 ``DataBlock.sampling_freq`` 反映**实际**中位间隔
+    （稀疏 COV 数据会是 "30s" 等），直接用采样标签反推期望点数会把缺口
+    洗白（120 点/30s/1h → 期望 120 → gap_ratio=0 → 门禁恒通过）。
+    因此期望点数必须基于**契约采样间隔**（``thresholds.base_sampling_freq``，
+    即 DataPlanner 决定 BASE 查询 interval_s 的同一口径）：
+    调用方应传入 ``expected_interval_s``；仅当未提供时回退采样标签解析
+    （向后兼容旧调用方）。
+    """
+    interval_sec = expected_interval_s if expected_interval_s and expected_interval_s > 0 else None
+    if interval_sec is None:
+        sampling_freq: str | None = None
+        for bundle in bundles:
+            block = bundle.data_block
+            if block.tag_group == TagGroup.BASE.value:
+                sampling_freq = block.sampling_freq
+                break
+        if not sampling_freq:
+            # 回退：1 秒一条
+            return max(int((ts_end - ts_start).total_seconds()), 1)
+        try:
+            # sampling_freq 形如 "1s" / "5s" / "1m"
+            unit = sampling_freq[-1]
+            num = int(sampling_freq[:-1])
+            if unit == "s":
+                interval_sec = num
+            elif unit == "m":
+                interval_sec = num * 60
+            elif unit == "h":
+                interval_sec = num * 3600
+            else:
+                interval_sec = 1
+        except (ValueError, IndexError):
+            interval_sec = 1
+    window_sec = max(int((ts_end - ts_start).total_seconds()), 1)
+    return max(window_sec // max(interval_sec, 1), 1)
+
+
+def _build_fitness_kwargs_from_result(
+    result: Any,
+) -> dict[str, Any]:
+    """把 FitnessResult 转换为 _persist_snapshot 所需的 kwargs（含三性维度等级）."""
+    if result is None:
+        return {
+            "fitness_level": None,
+            "fitness_tags": None,
+            "fitness_detail": None,
+            "assess_level": None,
+            "diagnose_level": None,
+            "tune_level": None,
+        }
+    return {
+        "fitness_level": result.level,
+        "fitness_tags": {"tags": result.tags} if isinstance(result.tags, list) else None,
+        "fitness_detail": result.detail if isinstance(result.detail, dict) else None,
+        "assess_level": result.assess_level,
+        "diagnose_level": result.diagnose_level,
+        "tune_level": result.tune_level,
+    }
+
+
+async def _load_fitness_sys_configs(db) -> dict[str, str] | None:
+    """一次性读取 sys_config 中 fitness.* 前缀的配置，None 表示全部用默认."""
+    try:
+        from sqlalchemy import select
+
+        from app.models.sys_config import SysConfig
+
+        result = await db.execute(select(SysConfig).where(SysConfig.key.like("fitness.%")))
+        rows = result.scalars().all()
+        if not rows:
+            return None
+        return {row.key: row.value for row in rows if row.value is not None}
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("加载 fitness sys_config 失败（使用默认阈值）: %s", exc)
+        return None
+
+
+async def _load_batch_runtime_overrides(db) -> dict:
+    """P5-02 批量元信息预载：任务边界一次性加载批级共享运行时阈值.
+
+    消除每回路重复元数据 IO（03 号文 P5-02 验收："1000 回路不出现每指标
+    重复元数据 IO"）——原 ``_calculate_loop_kpi`` 逐回路调
+    ``_load_fitness_sys_configs``（``key LIKE 'fitness.%'``）与
+    ``_load_kpi_min_observed_ratio``（单键查询），1000 回路 = 2000 次同
+    参数重复查询；现批级 2 次，批内所有回路共享同一快照。
+
+    **等价基线（10 号文）**：值与逐回路读取完全同源（同一 session、同一
+    查询、同一解析函数），批内固定消费与 G2-INC-a"任务边界固定配置快照"
+    纪律一致——运行中发布变更不再于批中途换值（更正确，非语义变更）；
+    ``configRevision`` 摘要输入恒等 → 分值/参考状态不变。
+
+    Returns:
+        ``{"fitness": dict | None, "kpiMinObservedRatio": float | None}``
+    """
+    return {
+        "fitness": await _load_fitness_sys_configs(db),
+        "kpiMinObservedRatio": await _load_kpi_min_observed_ratio(db),
+    }
+
+
+def _batch_runtime_config_revision(
+    runtime_overrides: dict | None, type_weights: dict | None, pinned_config: dict | None
+) -> str:
+    """批级 configRevision（终末失败回路的 FAILED record 用）.
+
+    与 ``_calculate_loop_kpi`` 内逐回路计算同输入同 digest：批级共享
+    runtime_overrides 后，typeWeights/fitness 两分支值恒等 → 摘要恒等，
+    FAILED record 的 configRevision 与同批 COMPLETED record 同源同构。
+    """
+    fitness = (runtime_overrides or {}).get("fitness") or {}
+    revision = result_ledger.config_revision_digest(
+        {"typeWeights": type_weights or {}, "fitness": fitness}
+    )
+    pinned_revision = pinned_config.get("configRevision") if pinned_config else None
+    if pinned_revision is not None:
+        revision = f"rev:{pinned_revision}:{revision.removeprefix('digest:')}"
+    return revision
+
+
+async def _batch_load_template_keys(
+    db, pinned_config: dict | None, loops: list[LoopLedger]
+) -> dict[str, str] | None:
+    """P5-02 批量预载工程模板键（TEMPLATE 层五层解析用）.
+
+    原 ``_resolve_loop_pinned_params`` 在 pinned 快照含 TEMPLATE 覆盖时
+    逐回路查一次 engineering_template（1000 回路=1000 次）；现批级 1 次
+    查询产出 ``{template_id: template_key}`` 共享。查不到的模板键 = None
+    （与逐回路 ``scalar_one_or_none`` 缺行行为等价：TEMPLATE 层不参与）。
+
+    无 TEMPLATE 覆盖 / 无模板绑定回路 / 查询失败 → None（调用方回落
+    逐回路 legacy 查询，行为不变）。
+    """
+    overrides = (pinned_config or {}).get("overrides") or {}
+    if not any(str(k).startswith("TEMPLATE|") for k in overrides):
+        return None
+    template_ids = {
+        str(tid)
+        for tid in (getattr(loop, "engineering_template_id", None) for loop in loops)
+        if tid
+    }
+    if not template_ids:
+        return None
+    try:
+        from sqlalchemy import select as _select
+
+        from app.models.engineering_template import EngineeringTemplate
+
+        rows = (
+            await db.execute(
+                _select(EngineeringTemplate.id, EngineeringTemplate.template_key).where(
+                    EngineeringTemplate.id.in_(template_ids)
+                )
+            )
+        ).all()
+        return {str(row[0]): row[1] for row in rows}
+    except Exception:  # noqa: BLE001 — 批级失败回落逐回路口径
+        logger.warning("批级模板键预载失败（回落逐回路查询）", exc_info=True)
+        return None
+
+
+async def _pin_task_config(db) -> dict | None:
+    """G2-INC-a：任务边界固定完整五层有效配置（不只 revision 号）.
+
+    经既有 ``config_publish.pin_config_snapshot``（L148）取得快照：
+    - DEFAULT 层合并值（算法默认 + algorithm_parameter + metric.threshold）；
+    - TEMPLATE/NODE/LOOP 覆盖层行。
+    任务内经 ``resolve_loop_params_map``（per-loop 五层展开）注入计算器，
+    运行中不读当前缓存（发布 v2 不影响在跑任务）。
+
+    失败返回 None：record 的 configRevision 回落既有内容摘要口径（不伪补
+    版本）；落包时 manifest.effectiveParams.status=UNPINNED（诚实标记，
+    重放按 legacy-unpinned 口径）。
+    """
+    try:
+        from app.services.config_publish import pin_config_snapshot
+
+        return await pin_config_snapshot(db)
+    except Exception:  # noqa: BLE001
+        logger.warning("任务边界固定配置快照失败，回落内容摘要口径", exc_info=True)
+        return None
+
+
+async def _resolve_task_release_context(db) -> dict | None:
+    """P3-08a：任务边界固定评估发布上下文（上线清单六要素）.
+
+    经 ``assessment_profile.resolve_task_release_context`` 读取 ACTIVE 发布
+    代际（无 ACTIVE 行 → releaseGeneration=None 显式标记，不伪代际）。
+    解析失败（登记表查询异常）回落 None：不写新 manifest 节/assessmentContext
+    （=当时未记录口径），不阻断评估任务主链。
+    """
+    try:
+        from app.services.assessment_profile import resolve_task_release_context
+
+        return await resolve_task_release_context(db)
+    except Exception:  # noqa: BLE001
+        logger.warning("任务边界解析评估发布上下文失败（回落未记录口径）", exc_info=True)
+        return None
+
+
+def _release_context_with_actuals(
+    release_context: dict[str, Any] | None,
+    config_revision: str | None,
+    *,
+    params_pinned: bool,
+) -> dict[str, Any] | None:
+    """发布上下文 → record payload assessmentContext（REWORK-D2 回填）.
+
+    writer 在任务边界回填两项**实际值**，与输入包 manifest.source 同源：
+    - ``configRevision``：恒取任务实际固定的配置身份（``rev:{n}:{digest16}``
+      或内容摘要）——登记行冻结值可能与后续发布漂移，语义比较（重放侧读
+      包 manifest source.configRevision）必须与任务实际同源同构才不产伪差异；
+    - ``paramsSource``：``"package"``（五层参数已固定随包）| ``"legacy-
+      unpinned"``（未固定）——与包 effectiveParams.params 的有无同一次落库
+      决定，同源恒等。
+    其余键原样保留（上线清单全量可查）；release_context=None 透传 None。
+    """
+    if release_context is None:
+        return None
+    ctx = dict(release_context)
+    ctx["configRevision"] = config_revision
+    ctx["paramsSource"] = "package" if params_pinned else "legacy-unpinned"
+    return ctx
+
+
+async def _resolve_loop_pinned_params(
+    db,
+    pinned_config: dict,
+    loop: LoopLedger,
+    template_keys: dict[str, str] | None = None,
+) -> tuple[dict[tuple[str, str], dict], dict[str, dict]]:
+    """在固定快照上解析该回路的五层有效参数（G2-INC-a，per-loop）.
+
+    TEMPLATE 层 scope（template_key）仅当快照含 TEMPLATE 覆盖时解析：
+    P5-02 起优先消费批级预载的 ``template_keys`` 映射（``_batch_load_
+    template_keys`` 一次查询批内共享，1000 回路 1000 次查询→1 次；
+    键缺失=TEMPLATE 层不参与，与逐回路 scalar_one_or_none 缺行等价）；
+    映射不可得（None，批级查询失败/独立调用方）时回落逐回路查询。
+    NODE=loop.unit_id、LOOP=loop.id 直接取回路行属性。
+
+    Returns:
+        (params_map, scope)：params_map 键 (metric_code, control_type) 值为
+        五层展开有效值；scope 为实际解析作用域（随包记录供审计/重放核对）。
+    """
+    from app.services.config_publish import resolve_loop_params_map
+
+    template_key: str | None = None
+    overrides = pinned_config.get("overrides") or {}
+    if any(str(k).startswith("TEMPLATE|") for k in overrides):
+        template_id = getattr(loop, "engineering_template_id", None)
+        if template_id:
+            if template_keys is not None:
+                # P5-02 批级预载映射（含"确无此键"=模板行不存在 → None）
+                template_key = template_keys.get(str(template_id))
+            else:
+                from sqlalchemy import select as _select
+
+                from app.models.engineering_template import EngineeringTemplate
+
+                try:
+                    row = (
+                        await db.execute(
+                            _select(EngineeringTemplate.template_key).where(
+                                EngineeringTemplate.id == str(template_id)
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    template_key = row
+                except Exception:  # noqa: BLE001
+                    logger.warning(
+                        "回路 %s 模板键解析失败（TEMPLATE 层覆盖不参与本次解析）",
+                        loop.id,
+                        exc_info=True,
+                    )
+    scope = {
+        "templateKey": template_key,
+        "nodeId": str(loop.unit_id) if getattr(loop, "unit_id", None) else None,
+        "loopId": str(loop.id),
+    }
+    resolved = resolve_loop_params_map(
+        pinned_config,
+        template_key=template_key,
+        node_id=scope["nodeId"],
+        loop_id=scope["loopId"],
+    )
+    return resolved["params"], {**scope, "sources": resolved["sources"]}
+
+
+@g5_trace.traced("kpi.loop")
+async def _calculate_loop_kpi(
+    db,
+    loop: LoopLedger,
+    metric_configs: dict[str, MetricConfig],
+    ts_start: datetime,
+    ts_end: datetime,
+    data_planner,
+    type_weights: dict[str, dict] | None = None,
+    custom_task_id: str | None = None,
+    loop_cfg: dict | None = None,
+    source: str | None = None,
+    source_task_id: str | None = None,
+    logical_run_id: str | None = None,
+    save_input_snapshot: bool = False,
+    pinned_config: dict | None = None,
+    release_context: dict[str, Any] | None = None,
+    runtime_overrides: dict | None = None,
+    template_keys: dict[str, str] | None = None,
+    failed_source_ids: set[str] | None = None,
+) -> dict | None:
+    """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
+
+    v4.0 架构：DataPlanner → 12 Calculator → ConfidenceEvaluator
+    - 通过 data_planner.request_bundles 获取预处理后的 MetricDataBundle
+    - _compute_kpis_three_layer 编排三层计算
+    - _persist_snapshot 通过 UPSERT 写入快照（含 7 个数据血缘字段）
+
+    P2 IA优化：KPI 聚合完成后调用 compute_fitness，得到 fitness_level/tags/detail
+    并随快照 UPSERT 写入。fitness 失败不阻断主流程，fitness_level 置 NULL。
+
+    P1-05 结果账本：logical_run_id 为本次逻辑运行身份（None 时由
+    _persist_snapshot 按运行上下文推导）；config_revision 取实际消费配置
+    （类型权重 + fitness sys_config）的内容摘要。
+
+    P2-03 计算上下文与历史复现：
+    - configRevision 接 P2-02 持久 revision（任务边界固定，格式
+      ``rev:{n}:{digest16}``；不可得时回落内容摘要 ``digest:...``）；
+    - ``save_input_snapshot=True`` 时按 DEC-10 类别（显式人工请求）保存
+      不可变 NPZ+manifest 输入包并填充 record.datasetSnapshotId；保存失败
+      显式降级（payload 标 inputSnapshot 状态，绝不静默冒充可复现）。
+
+    G2-INC-a 完整旧参数固定：
+    - ``pinned_config`` 为任务边界经 ``config_publish.pin_config_snapshot``
+      固定的完整快照；本函数按回路 scope 解析五层有效参数并注入全部算子
+      （``with_pinned_params``），计算全程不读当前缓存——运行中发布 v2
+      不影响本任务；None=未固定（回填/单回路既有口径，读当前缓存不变）。
+    - 落包时 manifest.source.effectiveParams 携带五层展开值与逐参来源，
+      重放据此按旧参数复现（不再读当前配置）。
+
+    P3-08a 发布代际接线：
+    - ``release_context`` 为任务边界经 ``assessment_profile.
+      resolve_task_release_context`` 固定的上线清单六要素；落包 manifest
+      ``source.{assessmentProfile, releaseGeneration, dataPolicyVersion}``
+      （1.3 只加不改；algorithmVersion/configRevision/executableBuildDigest
+      既有）+ record payload ``assessmentContext``；None=未解析（回填/单回
+      路既有口径，不写新节——旧读端按节缺失=当时未记录处理）。
+    - record payload 增存 ``metricsSemantic``/``composite``（完整语义明细，
+      供重放完整语义比较；latest 投影形状不动）。
+
+    Args:
+        db: 异步数据库会话
+        loop: 回路对象
+        metric_configs: 指标配置字典 {metric_code: MetricConfig}
+        ts_start: 时间窗起始
+        ts_end: 时间窗结束
+        data_planner: DataPlanner 实例（v4.0 统一取数）
+        type_weights: 回路类型权重映射（LoopTypeWeight）
+        custom_task_id: 自定义任务 ID（非 None 时写入 kpi_snapshot_custom）
+        loop_cfg: 预加载的回路配置（op_lower/op_upper/range_min/range_max）
+        logical_run_id: 结果账本逻辑运行身份（批次级，None=上下文推导）
+        save_input_snapshot: 保存不可变输入包（DEC-10 范围控制，默认关）
+        pinned_config: 任务边界固定的完整配置快照（P2-02 pin；None=未固定）
+        runtime_overrides: P5-02 批级共享运行时阈值（fitness 阈值 + KPI 观测
+            覆盖率阈值，``_load_batch_runtime_overrides`` 产物）；None=独立
+            调用方（benchmark 等），本函数内回落逐回路加载（兼容口径）。
+        template_keys: P5-02 批级预载的 ``{template_id: template_key}`` 映射
+            （五层解析 TEMPLATE 层）；None=回落逐回路查询（兼容口径）。
+
+    Returns:
+        快照字典，包含 status 字段
+    """
+    from app.services.loop_config import infer_score_type
+
+    control_type = _loop_type_to_control_type(loop.loop_type)
+    time_window = TimeWindow(start=ts_start, end=ts_end)
+
+    # P2: fitness 阈值配置（sys_config 中 fitness.* 前缀）。
+    # P5-02 批量元信息预载：批级 runtime_overrides 优先（同批所有回路共享
+    # 同一快照，等价基线：值与逐回路读取同源同值 → configRevision/分值不变）；
+    # None（独立调用方）时回落逐回路查询。
+    if runtime_overrides is not None:
+        fitness_sys_configs = runtime_overrides.get("fitness")
+    else:
+        fitness_sys_configs = None
+        try:
+            fitness_sys_configs = await _load_fitness_sys_configs(db)
+        except Exception:  # noqa: BLE001
+            fitness_sys_configs = None  # 使用默认阈值
+
+    # P1-05 结果账本：实际消费配置内容摘要作为 configRevision；P2-03 起叠加
+    # P2-02 任务边界固定的全局持久 revision（格式 rev:{n}:{digest16}，任务中
+    # 不切参；不可得时回落内容摘要口径 digest:...，不伪补版本）
+    config_revision = result_ledger.config_revision_digest(
+        {"typeWeights": type_weights or {}, "fitness": fitness_sys_configs or {}}
+    )
+    pinned_revision = pinned_config.get("configRevision") if pinned_config else None
+    if pinned_revision is not None:
+        config_revision = f"rev:{pinned_revision}:{config_revision.removeprefix('digest:')}"
+
+    # G2-INC-a：在固定快照上解析本回路五层有效参数（任务中不换参——后续
+    # 发布只改当前缓存/DB，不影响本 map；新任务重新 pin 取新值）
+    pinned_params: dict[tuple[str, str], dict] | None = None
+    pinned_resolve_meta: dict | None = None
+    if pinned_config is not None:
+        try:
+            pinned_params, pinned_resolve_meta = await _resolve_loop_pinned_params(
+                db, pinned_config, loop, template_keys=template_keys
+            )
+        except Exception:  # noqa: BLE001
+            logger.warning("回路 %s 五层参数解析失败（回落当前缓存口径）", loop.id, exc_info=True)
+            pinned_params = None
+            pinned_resolve_meta = None
+
+    # 分段计时（2026-10-08 评估吞吐优化观测）：read=TDengine 取数 /
+    # persist=快照写库 / compute=其余（门禁+三层计算+fitness）。
+    # 结果 dict 附 _timing 键（仅内存返回供批量聚合日志，不入库）。
+    # P2-03：输入包状态（save_input_snapshot 时在三层计算前填充；保存失败
+    # 显式降级标记随 payload 入账本，datasetSnapshotId=None）
+    dataset_snapshot_state: dict[str, Any] | None = None
+    # P3-08a：完整语义明细（三层计算后填充；早退分支 None=该窗口无指标语义）
+    metrics_semantic: dict[str, Any] | None = None
+    _t0 = time.perf_counter()
+    _t_read = 0.0
+    _t_persist = 0.0
+
+    def _timing_into(result: dict | None) -> dict | None:
+        if isinstance(result, dict):
+            result["_timing"] = {
+                "read": round(_t_read, 3),
+                "compute": round(time.perf_counter() - _t0 - _t_read - _t_persist, 3),
+                "persist": round(_t_persist, 3),
+            }
+        return result
+
+    async def _timed_persist(**kwargs: Any) -> dict:
+        nonlocal _t_persist
+        _tp = time.perf_counter()
+        # P1-05 结果账本：逻辑运行身份 + 配置摘要注入（调用方未显式指定时）
+        kwargs.setdefault("logical_run_id", logical_run_id)
+        kwargs.setdefault("config_revision", config_revision)
+        # P2-03：输入包引用注入（save_input_snapshot 时已保存；含显式降级标记）
+        if dataset_snapshot_state is not None:
+            kwargs.setdefault("dataset_snapshot_id", dataset_snapshot_state.get("snapshotId"))
+            kwargs.setdefault("input_snapshot_state", dataset_snapshot_state)
+        # P3-08a：语义明细与发布上下文随 record payload 入账本（幂等 setdefault，
+        # 早退分支 metrics_semantic=None → _persist_snapshot 跳过写键）
+        kwargs.setdefault("metrics_semantic", metrics_semantic)
+        # P5-02 显式重评链门（批级判定集合；None=未判定不解析）
+        kwargs.setdefault("failed_source_ids", failed_source_ids)
+        # REWORK-D2：assessmentContext 回填任务实际 configRevision/paramsSource
+        # （与包 manifest.source 同源，重放语义比较 identity 域两侧恒等）
+        kwargs.setdefault(
+            "assessment_context",
+            _release_context_with_actuals(
+                release_context, config_revision, params_pinned=pinned_params is not None
+            ),
+        )
+        _r = await _persist_snapshot(**kwargs)
+        _t_persist += time.perf_counter() - _tp
+        return _r
+
+    # 通过 DataPlanner 获取所有指标的 MetricDataBundle
+    _tr = time.perf_counter()
+    try:
+        bundles = await data_planner.request_bundles(
+            loop_id=str(loop.id),
+            metrics=_ALL_METRIC_CODES_DB,
+            time_window=time_window,
+            control_type=control_type,
+        )
+        _t_read += time.perf_counter() - _tr
+    except Exception as exc:  # noqa: BLE001
+        # ⑤（2026-10-13 连接风暴）：加 exc_info——首发现场只记 message 导致
+        # 毒化首发行的精确位置无法钉死（诊断报告 §3.5 的直接原因）。
+        logger.warning("DataPlanner 取数失败（回路 %s）: %s", loop.tag_name, exc, exc_info=True)
+        # F02：查询资源/执行异常不证明原始数据不足。原样交给调用方的
+        # rollback、有限资源重试和最终 FAILED record 链，保留错误身份与版本。
+        # 只有查询成功后的空 Bundle/数据门禁才可给 DATA_INSUFFICIENT。
+        raise
+
+    if not bundles:
+        logger.info("回路 %s 无数据（空 Bundle），返回 INCONCLUSIVE", loop.tag_name)
+        # P2: 空 Bundle → 数据严重不足 → L0
+        return _timing_into(
+            await _timed_persist(
+                db=db,
+                loop_id=str(loop.id),
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="INCONCLUSIVE",
+                custom_task_id=custom_task_id,
+                fitness_level="L0",
+                fitness_tags={"tags": ["DATA_INSUFFICIENT"]},
+                fitness_detail={"reason": "空Bundle，无可用数据"},
+                assess_level="L0",
+                diagnose_level="L0",
+                tune_level="L0",
+                source=source,
+                source_task_id=source_task_id,
+            )
+        )
+
+    # P2: 提取 BASE 时序（fitness 的 OP_SATURATED / SP_PV_DEVIATION 逐点统计用）
+    op_series, sp_series, pv_series, mode_series, base_point_count = _extract_base_series(bundles)
+    op_range, pv_range = _resolve_op_pv_ranges(loop, loop_cfg, pv_series, sp_series, bundles)
+
+    # P2: 复用 gate.py 评估门禁 → L0 判定口径与诊断链路完全一致
+    # R14-3（2026-09-06）：期望点数基于契约采样间隔（thresholds.base_sampling_freq）
+    # 而非 DataBlock.sampling_freq（后者现已反映实际中位间隔，稀疏数据下
+    # 用它反推期望会把缺口洗白）
+    from app.services.preprocessing.thresholds import get_threshold as _get_threshold
+
+    expected_points = _derive_expected_points(
+        bundles,
+        ts_start,
+        ts_end,
+        expected_interval_s=_get_threshold(control_type).base_sampling_freq,
+    )
+    base_valid_rate = _compute_loop_valid_rate_from_bundles(bundles)
+
+    # AD03/I05（§4.2）：point 网格门禁口径——expected=N（上下文期望格点数，
+    # 不用名义间隔推算）；point_count 投影为"可用有效样本"（核心角色交集
+    # 有效数），不得传 N 个含未知占位的行数；gapRatio 由此代表不可用样本
+    # 比例。legacy 路径实参完全不变。
+    _point_ctx = _point_context_from_bundles(bundles)
+    if _point_ctx is not None:
+        expected_points = int(_point_ctx.expected_slots)
+        base_point_count = int(round(base_valid_rate * expected_points)) if base_valid_rate else 0
+
+    # 构造虚拟 CONFIG bundle（提供 control_type / 手动理想稳态时间信号给计算器）
+    config_bundle = _build_config_bundle(str(loop.id), control_type, loop.ideal_settling_time)
+
+    # 构造权重映射（MetricConfig.weight > LoopTypeWeight > None）
+    score_type = infer_score_type(loop.loop_type)
+    weights = _build_weights_map(type_weights, score_type, metric_configs)
+
+    # P2-03：保存不可变输入包（DEC-10 类别=显式人工请求；小时例行不落包）。
+    # 包内容=实际消费的 DataBlock 全网格（缺口以逐槽 mask 显式保留，不删点
+    # 不拼段）+ manifest（绑定/量程/权重/配置上下文/构建摘要）。写入次序=
+    # 先原子写文件核 hash 再提交 DB 引用；失败显式降级（不阻断计算主链）。
+    if save_input_snapshot:
+        try:
+            from app.services import calc_snapshot as cs
+            from app.services.assessment_profile import release_manifest_source_section
+
+            arrays, blocks_meta = cs.serialize_data_blocks(bundles)
+            dataset_ref = (
+                getattr(_point_ctx, "dataset_ref", None) if _point_ctx is not None else None
+            ) or f"loop:{loop.id}"
+            manifest_extra: dict[str, Any] = {
+                "loopId": str(loop.id),
+                "tagName": loop.tag_name,
+                "loopType": loop.loop_type,
+                "window": {"tsStart": ts_start.isoformat(), "tsEnd": ts_end.isoformat()},
+                "binding": {
+                    "datasetRef": dataset_ref,
+                    "bindingVersion": getattr(_point_ctx, "binding_version", None)
+                    if _point_ctx is not None
+                    else None,
+                },
+                "engineering": {
+                    "opRange": list(op_range) if op_range else None,
+                    "pvRange": list(pv_range) if pv_range else None,
+                },
+                "blocks": blocks_meta,
+                "replayContext": {
+                    "loopId": str(loop.id),
+                    "controlType": control_type,
+                    "idealSettlingTime": loop.ideal_settling_time,
+                    "weights": weights,
+                    "opRange": list(op_range) if op_range else None,
+                    "pvRange": list(pv_range) if pv_range else None,
+                },
+                "source": {
+                    "algorithmVersion": (
+                        (release_context or {}).get("algorithmVersion") or ALGORITHM_VERSION
+                    ),
+                    "configRevision": config_revision,
+                    # P3-08a（schema 1.3 只加不改）：发布代际三要素——上线
+                    # 清单六要素之 assessmentProfile/releaseGeneration/
+                    # dataPolicyVersion（algorithmVersion/configRevision/
+                    # executableBuildDigest 既有；schemaVersion=manifest 自身）。
+                    # release_context=None（回填/单回路）不写新节=当时未记录。
+                    **(
+                        release_manifest_source_section(release_context)
+                        if release_context is not None
+                        else {}
+                    ),
+                    "effectiveParams": {
+                        "typeWeights": type_weights or {},
+                        "fitness": fitness_sys_configs or {},
+                        # G2-INC-a：完整五层有效参数（展开值+逐参来源+解析作用域），
+                        # 重放据此按旧参数复现；UNPINNED=任务边界固定失败（诚实标记，
+                        # 不伪补；重放按 legacy-unpinned 口径显式标注）
+                        "status": "PINNED" if pinned_params is not None else "UNPINNED",
+                        "configRevision": pinned_revision,
+                        "scope": (
+                            {
+                                "templateKey": pinned_resolve_meta.get("templateKey"),
+                                "nodeId": pinned_resolve_meta.get("nodeId"),
+                                "loopId": pinned_resolve_meta.get("loopId"),
+                            }
+                            if pinned_resolve_meta is not None
+                            else None
+                        ),
+                        "params": (
+                            {f"{m}|{ct}": p for (m, ct), p in sorted(pinned_params.items())}
+                            if pinned_params is not None
+                            else None
+                        ),
+                        "sources": (
+                            {
+                                f"{m}|{ct}": s
+                                for (m, ct), s in sorted(
+                                    (pinned_resolve_meta.get("sources") or {}).items()
+                                )
+                            }
+                            if pinned_params is not None
+                            else None
+                        ),
+                    },
+                },
+            }
+            snap = await cs.save_calculation_snapshot(
+                db,
+                kind=cs.KIND_KPI_GRID,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                dataset_ref=dataset_ref,
+                arrays=arrays,
+                manifest_extra=manifest_extra,
+                loop_id=str(loop.id),
+            )
+            if snap is not None:
+                dataset_snapshot_state = {
+                    "snapshotId": str(snap.id),
+                    "inputHash": snap.input_hash,
+                    "schemaVersion": cs.SNAPSHOT_SCHEMA_VERSION,
+                    "status": "SAVED",
+                }
+        except Exception as exc:  # noqa: BLE001
+            dataset_snapshot_state = {"status": "SAVE_FAILED", "error": str(exc)}
+            logger.warning(
+                "输入包保存失败（回路 %s 窗口 %s~%s），record 将标记不可完整复现",
+                loop.tag_name,
+                ts_start,
+                ts_end,
+                exc_info=True,
+            )
+
+    # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
+    # G2-INC-a：pinned_params 非空时全部算子只消费任务固定快照（不读当前缓存）
+    metric_results, composite_result = _compute_kpis_three_layer(
+        bundles, config_bundle, weights, pinned_params=pinned_params
+    )
+
+    # 12 子指标值+可信度（随 loop_confidence_latest 存储）
+    metrics_detail = _extract_metrics_detail(metric_results)
+    # P3-08a：完整语义明细（record payload 专用；latest 投影形状不动）
+    metrics_semantic = _extract_metrics_semantic(metric_results, composite_result)
+
+    # 提取数据血缘信息
+    # 可信度统一 Phase 1（P1-5）：valid_rate 改用回路级口径（核心 tag 交集 / point_count），
+    # 与 confidence_level 同口径，消除 §2.2 字段错配。
+    # 优先从 BASE 块（含 pv/sp/mode）计算回路级 valid_rate；缺失时回退到指标级 lineage。
+    # G5-γ1（2026-10-13）：前移至 INCONCLUSIVE 分支之前——该分支同样需要
+    # 血缘字段（algorithm_version 等），此前分支内缺参导致快照/latest 版本列
+    # 全 NULL（批 1 实测 100 行 DATA_INSUFFICIENT 四条件违约）。
+    loop_valid_rate = base_valid_rate
+    lineage_info = _extract_lineage_info(
+        metric_results, composite_result, loop_valid_rate=loop_valid_rate
+    )
+
+    # P2: 基于门禁（gate.py evaluate_gate）构造 GateResult 供 compute_fitness L0 判定复用
+    conf_level_for_gate = (
+        composite_result.confidence_level if composite_result.confidence_level else "E"
+    )
+    valid_rate_for_gate = base_valid_rate if base_valid_rate is not None else 0.0
+    try:
+        gate_result = evaluate_gate(
+            point_count=base_point_count,
+            expected_points=expected_points,
+            valid_rate=float(valid_rate_for_gate),
+            confidence_level=conf_level_for_gate,
+        )
+    except Exception:  # noqa: BLE001
+        gate_result = None
+
+    # 综合评分为 None（R 可信度 E 级）→ INCONCLUSIVE
+    if composite_result.value is None:
+        logger.info("回路 %s 综合评分为 None（E 级），返回 INCONCLUSIVE", loop.tag_name)
+        # P2: 可信度 E 级 + gate 构建 → compute_fitness 大概率 L0，但允许 L1 兜底
+        # G5-γ1（2026-10-13 批 1 实测）：source/source_task_id 原放本 dict，
+        # 被 _build_fitness_kwargs_from_result 整体替换吞掉（该函数只含
+        # fitness/三性六键）→ 快照/record/latest 的 source 与版本列全 NULL。
+        # 修复：显式字段改在 _timed_persist 调用点平铺（对齐主路径口径），
+        # 本 dict 只保留可被整体替换的 fitness 域键。
+        fitness_kwargs: dict[str, Any] = {
+            "fitness_level": None,
+            "fitness_tags": None,
+            "fitness_detail": None,
+        }
+        try:
+            fresult = compute_fitness(
+                kpi_values={},
+                gate_result=gate_result,
+                op_series=op_series,
+                sp_series=sp_series,
+                pv_series=pv_series,
+                mode_series=mode_series,
+                op_range=op_range,
+                pv_range=pv_range,
+                sys_configs=fitness_sys_configs,
+            )
+            fitness_kwargs = _build_fitness_kwargs_from_result(fresult)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("回路 %s fitness 计算失败（INCONCLUSIVE分支）: %s", loop.tag_name, exc)
+        return _timing_into(
+            await _timed_persist(
+                db=db,
+                loop_id=str(loop.id),
+                ts_start=ts_start,
+                ts_end=ts_end,
+                status="INCONCLUSIVE",
+                custom_task_id=custom_task_id,
+                metrics_detail=metrics_detail,
+                # 来源标注（G5-γ1）：平铺传递，不被 fitness_kwargs 整体替换波及
+                source=source,
+                source_task_id=source_task_id,
+                # 血缘字段（G5-γ1）：algorithm_version 等与主路径同源，
+                # 闭合快照/latest 版本列 NULL 违约；confidence_level 经
+                # lineage_info 携带（composite 可信度，E 兜底）
+                **lineage_info,
+                **fitness_kwargs,
+            )
+        )
+
+    # 提取 KPI 值（Calculator 代码 → DB 列名）
+    kpi_values = _extract_kpi_values(metric_results)
+
+    # 提取阀门运行区间 op_min/op_max（从 valve_operating_range details，Task 6）
+    valve_op_min, valve_op_max = _extract_valve_op_range(metric_results)
+
+    # 数据血缘（G5-γ1 前移至 INCONCLUSIVE 分支之前，主路径沿用同一变量）
+
+    # P2: 核心路径 — KPI 聚合完成后调用 compute_fitness
+    # 规则：fitness 计算失败不得阻断 KPI 主流程，catch 异常后 fitness_level=NULL
+    main_fitness_kwargs: dict[str, Any] = {
+        "fitness_level": None,
+        "fitness_tags": None,
+        "fitness_detail": None,
+    }
+    try:
+        # 把 Decimal KPI 转换为 float 归一化映射给 fitness
+        kpi_for_fitness: dict[str, Any] = {}
+        for k, v in kpi_values.items():
+            if v is None:
+                continue
+            try:
+                kpi_for_fitness[k] = float(v)
+            except (TypeError, ValueError):
+                pass
+        fresult_main = compute_fitness(
+            kpi_values=kpi_for_fitness,
+            gate_result=gate_result,
+            op_series=op_series,
+            sp_series=sp_series,
+            pv_series=pv_series,
+            mode_series=mode_series,
+            op_range=op_range,
+            pv_range=pv_range,
+            sys_configs=fitness_sys_configs,
+        )
+        main_fitness_kwargs = _build_fitness_kwargs_from_result(fresult_main)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("回路 %s fitness 计算失败（主路径，已兜底NULL）: %s", loop.tag_name, exc)
+
+    # 判定状态：必需指标缺失 → PARTIAL
+    status = "SUCCESS"
+    required_kpis = ("good_value_rate", "auto_mode_rate", "steady_rate")
+    if any(kpi_values.get(k) is None for k in required_kpis):
+        status = "PARTIAL"
+
+    # R14-3（2026-09-06）：缺口 gate 结论贯穿快照——gate 不通过时最终快照
+    # 不得 SUCCESS+高分。现有状态枚举已含 INCONCLUSIVE，此处直接采用；
+    # 评分置 None、可信度按最低等级 E + 原因字符串兼容表达（无 DB 迁移）。
+    # 指标值仍随快照落库（供诊断明细参考），但页面级评分/状态不可用。
+    final_score = (
+        _quantize(Decimal(str(composite_result.value)))
+        if composite_result.value is not None
+        else None
+    )
+    gate_failed = gate_result is not None and not gate_result.passed
+    if gate_failed:
+        status = "INCONCLUSIVE"
+        final_score = None
+        lineage_info = dict(lineage_info)
+        lineage_info["confidence_level"] = "E"
+        fitness_detail = main_fitness_kwargs.get("fitness_detail")
+        merged_detail = dict(fitness_detail) if isinstance(fitness_detail, dict) else {}
+        merged_detail["gate_failed_reason"] = gate_result.reason
+        merged_detail["gate"] = gate_result.to_dict()
+        main_fitness_kwargs = dict(main_fitness_kwargs)
+        main_fitness_kwargs["fitness_detail"] = merged_detail
+        logger.info(
+            "回路 %s 数据门禁不通过，快照置 INCONCLUSIVE（score=None）: %s",
+            loop.tag_name,
+            gate_result.reason,
+        )
+
+    # 3（2026-09-25）：KPI 观测覆盖率闸门（sys_config 开关，缺省不启用）。
+    # 现状：缺口小时被 HELD 填平后照常给分 = 拿填充值算 KPI；开关启用后
+    # 覆盖率不足即降级 INCONCLUSIVE（与 gate_failed 同一处置口径：score=None、
+    # 可信度 E、原因写进 fitness_detail）。
+    if status == "SUCCESS":
+        # P5-02 批级共享（runtime_overrides 优先；None=独立调用方回落逐回路查询）
+        if runtime_overrides is not None:
+            min_observed_ratio = runtime_overrides.get("kpiMinObservedRatio")
+        else:
+            min_observed_ratio = await _load_kpi_min_observed_ratio(db)
+        if min_observed_ratio is not None:
+            observed_ratio = _observed_ratio_from_bundles(bundles)
+            if observed_ratio is not None and observed_ratio < min_observed_ratio:
+                status = "INCONCLUSIVE"
+                final_score = None
+                lineage_info = dict(lineage_info)
+                lineage_info["confidence_level"] = "E"
+                _coverage_detail = main_fitness_kwargs.get("fitness_detail")
+                _merged_coverage = (
+                    dict(_coverage_detail) if isinstance(_coverage_detail, dict) else {}
+                )
+                _merged_coverage["coverage_insufficient"] = {
+                    "observedRatio": round(observed_ratio, 4),
+                    "minObservedRatio": min_observed_ratio,
+                }
+                main_fitness_kwargs = dict(main_fitness_kwargs)
+                main_fitness_kwargs["fitness_detail"] = _merged_coverage
+                logger.info(
+                    "回路 %s 窗口 %s 观测覆盖率 %.3f < 阈值 %.3f，快照置 INCONCLUSIVE（数据不足）",
+                    loop.tag_name,
+                    ts_start,
+                    observed_ratio,
+                    min_observed_ratio,
+                )
+
+    return _timing_into(
+        await _timed_persist(
+            db=db,
+            loop_id=str(loop.id),
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            custom_task_id=custom_task_id,
+            metrics_detail=metrics_detail,
+            score=final_score,
+            # 来源标注（G5 前置立卡项1，2026-10-13）：主成功/部分路径此前漏传
+            # source/source_task_id——快照 UPSERT 把两列覆盖为 NULL（早退分支
+            # 均已透传，唯主路径缺失），批 1' 现场 1000 行 source=None 即此因。
+            source=source,
+            source_task_id=source_task_id,
+            good_value_rate=kpi_values.get("good_value_rate"),
+            auto_mode_rate=kpi_values.get("auto_mode_rate"),
+            effective_auto_rate=kpi_values.get("effective_auto_rate"),
+            steady_rate=kpi_values.get("steady_rate"),
+            accuracy_rate=kpi_values.get("accuracy_rate"),
+            fast_rate=kpi_values.get("fast_rate"),
+            oscillation_rate=kpi_values.get("oscillation_rate"),
+            saturation_rate=kpi_values.get("saturation_rate"),
+            stiction_index=kpi_values.get("stiction_index"),
+            output_trip_index=kpi_values.get("output_trip_index"),
+            settling_time=kpi_values.get("settling_time"),
+            ideal_settling_time=kpi_values.get("ideal_settling_time"),
+            # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+            instrument_fault_rate=kpi_values.get("instrument_fault_rate"),
+            pv_mean=kpi_values.get("pv_mean"),
+            pv_std=kpi_values.get("pv_std"),
+            sp_mean=kpi_values.get("sp_mean"),
+            sp_std=kpi_values.get("sp_std"),
+            op_mean=kpi_values.get("op_mean"),
+            op_std=kpi_values.get("op_std"),
+            error_mean=kpi_values.get("error_mean"),
+            error_std=kpi_values.get("error_std"),
+            valve_linearity=kpi_values.get("valve_linearity"),
+            valve_nonlinearity=kpi_values.get("valve_nonlinearity"),
+            valve_op_min=valve_op_min,
+            valve_op_max=valve_op_max,
+            setpoint_crossing_count=kpi_values.get("setpoint_crossing_count"),
+            oscillation_amplitude=kpi_values.get("oscillation_amplitude"),
+            time_constant=kpi_values.get("time_constant"),
+            **lineage_info,
+            **main_fitness_kwargs,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# v4.0 辅助函数
+# ---------------------------------------------------------------------------
+
+
+def _loop_type_to_control_type(loop_type: str | None) -> ControlType:
+    """将回路类型映射为 ControlType（DataPlanner 采样策略用）。
+
+    映射关系（对齐 DDS §2.3）：
+        FLOW → FLOW
+        PRESSURE → PRESSURE
+        TEMPERATURE → TEMPERATURE
+        LEVEL → LEVEL
+        ANALYSIS → COMPOSITION
+        其他（SPEED/OTHER/None/未知）→ FLOW（回退）
+    """
+    mapping = {
+        "FLOW": ControlType.FLOW,
+        "PRESSURE": ControlType.PRESSURE,
+        "TEMPERATURE": ControlType.TEMPERATURE,
+        "LEVEL": ControlType.LEVEL,
+        "ANALYSIS": ControlType.COMPOSITION,
+    }
+    if not loop_type:
+        return ControlType.FLOW
+    return mapping.get(loop_type.upper(), ControlType.FLOW)
+
+
+def _build_config_bundle(
+    loop_id: str,
+    control_type: ControlType,
+    ideal_settling_time: float | None = None,
+) -> MetricDataBundle:
+    """构造虚拟 CONFIG bundle（提供 control_type 信号给 ideal_settling_time 计算器）。
+
+    CONFIG bundle 不查询数据库，直接构造一个 valid_rate=1.0 的 DataBlock，
+    signals 中包含 control_type 信号，供 IdealSettlingTimeCalculator 读取。
+
+    Args:
+        loop_id: 回路 ID
+        control_type: 控制类型（FC/PC/TC/LC/CC）
+        ideal_settling_time: 回路级手动配置的理想稳态时间（秒，loop_ledger.ideal_settling_time）。
+            非 None 且 > 0 时注入 signals，calculator 走 manual 分支（最高优先级）
+    """
+    ts = datetime.now(UTC)
+    signals: dict[str, list] = {"control_type": [control_type.value]}
+    if ideal_settling_time is not None:
+        try:
+            manual_ist = float(ideal_settling_time)
+        except (TypeError, ValueError):
+            manual_ist = 0.0
+        if manual_ist > 0:
+            signals["ideal_settling_time"] = [manual_ist]
+    data_block = DataBlock(
+        data_block_id=f"config_{loop_id}",
+        loop_id=loop_id,
+        tag_group=TagGroup.CONFIG.value,
+        sampling_freq="config",
+        timestamps=[ts],
+        signals=signals,
+        validity={},
+        quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
+        point_count=1,
+    )
+    return MetricDataBundle(
+        metric_code="ideal_settling_time",
+        data_block=data_block,
+        mask_expression="true",
+        masked_indices=[0],
+        lineage=DataLineage(
+            sampling_freq="config",
+            aggregation_policy="NONE",
+            quality_policy="CONFIG",
+            tag_group=TagGroup.CONFIG.value,
+            data_block_ids=[data_block.data_block_id],
+            valid_rate=1.0,
+            data_policy_version="config_v1",
+            algorithm_version=ALGORITHM_VERSION,
+        ),
+    )
+
+
+def _build_weights_map(
+    type_weights: dict[str, dict] | None,
+    score_type: str,
+    metric_configs: dict[str, MetricConfig] | None = None,
+) -> dict[str, float] | None:
+    """构造权重映射（Calculator 代码 → 权重值）。
+
+    优先级链：MetricConfig.weight > LoopTypeWeight > None
+
+    - 若 metric_configs 中 3 个核心指标（accuracy_rate/fast_rate/steady_rate）
+      的 weight 全部有效（非 None），则归一化后使用 MetricConfig 权重。
+      **weight=0 是合法配置**（E4 修复，2026-10-01）：confidence_evaluator
+      支持"权重为 0 的核心指标不参与评分"（如逻辑型回路配 accuracy=0），
+      仅未配置（None）才判无效回退；三项全 0（total=0）无意义，仍回退
+    - 否则回退到 LoopTypeWeight（type_weights[score_type]）
+    - 两者都无 → 返回 None（使用 ConfidenceEvaluator 默认权重）
+
+    Returns:
+        {"accuracy_rate": float, "fast_rate": float, "stability_rate": float}
+        或 None
+    """
+    # 核心指标 DB 列名 → Calculator 代码
+    core_metrics = (
+        ("accuracy_rate", "accuracy_rate"),
+        ("fast_rate", "fast_rate"),
+        ("steady_rate", "stability_rate"),
+    )
+
+    # 尝试 MetricConfig.weight 优先
+    if metric_configs is not None:
+        mc_weights = {}
+        all_valid = True
+        for db_code, calc_code in core_metrics:
+            config = metric_configs.get(db_code)
+            if config is not None and config.weight is not None:
+                mc_weights[calc_code] = float(config.weight)
+            else:
+                all_valid = False
+                break
+
+        if all_valid:
+            # 归一化到 0-1（总和应为 100，但容错处理非标准总和）
+            total = sum(mc_weights.values())
+            if total > 0:
+                return {k: v / total for k, v in mc_weights.items()}
+
+    # 回退到 LoopTypeWeight
+    if not type_weights or score_type not in type_weights:
+        return None
+
+    w = type_weights[score_type]
+    weight_a = w.get("weight_a", 0)
+    weight_f = w.get("weight_f", 0)
+    weight_s = w.get("weight_s", 0)
+
+    return {
+        "accuracy_rate": float(weight_a) if weight_a is not None else 0.0,
+        "fast_rate": float(weight_f) if weight_f is not None else 0.0,
+        "stability_rate": float(weight_s) if weight_s is not None else 0.0,
+    }
+
+
+def _compute_kpis_three_layer(
+    bundles: list[MetricDataBundle],
+    config_bundle: MetricDataBundle,
+    weights: dict[str, float] | None,
+    pinned_params: dict[tuple[str, str], dict] | None = None,
+) -> tuple[dict[str, MetricResult], MetricResult]:
+    """三层计算编排：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）。
+
+    Layer1: 23 个无依赖指标
+            原有 9 个（accuracy_rate, effective_auto_rate, good_value_rate,
+            oscillation_rate, saturation_rate, stiction_index, output_trip_index,
+            auto_mode_rate, settling_time）+ ideal_settling_time（从 config_bundle 计算）
+            Phase 1 新增 13 个（instrument_fault_rate, pv/sp/op_mean, pv/sp/op_std,
+            error_mean, error_std, valve_linearity, valve_operating_range,
+            setpoint_crossing_count, oscillation_amplitude）
+            + time_constant（F5）
+            （valve_nonlinearity 依赖 valve_linearity，移至 Layer2）
+    Layer2: 3 个有依赖指标
+            - stability_rate ← oscillation_rate
+            - fast_rate ← settling_time + ideal_settling_time
+            - valve_nonlinearity ← valve_linearity（1-|r| 互补复用）
+    Layer3: ConfidenceEvaluator.compute_composite_score(metric_results, weights)
+
+    Args:
+        bundles: DataPlanner 返回的 MetricDataBundle 列表（metric_code 为 DB 列名）
+        config_bundle: 虚拟 CONFIG bundle（提供 control_type 信号）
+        weights: 权重映射（None 时用默认权重）
+        pinned_params: G2-INC-a 任务边界固定的五层有效参数
+            （{(metric_code, control_type): params}；None=未固定，算子读当前缓存）
+
+    Returns:
+        (metric_results dict[calc_code, MetricResult], composite MetricResult)
+    """
+    metric_results: dict[str, MetricResult] = {}
+
+    # 构建 bundle 索引：DB 列名 → bundle
+    bundle_map: dict[str, MetricDataBundle] = {b.metric_code: b for b in bundles}
+
+    # --- Layer1: 无依赖指标 ---
+    # DB 列名列表（按 _DB_TO_CALCULATOR_METRIC_CODE 映射为 Calculator 代码）
+    # ideal_settling_time 从 config_bundle 单独计算（见下方），不在此列表中
+    layer1_db_codes = [
+        # 原有 9 个
+        "accuracy_rate",
+        "effective_auto_rate",
+        "good_value_rate",
+        "oscillation_rate",
+        "saturation_rate",
+        "stiction_index",
+        "output_trip_index",
+        "auto_mode_rate",
+        "settling_time",
+        # Phase 1 新增 13 个（HiaMonitor 借鉴，2026-07-23；
+        # valve_nonlinearity 依赖 valve_linearity，移至 Layer2）
+        "instrument_fault_rate",
+        "pv_mean",
+        "pv_std",
+        "sp_mean",
+        "sp_std",
+        "op_mean",
+        "op_std",
+        "error_mean",
+        "error_std",
+        "valve_linearity",
+        "valve_operating_range",
+        "setpoint_crossing_count",
+        "oscillation_amplitude",
+        # F5：时间常数（DISPLAY_ONLY，激励不足时 INCONCLUSIVE 保持 NULL）
+        "time_constant",
+    ]
+
+    for db_code in layer1_db_codes:
+        bundle = bundle_map.get(db_code)
+        if bundle is None:
+            continue
+        calc_code = _DB_TO_CALCULATOR_METRIC_CODE.get(db_code, db_code)
+        try:
+            # AD03/I04：缺口敏感动态指标守卫（point 非连续 mask → INCONCLUSIVE，
+            # 不把相隔 N 秒的样本当作相邻一步；legacy 不受影响）
+            from app.services.preprocessing.input_guards import (
+                gap_guard_verdict,
+                make_gap_guard_result,
+            )
+
+            allowed, max_gap = gap_guard_verdict(calc_code, bundle)
+            if not allowed:
+                metric_results[calc_code] = make_gap_guard_result(bundle, max_gap)
+                logger.info("Layer1 指标 %s 缺口守卫拦截（最大索引跳变 %d）", calc_code, max_gap)
+                continue
+            calculator = get_calculator(calc_code)
+            if pinned_params is not None and calculator is not None:
+                calculator.with_pinned_params(pinned_params)
+            result = calculator.calculate(bundle)
+            metric_results[calc_code] = result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Layer1 指标 %s 计算失败: %s", calc_code, exc)
+
+    # ideal_settling_time 从 config_bundle 计算
+    try:
+        calculator = get_calculator("ideal_settling_time")
+        if pinned_params is not None and calculator is not None:
+            calculator.with_pinned_params(pinned_params)
+        result = calculator.calculate(config_bundle)
+        metric_results["ideal_settling_time"] = result
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("ideal_settling_time 计算失败: %s", exc)
+
+    # --- Layer2: 2 个有依赖指标 ---
+    for calc_code, dep_codes in _LAYER2_DEPENDENCIES.items():
+        # 检查所有依赖是否已计算
+        deps = {dep: metric_results[dep] for dep in dep_codes if dep in metric_results}
+        if len(deps) != len(dep_codes):
+            logger.info(
+                "Layer2 指标 %s 缺少依赖，跳过: required=%s, present=%s",
+                calc_code,
+                dep_codes,
+                list(deps),
+            )
+            continue
+
+        # 获取该指标的 bundle（DB 列名）
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        bundle = bundle_map.get(db_code)
+        if bundle is None:
+            continue
+
+        try:
+            from app.services.preprocessing.input_guards import (
+                gap_guard_verdict,
+                make_gap_guard_result,
+            )
+
+            allowed, max_gap = gap_guard_verdict(calc_code, bundle)
+            if not allowed:
+                metric_results[calc_code] = make_gap_guard_result(bundle, max_gap)
+                logger.info("Layer2 指标 %s 缺口守卫拦截（最大索引跳变 %d）", calc_code, max_gap)
+                continue
+            calculator = get_calculator(calc_code)
+            calculator = calculator.with_dependencies(deps)
+            if pinned_params is not None:
+                calculator.with_pinned_params(pinned_params)
+            result = calculator.calculate(bundle)
+            metric_results[calc_code] = result
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Layer2 指标 %s 计算失败: %s", calc_code, exc)
+
+    # --- Layer3: 综合评分 ---
+    composite_result = ConfidenceEvaluator.compute_composite_score(metric_results, weights=weights)
+    metric_results["composite_score"] = composite_result
+
+    return metric_results, composite_result
+
+
+def _extract_metrics_detail(
+    metric_results: dict[str, MetricResult],
+) -> dict[str, dict]:
+    """提取 12 子指标的计算值（loop_confidence_latest.metrics JSONB）。
+
+    v6.2 可信度统一 Phase 2（P2-4 / D2）：
+        去除子指标 confidence 字段（已统一为回路级），仅保留 value。
+        键为 DB 列名（snake_case），形如::
+
+            {"accuracy_rate": {"value": 93.35}, ...}
+
+    - 跳过 composite_score（综合评分单独存储于 score / confidence_level 列）
+    - value 为 None 时保留 None（该指标 INCONCLUSIVE）
+    """
+    detail: dict[str, dict] = {}
+
+    for calc_code, result in metric_results.items():
+        if calc_code == "composite_score":
+            continue
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        detail[db_code] = {
+            "value": float(result.value) if result.value is not None else None,
+        }
+
+    return detail
+
+
+def _json_safe(value: Any) -> Any:
+    """递归转 JSON 可序列化（numpy scalar→Python 标量；其余原样）."""
+    import numpy as np
+
+    if isinstance(value, dict):
+        return {str(k): _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, np.bool_):
+        return bool(value)
+    if isinstance(value, np.integer):
+        return int(value)
+    if isinstance(value, np.floating):
+        return float(value)
+    if isinstance(value, float) and (value != value or value in (float("inf"), float("-inf"))):
+        return None  # NaN/Inf 不入 JSONB（显式 null）
+    return value
+
+
+def _extract_metrics_semantic(
+    metric_results: dict[str, MetricResult],
+    composite_result: MetricResult | None = None,
+) -> dict[str, Any]:
+    """完整语义明细（P3-08a，随 record payload ``metricsSemantic`` 入账本）.
+
+    每 metric（DB 列名键）：``{"value", "confidenceLevel",
+    "assessmentState", "details"}``——details 全量（分母/覆盖/原因/参考分
+    等语义字段；供重放完整语义比较与 08d/09a 读端消费）。
+    ``assessmentState`` 取 ``details.assessmentState``（评估三值命名空间，
+    O-3 契约：COMPLETE/PARTIAL/UNASSESSABLE；legacy 计算器未填 → null）。
+
+    composite（P/等级）：``{"value", "confidenceLevel", "details"}``——
+    等级/构成/低可信标注均在 details，随语义比较覆盖"P 与等级"域。
+
+    与 ``_extract_metrics_detail`` 分离：latest 投影（loop_confidence_
+    latest.metrics）保持既有形状不动（只加不改），语义明细只进 record。
+    """
+    semantic: dict[str, Any] = {}
+    for calc_code, result in metric_results.items():
+        if calc_code == "composite_score":
+            continue
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        details = _json_safe(dict(result.details or {}))
+        semantic[db_code] = {
+            "value": float(result.value) if result.value is not None else None,
+            "confidenceLevel": result.confidence_level,
+            "assessmentState": details.get("assessmentState"),
+            "details": details,
+        }
+    if composite_result is not None:
+        semantic["__composite__"] = {
+            "value": float(composite_result.value) if composite_result.value is not None else None,
+            "confidenceLevel": composite_result.confidence_level,
+            "assessmentState": (composite_result.details or {}).get("assessmentState"),
+            "details": _json_safe(dict(composite_result.details or {})),
+        }
+    return semantic
+
+
+def _composite_semantic_entry(semantic: dict[str, Any]) -> dict[str, Any] | None:
+    """从 metricsSemantic 提取 composite 独立条目（record payload.composite）."""
+    entry = semantic.get("__composite__")
+    return dict(entry) if isinstance(entry, dict) else None
+
+
+def _extract_kpi_values(
+    metric_results: dict[str, MetricResult],
+) -> dict[str, Decimal | None]:
+    """从 MetricResult 字典提取 KPI 值（Calculator 代码 → DB 列名）。
+
+    - 跳过 composite_score（不写入指标列）
+    - float 值转换为 Decimal（对齐 DB Numeric 类型）
+    - None 值保持 None
+    """
+    kpi_values: dict[str, Decimal | None] = {}
+
+    for calc_code, result in metric_results.items():
+        if calc_code == "composite_score":
+            continue
+        db_code = _CALCULATOR_TO_DB_METRIC_CODE.get(calc_code, calc_code)
+        if result.value is None:
+            kpi_values[db_code] = None
+        elif isinstance(result.value, Decimal):
+            kpi_values[db_code] = result.value
+        else:
+            kpi_values[db_code] = Decimal(str(result.value))
+
+    return kpi_values
+
+
+def _extract_valve_op_range(
+    metric_results: dict[str, MetricResult],
+) -> tuple[Decimal | None, Decimal | None]:
+    """从 valve_operating_range MetricResult details 提取 op_min/op_max（Task 6）.
+
+    valve_operating_range 计算器的 ``value`` 是 span（max-min），无单一 DB 列；
+    实际 DB 列 ``valve_op_min`` / ``valve_op_max`` 需从 ``result.details`` 提取。
+
+    Returns:
+        (valve_op_min, valve_op_max)，均为 Decimal | None；
+        计算器不存在 / INCONCLUSIVE / details 缺失时返回 (None, None)
+    """
+    vor_result = metric_results.get("valve_operating_range")
+    if vor_result is None or vor_result.value is None:
+        return None, None
+    details = vor_result.details or {}
+    op_min = details.get("op_min")
+    op_max = details.get("op_max")
+    return (
+        Decimal(str(op_min)) if op_min is not None else None,
+        Decimal(str(op_max)) if op_max is not None else None,
+    )
+
+
+def _compute_loop_valid_rate_from_bundles(
+    bundles: list[MetricDataBundle],
+) -> float | None:
+    """从 MetricDataBundle 列表计算回路级 valid_rate（可信度统一 Phase 1 P1-5）.
+
+    遍历 bundles 寻找 BASE 块（含 pv/sp/mode，3/4 核心 tag），用共享内核
+    ``DataQualityAssessor.compute_loop_valid_rate`` 计算回路级 valid_rate。
+    缺失的 tag 自动跳过（不影响交集），避免 tagGroup 切分导致的语义退化。
+
+    Args:
+        bundles: DataPlanner 返回的 MetricDataBundle 列表
+
+    Returns:
+        回路级 valid_rate ∈ [0.0, 1.0]；无可用块时返回 None（回退到指标级 lineage）
+    """
+    for bundle in bundles:
+        block = bundle.data_block
+        if block.tag_group == TagGroup.BASE.value:
+            # S3 修复（G23）：优先消费 DataBlock.loop_valid_rate —— 单一事实层。
+            #
+            # data_types.py 的契约写明 loop_valid_rate 由 Pipeline 以
+            # ConfidenceEvaluator.evaluate(loop_valid_rate) 一次算出供"所有指标读取"，
+            # 且其值已按 R14-2 口径折入时间覆盖率（有效可信度 = 回路级 valid_rate
+            # × 时间覆盖率）。原实现忽略该字段，改从 validity/point_count 重算**裸值**，
+            # 漏掉时间覆盖因子，导致同一小时快照出现
+            #   kpi_snapshot_hourly.valid_rate = 1.0000 而 confidence_level = 'E'
+            # 的内部矛盾 —— 正是可信度统一方案 P1-5 声称已消除的 §2.2 字段错配，
+            # 也是该方案 Phase 1「统一 valid_rate 口径」在 R14-2 之后被重新劈开的点。
+            #
+            # 当前管道版本的0.0是已计算的真实零，必须保留（UNKNOWN可保留
+            # Good数值但不能充有效点）；只有未升级的手工/legacy默认块才回退。
+            from app.services.preprocessing.pipeline import PREPROCESS_VERSION
+
+            if block.loop_valid_rate > 0 or (
+                getattr(block, "preprocess_version", None) == PREPROCESS_VERSION
+            ):
+                return float(block.loop_valid_rate)
+            return DataQualityAssessor.compute_loop_valid_rate(block.validity, block.point_count)
+    return None
+
+
+def _extract_lineage_info(
+    metric_results: dict[str, MetricResult],
+    composite: MetricResult,
+    loop_valid_rate: float | None = None,
+) -> dict:
+    """提取数据血缘信息（优先 accuracy_rate lineage，其次 composite lineage）。
+
+    Args:
+        metric_results: 指标结果字典
+        composite: 综合评分结果（confidence_level 取自此）
+        loop_valid_rate: 回路级 valid_rate（核心 tag 交集 / point_count）。
+            可信度统一 Phase 1（P1-5）：提供时覆盖 lineage 中的单指标 valid_rate，
+            使 ``kpi_snapshot_hourly.valid_rate`` 与 ``confidence_level`` 同为回路级口径，
+            消除 §2.2 字段错配。None 时回退到 lineage.valid_rate（向后兼容）。
+
+    Returns:
+        dict 含: algorithm_version, sampling_freq, quality_policy,
+        valid_rate, confidence_level, data_lineage
+    """
+    # 优先从 accuracy_rate 的 lineage 取
+    accuracy_result = metric_results.get("accuracy_rate")
+    lineage = (
+        accuracy_result.lineage
+        if accuracy_result and accuracy_result.lineage
+        else (composite.lineage if composite and composite.lineage else None)
+    )
+
+    # 回路级 valid_rate 优先（P1-5：修复字段口径错配）
+    if loop_valid_rate is not None:
+        valid_rate = Decimal(str(loop_valid_rate)).quantize(Decimal("0.0001"))
+    elif lineage is not None and lineage.valid_rate is not None:
+        valid_rate = Decimal(str(lineage.valid_rate)).quantize(Decimal("0.0001"))
+    else:
+        valid_rate = None
+
+    if lineage is not None:
+        data_lineage_dict = {
+            "sampling_freq": lineage.sampling_freq,
+            "aggregation_policy": lineage.aggregation_policy,
+            "quality_policy": lineage.quality_policy,
+            "tag_group": lineage.tag_group,
+            "data_block_ids": lineage.data_block_ids,
+            "valid_rate": lineage.valid_rate,
+            "data_policy_version": lineage.data_policy_version,
+            "algorithm_version": lineage.algorithm_version,
+        }
+    else:
+        data_lineage_dict = {}
+
+    confidence_level = (
+        composite.confidence_level if composite and composite.confidence_level else "E"
+    )
+
+    return {
+        "algorithm_version": (lineage.algorithm_version if lineage else ALGORITHM_VERSION),
+        "sampling_freq": lineage.sampling_freq if lineage else None,
+        "quality_policy": lineage.quality_policy if lineage else None,
+        "valid_rate": valid_rate,
+        "confidence_level": confidence_level,
+        "data_lineage": data_lineage_dict,
+    }
+
+
+def _build_data_planner(db, bundle_cache=None):
+    """构造 DataPlanner 实例（工厂函数）。
+
+    从 get_provider().make_query_fn(db) 获取 TDengine 查询函数，
+    配合 L1DataBlockCache + L2BundleCache + MetricDataBundleAssembler 构造 DataPlanner。
+
+    Args:
+        db: 异步数据库会话
+        bundle_cache: 可选的 L2 Bundle 缓存实例。None 时自动创建（启用 L2 缓存）。
+            传入 False 可显式禁用 L2 缓存（用于测试）。
+    """
+    from app.core.redis import redis_client
+    from app.services.cache.l1_datablock import L1DataBlockCache
+    from app.services.cache.l2_bundle import L2BundleCache
+    from app.services.data_planner import DataPlanner
+    from app.services.data_source.factory import get_provider
+    from app.services.metric_data_bundle import MetricDataBundleAssembler
+
+    query_fn = get_provider().make_query_fn(db)
+    assembler = MetricDataBundleAssembler()
+
+    # L2 Bundle 缓存（默认启用，传入 False 显式禁用 L1 + L2）
+    if bundle_cache is False:
+        l2_cache = None
+        cache = None  # 同时禁用 L1 缓存（backfill 场景，避免无用 Redis I/O）
+    else:
+        cache = L1DataBlockCache(redis_client)
+        if bundle_cache is not None:
+            l2_cache = bundle_cache
+        else:
+            l2_cache = L2BundleCache(redis_client)
+
+    return DataPlanner(
+        cache=cache,
+        tdengine_query_fn=query_fn,
+        assembler=assembler,
+        db=db,
+        bundle_cache=l2_cache,
+    )
+
+
+# 共享 L2 Bundle 缓存实例（进程内单例，避免每回路创建）
+_shared_bundle_cache = None
+
+
+def _get_shared_bundle_cache():
+    """获取共享 L2 Bundle 缓存实例（懒初始化）."""
+    global _shared_bundle_cache
+    if _shared_bundle_cache is None:
+        from app.core.redis import redis_client
+        from app.services.cache.l2_bundle import L2BundleCache
+
+        _shared_bundle_cache = L2BundleCache(redis_client)
+    return _shared_bundle_cache
+
+
+async def _batch_load_loop_configs(db, loop_ids: list[str]) -> dict[str, dict]:
+    """批量预加载回路配置（OP 限位 + PV 量程 + config_version）.
+
+    一次性查询所有回路的配置信息，避免 DataPlanner 内部每回路查 3-5 次 DB。
+    1000 回路：5000 次 DB 查询 → 3 次批量查询。
+
+    Returns:
+        {loop_id: {op_lower, op_upper, range_min, range_max, config_version, updated_at}}
+    """
+    if not loop_ids:
+        return {}
+
+    from app.models.loop import LoopLedger, LoopTagMapping
+    from app.models.tag import TagRegistry
+
+    configs: dict[str, dict] = {}
+
+    # 1. 批量查询 LoopLedger（OP 限位 + updated_at + control_type 响应类别）
+    loop_result = await db.execute(
+        select(
+            LoopLedger.id,
+            LoopLedger.op_output_lower_limit,
+            LoopLedger.op_output_upper_limit,
+            LoopLedger.updated_at,
+            LoopLedger.control_type,
+        ).where(LoopLedger.id.in_(loop_ids))
+    )
+    for row in loop_result.all():
+        loop_id = str(row[0])
+        configs[loop_id] = {
+            "op_lower": float(row[1]) if row[1] is not None else None,
+            "op_upper": float(row[2]) if row[2] is not None else None,
+            "range_min": 0.0,
+            "range_max": 100.0,
+            "config_version": f"cfg_{int(row[3].timestamp())}" if row[3] else "v1",
+            # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC），供指标计算器读取算法参数
+            "control_type": row[4],
+        }
+
+    # 2. 批量查询 LoopTagMapping（所有回路的 tag 映射）
+    mapping_result = await db.execute(
+        select(LoopTagMapping.loop_id, LoopTagMapping.tag_role, LoopTagMapping.tag_id).where(
+            LoopTagMapping.loop_id.in_(loop_ids)
+        )
+    )
+    # {loop_id: {role: tag_id}}
+    loop_tags: dict[str, dict[str, str]] = {}
+    for row in mapping_result.all():
+        loop_id = str(row[0])
+        if loop_id not in loop_tags:
+            loop_tags[loop_id] = {}
+        loop_tags[loop_id][row[1]] = str(row[2])
+
+    # 3. 批量查询 PV tag 量程（所有 PV tag_id）
+    pv_tag_ids = [
+        tag_id for tags in loop_tags.values() for role, tag_id in tags.items() if role == "PV"
+    ]
+    tag_ranges: dict[str, tuple[float, float]] = {}
+    if pv_tag_ids:
+        tag_result = await db.execute(
+            select(TagRegistry.id, TagRegistry.range_min, TagRegistry.range_max).where(
+                TagRegistry.id.in_(pv_tag_ids)
+            )
+        )
+        for row in tag_result.all():
+            tag_ranges[str(row[0])] = (
+                float(row[1]) if row[1] is not None else 0.0,
+                float(row[2]) if row[2] is not None else 100.0,
+            )
+
+    # 4. 合并 PV 量程到 configs
+    for loop_id, tags in loop_tags.items():
+        pv_tag_id = tags.get("PV")
+        if pv_tag_id and pv_tag_id in tag_ranges and loop_id in configs:
+            configs[loop_id]["range_min"] = tag_ranges[pv_tag_id][0]
+            configs[loop_id]["range_max"] = tag_ranges[pv_tag_id][1]
+
+    # 5. OP tag 量程作为回退（Loop 表 OP 限位为 None 时）
+    op_tag_ids = [
+        tag_id for tags in loop_tags.values() for role, tag_id in tags.items() if role == "OP"
+    ]
+    op_tag_ranges: dict[str, tuple[float, float]] = {}
+    if op_tag_ids:
+        op_result = await db.execute(
+            select(TagRegistry.id, TagRegistry.range_min, TagRegistry.range_max).where(
+                TagRegistry.id.in_(op_tag_ids)
+            )
+        )
+        for row in op_result.all():
+            op_tag_ranges[str(row[0])] = (
+                float(row[1]) if row[1] is not None else None,
+                float(row[2]) if row[2] is not None else None,
+            )
+    for loop_id, tags in loop_tags.items():
+        if loop_id not in configs:
+            continue
+        cfg = configs[loop_id]
+        if cfg["op_lower"] is None or cfg["op_upper"] is None:
+            op_tag_id = tags.get("OP")
+            if op_tag_id and op_tag_id in op_tag_ranges:
+                op_min, op_max = op_tag_ranges[op_tag_id]
+                if cfg["op_lower"] is None and op_min is not None:
+                    cfg["op_lower"] = op_min
+                if cfg["op_upper"] is None and op_max is not None:
+                    cfg["op_upper"] = op_max
+
+    # 5b. 合并 OP tag 量程到 configs（OP 归一化用）+ config_version 纳入 OP 量程
+    # OP 是百分比输出（0-100%），物理量程与 PV 不同，需用 OP 自身量程归一化；
+    # config_version 拼接 OP 量程确保部署修复后 L1/L2 缓存自动失效
+    for loop_id, tags in loop_tags.items():
+        if loop_id not in configs:
+            continue
+        cfg = configs[loop_id]
+        op_tag_id = tags.get("OP")
+        if op_tag_id and op_tag_id in op_tag_ranges:
+            op_min, op_max = op_tag_ranges[op_tag_id]
+            cfg["op_range_min"] = op_min if op_min is not None else 0.0
+            cfg["op_range_max"] = op_max if op_max is not None else 100.0
+        else:
+            cfg["op_range_min"] = 0.0
+            cfg["op_range_max"] = 100.0
+        base_ver = cfg["config_version"]
+        cfg["config_version"] = f"{base_ver}_opr{cfg['op_range_min']}_{cfg['op_range_max']}"
+
+    logger.info(
+        "批量预加载回路配置: %d 回路, %d PV tags, %d OP tags",
+        len(configs),
+        len(tag_ranges),
+        len(op_tag_ranges),
+    )
+    return configs
+
+
+def _make_config_loader(loop_cfg: dict | None):
+    """构造 config_loader 闭包（使用预加载的配置，避免 DB 查询）.
+
+    返回一个 async 函数，签名对齐 DataPlanner._default_config_loader：
+        async def loader(loop_id, control_type) -> LoopPreprocessConfig
+    """
+    from app.contracts.data_types import LoopPreprocessConfig
+
+    async def _loader(loop_id: str, control_type: ControlType) -> LoopPreprocessConfig:
+        if loop_cfg is None:
+            return LoopPreprocessConfig(
+                loop_id=loop_id,
+                control_type=control_type,
+                range_min=0.0,
+                range_max=100.0,
+                config_version="v1",
+                op_range_min=0.0,
+                op_range_max=100.0,
+            )
+        return LoopPreprocessConfig(
+            loop_id=loop_id,
+            control_type=control_type,
+            range_min=loop_cfg.get("range_min", 0.0),
+            range_max=loop_cfg.get("range_max", 100.0),
+            config_version=loop_cfg.get("config_version", "v1"),
+            # P0-B: 响应类别（STABLE/SLOW/FAST/LOGIC）来自 loop_ledger.control_type
+            response_category=loop_cfg.get("control_type"),
+            # OP tag 量程（OP 归一化用，默认 0-100 百分比输出）
+            op_range_min=loop_cfg.get("op_range_min", 0.0),
+            op_range_max=loop_cfg.get("op_range_max", 100.0),
+        )
+
+    return _loader
+
+
+def _get_tag_name(
+    mappings: dict[str, LoopTagMapping],
+    tags_map: dict[str, TagRegistry],
+    role: str,
+) -> str | None:
+    """获取指定角色的 tag_name。"""
+    mapping = mappings.get(role)
+    if not mapping:
+        return None
+    tag = tags_map.get(str(mapping.tag_id))
+    if not tag:
+        return None
+    return tag.tag_name
+
+
+def _ts_to_float(ts: Any) -> float | None:
+    """将时间戳转换为浮点数（秒级 epoch）。
+
+    支持 int/float/datetime/ISO 字符串；无法转换时返回 None。
+    naive datetime / 无时区 ISO 字符串按 UTC 处理（补 Z 口径）：
+    避免 naive .timestamp() 的本地时区慢路径（macOS fork 陷阱，项目红线），
+    并保证结果与后端部署时区无关。
+    """
+    if ts is None:
+        return None
+    if isinstance(ts, (int, float)):
+        return float(ts)
+    if isinstance(ts, datetime):
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+        return float(ts.timestamp())
+    # 字符串：先尝试数值，再尝试 ISO 解析
+    s = str(ts)
+    try:
+        return float(s)
+    except ValueError:
+        pass
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=UTC)
+        return float(dt.timestamp())
+    except (ValueError, TypeError):
+        return None
+
+
+# 时间戳容差（秒）：±500ms 内视为同一时间点
+_TS_TOLERANCE_SEC = 0.5
+
+
+def _build_ts_index(data: list[dict]) -> tuple[list[float], list[Any]]:
+    """构建数值时间戳索引（用于 bisect 最近邻查找）。
+
+    Returns:
+        (sorted_ts_floats, sorted_original_ts) — 同序排列；
+        若任意 ts 无法转数值，返回空列表。
+
+    性能：全部为 datetime 时走向量化快速路径——仅首点做一次 epoch 换算，
+    其余点用 timedelta.total_seconds() 差分（纯算术），避免逐点
+    naive .timestamp() 的时区慢路径（项目红线）。
+    """
+    if not data:
+        return [], []
+
+    # 向量化快速路径：所有 ts 均为 datetime
+    first_ts = data[0].get("ts")
+    if isinstance(first_ts, datetime) and all(isinstance(d.get("ts"), datetime) for d in data):
+        base = first_ts if first_ts.tzinfo is not None else first_ts.replace(tzinfo=UTC)
+        base_f = float(base.timestamp())
+        dt_pairs: list[tuple[float, Any]] = []
+        for d in data:
+            ts_orig = d["ts"]
+            ts_aware = ts_orig if ts_orig.tzinfo is not None else ts_orig.replace(tzinfo=UTC)
+            dt_pairs.append((base_f + (ts_aware - base).total_seconds(), ts_orig))
+        dt_pairs.sort(key=lambda p: p[0])
+        return [p[0] for p in dt_pairs], [p[1] for p in dt_pairs]
+
+    pairs: list[tuple[float, Any]] = []
+    for d in data:
+        ts_orig = d.get("ts")
+        ts_f = _ts_to_float(ts_orig)
+        if ts_f is None:
+            return [], []  # 退化为精确匹配模式
+        pairs.append((ts_f, ts_orig))
+    pairs.sort(key=lambda p: p[0])
+    return [p[0] for p in pairs], [p[1] for p in pairs]
+
+
+def _find_nearest_value(
+    target_ts: Any,
+    sorted_ts_floats: list[float],
+    exact_map: dict[Any, Any],
+    sorted_values: list[Any] | None = None,
+) -> Any:
+    """查找目标时间戳对应的值：先精确匹配，再容差最近邻匹配。
+
+    Args:
+        target_ts: 目标时间戳（任意类型）
+        sorted_ts_floats: 已排序的数值时间戳列表
+        exact_map: 原始 ts → value 的精确映射
+        sorted_values: 与 sorted_ts_floats 同序的值列表（容差匹配用）
+    """
+    # 1. 精确匹配（兼容字符串 ts 如 "t1"）
+    if target_ts in exact_map:
+        return exact_map[target_ts]
+    # 2. 数值容差匹配
+    target_f = _ts_to_float(target_ts)
+    if target_f is None or not sorted_ts_floats or sorted_values is None:
+        return None
+    idx = bisect_left(sorted_ts_floats, target_f)
+    best_idx = -1
+    best_diff = float("inf")
+    # 检查 idx 和 idx-1 两个候选（bisect_left 返回插入点）
+    for cand in (idx - 1, idx):
+        if 0 <= cand < len(sorted_ts_floats):
+            diff = abs(sorted_ts_floats[cand] - target_f)
+            if diff < best_diff:
+                best_diff = diff
+                best_idx = cand
+    if best_idx >= 0 and best_diff <= _TS_TOLERANCE_SEC:
+        return sorted_values[best_idx]
+    return None
+
+
+def _quantize(value: Decimal) -> Decimal:
+    """量化到 2 位小数。"""
+    return value.quantize(Decimal("0.01"))
+
+
+@g5_trace.traced("pg.hourly_snapshot")
+async def _save_snapshot(
+    db,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    score: Decimal | None = None,
+    good_value_rate: Decimal | None = None,
+    auto_mode_rate: Decimal | None = None,
+    effective_auto_rate: Decimal | None = None,
+    steady_rate: Decimal | None = None,
+    accuracy_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
+    oscillation_rate: Decimal | None = None,
+    saturation_rate: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
+    ideal_settling_time: Decimal | None = None,
+    algorithm_version: str | None = None,
+    sampling_freq: str | None = None,
+    quality_policy: str | None = None,
+    valid_rate: Decimal | None = None,
+    confidence_level: str | None = None,
+    data_lineage: dict | None = None,
+    # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+    instrument_fault_rate: Decimal | None = None,
+    pv_mean: Decimal | None = None,
+    pv_std: Decimal | None = None,
+    sp_mean: Decimal | None = None,
+    sp_std: Decimal | None = None,
+    op_mean: Decimal | None = None,
+    op_std: Decimal | None = None,
+    error_mean: Decimal | None = None,
+    error_std: Decimal | None = None,
+    valve_linearity: Decimal | None = None,
+    valve_nonlinearity: Decimal | None = None,
+    valve_op_min: Decimal | None = None,
+    valve_op_max: Decimal | None = None,
+    setpoint_crossing_count: Decimal | None = None,
+    oscillation_amplitude: Decimal | None = None,
+    time_constant: Decimal | None = None,
+    # P2 IA优化：回路适用性分层（L0~L4）
+    fitness_level: str | None = None,
+    fitness_tags: dict | None = None,
+    fitness_detail: dict | None = None,
+    # 三性分离（R5）
+    assess_level: str | None = None,
+    diagnose_level: str | None = None,
+    tune_level: str | None = None,
+    # 来源标注（整合方案 B1）
+    source: str | None = None,
+    source_task_id: str | None = None,
+    # P1-05 结果账本：本行对应的不可变 record
+    result_record_id: str | None = None,
+) -> dict:
+    """幂等写入快照（UPSERT 模式：相同 loop_id + ts_start 覆盖更新）.
+
+    v4.0 使用 PostgreSQL ``INSERT ... ON CONFLICT DO UPDATE``，
+    不再通过 select-then-add 模式，减少一次查询并避免并发竞争。
+    7 个数据血缘字段（ideal_settling_time/algorithm_version/sampling_freq/
+    quality_policy/valid_rate/confidence_level/data_lineage）随 UPSERT 写入。
+    Phase 1 新增 15 个指标列随 UPSERT 写入；F5 起 time_constant 由计算器写入
+    （激励不足窗口保持 NULL）。
+    P2 新增 3 个适用性分层字段随 UPSERT 写入。
+    P1-05：result_record_id（结果账本投影指针）随 UPSERT 写入，由
+    ``_persist_snapshot`` 先追加不可变 record 后传入，同事务切换投影。
+    实际写入行的 id 通过 ``RETURNING id`` 随 UPSERT 一并取回（新增与
+    UPDATE 分支均返回），不再单独 SELECT 回查。
+    """
+    snapshot_id = str(uuid4())
+
+    insert_values = {
+        "id": snapshot_id,
+        "loop_id": loop_id,
+        "ts_start": ts_start,
+        "ts_end": ts_end,
+        "status": status,
+        "score": score,
+        "good_value_rate": good_value_rate,
+        "auto_mode_rate": auto_mode_rate,
+        "effective_auto_rate": effective_auto_rate,
+        "steady_rate": steady_rate,
+        "accuracy_rate": accuracy_rate,
+        "fast_rate": fast_rate,
+        "oscillation_rate": oscillation_rate,
+        "saturation_rate": saturation_rate,
+        "stiction_index": stiction_index,
+        "settling_time": settling_time,
+        "output_trip_index": output_trip_index,
+        "ideal_settling_time": ideal_settling_time,
+        "algorithm_version": algorithm_version,
+        "sampling_freq": sampling_freq,
+        "quality_policy": quality_policy,
+        "valid_rate": valid_rate,
+        "confidence_level": confidence_level,
+        "data_lineage": data_lineage,
+        # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+        "instrument_fault_rate": instrument_fault_rate,
+        "pv_mean": pv_mean,
+        "pv_std": pv_std,
+        "sp_mean": sp_mean,
+        "sp_std": sp_std,
+        "op_mean": op_mean,
+        "op_std": op_std,
+        "error_mean": error_mean,
+        "error_std": error_std,
+        "valve_linearity": valve_linearity,
+        "valve_nonlinearity": valve_nonlinearity,
+        "valve_op_min": valve_op_min,
+        "valve_op_max": valve_op_max,
+        "setpoint_crossing_count": setpoint_crossing_count,
+        "oscillation_amplitude": oscillation_amplitude,
+        "time_constant": time_constant,
+        # P2 IA优化：回路适用性分层
+        "fitness_level": fitness_level,
+        "fitness_tags": fitness_tags,
+        "fitness_detail": fitness_detail,
+        # 三性分离（R5）
+        "assess_level": assess_level,
+        "diagnose_level": diagnose_level,
+        "tune_level": tune_level,
+        # 来源标注（整合方案 B1）
+        "source": source,
+        "source_task_id": source_task_id,
+        # P1-05 结果账本投影指针
+        "result_record_id": result_record_id,
+    }
+
+    update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id", "ts_start")}
+
+    stmt = (
+        pg_insert(KpiSnapshotHourly)
+        .values(**insert_values)
+        .on_conflict_do_update(
+            index_elements=["loop_id", "ts_start"],
+            set_=update_cols,
+        )
+        .returning(KpiSnapshotHourly.id)
+    )
+    # RETURNING 直接取回实际写入行的 id（新增与 UPDATE 分支均返回），
+    # 省去 UPSERT 后再 SELECT 回查 id 的一次额外查询
+    id_result = await db.execute(stmt)
+    id_row = id_result.first()
+    actual_id = str(id_row[0]) if id_row else snapshot_id
+
+    return {
+        "loopId": loop_id,
+        "snapshotId": actual_id,
+        "tsStart": ts_start.isoformat(),
+        "tsEnd": ts_end.isoformat(),
+        "status": status,
+        "score": float(score) if score is not None else None,
+        "algorithmVersion": algorithm_version or ALGORITHM_VERSION,
+    }
+
+
+@g5_trace.traced("pg.latest_projection")
+async def _save_confidence_latest(
+    db,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    score: Decimal | None = None,
+    confidence_level: str | None = None,
+    valid_rate: Decimal | float | None = None,
+    metrics: dict | None = None,
+    algorithm_version: str | None = None,
+    result_record_id: str | None = None,
+) -> None:
+    """UPSERT 写入 loop_confidence_latest（按 loop_id 冲突覆盖全部字段）。
+
+    每回路仅保留"最新一次评估"记录：评估时间取写入时刻（naive UTC），
+    数据源时间区间取快照窗口。metrics 为 12 子指标 JSONB
+    （``_extract_metrics_detail`` 产物），无子指标数据存空对象。
+
+    P1-05（DEC-09 迟到规则）：latest 是"最新业务窗口"的当前投影——
+    迟到历史窗口（ts_end 早于现存投影的 data_ts_end）**不更新本表**，
+    只保留账本 record；同窗（ts_end 相等）重评仍覆盖切换。
+    """
+    now = datetime.now(UTC).replace(tzinfo=None)
+
+    # DEC-09：先查现存投影的业务窗终点，迟到写入直接跳过（不覆盖当前事实）
+    incoming_end = to_naive_utc(ts_end)
+    existing_result = await db.execute(
+        select(LoopConfidenceLatest.data_ts_end).where(LoopConfidenceLatest.loop_id == loop_id)
+    )
+    existing_end = existing_result.scalar_one_or_none()
+    if existing_end is not None and incoming_end < existing_end:
+        logger.info(
+            "迟到历史窗口不更新 loop_confidence_latest（回路 %s：incoming=%s < current=%s）",
+            loop_id,
+            incoming_end,
+            existing_end,
+        )
+        return
+
+    insert_values = {
+        "id": str(uuid4()),
+        "loop_id": loop_id,
+        "eval_time": now,
+        "data_ts_start": ts_start,
+        "data_ts_end": ts_end,
+        "status": status,
+        "score": score,
+        "confidence_level": confidence_level,
+        "valid_rate": float(valid_rate) if valid_rate is not None else None,
+        "metrics": metrics if metrics is not None else {},
+        "algorithm_version": algorithm_version,
+        "updated_at": now,
+        # P1-05 结果账本投影指针
+        "result_record_id": result_record_id,
+    }
+
+    update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id")}
+
+    stmt = (
+        pg_insert(LoopConfidenceLatest)
+        .values(**insert_values)
+        .on_conflict_do_update(
+            index_elements=["loop_id"],
+            set_=update_cols,
+        )
+    )
+    await db.execute(stmt)
+
+
+async def _save_custom_snapshot(
+    db,
+    task_id: str,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    score: Decimal | None = None,
+    good_value_rate: Decimal | None = None,
+    auto_mode_rate: Decimal | None = None,
+    effective_auto_rate: Decimal | None = None,
+    steady_rate: Decimal | None = None,
+    accuracy_rate: Decimal | None = None,
+    fast_rate: Decimal | None = None,
+    oscillation_rate: Decimal | None = None,
+    saturation_rate: Decimal | None = None,
+    stiction_index: Decimal | None = None,
+    settling_time: Decimal | None = None,
+    output_trip_index: Decimal | None = None,
+    ideal_settling_time: Decimal | None = None,
+    algorithm_version: str | None = None,
+    sampling_freq: str | None = None,
+    quality_policy: str | None = None,
+    valid_rate: Decimal | None = None,
+    confidence_level: str | None = None,
+    data_lineage: dict | None = None,
+    # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+    instrument_fault_rate: Decimal | None = None,
+    pv_mean: Decimal | None = None,
+    pv_std: Decimal | None = None,
+    sp_mean: Decimal | None = None,
+    sp_std: Decimal | None = None,
+    op_mean: Decimal | None = None,
+    op_std: Decimal | None = None,
+    error_mean: Decimal | None = None,
+    error_std: Decimal | None = None,
+    valve_linearity: Decimal | None = None,
+    valve_nonlinearity: Decimal | None = None,
+    valve_op_min: Decimal | None = None,
+    valve_op_max: Decimal | None = None,
+    setpoint_crossing_count: Decimal | None = None,
+    oscillation_amplitude: Decimal | None = None,
+    time_constant: Decimal | None = None,
+    # P2 IA优化：回路适用性分层（L0~L4）
+    fitness_level: str | None = None,
+    fitness_tags: dict | None = None,
+    fitness_detail: dict | None = None,
+    # 三性分离（R5）
+    assess_level: str | None = None,
+    diagnose_level: str | None = None,
+    tune_level: str | None = None,
+    # 来源标注（整合方案 B1）
+    source: str | None = None,
+    source_task_id: str | None = None,
+    # P1-05 结果账本：本行对应的不可变 record
+    result_record_id: str | None = None,
+) -> dict:
+    """幂等写入自定义任务快照（select-then-add 模式）.
+
+    自定义任务快照使用 ``(task_id, loop_id)`` 作为唯一键，
+    通过 select-then-add/update 模式写入（与 hourly 表的 UPSERT 不同）。
+    P2 新增 3 个适用性分层字段随写入。
+    P1-05：result_record_id（结果账本投影指针）随写入；同任务重跑时
+    record 按唯一键复用（logicalRunId=task_id 推导），投影行仍按既有
+    语义覆盖更新。
+    """
+    existing_result = await db.execute(
+        select(KpiSnapshotCustom).where(
+            KpiSnapshotCustom.task_id == task_id,
+            KpiSnapshotCustom.loop_id == loop_id,
+        )
+    )
+    existing = existing_result.scalar_one_or_none()
+
+    if existing:
+        existing.ts_end = ts_end
+        existing.status = status
+        existing.score = score
+        existing.good_value_rate = good_value_rate
+        existing.auto_mode_rate = auto_mode_rate
+        existing.effective_auto_rate = effective_auto_rate
+        existing.steady_rate = steady_rate
+        existing.accuracy_rate = accuracy_rate
+        existing.fast_rate = fast_rate
+        existing.oscillation_rate = oscillation_rate
+        existing.saturation_rate = saturation_rate
+        existing.stiction_index = stiction_index
+        existing.settling_time = settling_time
+        existing.output_trip_index = output_trip_index
+        existing.ideal_settling_time = ideal_settling_time
+        existing.algorithm_version = algorithm_version
+        existing.sampling_freq = sampling_freq
+        existing.quality_policy = quality_policy
+        existing.valid_rate = valid_rate
+        existing.confidence_level = confidence_level
+        existing.data_lineage = data_lineage
+        # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+        existing.instrument_fault_rate = instrument_fault_rate
+        existing.pv_mean = pv_mean
+        existing.pv_std = pv_std
+        existing.sp_mean = sp_mean
+        existing.sp_std = sp_std
+        existing.op_mean = op_mean
+        existing.op_std = op_std
+        existing.error_mean = error_mean
+        existing.error_std = error_std
+        existing.valve_linearity = valve_linearity
+        existing.valve_nonlinearity = valve_nonlinearity
+        existing.valve_op_min = valve_op_min
+        existing.valve_op_max = valve_op_max
+        existing.setpoint_crossing_count = setpoint_crossing_count
+        existing.oscillation_amplitude = oscillation_amplitude
+        existing.time_constant = time_constant
+        # P2 IA优化：回路适用性分层
+        existing.fitness_level = fitness_level
+        existing.fitness_tags = fitness_tags
+        existing.fitness_detail = fitness_detail
+        # P1-05 结果账本投影指针
+        existing.result_record_id = result_record_id
+        snapshot_id = str(existing.id)
+    else:
+        snapshot_id = str(uuid4())
+        snapshot = KpiSnapshotCustom(
+            id=snapshot_id,
+            task_id=task_id,
+            loop_id=loop_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            score=score,
+            good_value_rate=good_value_rate,
+            auto_mode_rate=auto_mode_rate,
+            effective_auto_rate=effective_auto_rate,
+            steady_rate=steady_rate,
+            accuracy_rate=accuracy_rate,
+            fast_rate=fast_rate,
+            oscillation_rate=oscillation_rate,
+            saturation_rate=saturation_rate,
+            stiction_index=stiction_index,
+            settling_time=settling_time,
+            output_trip_index=output_trip_index,
+            ideal_settling_time=ideal_settling_time,
+            algorithm_version=algorithm_version,
+            sampling_freq=sampling_freq,
+            quality_policy=quality_policy,
+            valid_rate=valid_rate,
+            confidence_level=confidence_level,
+            data_lineage=data_lineage,
+            # Phase 1 新增指标（HiaMonitor 借鉴，2026-07-23）
+            instrument_fault_rate=instrument_fault_rate,
+            pv_mean=pv_mean,
+            pv_std=pv_std,
+            sp_mean=sp_mean,
+            sp_std=sp_std,
+            op_mean=op_mean,
+            op_std=op_std,
+            error_mean=error_mean,
+            error_std=error_std,
+            valve_linearity=valve_linearity,
+            valve_nonlinearity=valve_nonlinearity,
+            valve_op_min=valve_op_min,
+            valve_op_max=valve_op_max,
+            setpoint_crossing_count=setpoint_crossing_count,
+            oscillation_amplitude=oscillation_amplitude,
+            time_constant=time_constant,
+            # P2 IA优化：回路适用性分层
+            fitness_level=fitness_level,
+            fitness_tags=fitness_tags,
+            fitness_detail=fitness_detail,
+            assess_level=assess_level,
+            diagnose_level=diagnose_level,
+            tune_level=tune_level,
+            # 来源标注（整合方案 B1）：本表恒为手动自定义评估产出
+            source="MANUAL_CUSTOM",
+            source_task_id=task_id,
+            # P1-05 结果账本投影指针
+            result_record_id=result_record_id,
+        )
+        db.add(snapshot)
+
+    return {
+        "taskId": task_id,
+        "loopId": loop_id,
+        "snapshotId": snapshot_id,
+        "tsStart": ts_start.isoformat(),
+        "tsEnd": ts_end.isoformat(),
+        "status": status,
+        "score": float(score) if score is not None else None,
+        "algorithmVersion": algorithm_version or ALGORITHM_VERSION,
+    }
+
+
+@g5_trace.traced("pg.persist_total")
+async def _persist_snapshot(
+    db,
+    loop_id: str,
+    ts_start: datetime,
+    ts_end: datetime,
+    status: str,
+    custom_task_id: str | None = None,
+    logical_run_id: str | None = None,
+    config_revision: str | None = None,
+    dataset_snapshot_id: str | None = None,
+    input_snapshot_state: dict | None = None,
+    **kwargs,
+) -> dict:
+    """统一快照持久化入口（根据 custom_task_id 分发到对应表）.
+
+    - ``custom_task_id=None`` → 写入 ``kpi_snapshot_hourly``（标准小时快照），
+      并同步 UPSERT ``loop_confidence_latest``（每回路最新一条可信度记录）
+    - ``custom_task_id`` 非 None → 写入 ``kpi_snapshot_custom``（自定义任务快照，
+      不更新 loop_confidence_latest，维持 DEC-09 口径现状）
+
+    ``metrics_detail`` kwarg（12 子指标值+可信度，``_extract_metrics_detail``
+    产物）随 record payload 入账本、并用于 loop_confidence_latest，不透传给
+    _save_* 函数；其余 kwargs 透传（KPI 值 + 7 个数据血缘字段）。
+    loop_confidence_latest 写入失败仅记日志，不影响主快照结果。
+
+    P1-05 结果账本：**先追加不可变 calculation_result_record**（同
+    logicalRunId 唯一键冲突即复用既有 record，不重复建），**同事务**把
+    投影行的 ``result_record_id`` 指向该 record；账本追加失败仅记日志，
+    投影照常写入（兼容期投影优先，账本缺口由后续重算自然补齐）。
+
+    P0 #3：INCONCLUSIVE 快照的 ``confidence_level`` 缺省落 'E'
+    （对齐 §7.15 E↔INCONCLUSIVE 语义，使"非空最差等级"聚合能覆盖
+    INCONCLUSIVE 行）；调用方已传血缘等级（如 composite 评估产物）时沿用，
+    不覆盖。
+    """
+    metrics_detail = kwargs.pop("metrics_detail", None)
+    # P3-08a：完整语义明细/发布上下文——只进 record payload（不出现在投影）；
+    # metrics_semantic=None（早退分支）不写键（诚实口径：无指标语义可存）
+    metrics_semantic = kwargs.pop("metrics_semantic", None)
+    assessment_context = kwargs.pop("assessment_context", None)
+    # P5-02 显式重评链门（批级 loop_ids_with_failed_records 产物）：
+    # None=未判定（直调方/兼容口径，不解析）；集合命中本回路才做单条
+    # FAILED 前身点查（常见空集路径零额外查询）
+    failed_source_ids = kwargs.pop("failed_source_ids", None)
+    if status == "INCONCLUSIVE" and kwargs.get("confidence_level") is None:
+        kwargs["confidence_level"] = "E"
+
+    # --- P1-05：先追加不可变 record（幂等），再切换投影 ---
+    try:
+        record_logical_run_id = logical_run_id or result_ledger.derive_loop_logical_run_id(
+            ts_start,
+            custom_task_id=custom_task_id,
+            source=kwargs.get("source"),
+            source_task_id=kwargs.get("source_task_id"),
+        )
+        source_record_hint: str | None = None
+        if failed_source_ids is not None and loop_id in failed_source_ids:
+            # P5-02（G2 遗留③）：同窗 FAILED 前身存在 → 新 COMPLETED record
+            # 的 sourceRecordId 指向最近一条失败证据（不覆盖）
+            source_record_hint = await result_ledger.latest_failed_source_id(
+                db,
+                logical_run_id=record_logical_run_id,
+                object_kind=result_ledger.OBJECT_KIND_LOOP,
+                object_id=loop_id,
+                ts_start=ts_start,
+                ts_end=ts_end,
+            )
+        record = await g5_trace.awaited(
+            "pg.ledger",
+            result_ledger.append_result_record(
+                db,
+                logical_run_id=record_logical_run_id,
+                object_kind=result_ledger.OBJECT_KIND_LOOP,
+                object_id=loop_id,
+                ts_start=ts_start,
+                ts_end=ts_end,
+                algorithm_version=kwargs.get("algorithm_version") or ALGORITHM_VERSION,
+                config_revision=config_revision or result_ledger.CONFIG_REVISION_UNVERSIONED,
+                dataset_snapshot_id=dataset_snapshot_id,
+                source_record_id=source_record_hint,
+                payload={
+                    "snapshotStatus": status,
+                    "customTaskId": custom_task_id,
+                    "metricsDetail": metrics_detail,
+                    **(
+                        {"metricsSemantic": metrics_semantic}
+                        if metrics_semantic is not None
+                        else {}
+                    ),
+                    **(
+                        {"composite": _composite_semantic_entry(metrics_semantic)}
+                        if isinstance(metrics_semantic, dict)
+                        and _composite_semantic_entry(metrics_semantic) is not None
+                        else {}
+                    ),
+                    **(
+                        {"assessmentContext": assessment_context}
+                        if assessment_context is not None
+                        else {}
+                    ),
+                    **({"inputSnapshot": input_snapshot_state} if input_snapshot_state else {}),
+                    **kwargs,
+                },
+            ),
+        )
+    except Exception:  # noqa: BLE001
+        record = None
+        logger.warning(
+            "结果账本 record 追加失败（回路 %s 窗口 %s~%s），投影照常写入",
+            loop_id,
+            ts_start,
+            ts_end,
+            exc_info=True,
+        )
+    record_id_value = getattr(record, "id", None)
+    result_record_id = str(record_id_value) if record_id_value is not None else None
+
+    if custom_task_id is not None:
+        return await _save_custom_snapshot(
+            db=db,
+            task_id=custom_task_id,
+            loop_id=loop_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            result_record_id=result_record_id,
+            **kwargs,
+        )
+    result = await _save_snapshot(
+        db=db,
+        loop_id=loop_id,
+        ts_start=ts_start,
+        ts_end=ts_end,
+        status=status,
+        result_record_id=result_record_id,
+        **kwargs,
+    )
+    try:
+        await _save_confidence_latest(
+            db=db,
+            loop_id=loop_id,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            status=status,
+            score=kwargs.get("score"),
+            confidence_level=kwargs.get("confidence_level"),
+            valid_rate=kwargs.get("valid_rate"),
+            metrics=metrics_detail,
+            algorithm_version=kwargs.get("algorithm_version"),
+            result_record_id=result_record_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "loop_confidence_latest 写入失败（回路 %s），主快照不受影响",
+            loop_id,
+            exc_info=True,
+        )
+    return result
+
+
+__all__ = [
+    "ALGORITHM_VERSION",
+    "AsyncTask",
+    "backfill_kpi_range",
+    "calculate_custom_loop_kpi",
+    "calculate_daily_kpi",
+    "calculate_hourly_kpi",
+    "calculate_loop_kpi",
+    "calculate_monthly_kpi",
+    "calculate_node_kpi",
+    "calculate_node_kpi_hourly",
+]
+
+
+# ---------------------------------------------------------------------------
+# 节点级性能评估任务（GB/T 44693.2-2024 §6.4 综合评估）
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_node_kpi_hourly",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_node_kpi_hourly(
+    self: AsyncTask, ts_start: str | None = None, ts_end: str | None = None
+) -> dict:
+    """每小时节点级聚合任务（在回路级 KPI 计算完成后级联触发）。
+
+    遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
+    递归收集下属回路，按 score_weight 加权聚合回路级快照，
+    写入 kpi_node_snapshot_hourly。
+
+    CAL-05（2026-10-10）：支持显式时间窗参数化（复用 calculate_node_kpi
+    的窗口参数模式）。回路级 ``_do_calculate`` 级联时传原窗——历史回算/
+    迟到窗口的节点聚合落在原窗，不刷新无关当前窗；不传时保持既有口径
+    （上一个完整小时，独立手动触发场景）。
+    """
+    logger.info(
+        "节点级 KPI 聚合任务开始, task_id=%s, ts_start=%s, ts_end=%s",
+        self.request.id,
+        ts_start,
+        ts_end,
+    )
+    try:
+        result = self.run_async(_do_calculate_node_kpi(ts_start, ts_end))
+        logger.info("节点级 KPI 聚合任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("节点级 KPI 聚合任务失败")
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_node_kpi",
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_node_kpi(
+    plant_node_id: str, ts_start: str | None = None, ts_end: str | None = None
+) -> dict:
+    """单节点 KPI 聚合（可手动触发，支持指定时间段）。
+
+    Args:
+        plant_node_id: 工厂节点 ID
+        ts_start: 起始时间（ISO 8601），None 表示上一个完整小时
+        ts_end: 结束时间（ISO 8601），None 表示 ts_start + 1 小时
+    """
+    logger.info(
+        "单节点 KPI 聚合, plant_node_id=%s, ts_start=%s, ts_end=%s", plant_node_id, ts_start, ts_end
+    )
+    return AsyncTask().run_async(_do_calculate_single_node(plant_node_id, ts_start, ts_end))
+
+
+async def _do_calculate_node_kpi(ts_start: str | None = None, ts_end: str | None = None) -> dict:
+    """执行节点级 KPI 聚合的实际 async 逻辑。
+
+    CAL-05（2026-10-10）：ts_start/ts_end 显式窗口参数化（ISO 8601），
+    缺省时保持既有口径（上一个完整小时）。窗口解析复用
+    ``_do_calculate_single_node`` 的参数化模式（naive UTC 对齐 DB）。
+
+    Phase 4 优化：使用 batch_calculate_and_save_node_snapshots 替代逐节点串行处理。
+    批量预加载树遍历/实时自控率/回路计数 + 并发聚合，将 ~9N 次 DB 查询降至
+    ~6 次批量查询 + 3N 次单节点查询。
+    """
+    from app.core.db import AsyncSessionLocal
+    from app.models.plant_node import PlantNode
+    from app.services.node_performance import batch_calculate_and_save_node_snapshots
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+    else:
+        # 时间窗：上一个完整小时（与回路级一致）— naive UTC
+        ts_start_dt = now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
+
+    if ts_end:
+        try:
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            ts_end_dt = datetime.fromisoformat(ts_end).replace(tzinfo=None)
+    else:
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
+
+    async with AsyncSessionLocal() as db:
+        # 查询所有启用 KPI 评估的节点
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
+        nodes = list(node_result.scalars().all())
+
+    if not nodes:
+        logger.info("无启用 KPI 评估的节点，跳过节点级聚合")
+        return {"total": 0, "success": 0, "skipped": 0}
+
+    logger.info("待聚合节点数: %d（批量模式）", len(nodes))
+
+    # 批量预加载 + 并发聚合 + 保存
+    result = await batch_calculate_and_save_node_snapshots(
+        nodes=nodes,
+        ts_start=ts_start_dt,
+        ts_end=ts_end_dt,
+        concurrency=10,
+    )
+
+    logger.info(
+        "节点级聚合完成: total=%d, success=%d, skipped=%d, failed=%d, cancelled=%d",
+        result["total"],
+        result["success"],
+        result["skipped"],
+        result["failed"],
+        # G-c B1：取消节点单列消费（.get 兜底旧形状/无节点早退路径）
+        result.get("cancelled", 0),
+    )
+    return result
+
+
+async def _do_calculate_single_node(
+    plant_node_id: str,
+    ts_start: str | None = None,
+    ts_end: str | None = None,
+) -> dict:
+    """单节点 KPI 聚合（支持指定时间段）。"""
+    from app.core.db import AsyncSessionLocal
+    from app.services.node_performance import calculate_and_save_node_snapshot
+
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if ts_start:
+        try:
+            ts_start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(
+                tzinfo=None
+            )
+        except ValueError:
+            ts_start_dt = datetime.fromisoformat(ts_start).replace(tzinfo=None)
+    else:
+        ts_start_dt = (now - timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
+
+    if ts_end:
+        try:
+            ts_end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+        except ValueError:
+            ts_end_dt = datetime.fromisoformat(ts_end).replace(tzinfo=None)
+    else:
+        ts_end_dt = ts_start_dt + timedelta(hours=1)
+
+    async with AsyncSessionLocal() as db:
+        snap = await calculate_and_save_node_snapshot(
+            db=db,
+            plant_node_id=plant_node_id,
+            ts_start=ts_start_dt,
+            ts_end=ts_end_dt,
+        )
+        await db.commit()
+
+    if snap is None:
+        return {"plantNodeId": plant_node_id, "status": "SKIPPED", "reason": "无下属回路数据"}
+    return {"plantNodeId": plant_node_id, "status": "SUCCESS", "snapshot": snap}
+
+
+# ---------------------------------------------------------------------------
+# 回填任务（backfill_kpi_range）— 按小时窗口批量重算历史 KPI 快照
+# ---------------------------------------------------------------------------
+
+
+# 回填任务使用独立的较低内层并发，避免 Celery 外层并发与回路并发相乘。
+# BATCH_SIZE=1：每个小时窗口一个子任务（24 窗口 → 24 子任务），配合 worker
+# concurrency=8 分 3 波跑完，进程级 fan-out 拉满。
+# 2026-10-08：窗口内回路并发 4 → 8（生产实测回填吞吐瓶颈在 TDengine 取数，
+# 读并发翻倍预估整体提速 ~1.6 倍；PG 连接峰值 8 worker × 8 = 64，仍低于
+# max_connections=100；TDengine REST 池已同步扩至 32）。
+_BACKFILL_BATCH_SIZE = 1
+_BACKFILL_LOOP_CONCURRENCY = 8
+
+
+class _BackfillWindowBatchTask(AsyncTask):
+    """`_backfill_window_batch` 的任务类：BUSY 轮询重试保留 10s（止血②豁免）.
+
+    BUSY = 该窗口子批正被另一 worker 持有租约执行，10s 短轮询是有意的
+    收敛节奏（非故障重试），不受 AsyncTask 30s countdown 下限约束。
+    """
+
+    min_retry_countdown = 10.0
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc._backfill_window_batch",
+    bind=True,
+    base=_BackfillWindowBatchTask,
+    max_retries=None,
+)
+def _backfill_window_batch(
+    self: AsyncTask,
+    window_isos: list[str],
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+    window_offset: int = 0,
+    total_windows: int = 0,
+    skip_existing: bool = False,
+) -> dict:
+    """子任务：处理一批小时窗口（在独立 worker 进程中运行，利用多核 CPU）。
+
+    Args:
+        window_isos: 窗口起始时间列表（ISO 8601 字符串）
+        loop_ids: 回路 ID 过滤列表
+    """
+    _sub_t0 = time.monotonic()
+    batch_id = self.request.id if isinstance(self.request.id, str) else None
+    execution_token = str(uuid4())
+    has_batch_claim = bool(task_id and batch_id)
+    if has_batch_claim:
+        from app.services import task_tracker
+
+        assert task_id is not None and batch_id is not None
+        claim_state, cached_result = self.run_async(
+            task_tracker.claim_backfill_batch(
+                task_id,
+                batch_id,
+                execution_token=execution_token,
+            )
+        )
+        if claim_state == "DONE":
+            return cached_result or {}
+        if claim_state == "BUSY":
+            raise self.retry(countdown=10)
+    logger.info(
+        "[子任务] 启动: windows=%d, first=%s, loop_ids=%s",
+        len(window_isos),
+        window_isos[0] if window_isos else "(empty)",
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
+
+    async def _run() -> dict:
+        import time as _time
+
+        from app.core.db import AsyncSessionLocal
+
+        windows = [
+            datetime.fromisoformat(w.replace("Z", "+00:00")).replace(tzinfo=None)
+            for w in window_isos
+        ]
+
+        # 预加载（子任务内 1 次；参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
+        _preload_t0 = _time.monotonic()
+        async with AsyncSessionLocal() as db:
+            stmt = _eval_loop_selection_stmt(loop_ids)
+            result = await db.execute(stmt)
+            loops = list(result.scalars().all())
+
+            if not loops:
+                logger.warning("[子任务] 无可用回路，提前返回")
+                return {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
+
+            metric_result = await db.execute(select(MetricConfig))
+            metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+            from app.services.loop_config import get_loop_type_weights_map
+
+            type_weights = await get_loop_type_weights_map(db)
+            loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+        logger.info(
+            "[子任务] 预加载完成: loops=%d, metrics=%d, configs=%d, 耗时=%.2fs",
+            len(loops),
+            len(metric_configs),
+            len(loop_configs),
+            _time.monotonic() - _preload_t0,
+        )
+
+        agg = {
+            "success": 0,
+            "inconclusive": 0,
+            "failed": 0,
+            "skipped": 0,
+            "node_success": 0,
+            "failed_detail": [],
+            "failed_windows": [],
+        }
+
+        for w_idx, w in enumerate(windows, 1):
+            if task_id and await _is_task_cancelled(task_id):
+                agg["cancelled"] = True
+                break
+            w_start = w
+            w_end = w + timedelta(hours=1)
+            _w_t0 = _time.monotonic()
+
+            # 补差模式（skip_existing=True，2026-10-10 用户裁决默认全量覆盖）：
+            # 该窗口已有快照的回路跳过——重发同窗只补无快照组合（如连接挤爆
+            # 偶发失败 11 次那种），全量重算 40min → 秒级补差
+            todo_loops = loops
+            if skip_existing:
+                async with AsyncSessionLocal() as skip_db:
+                    existing_ids = {
+                        str(row[0])
+                        for row in (
+                            await skip_db.execute(
+                                select(KpiSnapshotHourly.loop_id).where(
+                                    KpiSnapshotHourly.loop_id.in_([str(lp.id) for lp in loops]),
+                                    KpiSnapshotHourly.ts_start == w_start,
+                                )
+                            )
+                        ).all()
+                    }
+                todo_loops = [lp for lp in loops if str(lp.id) not in existing_ids]
+                agg["skipped"] += len(loops) - len(todo_loops)
+                if not todo_loops:
+                    continue
+
+            try:
+
+                async def _on_completed(
+                    loop_id: str,
+                    current_window_index: int = window_offset + w_idx,
+                    window_start: datetime = w_start,
+                ) -> None:
+                    if task_id:
+                        await _increment_backfill_progress(
+                            task_id,
+                            current_window_index,
+                            total_windows,
+                            len(loops),
+                            event_id=f"{window_start.isoformat()}:{loop_id}",
+                        )
+
+                results = await _run_batch_loop_calculations(
+                    loops=todo_loops,
+                    loop_configs=loop_configs,
+                    metric_configs=metric_configs,
+                    ts_start=w_start,
+                    ts_end=w_end,
+                    type_weights=type_weights,
+                    bundle_cache=False,
+                    concurrency=_BACKFILL_LOOP_CONCURRENCY,
+                    source="BACKFILL",
+                    # P1-05：窗口子任务（batch_id）级逻辑运行身份——子任务重试
+                    # （claim 缓存/BUSY 重投）复用同一 logicalRunId，幂等；
+                    # 新一轮回填任务产生新 record，与旧版本共存
+                    logical_run_id=result_ledger.derive_loop_logical_run_id(
+                        w_start,
+                        celery_task_id=batch_id,
+                        source="BACKFILL",
+                        source_task_id=task_id,
+                    ),
+                    on_completed=_on_completed if task_id else None,
+                )
+                summary = _summarize_batch_results(results, loops=todo_loops)
+                # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+                _assert_batch_health(summary, len(results))
+                agg["success"] += summary["success"]
+                agg["inconclusive"] += summary["inconclusive"]
+                agg["failed"] += summary["failed"]
+                agg["failed_detail"].extend(summary.get("failed_detail", []))
+                logger.info(
+                    "[子任务] 窗口 %d/%d %s: ok=%d, inconclusive=%d, failed=%d, 耗时=%.2fs",
+                    w_idx,
+                    len(windows),
+                    w.isoformat(),
+                    summary["success"],
+                    summary["inconclusive"],
+                    summary["failed"],
+                    _time.monotonic() - _w_t0,
+                )
+            except Exception as exc:  # noqa: BLE001
+                agg["failed_windows"].append(w.isoformat())
+                agg["failed"] += len(loops)
+                logger.exception(
+                    "[子任务] 窗口 %d/%d %s 失败: %s",
+                    w_idx,
+                    len(windows),
+                    w.isoformat(),
+                    exc,
+                )
+
+        # 节点聚合按窗口批次在 chord header 中并行，避免 30 天聚合
+        # 集中到单个 callback 并受全局时限约束。
+        if windows and not agg.get("cancelled") and not agg["failed_windows"] and not agg["failed"]:
+            agg["node_success"] = await _do_backfill_node_aggregation(
+                windows[0], windows[-1] + timedelta(hours=1)
+            )
+
+        logger.info(
+            "[子任务] 全部完成: windows=%d, ok=%d, inconclusive=%d, failed=%d, 总耗时=%.2fs",
+            len(windows),
+            agg["success"],
+            agg["inconclusive"],
+            agg["failed"],
+            _time.monotonic() - _sub_t0,
+        )
+        return agg
+
+    try:
+        result = self.run_async(_run())
+        if has_batch_claim:
+            from app.services import task_tracker
+
+            assert task_id is not None and batch_id is not None
+            self.run_async(
+                task_tracker.complete_backfill_batch(
+                    task_id,
+                    batch_id,
+                    execution_token=execution_token,
+                    result=result,
+                )
+            )
+        return result
+    except Exception:
+        if has_batch_claim:
+            from app.services import task_tracker
+
+            assert task_id is not None and batch_id is not None
+            self.run_async(
+                task_tracker.release_backfill_batch(
+                    task_id,
+                    batch_id,
+                    execution_token=execution_token,
+                )
+            )
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.backfill_kpi_range",
+    bind=True,
+    base=AsyncTask,
+)
+def backfill_kpi_range(
+    self: AsyncTask,
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+    skip_existing: bool = False,
+) -> dict:
+    """按小时窗口批量回填 KPI 快照（脚本/HTTP 触发）。
+
+    遍历 [ts_start, ts_end) 范围内的每个完整小时窗口，
+    对全量 ACTIVE/READY 回路计算 KPI，并同步触发节点级聚合。
+    幂等：相同 (loop_id, ts_start) 的快照会被 UPSERT 覆盖，可重复执行。
+
+    Args:
+        ts_start: 起始时间（ISO 8601，UTC）
+        ts_end: 结束时间（ISO 8601，UTC，不包含）
+        loop_ids: 回路 ID 过滤列表。None=全量；非空列表=仅这些回路；空列表=直接返回。
+        task_id: Redis 任务跟踪 ID（HTTP API 触发时传入）。
+    """
+    logger.info(
+        "KPI 回填任务开始, celery_id=%s, task_id=%s, range=%s~%s, loop_ids=%s",
+        self.request.id,
+        task_id or "(none)",
+        ts_start,
+        ts_end,
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
+
+    try:
+        if task_id:
+            try:
+                self.run_async(_update_task_running(task_id))
+            except Exception:
+                logger.warning("更新任务 RUNNING 状态失败: task_id=%s", task_id, exc_info=True)
+
+        windows = _build_backfill_windows(ts_start, ts_end)
+        if loop_ids is not None and not loop_ids:
+            result = _empty_backfill_result(len(windows))
+            if task_id:
+                self.run_async(_update_task_success(task_id, result))
+            return result
+
+        child_task_ids, callback_task_id = _backfill_canvas_ids(task_id, len(windows))
+        reservation_token = str(uuid4())
+        dispatch_action = "CLAIMED"
+        if task_id:
+            from app.services import task_tracker
+
+            dispatch_action, child_task_ids, callback_task_id = self.run_async(
+                task_tracker.reserve_backfill_dispatch(
+                    task_id,
+                    reservation_token=reservation_token,
+                    child_task_ids=child_task_ids,
+                    callback_task_id=callback_task_id,
+                )
+            )
+        dispatch = {
+            "total_windows": len(windows),
+            "child_task_ids": child_task_ids,
+            "callback_task_id": callback_task_id,
+        }
+        if dispatch_action == "EXISTING":
+            return {"status": "DISPATCHED", **dispatch}
+
+        try:
+            dispatch = _dispatch_backfill_chord(
+                ts_start,
+                ts_end,
+                loop_ids=loop_ids,
+                task_id=task_id,
+                child_task_ids=child_task_ids,
+                callback_task_id=callback_task_id,
+                skip_existing=skip_existing,
+            )
+        except Exception:
+            if task_id:
+                self.run_async(task_tracker.release_backfill_dispatch(task_id, reservation_token))
+            raise
+        if task_id:
+            self.run_async(task_tracker.complete_backfill_dispatch(task_id, reservation_token))
+
+        return {"status": "DISPATCHED", **dispatch}
+    except Exception as exc:
+        logger.exception("KPI 回填任务派发失败")
+
+        if task_id:
+            try:
+                self.run_async(_update_task_failed(task_id, str(exc)))
+            except Exception:
+                logger.warning("更新任务 FAILED 状态失败: task_id=%s", task_id, exc_info=True)
+        raise
+
+
+def _build_backfill_windows(ts_start: str, ts_end: str) -> list[datetime]:
+    """Build aligned hourly windows for a backfill range."""
+    start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+    end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+    windows: list[datetime] = []
+    current = start_dt.replace(minute=0, second=0, microsecond=0)
+    while current < end_dt:
+        windows.append(current)
+        current += timedelta(hours=1)
+    return windows
+
+
+def _empty_backfill_result(total_windows: int) -> dict:
+    return {
+        "total_windows": total_windows,
+        "failed_windows": 0,
+        "loop_success": 0,
+        "loop_inconclusive": 0,
+        "loop_failed": 0,
+        "node_success": 0,
+        "failed_window_list": [],
+    }
+
+
+def _backfill_canvas_ids(task_id: str | None, total_windows: int) -> tuple[list[str], str]:
+    """Build stable canvas IDs so a reserved-but-unmarked publish can be retried safely."""
+    batch_count = (total_windows + _BACKFILL_BATCH_SIZE - 1) // _BACKFILL_BATCH_SIZE
+    if task_id is None:
+        return [str(uuid4()) for _ in range(batch_count)], str(uuid4())
+    children = [
+        str(uuid5(NAMESPACE_URL, f"clpm:backfill:{task_id}:batch:{index}"))
+        for index in range(batch_count)
+    ]
+    callback = str(uuid5(NAMESPACE_URL, f"clpm:backfill:{task_id}:callback"))
+    return children, callback
+
+
+def _dispatch_backfill_chord(
+    ts_start: str,
+    ts_end: str,
+    *,
+    loop_ids: list[str] | None,
+    task_id: str | None,
+    child_task_ids: list[str] | None = None,
+    callback_task_id: str | None = None,
+    skip_existing: bool = False,
+) -> dict:
+    """Dispatch child batches and return immediately without joining results."""
+    windows = _build_backfill_windows(ts_start, ts_end)
+    window_isos = [window.isoformat() for window in windows]
+    batches = [
+        window_isos[index : index + _BACKFILL_BATCH_SIZE]
+        for index in range(0, len(window_isos), _BACKFILL_BATCH_SIZE)
+    ]
+    generated_child_ids, generated_callback_id = _backfill_canvas_ids(task_id, len(windows))
+    child_task_ids = child_task_ids or generated_child_ids
+    callback_task_id = callback_task_id or generated_callback_id
+    if len(child_task_ids) != len(batches):
+        raise ValueError("回填子任务 ID 数量与窗口分片数不一致")
+
+    header = []
+    for batch_index, (batch, child_id) in enumerate(zip(batches, child_task_ids, strict=True)):
+        child = _backfill_window_batch.s(
+            batch,
+            loop_ids=loop_ids,
+            task_id=task_id,
+            window_offset=batch_index * _BACKFILL_BATCH_SIZE,
+            total_windows=len(windows),
+            skip_existing=skip_existing,
+        ).set(task_id=child_id)
+        child.link_error(_backfill_chord_error.s(task_id=task_id))
+        header.append(child)
+    callback = _finalize_backfill.s(
+        ts_start=ts_start,
+        ts_end=ts_end,
+        total_windows=len(windows),
+        task_id=task_id,
+        loop_ids=loop_ids,
+    ).set(task_id=callback_task_id)
+    callback.link_error(_backfill_chord_error.s(task_id=task_id))
+    chord(header, callback).apply_async()
+
+    return {
+        "total_windows": len(windows),
+        "child_task_ids": child_task_ids,
+        "callback_task_id": callback_task_id,
+    }
+
+
+async def _update_task_running(task_id: str) -> None:
+    """将任务状态从 PENDING 更新为 RUNNING。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        current_stage="回填计算",
+        started_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_success(task_id: str, result: dict) -> None:
+    """将任务状态更新为 SUCCESS。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    if await _is_task_cancelled(task_id):
+        return
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.SUCCESS,
+        progress=1.0,
+        current_stage="完成",
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+async def _update_task_failed(task_id: str, error_message: str) -> None:
+    """将任务状态更新为 FAILED。"""
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    if await _is_task_cancelled(task_id):
+        return
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.FAILED,
+        current_stage="失败",
+        error_message=error_message,
+        finished_at=task_tracker._now_iso(),
+    )
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc._finalize_backfill",
+    bind=True,
+    base=AsyncTask,
+)
+def _finalize_backfill(
+    self: AsyncTask,
+    batch_results: list[dict],
+    ts_start: str,
+    ts_end: str,
+    total_windows: int,
+    task_id: str | None = None,
+    loop_ids: list[str] | None = None,
+) -> dict:
+    """Chord callback: aggregate child results and set the business terminal state."""
+    try:
+        return self.run_async(
+            _do_finalize_backfill(
+                batch_results,
+                ts_start,
+                ts_end,
+                total_windows=total_windows,
+                task_id=task_id,
+                loop_ids=loop_ids,
+            )
+        )
+    except Exception as exc:
+        if task_id:
+            self.run_async(_update_task_failed(task_id, str(exc)))
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc._backfill_chord_error",
+    bind=True,
+    base=AsyncTask,
+)
+def _backfill_chord_error(
+    self: AsyncTask,
+    *args,
+    task_id: str | None = None,
+    **kwargs,
+) -> dict:
+    """Chord errback: make header/callback failures visible in task tracking."""
+    error = str(args[-1]) if args else "KPI 回填子任务失败"
+    if task_id:
+        self.run_async(_update_task_failed(task_id, error))
+    return {"status": "FAILED", "error": error}
+
+
+async def _invalidate_backfill_cache(loop_ids: list[str] | None) -> int:
+    """回填完成后失效相关回路的 L1/L2/L3 缓存.
+
+    「先算后导」场景：数据补齐前计算可能已缓存空 DataBlock（L1 负缓存）
+    或基于空块的 Bundle（L2）。回填完成后主动失效涉及回路的
+    ``pdb:`` / ``pdb_l2:`` / ``pdb_l3:`` Key，保证后续计算读取新数据。
+
+    Args:
+        loop_ids: 本次回填涉及的回路 ID；``None`` 表示全量回填，
+            退化为全量清理（``pdb*:*``）
+
+    Returns:
+        删除的 Key 数量；失效失败时返回 0（不阻断回填主流程）
+    """
+    try:
+        from app.core.redis import redis_client
+        from app.services.cache.invalidation import CacheInvalidator
+
+        invalidator = CacheInvalidator(redis_client)
+        if loop_ids is None:
+            deleted = await invalidator.invalidate_all()
+        else:
+            deleted = 0
+            for loop_id in loop_ids:
+                deleted += await invalidator.invalidate_loop(str(loop_id))
+        logger.info(
+            "回填完成后缓存失效: loop_ids=%s, deleted=%d",
+            "all" if loop_ids is None else f"{len(loop_ids)} loops",
+            deleted,
+        )
+        return deleted
+    except Exception:
+        # 缓存失效失败不应阻断回填终态（缓存条目会随 TTL 自然过期）
+        logger.warning("回填完成后缓存失效失败，忽略", exc_info=True)
+        return 0
+
+
+async def _do_finalize_backfill(
+    batch_results: list[dict],
+    ts_start: str,
+    ts_end: str,
+    *,
+    total_windows: int,
+    task_id: str | None,
+    loop_ids: list[str] | None = None,
+) -> dict:
+    """Aggregate chord results; node aggregation only runs after clean headers."""
+    if task_id and await _is_task_cancelled(task_id):
+        return {**_empty_backfill_result(total_windows), "cancelled": True}
+
+    result = _empty_backfill_result(total_windows)
+    failed_window_list: list[str] = []
+    failed_detail_list: list[str] = []
+    for batch in batch_results:
+        if not isinstance(batch, dict):
+            result["loop_failed"] += 1
+            failed_detail_list.append("(子批次无返回)")
+            continue
+        result["loop_success"] += int(batch.get("success", 0))
+        result["loop_inconclusive"] += int(batch.get("inconclusive", 0))
+        result["loop_failed"] += int(batch.get("failed", 0))
+        result["node_success"] += int(batch.get("node_success", 0))
+        result["skipped"] = int(result.get("skipped", 0)) + int(batch.get("skipped", 0))
+        failed_window_list.extend(batch.get("failed_windows", []))
+        failed_detail_list.extend(batch.get("failed_detail", []))
+        if batch.get("cancelled"):
+            result["cancelled"] = True
+
+    result["failed_window_list"] = failed_window_list
+    result["failed_windows"] = len(failed_window_list)
+
+    if result.get("cancelled") or (task_id and await _is_task_cancelled(task_id)):
+        result["cancelled"] = True
+        return result
+
+    # 回填完成（无论全部成功还是部分窗口失败）：失效涉及回路的
+    # L1/L2/L3 缓存，清除「先算后导」留下的空块负缓存与旧 Bundle
+    await _invalidate_backfill_cache(loop_ids)
+
+    if result["loop_failed"] or result["failed_windows"]:
+        result["status"] = "FAILED"
+        # 失败明细（回路位号+原因）直接进任务详情——免翻 worker 日志定位
+        detail = "; ".join(failed_detail_list[:20])
+        if len(failed_detail_list) > 20:
+            detail += f"; …等共 {len(failed_detail_list)} 条"
+        detail = detail[:600]
+        if task_id:
+            await _update_task_failed(
+                task_id,
+                f"回填失败: loop_failed={result['loop_failed']}, "
+                f"failed_windows={result['failed_windows']}"
+                + (f" | 明细: {detail}" if detail else ""),
+            )
+        return result
+
+    result["status"] = "SUCCESS"
+    if task_id:
+        if await _is_task_cancelled(task_id):
+            result["cancelled"] = True
+            result.pop("status", None)
+            return result
+        await _update_task_success(task_id, result)
+    return result
+
+
+async def _update_backfill_progress(
+    task_id: str,
+    window_index: int,
+    total_windows: int,
+    done_in_window: int,
+    loops_per_window: int,
+) -> None:
+    """更新回填/全量计算任务细粒度进度（逐回路，前端进度条 ≤10s 刷新）。
+
+    进度按工作项（回路 × 窗口）计算：
+    进度 = (已完成窗口 × 每窗口回路数 + 当前窗口已完成回路数) / (总窗口 × 每窗口回路数)
+
+    工作项进度写入独立字段 ``work_items_total``/``work_items_done``；
+    ``loops_total`` 恒为回路数（即每窗口回路数），不再被工作项数覆盖
+    （2026-07-21 P0 根因修复）。``loops_done`` 仅在单窗口场景（STANDARD
+    全量计算，工作项 == 回路）写入回路完成数。
+    """
+    from app.schemas.task import TaskStatus
+    from app.services import task_tracker
+
+    total_work_items = total_windows * loops_per_window
+    done_work_items = (window_index - 1) * loops_per_window + done_in_window
+    progress = done_work_items / total_work_items if total_work_items > 0 else 0.0
+    if total_windows > 1:
+        stage = (
+            f"回填计算 窗口[{window_index}/{total_windows}]"
+            f" 回路[{done_in_window}/{loops_per_window}]"
+        )
+    else:
+        stage = f"指标计算 回路[{done_in_window}/{loops_per_window}]"
+    await task_tracker.update_status(
+        task_id,
+        TaskStatus.RUNNING,
+        progress=progress,
+        loops_total=loops_per_window,
+        loops_done=done_in_window if total_windows == 1 else None,
+        work_items_total=total_work_items,
+        work_items_done=done_work_items,
+        current_stage=stage,
+    )
+
+
+async def _increment_backfill_progress(
+    task_id: str,
+    window_index: int,
+    total_windows: int,
+    loops_per_window: int,
+    *,
+    event_id: str | None = None,
+) -> None:
+    """按窗口+回路幂等计数，原子写入单调进度。
+
+    进度按「回路×窗口」工作项写入 ``work_items_total``/``work_items_done``，
+    不覆盖 ``loops_total``（恒为回路数）。
+    """
+    from app.services import task_tracker
+
+    total_work_items = total_windows * loops_per_window
+    unique_event = event_id or f"window:{window_index}:legacy:{uuid4()}"
+    await task_tracker.record_backfill_progress_once(
+        task_id,
+        event_id=unique_event,
+        total_work_items=total_work_items,
+        current_stage=f"回填计算 窗口[{window_index}/{total_windows}]",
+    )
+
+
+async def _is_task_cancelled(task_id: str) -> bool:
+    """检查任务是否已被取消。"""
+    from app.core.redis import redis_client
+
+    raw = await redis_client.hget(f"task:{task_id}", "status")
+    if raw is None:
+        return False
+    return str(raw).upper() == "CANCELLED"
+
+
+# 每个 Celery 子任务处理的窗口数
+_BACKFILL_PROCESS_BATCH = _BACKFILL_BATCH_SIZE
+
+
+def _process_windows_subprocess(
+    window_isos: list[str],
+    loop_ids: list[str] | None,
+) -> dict:
+    """顶层函数（可 pickle）：在子进程中计算一批窗口的 KPI。
+
+    每个子进程创建独立事件循环和 DB 连接，实现真正的多核并行。
+    """
+    import asyncio
+
+    async def _run() -> dict:
+        from app.core.db import AsyncSessionLocal
+        from app.services.loop_config import get_loop_type_weights_map
+
+        windows_dt = [
+            datetime.fromisoformat(w.replace("Z", "+00:00")).replace(tzinfo=None)
+            for w in window_isos
+        ]
+
+        # P1-05：本子进程一轮回填 = 一个逻辑运行（跨窗口共享，窗口进唯一键）
+        backfill_run_id = str(uuid4())
+
+        # 子进程内预加载（参评口径统一：全量仅参评，显式 loop_ids 精准过滤）
+        async with AsyncSessionLocal() as db:
+            stmt = _eval_loop_selection_stmt(loop_ids)
+            result = await db.execute(stmt)
+            loops = list(result.scalars().all())
+
+            if not loops:
+                return {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
+
+            metric_result = await db.execute(select(MetricConfig))
+            metric_configs = {c.metric_code.lower(): c for c in metric_result.scalars().all()}
+
+            type_weights = await get_loop_type_weights_map(db)
+            loop_configs = await _batch_load_loop_configs(db, [str(lp.id) for lp in loops])
+
+        agg = {"success": 0, "inconclusive": 0, "failed": 0, "failed_windows": []}
+
+        for w in windows_dt:
+            try:
+                results = await _run_batch_loop_calculations(
+                    loops=loops,
+                    loop_configs=loop_configs,
+                    metric_configs=metric_configs,
+                    ts_start=w,
+                    ts_end=w + timedelta(hours=1),
+                    type_weights=type_weights,
+                    source="BACKFILL",
+                    bundle_cache=False,
+                    logical_run_id=result_ledger.derive_loop_logical_run_id(
+                        w, source="BACKFILL", source_task_id=backfill_run_id
+                    ),
+                )
+                summary = _summarize_batch_results(results)
+                # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
+                _assert_batch_health(summary, len(results))
+                agg["success"] += summary["success"]
+                agg["inconclusive"] += summary["inconclusive"]
+                agg["failed"] += summary["failed"]
+            except Exception as exc:  # noqa: BLE001
+                agg["failed_windows"].append(w.isoformat())
+                logger.warning("子进程窗口 %s 失败: %s", w.isoformat(), exc)
+
+        return agg
+
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(_run())
+    finally:
+        loop.close()
+
+
+async def _do_backfill_node_aggregation(start_dt: datetime, end_dt: datetime) -> int:
+    """统一节点级聚合：遍历所有窗口执行节点 KPI 聚合。"""
+    from app.core.db import AsyncSessionLocal
+    from app.models.plant_node import PlantNode
+    from app.services.node_performance import batch_calculate_and_save_node_snapshots
+
+    async with AsyncSessionLocal() as db:
+        node_result = await db.execute(select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True)))
+        nodes = list(node_result.scalars().all())
+
+    if not nodes:
+        return 0
+
+    cur = start_dt.replace(minute=0, second=0, microsecond=0)
+    agg_node_success = 0
+    while cur < end_dt:
+        w_start = cur
+        w_end = cur + timedelta(hours=1)
+        result = await batch_calculate_and_save_node_snapshots(
+            nodes=nodes,
+            ts_start=w_start,
+            ts_end=w_end,
+            concurrency=10,
+        )
+        agg_node_success += result.get("success", 0)
+        cur += timedelta(hours=1)
+
+    logger.info(
+        "回填节点聚合完成: %s ~ %s, node_success=%d",
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        agg_node_success,
+    )
+    return agg_node_success
+
+
+async def _do_backfill(
+    ts_start: str,
+    ts_end: str,
+    loop_ids: list[str] | None = None,
+    task_id: str | None = None,
+) -> dict:
+    """批量回填 async 逻辑：遍历小时窗口，每窗口全量回路计算 + 最终统一节点聚合。
+
+    v4.1 优化（2026-07-16）：
+    - 预加载回路列表/配置/指标配置（1 次 PG 查询，而非 N×窗口次）
+    - 跳过 L2 缓存检查 + 兜底预热（backfill 场景缓存 Key 含时间窗口，必然 MISS）
+    - 使用 bundle_cache=False 禁用 L1/L2 缓存读写（backfill 不会复用，纯浪费 I/O）
+    - 节点级聚合改为全部窗口完成后统一执行一次（而非每窗口重复聚合）
+    """
+    from app.core.db import AsyncSessionLocal
+
+    start_dt = datetime.fromisoformat(ts_start.replace("Z", "+00:00")).replace(tzinfo=None)
+    end_dt = datetime.fromisoformat(ts_end.replace("Z", "+00:00")).replace(tzinfo=None)
+
+    windows: list[datetime] = []
+    cur = start_dt.replace(minute=0, second=0, microsecond=0)
+    while cur < end_dt:
+        windows.append(cur)
+        cur += timedelta(hours=1)
+
+    total = len(windows)
+
+    if loop_ids is not None and len(loop_ids) == 0:
+        return {
+            "total_windows": total,
+            "failed_windows": 0,
+            "loop_success": 0,
+            "loop_inconclusive": 0,
+            "loop_failed": 0,
+            "node_success": 0,
+            "failed_window_list": [],
+        }
+
+    logger.info(
+        "回填窗口数: %d (%s ~ %s), loop_ids=%s",
+        total,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        "all" if loop_ids is None else f"{len(loop_ids)} loops",
+    )
+
+    # ── Phase 1: 快速校验（确认有可计算的回路） ──
+    async with AsyncSessionLocal() as db:
+        count_stmt = select(LoopLedger.id).where(
+            LoopLedger.is_active.is_(True),
+            LoopLedger.status == "READY",
+        )
+        if loop_ids is not None:
+            count_stmt = count_stmt.where(LoopLedger.id.in_(loop_ids))
+        count_result = await db.execute(count_stmt)
+        loops_count = len(list(count_result.scalars().all()))
+
+    if loops_count == 0:
+        return {
+            "total_windows": total,
+            "failed_windows": 0,
+            "loop_success": 0,
+            "loop_inconclusive": 0,
+            "loop_failed": 0,
+            "node_success": 0,
+            "failed_window_list": [],
+        }
+
+    logger.info(
+        "回填窗口数: %d (%s ~ %s), loops=%d, 子进程将各自预加载配置",
+        total,
+        start_dt.isoformat(),
+        end_dt.isoformat(),
+        loops_count,
+    )
+
+    agg_loop_success = 0
+    agg_loop_inconclusive = 0
+    agg_loop_failed = 0
+    failed_windows: list[str] = []
+
+    # ── Phase 2: 多进程并行计算（Celery group + 异步轮询，不阻塞事件循环） ──
+    import time as _time
+
+    _phase2_t0 = _time.monotonic()
+    window_isos = [w.isoformat() for w in windows]
+    batches = [
+        window_isos[i : i + _BACKFILL_PROCESS_BATCH]
+        for i in range(0, len(window_isos), _BACKFILL_PROCESS_BATCH)
+    ]
+    num_batches = len(batches)
+    logger.info(
+        "[Phase2] 启动 Celery 并行: %d 窗口 → %d 子任务（每批 %d 窗口）",
+        total,
+        num_batches,
+        _BACKFILL_PROCESS_BATCH,
+    )
+
+    # 提交所有子任务（非阻塞）
+    _dispatch_t0 = _time.monotonic()
+    job = group(_backfill_window_batch.s(batch, loop_ids=loop_ids) for batch in batches)
+    group_result = job.apply_async()
+    _dispatch_ids = [r.id for r in group_result.results]
+    logger.info(
+        "[Phase2] 子任务已派发: %d 个, celery_ids=%s, 派发耗时=%.2fs",
+        len(_dispatch_ids),
+        _dispatch_ids[:5],  # 只打印前 5 个避免刷屏
+        _time.monotonic() - _dispatch_t0,
+    )
+
+    # 异步轮询结果（每 2 秒检查一次，不阻塞事件循环）
+    # Celery prefork 16 进程：1 个运行主任务，最多 15 个并行子任务
+    _poll_count = 0
+    while not group_result.ready():
+        _poll_count += 1
+        # 每 10 次轮询（~20s）打印一次详细状态
+        if _poll_count % 10 == 1:
+            _states = []
+            for i, r in enumerate(group_result.results):
+                st = r.state  # PENDING/STARTED/SUCCESS/FAILURE/RETRY
+                _states.append(f"batch{i}:{st}")
+            _done = sum(1 for r in group_result.results if r.successful())
+            logger.info(
+                "[Phase2] 轮询#%d: done=%d/%d, 状态=[%s]",
+                _poll_count,
+                _done,
+                num_batches,
+                ", ".join(_states[:8]),  # 前 8 个
+            )
+        # 更新进度（基于已完成的子任务数）
+        completed = sum(1 for r in group_result.results if r.successful())
+        if completed > 0 and task_id and total > 0:
+            est_progress = (completed / num_batches) * total
+            try:
+                await _update_backfill_progress(
+                    task_id, int(est_progress), total, loops_count, loops_count
+                )
+            except Exception:
+                logger.warning("[Phase2] 更新进度失败", exc_info=True)
+        await asyncio.sleep(2)
+
+    logger.info(
+        "[Phase2] 所有子任务完成: 轮询次数=%d, 总耗时=%.2fs",
+        _poll_count,
+        _time.monotonic() - _phase2_t0,
+    )
+
+    # 收集所有子任务结果（禁止在 task 内调用 .get()，直接访问 .result 属性）
+    _collect_t0 = _time.monotonic()
+    for i, r in enumerate(group_result.results):
+        batch = batches[i]
+        try:
+            if r.successful():
+                batch_result = r.result
+                logger.info(
+                    "[Phase2] 收集 batch%d/%d (%s) 成功: celery_id=%s, ok=%d, failed=%d",
+                    i + 1,
+                    num_batches,
+                    batch[0],
+                    r.id,
+                    batch_result.get("success", 0),
+                    batch_result.get("failed", 0),
+                )
+            else:
+                # 子任务失败 — 记录详细错误
+                _err = r.result  # 异常对象
+                logger.error(
+                    "[Phase2] 收集 batch%d/%d (%s) 失败: celery_id=%s, state=%s, error=%s",
+                    i + 1,
+                    num_batches,
+                    batch[0],
+                    r.id,
+                    r.state,
+                    _err,
+                )
+                batch_result = {
+                    "success": 0,
+                    "inconclusive": 0,
+                    "failed": len(batch),
+                    "failed_windows": batch,
+                }
+        except Exception:
+            logger.exception(
+                "[Phase2] 收集 batch%d/%d (%s) 异常: celery_id=%s",
+                i + 1,
+                num_batches,
+                batch[0],
+                r.id,
+            )
+            batch_result = {
+                "success": 0,
+                "inconclusive": 0,
+                "failed": len(batch),
+                "failed_windows": batch,
+            }
+
+        agg_loop_success += batch_result.get("success", 0)
+        agg_loop_inconclusive += batch_result.get("inconclusive", 0)
+        agg_loop_failed += batch_result.get("failed", 0)
+        failed_windows.extend(batch_result.get("failed_windows", []))
+
+    logger.info(
+        "[Phase2] 结果汇总: ok=%d, inconclusive=%d, failed=%d, failed_windows=%d, 收集耗时=%.2fs",
+        agg_loop_success,
+        agg_loop_inconclusive,
+        agg_loop_failed,
+        len(failed_windows),
+        _time.monotonic() - _collect_t0,
+    )
+
+    logger.info(
+        "回填回路计算完成: ok=%d, inconclusive=%d, failed=%d",
+        agg_loop_success,
+        agg_loop_inconclusive,
+        agg_loop_failed,
+    )
+
+    # ── Phase 3: 统一节点级聚合（全部窗口完成后执行一次，而非每窗口重复） ──
+    _phase3_t0 = _time.monotonic()
+    logger.info(
+        "[Phase3] 节点级聚合开始: windows=%d",
+        total,
+    )
+    agg_node_success = 0
+    try:
+        from app.models.plant_node import PlantNode
+        from app.services.node_performance import batch_calculate_and_save_node_snapshots
+
+        async with AsyncSessionLocal() as db:
+            node_result = await db.execute(
+                select(PlantNode).where(PlantNode.is_kpi_enabled.is_(True))
+            )
+            nodes = list(node_result.scalars().all())
+
+        logger.info(
+            "[Phase3] 加载 KPI 启用节点: %d 个, 耗时=%.2fs",
+            len(nodes),
+            _time.monotonic() - _phase3_t0,
+        )
+
+        if nodes:
+            _node_loop_t0 = _time.monotonic()
+            for n_idx, w in enumerate(windows, 1):
+                w_start = w
+                w_end = w + timedelta(hours=1)
+                node_result = await batch_calculate_and_save_node_snapshots(
+                    nodes=nodes,
+                    ts_start=w_start,
+                    ts_end=w_end,
+                    concurrency=10,
+                )
+                agg_node_success += node_result.get("success", 0)
+                if n_idx % 10 == 0 or n_idx == total:
+                    logger.info(
+                        "[Phase3] 节点聚合进度 %d/%d %s: node_success=%d, 累计耗时=%.2fs",
+                        n_idx,
+                        total,
+                        w.isoformat(),
+                        agg_node_success,
+                        _time.monotonic() - _node_loop_t0,
+                    )
+            logger.info(
+                "[Phase3] 节点聚合完成: windows=%d, node_success=%d, 总耗时=%.2fs",
+                total,
+                agg_node_success,
+                _time.monotonic() - _phase3_t0,
+            )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "[Phase3] 节点聚合失败: %s (耗时=%.2fs)",
+            exc,
+            _time.monotonic() - _phase3_t0,
+        )
+
+    logger.info(
+        "[回填] 全流程完成: windows=%d, loop_ok=%d, loop_failed=%d, "
+        "node_success=%d, Phase2=%.2fs, Phase3=%.2fs, 总耗时=%.2fs",
+        total,
+        agg_loop_success,
+        agg_loop_failed,
+        agg_node_success,
+        _time.monotonic() - _phase2_t0,
+        _time.monotonic() - _phase3_t0,
+        _time.monotonic() - _phase2_t0,
+    )
+
+    return {
+        "total_windows": total,
+        "failed_windows": len(failed_windows),
+        "loop_success": agg_loop_success,
+        "loop_inconclusive": agg_loop_inconclusive,
+        "loop_failed": agg_loop_failed,
+        "node_success": agg_node_success,
+        "failed_window_list": failed_windows,
+    }
+
+
+# 节点级聚合不再使用独立 Beat 调度，改为回路级任务 _do_calculate() 完成后级联触发
+# calculate_node_kpi_hourly.delay()，消除时序竞态（原 node-kpi-hourly Beat 已移除）
+
+
+# ---------------------------------------------------------------------------
+# 历史数据导入任务（Phase 3：从远端 HTTP API 拉取历史数据写入本地 TDengine）
+# ---------------------------------------------------------------------------
+
+
+async def _check_import_idempotency(task_id: str | None) -> dict | None:
+    """历史数据导入任务幂等预检查（防 worker 崩溃后重投重复执行）.
+
+    在 Celery 任务入口读取 Redis 任务记录：
+    - 已终态（SUCCESS/FAILED/CANCELLED）→ 返回缓存结果，跳过执行
+    - RUNNING 且 started_at 未超时 → 返回跳过结果（防并发重投）
+    - RUNNING 但超时（前次 worker 已死）→ 返回 None，允许接续执行
+    - PENDING/不存在/task_id 为 None → 返回 None，正常执行
+
+    Returns:
+        非 None 表示应跳过执行，直接返回该结果；None 表示通过检查正常执行。
+    """
+    if not task_id:
+        return None
+
+    from app.core.config import settings
+    from app.schemas.loop_data import ImportStatus
+    from app.services.data_import import _build_cached_result, _get_task
+
+    data = await _get_task(task_id)
+    if not data:
+        return None  # 记录不存在（理论上 API 已预写 PENDING），防御性放过
+
+    status = str(data.get("status", "")).upper()
+    terminal = {
+        ImportStatus.SUCCESS.value,
+        ImportStatus.FAILED.value,
+        ImportStatus.CANCELLED.value,
+    }
+
+    if status in terminal:
+        logger.warning(
+            "检测到导入任务重投且已终态: task_id=%s, status=%s, 跳过执行",
+            task_id,
+            status,
+        )
+        return _build_cached_result(data)
+
+    if status == ImportStatus.RUNNING.value:
+        # 心跳判活：新版任务每分块写 last_progress_at，
+        # 有心跳按停滞阈值判定（长任务持续推进即视为存活，不会被误杀重投）；
+        # 无心跳的旧任务回退 started_at + RUNNING 总时长兜底口径。
+        last_progress_at = data.get("last_progress_at", "")
+        started_at = data.get("started_at", "")
+        ref_raw = last_progress_at or started_at
+        if ref_raw:
+            try:
+                ref_ts = datetime.fromisoformat(ref_raw).timestamp()
+            except (ValueError, TypeError):
+                ref_ts = 0.0
+            now_ts = datetime.now(UTC).timestamp()
+            threshold = (
+                int(settings.IMPORT_TASK_STALL_TIMEOUT_SECONDS)
+                if last_progress_at
+                else int(settings.IMPORT_TASK_RUNNING_TIMEOUT_SECONDS)
+            )
+            age = now_ts - ref_ts
+            if age < threshold:
+                # 前次 worker 仍在存活窗口内 → 跳过（防并发重投）
+                logger.warning(
+                    "导入任务重投且 RUNNING 未停滞: task_id=%s, age=%.0fs, threshold=%ds, 跳过执行",
+                    task_id,
+                    age,
+                    threshold,
+                )
+                return {
+                    "total": int(data.get("loop_count", 0)),
+                    "succeeded": 0,
+                    "failed": 0,
+                    "errors": [f"concurrent redelivery skipped (age={age:.0f}s)"],
+                    "skipped_redelivery": True,
+                }
+            # RUNNING 停滞/超时 → 前次 worker 已死或卡死，允许接续执行
+            logger.warning(
+                "导入任务重投 RUNNING 已停滞/超时: task_id=%s age=%.0fs, 接续执行",
+                task_id,
+                age,
+            )
+            return None
+        # started_at/last_progress_at 均缺失：异常数据，放行交 _do_import 内 CAS 兜底
+        return None
+
+    # PENDING → 正常执行
+    return None
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.import_history_data",
+    bind=True,
+    base=AsyncTask,
+    # 长批次导入任务（961 回路 × 24h~周级窗口）设计上远超 30 分钟，必须显式
+    # 覆盖全局 task_time_limit=1800s 硬超时——否则 24h 窗口导入会在 ~45% 进度
+    # （434/961 回路）处被 SIGKILL 误杀，事后又被停滞清扫器误标"worker 卡死"
+    # （0908 本机 / 0909 zpdev 曾因 soft=6900s 在 115 分钟误杀；删除任务级
+    # 超时后暴露全局 1800s 硬超时，0910 zpdev 第三次误杀）。
+    # 存活保护由三层既有机制承担：分块级进度心跳 + 1800s 停滞清扫器 + CAS
+    # 幂等预检（broker 因 visibility_timeout 重投的副本被短路）。Celery 硬超时
+    # 对该任务冗余且有害，设 24h 大值兜底（正常远早于此完成）。
+    time_limit=86400,
+    soft_time_limit=86000,
+)
+def import_history_data(
+    self: AsyncTask,
+    loop_ids: list[str],
+    ts_start: str,
+    ts_end: str,
+    interval: int = 1,
+    trigger_backfill: bool = False,
+    point_only: bool = False,
+    task_id: str | None = None,
+) -> dict:
+    """历史数据导入 Celery 任务.
+
+    从远端 HTTP API 拉取历史数据，写入本地 TDengine 宽表。
+    统一按"回路号（子表） + 时间戳（ts）"幂等覆盖导入（同 ts 行 UPSERT）。
+
+    Args:
+        loop_ids: 回路 ID 列表
+        ts_start: 开始时间 (ISO 8601)
+        ts_end: 结束时间 (ISO 8601)
+        interval: 采样间隔（秒），默认 1
+        trigger_backfill: 是否在导入完成后触发 KPI 回算
+        point_only: 仅写入位号点表、跳过宽表（历史回填独立表场景）
+        task_id: Redis 任务跟踪 ID（API 触发时传入）
+    """
+    logger.info(
+        "历史数据导入任务开始, celery_id=%s, task_id=%s, loops=%d, range=%s~%s",
+        self.request.id,
+        task_id or "(none)",
+        len(loop_ids),
+        ts_start,
+        ts_end,
+    )
+
+    # 幂等预检查（A 方案）：已终态或 RUNNING 未超时则短路返回，不进入 _do_import
+    cached = self.run_async(_check_import_idempotency(task_id))
+    if cached is not None:
+        logger.info(
+            "导入任务幂等预检查命中短路: task_id=%s, 返回缓存结果",
+            task_id or "(none)",
+        )
+        return cached
+
+    from app.services.data_import import import_history_data as _do_import
+
+    return self.run_async(
+        _do_import(
+            loop_ids=loop_ids,
+            ts_start=ts_start,
+            ts_end=ts_end,
+            interval=interval,
+            trigger_backfill=trigger_backfill,
+            point_only=point_only,
+            task_id=task_id,
+        )
+    )
+
+
+# ---------------------------------------------------------------------------
+# 节点级日/月聚合任务（GB/T 44693.2-2024 §6.4 多级时间聚合）
+# ---------------------------------------------------------------------------
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_daily_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_daily_kpi(self: AsyncTask, stat_date: str | None = None) -> dict:
+    """每日节点级日聚合任务（Beat: 每日 00:05 触发）。
+
+    遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
+    按 loop_count 加权聚合当天 24 条小时快照，
+    写入 kpi_node_snapshot_daily。
+
+    Args:
+        stat_date: 统计日期（ISO 8601），None 表示昨天（Beat 00:05 触发时聚合前一天数据）
+    """
+    logger.info("节点级日聚合任务开始, task_id=%s, stat_date=%s", self.request.id, stat_date)
+    try:
+        result = self.run_async(_do_calculate_daily(stat_date))
+        logger.info("节点级日聚合任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("节点级日聚合任务失败")
+        raise
+
+
+@celery_app.task(
+    name="app.tasks.kpi_calc.calculate_monthly_kpi",
+    bind=True,
+    base=AsyncTask,
+    autoretry_for=(Exception,),
+    retry_kwargs={"max_retries": 3, "countdown": 60},
+    retry_backoff=True,
+    retry_backoff_max=600,
+    retry_jitter=True,
+)
+def calculate_monthly_kpi(self: AsyncTask, stat_month: str | None = None) -> dict:
+    """每月节点级月聚合任务（Beat: 每月 1 日 00:10 触发）。
+
+    遍历所有 is_kpi_enabled=True 的 PlantNode 节点，
+    按 loop_count 加权聚合当月所有日快照，
+    写入 kpi_node_snapshot_monthly。
+
+    Args:
+        stat_month: 统计月份（ISO 8601，月初），None 表示上个月
+            （Beat 1 日 00:10 触发时聚合上个月数据）
+    """
+    logger.info("节点级月聚合任务开始, task_id=%s, stat_month=%s", self.request.id, stat_month)
+    try:
+        result = self.run_async(_do_calculate_monthly(stat_month))
+        logger.info("节点级月聚合任务完成: %s", result)
+        return result
+    except Exception:
+        logger.exception("节点级月聚合任务失败")
+        raise
+
+
+async def _do_calculate_daily(stat_date: str | None = None) -> dict:
+    """执行节点级日聚合的实际 async 逻辑。"""
+    from datetime import date
+
+    from app.services.node_aggregation import aggregate_all_nodes_daily
+
+    # 默认聚合昨天（Beat 00:05 触发时，前一天的数据已完整）
+    if stat_date:
+        try:
+            stat_date_dt = datetime.fromisoformat(stat_date.replace("Z", "+00:00")).date()
+        except ValueError:
+            stat_date_dt = date.fromisoformat(stat_date)
+    else:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        stat_date_dt = (now - timedelta(days=1)).date()
+
+    return await aggregate_all_nodes_daily(stat_date_dt)
+
+
+async def _do_calculate_monthly(stat_month: str | None = None) -> dict:
+    """执行节点级月聚合的实际 async 逻辑。"""
+    from datetime import date
+
+    from app.services.node_aggregation import aggregate_all_nodes_monthly
+
+    # 默认聚合上个月（Beat 1 日 00:10 触发时，上个月的数据已完整）
+    if stat_month:
+        try:
+            stat_month_dt = datetime.fromisoformat(stat_month.replace("Z", "+00:00")).date()
+        except ValueError:
+            stat_month_dt = date.fromisoformat(stat_month)
+        # 规范化为月初
+        stat_month_dt = stat_month_dt.replace(day=1)
+    else:
+        now = datetime.now(UTC).replace(tzinfo=None)
+        # 上个月月初
+        if now.month == 1:
+            stat_month_dt = date(now.year - 1, 12, 1)
+        else:
+            stat_month_dt = date(now.year, now.month - 1, 1)
+
+    return await aggregate_all_nodes_monthly(stat_month_dt)

@@ -1,0 +1,13 @@
+test_closed_form_and_no_anon_shmem_double_count (test_resource_accounting.RawMemoryAccountingTests.test_closed_form_and_no_anon_shmem_double_count) ... ok
+test_floor_and_fixed_budget_not_retuned (test_resource_accounting.RawMemoryAccountingTests.test_floor_and_fixed_budget_not_retuned) ... ok
+test_gap_duplicate_and_backwards_rejected (test_resource_accounting.RawMemoryAccountingTests.test_gap_duplicate_and_backwards_rejected) ... ok
+test_missing_oom_raw_is_blocked_even_with_zero_metadata (test_resource_accounting.RawMemoryAccountingTests.test_missing_oom_raw_is_blocked_even_with_zero_metadata) ... ok
+test_missing_pid_or_container_not_silently_zero (test_resource_accounting.RawMemoryAccountingTests.test_missing_pid_or_container_not_silently_zero) ... ok
+test_new_worker_cannot_hide_outside_known_pid_list (test_resource_accounting.RawMemoryAccountingTests.test_new_worker_cannot_hide_outside_known_pid_list) ... ok
+test_raw_current_cannot_be_replaced_by_smaller_metadata (test_resource_accounting.RawMemoryAccountingTests.test_raw_current_cannot_be_replaced_by_smaller_metadata) ... ok
+test_raw_oom_counter_rejected (test_resource_accounting.RawMemoryAccountingTests.test_raw_oom_counter_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.027s
+
+OK

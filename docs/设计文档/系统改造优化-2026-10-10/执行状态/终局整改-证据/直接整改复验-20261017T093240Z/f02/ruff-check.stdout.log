@@ -1,0 +1,99 @@
+UP047 Generic function `gather_settled` should use type parameters
+  --> app/core/async_tasks.py:12:11
+   |
+12 | async def gather_settled(*operations: Awaitable[_T]) -> list[_T]:
+   |           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+13 |     """Preserve result order and the first observed error after siblings settle.
+   |
+help: Use type parameters
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> tests/test_g5_data_acquisition_failure.py:6:1
+   |
+ 4 |   """
+ 5 |
+ 6 | / from __future__ import annotations
+ 7 | |
+ 8 | | import asyncio
+ 9 | | from datetime import UTC, datetime, timedelta
+10 | | from types import SimpleNamespace
+11 | | from unittest.mock import AsyncMock, MagicMock
+12 | |
+13 | | import pytest
+14 | |
+15 | | from app.tasks import kpi_calc
+16 | | from app.core.async_tasks import gather_settled
+   | |_______________________________________________^
+   |
+help: Organize imports
+
+E501 Line too long (104 > 100)
+  --> tests/test_g5_data_acquisition_failure.py:83:101
+   |
+81 |     monkeypatch.setattr("app.core.db.AsyncSessionLocal", new_session)
+82 |     monkeypatch.setattr("app.core.db.close_session_guarded", AsyncMock())
+83 |     monkeypatch.setattr("app.services.data_planner.resolve_data_version", AsyncMock(return_value="f02"))
+   |                                                                                                     ^^^^
+84 |     monkeypatch.setattr(kpi_calc, "_build_data_planner", MagicMock())
+85 |     append_failed = AsyncMock()
+   |
+
+E501 Line too long (108 > 100)
+   --> tests/test_g5_data_acquisition_failure.py:109:101
+    |
+109 | @pytest.mark.parametrize("message", ["[0x073a]: Query memory exhausted", "sorry, too many clients already"])
+    |                                                                                                     ^^^^^^^^
+110 | async def test_resource_retry_recovers_without_failed_record(monkeypatch, batch_boundaries, message):
+111 |     sessions, append_failed, sleep = batch_boundaries
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_g5_data_acquisition_failure.py:110:101
+    |
+109 | @pytest.mark.parametrize("message", ["[0x073a]: Query memory exhausted", "sorry, too many clients already"])
+110 | async def test_resource_retry_recovers_without_failed_record(monkeypatch, batch_boundaries, message):
+    |                                                                                                     ^
+111 |     sessions, append_failed, sleep = batch_boundaries
+112 |     error = RuntimeError(message)
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_g5_data_acquisition_failure.py:142:101
+    |
+140 |     assert append_failed.await_args.kwargs["error"] is error
+141 |     assert append_failed.await_args.kwargs["algorithm_version"] == kpi_calc.ALGORITHM_VERSION
+142 |     assert append_failed.await_args.kwargs["logical_run_id"] == "4886b5f5-d41f-4269-bb2c-9e1ab0ccc62a"
+    |                                                                                                     ^^
+143 |     assert len(sessions) == 3
+144 |     for session in sessions:
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_g5_data_acquisition_failure.py:150:101
+    |
+150 | async def test_nonterminal_resource_exhaustion_waits_for_celery_retry(monkeypatch, batch_boundaries):
+    |                                                                                                     ^
+151 |     _, append_failed, _ = batch_boundaries
+152 |     error = RuntimeError("[0x073a]: Query memory exhausted")
+    |
+
+E501 Line too long (101 > 100)
+   --> tests/test_g5_data_acquisition_failure.py:159:101
+    |
+159 | @pytest.mark.parametrize("message", ["invalid SQL", "network timeout", "query memory usage warning"])
+    |                                                                                                     ^
+160 | async def test_unknown_error_is_not_locally_retried(monkeypatch, batch_boundaries, message):
+161 |     _, append_failed, sleep = batch_boundaries
+    |
+
+E501 Line too long (102 > 100)
+   --> tests/test_g5_data_acquisition_failure.py:172:101
+    |
+172 | async def test_cancelled_provider_is_neither_retried_nor_failed_record(monkeypatch, batch_boundaries):
+    |                                                                                                     ^^
+173 |     _, append_failed, sleep = batch_boundaries
+174 |     calc = AsyncMock(side_effect=asyncio.CancelledError())
+    |
+
+Found 9 errors.
+[*] 1 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

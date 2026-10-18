@@ -1,0 +1,64 @@
+{
+  "copiedAt": "2026-10-17T14:37:01.576225+00:00",
+  "authorization": "Root explicitly confirmed old hooks exited and authorized copying exact independently accepted evidence source only",
+  "independentReview": "F04 message: c2eba163 local tool-scope PASS; no real algorithm/Linux outcome acceptance",
+  "candidateHeadBeforeCopy": "e2711c384f9104e311a29800362fa9dbbda1b7e6",
+  "oldSha256": "6d9ffd634fdeac37d75a7e1b4f3176ac91a53553df2840e99071aacbeca119cf",
+  "newSha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858",
+  "newBytes": 17277,
+  "newLines": 437,
+  "actualCandidateSource": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py",
+  "unchangedWorkflowSha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622",
+  "onlyChangedFile": "backend/scripts/profile_identification_numerics.py",
+  "patchSha256": "e53c41a74a0ebd1c86f1c26452fd83861b73df709c40f646e6ce5f680b6ba9c3",
+  "commands": [
+    {
+      "argv": [
+        "git",
+        "rev-parse",
+        "HEAD"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "startedAt": "2026-10-17T14:37:01.508683+00:00",
+      "finishedAt": "2026-10-17T14:37:01.517475+00:00",
+      "rc": 0
+    },
+    {
+      "argv": [
+        "git",
+        "status",
+        "--porcelain"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "startedAt": "2026-10-17T14:37:01.517659+00:00",
+      "finishedAt": "2026-10-17T14:37:01.552359+00:00",
+      "rc": 0
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--name-only"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "startedAt": "2026-10-17T14:37:01.552881+00:00",
+      "finishedAt": "2026-10-17T14:37:01.565813+00:00",
+      "rc": 0
+    },
+    {
+      "argv": [
+        "git",
+        "diff",
+        "--",
+        "backend/scripts/profile_identification_numerics.py"
+      ],
+      "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+      "startedAt": "2026-10-17T14:37:01.565989+00:00",
+      "finishedAt": "2026-10-17T14:37:01.575962+00:00",
+      "rc": 0
+    }
+  ],
+  "productAlgorithmRun": "NOT_PERFORMED",
+  "servicesOrDataTouched": false,
+  "commitPush": "NOT_PERFORMED_BY_THIS_AGENT"
+}

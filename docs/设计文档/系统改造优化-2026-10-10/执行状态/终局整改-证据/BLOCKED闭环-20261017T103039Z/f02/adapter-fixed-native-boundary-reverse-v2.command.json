@@ -1,0 +1,14 @@
+{
+  "command": [
+    "/usr/bin/env",
+    "CLPM_ADAPTER_SOURCE=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapter-sources-v2/adapt_capacity_artifacts.py",
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "../independent/f02-adapter-review-v2/replay_fixed_native_boundary.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02",
+  "startedAt": "2026-10-17T12:58:41.894664+00:00",
+  "elapsedSeconds": 0.054691457975422964,
+  "rc": 1,
+  "stdoutSha256": "0ee9b9d59f39f3bae80614e6c7f1c7fccb9390fb195a15bbe28f2c389c180c55",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

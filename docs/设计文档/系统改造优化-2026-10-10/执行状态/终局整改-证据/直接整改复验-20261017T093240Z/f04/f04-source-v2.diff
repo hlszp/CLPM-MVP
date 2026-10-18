@@ -1,0 +1,2704 @@
+diff --git a/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/loop_batch_restore.py b/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/loop_batch_restore.py
+new file mode 100644
+index 00000000..59e3c178
+--- /dev/null
++++ b/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/loop_batch_restore.py
+@@ -0,0 +1,431 @@
++"""可恢复的工程属性批次：复用不可变 sys_audit_log，不新增数据库结构。
++
++快照与业务变更同事务提交；恢复只重放服务端快照，不接收客户端 before 值。
++行锁和完整状态令牌共同阻止覆盖后来编辑；每行确定性恢复审计保证重试幂等。
++"""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from datetime import UTC, datetime
++from uuid import NAMESPACE_URL, uuid5
++
++from sqlalchemy import func, select, text
++from sqlalchemy.ext.asyncio import AsyncSession
++
++from app.core.exceptions import BizError
++from app.models.audit import SysAuditLog
++from app.models.dcs_model import DcsModel
++from app.models.loop import LoopLedger
++from app.models.sys_user import SysUser
++from app.services.authz_scope import (
++    ScopeContext,
++    domain_guard_enabled,
++    ensure_loops_in_scope,
++    lock_guard_for_share,
++    resolve_scope,
++)
++from app.services.loop_batch import batch_update_loops
++
++FIELDS = (
++    "control_action_direction",
++    "op_output_lower_limit",
++    "op_output_upper_limit",
++    "dcs_model_id",
++    "engineering_template_id",
++    "engineering_template_version",
++)
++SNAPSHOT_OPERATION = "LOOP_BATCH_SNAPSHOT"
++RESTORE_OPERATION = "LOOP_BATCH_RESTORE"
++
++
++def _json(value: object) -> str:
++    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
++
++
++def _state(loop: LoopLedger) -> dict:
++    state = {field: getattr(loop, field) for field in FIELDS}
++    for field in ("dcs_model_id", "engineering_template_id"):
++        if state[field] is not None:
++            state[field] = str(state[field])
++    return state
++
++
++def _token(loop: LoopLedger) -> str:
++    # updated_at 也参与令牌：先改为 B 再改回 A（ABA）仍须重新预览。
++    updated_at = loop.updated_at.isoformat() if loop.updated_at else None
++    return hashlib.sha256(
++        _json({"state": _state(loop), "updatedAt": updated_at}).encode()
++    ).hexdigest()
++
++
++def _request(loop_ids: list[str], updates: dict, tokens: dict[str, str]) -> dict:
++    if not loop_ids or len(loop_ids) > 200 or len(set(loop_ids)) != len(loop_ids):
++        raise BizError("ERR_BATCH_INVALID_FIELD", "工程快照批次须为 1~200 个不重复回路", 422)
++    if not updates or set(updates) - set(FIELDS):
++        raise BizError("ERR_BATCH_INVALID_FIELD", "工程快照批次仅支持工程属性字段", 422)
++    updates = dict(updates)
++    if "engineering_template_id" in updates:
++        # 选择 follow 或解除关联必须清除原 pin，不能继承另一模板的版本。
++        updates.setdefault("engineering_template_version", None)
++        if updates["engineering_template_id"] is None and updates["engineering_template_version"]:
++            raise BizError("ERR_BATCH_INVALID_FIELD", "解除模板关联时不能保留固定版本", 422)
++    return {"loopIds": loop_ids, "updates": updates, "expectedStateTokens": tokens}
++
++
++async def _rows(db: AsyncSession, loop_ids: list[str], *, lock: bool) -> dict[str, LoopLedger]:
++    stmt = select(LoopLedger).where(LoopLedger.id.in_(loop_ids)).order_by(LoopLedger.id)
++    if lock:
++        stmt = stmt.with_for_update().execution_options(populate_existing=True)
++    rows = (await db.execute(stmt)).scalars().all()
++    return {str(row.id): row for row in rows}
++
++
++async def _lock_write_scope(
++    db: AsyncSession, operator_id: str | None, scope: ScopeContext | None
++) -> ScopeContext | None:
++    """复用现有授权发布栅栏：撤权/范围变更不能插入复核与本次提交之间。"""
++    if operator_id is None or scope is None or not domain_guard_enabled():
++        return scope
++    from app.services.authz_runtime import get_role_codes
++
++    revision = await lock_guard_for_share(db)
++    user = (await db.execute(select(SysUser).where(SysUser.id == operator_id))).scalar_one_or_none()
++    if user is None or not user.is_active or user.role == "SPONSOR":
++        raise BizError("ERR_PERMISSION_DENIED", "当前主体已失去批量维护权限", 403)
++    granted = await get_role_codes(db, user.role)
++    if not any(code in granted for code in ("*", "loop:*", "loop:batch-config")):
++        raise BizError("ERR_PERMISSION_DENIED", "当前主体已失去批量维护权限", 403)
++    return await resolve_scope(db, operator_id, user.role, revision=revision)
++
++
++async def _snapshot(
++    db: AsyncSession, snapshot_id: str, operator: str, operator_id: str | None = None
++) -> tuple[SysAuditLog, dict]:
++    log = await db.get(SysAuditLog, snapshot_id)
++    # 不泄露其他操作者批次的存在性；有批量权限仍不能恢复他人的动作。
++    if log is None or log.operation_type != SNAPSHOT_OPERATION:
++        raise BizError("ERR_BATCH_SNAPSHOT_NOT_FOUND", "快照不存在或不属于当前操作者", 404)
++    payload = json.loads(log.before_value)
++    if payload.get("ownerId") != (operator_id or operator):
++        raise BizError("ERR_BATCH_SNAPSHOT_NOT_FOUND", "快照不存在或不属于当前操作者", 404)
++    if payload.get("version") != 1:
++        raise BizError("ERR_BATCH_SNAPSHOT_VERSION", "快照格式不支持，禁止猜测恢复", 409)
++    return log, payload
++
++
++async def run_snapshot_batch(
++    db: AsyncSession,
++    loop_ids: list[str],
++    updates: dict,
++    operator: str,
++    *,
++    operation_id: str,
++    dry_run: bool,
++    expected_state_tokens: dict[str, str] | None = None,
++    scope: ScopeContext | None = None,
++    operator_id: str | None = None,
++) -> dict:
++    """工程批量预览/执行；每个 chunk 一个稳定 operationId，失败重试不能重新生成。"""
++    request = _request(loop_ids, updates, expected_state_tokens or {})
++    if not dry_run:
++        scope = await _lock_write_scope(db, operator_id, scope)
++    if scope is not None:
++        await ensure_loops_in_scope(db, scope, loop_ids)
++    updates = request["updates"]
++    fingerprint = hashlib.sha256(_json(request).encode()).hexdigest()
++    if not dry_run:
++        # 对同一幂等 ID 串行化，含不同回路列表并发复用 ID 的情况。
++        key = int.from_bytes(hashlib.sha256(operation_id.encode()).digest()[:8], "big", signed=True)
++        await db.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": key})
++        existing = await db.get(SysAuditLog, operation_id)
++        if existing is not None:
++            log, payload = await _snapshot(db, operation_id, operator, operator_id)
++            if payload["fingerprint"] != fingerprint:
++                raise BizError(
++                    "ERR_BATCH_OPERATION_REUSED", "operationId 已用于不同请求，请重新预览", 409
++                )
++            return {**json.loads(log.after_value), "replayed": True}
++
++    loops = await _rows(db, loop_ids, lock=not dry_run)
++    if scope is not None and any(not scope.node_in_scope(row.unit_id) for row in loops.values()):
++        raise BizError("ERR_SCOPE_FORBIDDEN", "无权访问该数据范围外的对象", 403)
++    before = {lid: {"state": _state(row), "token": _token(row)} for lid, row in loops.items()}
++    conflicts = []
++    eligible = []
++    for lid in loop_ids:
++        row = loops.get(lid)
++        if (
++            row is not None
++            and not dry_run
++            and request["expectedStateTokens"].get(lid) != _token(row)
++        ):
++            conflicts.append(
++                {
++                    "loopId": lid,
++                    "tagName": row.tag_name,
++                    "status": "CONFLICT",
++                    "changes": [],
++                    "error": "预览后回路已变更或缺少状态令牌，请重新预览",
++                }
++            )
++        else:
++            eligible.append(lid)
++    result = {"affected": 0, "dryRun": dry_run, "results": []}
++    if eligible:
++        result = await batch_update_loops(
++            db,
++            eligible,
++            updates,
++            operator,
++            dry_run=dry_run,
++            commit=False,
++            allow_null_engineering=True,
++        )
++    result["results"].extend(conflicts)
++    result["results"].sort(key=lambda item: loop_ids.index(item["loopId"]))
++    for item in result["results"]:
++        if item["loopId"] in before:
++            item["beforeState"] = before[item["loopId"]]["state"]
++            item["stateToken"] = before[item["loopId"]]["token"]
++    result.update(snapshotId=None, replayed=False)
++    if dry_run:
++        return result
++
++    changed = {item["loopId"] for item in result["results"] if item["status"] == "OK"}
++    now = datetime.now(UTC).replace(tzinfo=None)
++    for lid in changed:
++        loops[lid].updated_at = now
++    await db.flush()
++    entries = [
++        {
++            "loopId": lid,
++            "tagName": loops[lid].tag_name,
++            "before": before[lid]["state"],
++            "after": _state(loops[lid]),
++            "afterToken": _token(loops[lid]),
++        }
++        for lid in loop_ids
++        if lid in changed
++    ]
++    result["snapshotId"] = operation_id
++    db.add(
++        SysAuditLog(
++            id=operation_id,
++            operator=operator,
++            operation_type=SNAPSHOT_OPERATION,
++            target_type="loop_batch_snapshot",
++            target_id=operator_id or operation_id,
++            before_value=_json(
++                {
++                    "version": 1,
++                    "ownerId": operator_id or operator,
++                    "fingerprint": fingerprint,
++                    "request": request,
++                    "entries": entries,
++                }
++            ),
++            after_value=_json(result),
++            operated_at=now,
++        )
++    )
++    await db.commit()
++    return result
++
++
++async def list_batch_snapshots(
++    db: AsyncSession, operator: str, *, offset: int, limit: int, operator_id: str | None = None
++) -> dict:
++    where = (
++        SysAuditLog.operation_type == SNAPSHOT_OPERATION,
++        SysAuditLog.target_id == operator_id if operator_id else SysAuditLog.operator == operator,
++    )
++    total = (
++        await db.execute(select(func.count()).select_from(SysAuditLog).where(*where))
++    ).scalar_one()
++    logs = (
++        (
++            await db.execute(
++                select(SysAuditLog)
++                .where(*where)
++                .order_by(SysAuditLog.operated_at.desc(), SysAuditLog.id)
++                .offset(offset)
++                .limit(limit)
++            )
++        )
++        .scalars()
++        .all()
++    )
++    return {
++        "items": [
++            {
++                "snapshotId": log.id,
++                "operator": log.operator,
++                "createdAt": log.operated_at.isoformat(),
++                "affected": json.loads(log.after_value)["affected"],
++            }
++            for log in logs
++        ],
++        "total": total,
++        "offset": offset,
++        "limit": limit,
++    }
++
++
++async def get_batch_snapshot(
++    db: AsyncSession,
++    snapshot_id: str,
++    operator: str,
++    *,
++    offset: int,
++    limit: int,
++    scope: ScopeContext | None = None,
++    operator_id: str | None = None,
++) -> dict:
++    log, payload = await _snapshot(db, snapshot_id, operator, operator_id)
++    entries = payload["entries"]
++    if scope is not None:
++        await ensure_loops_in_scope(db, scope, [entry["loopId"] for entry in entries])
++    return {
++        "snapshotId": snapshot_id,
++        "operator": log.operator,
++        "createdAt": log.operated_at.isoformat(),
++        "items": entries[offset : offset + limit],
++        "total": len(entries),
++        "offset": offset,
++        "limit": limit,
++        "expiresAt": None,
++        "retentionNote": "依赖审计日志保留；日志缺失时明确拒绝恢复",
++    }
++
++
++async def _validate_restore(db: AsyncSession, state: dict, loop_id: str) -> None:
++    if state["dcs_model_id"] is not None:
++        if await db.get(DcsModel, state["dcs_model_id"]) is None:
++            raise BizError("ERR_DCS_MODEL_NOT_FOUND", "原 DCS 型号已删除，不能恢复", 409)
++    if state["engineering_template_id"] is not None:
++        from app.services.engineering_template import validate_loop_template_ref
++
++        await validate_loop_template_ref(
++            db,
++            template_id=state["engineering_template_id"],
++            version=state["engineering_template_version"],
++        )
++    from app.models.loop import LoopTagMapping
++    from app.models.tag import TagRegistry
++    from app.services.loop import _validate_op_output_limits
++
++    tag = (
++        await db.execute(
++            select(TagRegistry.range_min, TagRegistry.range_max)
++            .join(LoopTagMapping, LoopTagMapping.tag_id == TagRegistry.id)
++            .where(LoopTagMapping.loop_id == loop_id, LoopTagMapping.tag_role == "OP")
++        )
++    ).first()
++    _validate_op_output_limits(
++        lower=state["op_output_lower_limit"],
++        upper=state["op_output_upper_limit"],
++        op_range_min=float(tag[0]) if tag and tag[0] is not None else None,
++        op_range_max=float(tag[1]) if tag and tag[1] is not None else None,
++    )
++
++
++async def restore_batch_snapshot(
++    db: AsyncSession,
++    snapshot_id: str,
++    operator: str,
++    *,
++    reason: str,
++    dry_run: bool,
++    loop_ids: list[str] | None = None,
++    scope: ScopeContext | None = None,
++    operator_id: str | None = None,
++) -> dict:
++    """逐回路比较原动作后的完整状态/时间，再恢复原状态（含 NULL 和各自 pin）。"""
++    _, payload = await _snapshot(db, snapshot_id, operator, operator_id)
++    entries = {entry["loopId"]: entry for entry in payload["entries"]}
++    selected = list(entries) if loop_ids is None else loop_ids
++    if len(selected) > 200 or len(set(selected)) != len(selected) or set(selected) - set(entries):
++        raise BizError("ERR_BATCH_RESTORE_SCOPE", "恢复范围必须属于该快照且不超过 200 条", 422)
++    if not dry_run:
++        scope = await _lock_write_scope(db, operator_id, scope)
++    if scope is not None:
++        await ensure_loops_in_scope(db, scope, selected)
++    rows = await _rows(db, selected, lock=not dry_run)
++    if scope is not None and any(not scope.node_in_scope(row.unit_id) for row in rows.values()):
++        raise BizError("ERR_SCOPE_FORBIDDEN", "无权访问该数据范围外的对象", 403)
++    results = []
++    affected = 0
++    for lid in selected:
++        entry = entries[lid]
++        item = {
++            "loopId": lid,
++            "tagName": entry["tagName"],
++            "status": "OK",
++            "changes": [],
++            "error": None,
++        }
++        row = rows.get(lid)
++        if row is None:
++            item.update(status="NOT_FOUND", error="回路已删除，无法恢复")
++            results.append(item)
++            continue
++        restore_id = str(uuid5(NAMESPACE_URL, f"clpm:loop-batch-restore:{snapshot_id}:{lid}"))
++        previous = await db.get(SysAuditLog, restore_id)
++        if previous is not None:
++            restored = json.loads(previous.after_value)
++            if restored.get("ownerId") == (operator_id or operator) and restored["token"] == _token(
++                row
++            ):
++                item["status"] = "ALREADY_RESTORED"
++            else:
++                item.update(status="CONFLICT", error="该回路恢复后又被编辑，禁止覆盖")
++        elif _token(row) != entry["afterToken"]:
++            item.update(status="CONFLICT", error="原动作后回路已被编辑，请人工核对；未覆盖当前值")
++        else:
++            try:
++                await _validate_restore(db, entry["before"], lid)
++            except BizError as exc:
++                item.update(status="FAIL", error=exc.message)
++            if item["status"] == "OK":
++                item["changes"] = [
++                    {
++                        "field": field,
++                        "before": entry["after"][field],
++                        "after": entry["before"][field],
++                    }
++                    for field in FIELDS
++                    if entry["after"][field] != entry["before"][field]
++                ]
++                affected += 1
++                if not dry_run:
++                    current = _state(row)
++                    for field in FIELDS:
++                        setattr(row, field, entry["before"][field])
++                    row.updated_by = operator
++                    row.updated_at = datetime.now(UTC).replace(tzinfo=None)
++                    db.add(
++                        SysAuditLog(
++                            id=restore_id,
++                            operator=operator,
++                            operation_type=RESTORE_OPERATION,
++                            target_type="loop_ledger",
++                            target_id=lid,
++                            before_value=_json(
++                                {"snapshotId": snapshot_id, "reason": reason, "state": current}
++                            ),
++                            after_value=_json(
++                                {
++                                    "state": _state(row),
++                                    "token": _token(row),
++                                    "ownerId": operator_id or operator,
++                                }
++                            ),
++                            operated_at=row.updated_at,
++                        )
++                    )
++        results.append(item)
++    if not dry_run:
++        await db.commit()
++    return {"snapshotId": snapshot_id, "affected": affected, "dryRun": dry_run, "results": results}
+diff --git a/backend/app/services/loop_batch.py b/backend/app/services/loop_batch.py
+index eeaddc3a..5f71a16b 100644
+--- a/backend/app/services/loop_batch.py
++++ b/backend/app/services/loop_batch.py
+@@ -101,6 +101,8 @@ async def batch_update_loops(
+     operator: str,
+     *,
+     dry_run: bool = False,
++    commit: bool = True,
++    allow_null_engineering: bool = False,
+ ) -> dict:
+     """批量更新回路配置（支持 dry-run 预览：差异/部分失败状态/受影响清单）.
+ 
+@@ -266,12 +268,14 @@ async def batch_update_loops(
+         # 回路级校验（生效值 = 更新值优先，否则保持原值）
+         eff_lower = (
+             updates["op_output_lower_limit"]
+-            if updates.get("op_output_lower_limit") is not None
++            if "op_output_lower_limit" in updates
++            and (allow_null_engineering or updates["op_output_lower_limit"] is not None)
+             else loop.op_output_lower_limit
+         )
+         eff_upper = (
+             updates["op_output_upper_limit"]
+-            if updates.get("op_output_upper_limit") is not None
++            if "op_output_upper_limit" in updates
++            and (allow_null_engineering or updates["op_output_upper_limit"] is not None)
+             else loop.op_output_upper_limit
+         )
+         if "op_output_lower_limit" in updates or "op_output_upper_limit" in updates:
+@@ -287,7 +291,17 @@ async def batch_update_loops(
+         _field_before = _make_field_before_getter(loop)
+ 
+         for field, value in updates.items():
+-            if value is None:
++            if value is None and not (
++                allow_null_engineering
++                and field
++                in {
++                    "op_output_lower_limit",
++                    "op_output_upper_limit",
++                    "dcs_model_id",
++                    "engineering_template_id",
++                    "engineering_template_version",
++                }
++            ):
+                 continue
+             if field in ("is_monitored", "is_stat_enabled"):
+                 # 二者均写 is_active（P1 #10 互斥由 Schema 层保证）
+@@ -335,11 +349,17 @@ async def batch_update_loops(
+         # P2-04 工程属性
+         if updates.get("control_action_direction") is not None:
+             loop.control_action_direction = updates["control_action_direction"]
+-        if updates.get("op_output_lower_limit") is not None:
++        if "op_output_lower_limit" in updates and (
++            allow_null_engineering or updates["op_output_lower_limit"] is not None
++        ):
+             loop.op_output_lower_limit = updates["op_output_lower_limit"]
+-        if updates.get("op_output_upper_limit") is not None:
++        if "op_output_upper_limit" in updates and (
++            allow_null_engineering or updates["op_output_upper_limit"] is not None
++        ):
+             loop.op_output_upper_limit = updates["op_output_upper_limit"]
+-        if updates.get("dcs_model_id") is not None:
++        if "dcs_model_id" in updates and (
++            allow_null_engineering or updates["dcs_model_id"] is not None
++        ):
+             loop.dcs_model_id = updates["dcs_model_id"]
+         if "engineering_template_id" in updates:
+             loop.engineering_template_id = updates["engineering_template_id"]
+@@ -400,7 +420,9 @@ async def batch_update_loops(
+                 len(disabled_loop_ids),
+                 closed,
+             )
+-    await db.commit()
++    # 快照批次在调用方把操作前/后状态与业务变更放进同一事务后提交。
++    if commit:
++        await db.commit()
+ 
+     # 2026-10-10 参评口径统一：批量停用/启用/参评切换改变聚合分母 → 即时
+     # 失效驾驶舱总览/趋势缓存（进程 + Redis 双端）。
+diff --git a/backend/app/schemas/loop_batch.py b/backend/app/schemas/loop_batch.py
+index 02c3f0d2..89fc45f2 100644
+--- a/backend/app/schemas/loop_batch.py
++++ b/backend/app/schemas/loop_batch.py
+@@ -5,6 +5,8 @@
+ 
+ from __future__ import annotations
+ 
++from uuid import UUID
++
+ from pydantic import Field, model_validator
+ 
+ from app.schemas.base import CamelModel
+@@ -81,11 +83,20 @@ class LoopBatchConfigRequest(CamelModel):
+         False,
+         description="P2-04 dry-run 预览：只返回逐回路差异/部分失败状态/受影响清单，零写入",
+     )
++    operation_id: UUID | None = Field(
++        None,
++        description="工程属性快照批次幂等 ID；同 ID 只能重放同一请求。此模式显式 null=清空",
++    )
++    expected_state_tokens: dict[str, str] | None = Field(
++        None, description="工程属性快照模式执行时携带预览返回的逐回路状态令牌；失配逐条冲突"
++    )
+ 
+     @model_validator(mode="after")
+     def check_action_updates_exclusive(self) -> LoopBatchConfigRequest:
+         """action 和 updates 互斥；非删除动作必须有 updates。"""
+         if self.action == "delete":
++            if self.operation_id is not None:
++                raise ValueError("工程快照批次不支持删除")
+             if self.updates is not None:
+                 raise ValueError("action=delete 时不能同时提供 updates")
+             if self.dry_run:
+@@ -94,6 +105,26 @@ class LoopBatchConfigRequest(CamelModel):
+         # 非删除模式必须有 updates
+         if self.updates is None:
+             raise ValueError("非删除模式必须提供 updates 字段")
++        if self.operation_id is not None:
++            allowed = {
++                "control_action_direction",
++                "op_output_lower_limit",
++                "op_output_upper_limit",
++                "dcs_model_id",
++                "engineering_template_id",
++                "engineering_template_version",
++            }
++            supplied = self.updates.model_fields_set
++            if not supplied or supplied - allowed:
++                raise ValueError("工程快照批次仅支持工程属性字段，至少显式指定一个字段")
++            if (
++                "control_action_direction" in supplied
++                and self.updates.control_action_direction is None
++            ):
++                raise ValueError("controlActionDirection 不可清空，请使用 UNKNOWN")
++            if not self.dry_run and self.expected_state_tokens is None:
++                raise ValueError("工程快照执行必须携带预览的 expectedStateTokens")
++            return self
+         # updates 至少有一个非 None 字段
+         if all(
+             getattr(self.updates, f) is None
+@@ -133,6 +164,10 @@ class LoopBatchResultItem(CamelModel):
+     )
+     changes: list[LoopBatchChangeItem] = Field(default_factory=list, description="字段级差异")
+     error: str | None = Field(None, description="失败原因（status=FAIL/NOT_FOUND 时）")
++    before_state: dict | None = Field(
++        None, description="工程快照模式操作前完整工程属性，含显式 null"
++    )
++    state_token: str | None = Field(None, description="操作前状态令牌；执行时防止预览后并发修改")
+ 
+ 
+ class LoopBatchConfigResult(CamelModel):
+@@ -148,6 +183,22 @@ class LoopBatchConfigResult(CamelModel):
+     results: list[LoopBatchResultItem] | None = Field(
+         None, description="逐回路结果（update 动作；差异/失败状态可追溯）"
+     )
++    snapshot_id: str | None = Field(None, description="工程批次恢复引用；仅真实执行持久化")
++    replayed: bool = Field(False, description="同 operationId、同请求的幂等重放")
++
++
++class LoopBatchRestoreRequest(CamelModel):
++    """恢复自己的工程属性批次；每批最多 200 条，不接受客户端指定原始值。"""
++
++    reason: str = Field(..., min_length=1, max_length=500)
++    dry_run: bool = False
++    loop_ids: list[str] | None = Field(None, min_length=1, max_length=200)
++
++    @model_validator(mode="after")
++    def non_blank_reason(self) -> LoopBatchRestoreRequest:
++        if not self.reason.strip():
++            raise ValueError("恢复原因不能为空白")
++        return self
+ 
+ 
+ __all__ = [
+diff --git a/backend/app/api/v1/endpoints/loops.py b/backend/app/api/v1/endpoints/loops.py
+index 4215b619..cd932fbc 100644
+--- a/backend/app/api/v1/endpoints/loops.py
++++ b/backend/app/api/v1/endpoints/loops.py
+@@ -53,7 +53,11 @@ from app.schemas.loop import (
+     LoopUpdate,
+     LoopUpdateResult,
+ )
+-from app.schemas.loop_batch import LoopBatchConfigRequest, LoopBatchConfigResult
++from app.schemas.loop_batch import (
++    LoopBatchConfigRequest,
++    LoopBatchConfigResult,
++    LoopBatchRestoreRequest,
++)
+ from app.services.authz_scope import ScopeContext, ensure_loop_in_scope
+ from app.services.loop import (
+     batch_group_loops,
+@@ -72,6 +76,12 @@ from app.services.loop import (
+     update_loop,
+ )
+ from app.services.loop_batch import batch_delete_loops, batch_update_loops
++from app.services.loop_batch_restore import (
++    get_batch_snapshot,
++    list_batch_snapshots,
++    restore_batch_snapshot,
++    run_snapshot_batch,
++)
+ from app.services.monitor import get_loop_monitor_detail, list_loop_monitor
+ from app.services.tag_mapping import get_loop_tags, update_loop_tags
+ 
+@@ -240,6 +250,7 @@ async def batch_config_loops_endpoint(
+     body: LoopBatchConfigRequest,
+     db: AsyncSession = Depends(get_db),
+     user: SysUser = Depends(require_perms("loop:batch-config")),
++    scope: ScopeContext = Depends(get_scope_ctx),
+ ) -> dict:
+     """批量配置回路（仅 ADMIN）。
+ 
+@@ -252,6 +263,27 @@ async def batch_config_loops_endpoint(
+ 
+     所有写入操作均记录审计日志。
+     """
++    if body.operation_id is not None:
++        batch_result = await run_snapshot_batch(
++            db,
++            body.loop_ids,
++            body.updates.model_dump(exclude_unset=True),
++            user.username,
++            operation_id=str(body.operation_id),
++            dry_run=body.dry_run,
++            expected_state_tokens=body.expected_state_tokens,
++            scope=scope,
++            operator_id=str(user.id),
++        )
++        result = LoopBatchConfigResult(
++            action="update",
++            loop_ids=body.loop_ids,
++            **batch_result,
++        )
++        return success(
++            data=result.model_dump(by_alias=True),
++            message="批量操作预览（零写入）" if body.dry_run else "工程快照批次已记录",
++        )
+     if body.action == "delete":
+         # P1 #9: batch_delete_loops 返回 {"deleted": int, "skipped": list}
+         del_result = await batch_delete_loops(
+@@ -310,6 +342,67 @@ async def batch_config_loops_endpoint(
+     )
+ 
+ 
++@router.get("/batch-snapshots", response_model=ApiResponse[dict])
++async def list_batch_snapshots_endpoint(
++    offset: int = Query(0, ge=0),
++    limit: int = Query(20, ge=1, le=200),
++    db: AsyncSession = Depends(get_db),
++    user: SysUser = Depends(require_perms("loop:batch-config")),
++) -> dict:
++    """当前操作者自己的工程批次历史（分页，不按模板当前关联关系查找）。"""
++    return success(
++        data=await list_batch_snapshots(
++            db, user.username, offset=offset, limit=limit, operator_id=str(user.id)
++        )
++    )
++
++
++@router.get("/batch-snapshots/{snapshot_id}", response_model=ApiResponse[dict])
++async def get_batch_snapshot_endpoint(
++    snapshot_id: UUID,
++    offset: int = Query(0, ge=0),
++    limit: int = Query(200, ge=1, le=200),
++    db: AsyncSession = Depends(get_db),
++    user: SysUser = Depends(require_perms("loop:batch-config")),
++    scope: ScopeContext = Depends(get_scope_ctx),
++) -> dict:
++    """读取本人操作前/后快照；审计日志缺失或主体/范围越权均拒绝。"""
++    return success(
++        data=await get_batch_snapshot(
++            db,
++            str(snapshot_id),
++            user.username,
++            offset=offset,
++            limit=limit,
++            scope=scope,
++            operator_id=str(user.id),
++        )
++    )
++
++
++@router.post("/batch-snapshots/{snapshot_id}/restore", response_model=ApiResponse[dict])
++async def restore_batch_snapshot_endpoint(
++    snapshot_id: UUID,
++    body: LoopBatchRestoreRequest,
++    db: AsyncSession = Depends(get_db),
++    user: SysUser = Depends(require_perms("loop:batch-config")),
++    scope: ScopeContext = Depends(get_scope_ctx),
++) -> dict:
++    """恢复本人快照；逐回路冲突拒写，重复恢复幂等，原因与结果追加审计。"""
++    return success(
++        data=await restore_batch_snapshot(
++            db,
++            str(snapshot_id),
++            user.username,
++            reason=body.reason,
++            dry_run=body.dry_run,
++            loop_ids=body.loop_ids,
++            scope=scope,
++            operator_id=str(user.id),
++        )
++    )
++
++
+ # ---------------------------------------------------------------------------
+ # Loop Complex Grouping (固定路径，必须在 {loop_id} 之前)
+ # ---------------------------------------------------------------------------
+diff --git a/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_loop_batch_restore.py b/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_loop_batch_restore.py
+new file mode 100644
+index 00000000..cf8e576e
+--- /dev/null
++++ b/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_loop_batch_restore.py
+@@ -0,0 +1,458 @@
++"""可恢复工程批次的状态ful离线契约；不连接运行库、不启动 Worker。
++
++测试真实快照/冲突/幂等实现；底层批量更新与引用校验分别由既有批量测试和
++本文件原始 NULL 写入测试覆盖。PG 行锁语义另需隔离真实库集成复验。
++"""
++
++from __future__ import annotations
++
++import copy
++import json
++from datetime import datetime, timedelta
++from types import SimpleNamespace
++from unittest.mock import AsyncMock, MagicMock
++from uuid import uuid4
++
++import pytest
++from pydantic import ValidationError
++
++from app.core.exceptions import BizError
++from app.models.audit import SysAuditLog
++from app.schemas.loop_batch import LoopBatchConfigRequest, LoopBatchRestoreRequest
++from app.services import loop_batch_restore as svc
++from app.services.loop_batch import batch_update_loops
++from tests.conftest import TEST_USERS, mock_current_user
++
++
++def make_loop(index=0):
++    return SimpleNamespace(
++        id=str(uuid4()),
++        tag_name=f"RESTORE-{index:04}",
++        unit_id="unit-1",
++        control_action_direction="UNKNOWN",
++        op_output_lower_limit=None,
++        op_output_upper_limit=None,
++        dcs_model_id=None,
++        engineering_template_id=None if index % 3 == 0 else f"template-{index % 2}",
++        engineering_template_version=None if index % 3 == 0 else index % 2 + 1,
++        updated_at=datetime(2026, 10, 17),
++        updated_by="seed",
++    )
++
++
++class MemorySession:
++    """仅模拟数据库 IO；实际业务状态比较/快照/restore 分支均使用生产函数。"""
++
++    def __init__(self, rows):
++        self.rows = {row.id: row for row in rows}
++        self.logs = {}
++        self.added = []
++        self.statements = []
++        self.commits = 0
++
++    async def execute(self, statement, params=None):
++        self.statements.append(str(statement))
++        result = MagicMock()
++        if "FROM loop_ledger" in str(statement):
++            ids = statement.compile().params["id_1"]
++            result.scalars.return_value.all.return_value = [
++                self.rows[lid] for lid in ids if lid in self.rows
++            ]
++        else:
++            result.first.return_value = None
++        return result
++
++    async def get(self, model, key):
++        return self.logs.get(str(key)) if model is SysAuditLog else None
++
++    def add(self, log):
++        assert log.id not in self.logs, "duplicate immutable audit ID"
++        self.logs[log.id] = log
++        self.added.append(log)
++
++    async def flush(self):
++        pass
++
++    async def commit(self):
++        self.commits += 1
++
++
++async def apply_engineering(db, loop_ids, updates, operator, *, dry_run, **kwargs):
++    results = []
++    affected = 0
++    for lid in loop_ids:
++        row = db.rows.get(lid)
++        if row is None:
++            results.append(
++                {
++                    "loopId": lid,
++                    "tagName": None,
++                    "status": "NOT_FOUND",
++                    "changes": [],
++                    "error": "不存在",
++                }
++            )
++            continue
++        changes = [
++            {"field": key, "before": getattr(row, key), "after": value}
++            for key, value in updates.items()
++            if getattr(row, key) != value
++        ]
++        results.append(
++            {
++                "loopId": lid,
++                "tagName": row.tag_name,
++                "status": "OK" if changes else "UNCHANGED",
++                "changes": changes,
++                "error": None,
++            }
++        )
++        affected += bool(changes)
++        if not dry_run:
++            for key, value in updates.items():
++                setattr(row, key, value)
++    return {"affected": affected, "dryRun": dry_run, "results": results}
++
++
++@pytest.fixture
++def engine(monkeypatch):
++    monkeypatch.setattr(svc, "batch_update_loops", apply_engineering)
++    monkeypatch.setattr(svc, "_validate_restore", AsyncMock())
++
++
++async def execute(db, ids, updates=None, operation_id=None):
++    updates = updates or {"engineering_template_id": "new-template"}
++    operation_id = operation_id or str(uuid4())
++    preview = await svc.run_snapshot_batch(
++        db, ids, updates, "admin", operation_id=operation_id, dry_run=True
++    )
++    tokens = {
++        row["loopId"]: row["stateToken"] for row in preview["results"] if row.get("stateToken")
++    }
++    applied = await svc.run_snapshot_batch(
++        db,
++        ids,
++        updates,
++        "admin",
++        operation_id=operation_id,
++        dry_run=False,
++        expected_state_tokens=tokens,
++    )
++    return applied, tokens
++
++
++@pytest.mark.asyncio
++async def test_1000_mixed_original_states_exact_restore_in_five_chunks(engine):
++    rows = [make_loop(index) for index in range(1000)]
++    db = MemorySession(rows)
++    originals = {row.id: copy.deepcopy(svc._state(row)) for row in rows}
++    snapshots = []
++    for start in range(0, 1000, 200):
++        result, _ = await execute(db, [row.id for row in rows[start : start + 200]])
++        assert result["affected"] == 200
++        snapshots.append(result["snapshotId"])
++    assert len(db.logs) == 5
++    for snapshot_id in snapshots:
++        first = await svc.get_batch_snapshot(db, snapshot_id, "admin", offset=0, limit=71)
++        second = await svc.get_batch_snapshot(db, snapshot_id, "admin", offset=71, limit=129)
++        assert first["total"] == 200
++        assert len(first["items"] + second["items"]) == 200
++        prior_audits, prior_commits = len(db.logs), db.commits
++        preview = await svc.restore_batch_snapshot(
++            db, snapshot_id, "admin", reason="核验回退", dry_run=True
++        )
++        assert preview["affected"] == 200
++        assert (len(db.logs), db.commits) == (prior_audits, prior_commits)
++        actual = await svc.restore_batch_snapshot(
++            db, snapshot_id, "admin", reason="核验回退", dry_run=False
++        )
++        assert actual["affected"] == 200
++        count = len(db.logs)
++        again = await svc.restore_batch_snapshot(
++            db, snapshot_id, "admin", reason="网络重试", dry_run=False
++        )
++        assert again["affected"] == 0
++        assert {item["status"] for item in again["results"]} == {"ALREADY_RESTORED"}
++        assert len(db.logs) == count
++    assert {row.id: svc._state(row) for row in rows} == originals
++    assert len(db.logs) == 1005
++    assert any("FOR UPDATE" in statement for statement in db.statements)
++    assert any("pg_advisory_xact_lock" in statement for statement in db.statements)
++
++
++@pytest.mark.asyncio
++async def test_same_operation_replay_and_payload_reuse_rejected(engine):
++    row = make_loop()
++    db = MemorySession([row])
++    applied, tokens = await execute(db, [row.id])
++    replay = await svc.run_snapshot_batch(
++        db,
++        [row.id],
++        {"engineering_template_id": "new-template"},
++        "admin",
++        operation_id=applied["snapshotId"],
++        dry_run=False,
++        expected_state_tokens=tokens,
++    )
++    assert replay["replayed"] and len(db.logs) == 1 and db.commits == 1
++    with pytest.raises(BizError, match="operationId"):
++        await svc.run_snapshot_batch(
++            db,
++            [row.id],
++            {"engineering_template_id": "other"},
++            "admin",
++            operation_id=applied["snapshotId"],
++            dry_run=False,
++            expected_state_tokens=tokens,
++        )
++
++
++@pytest.mark.asyncio
++async def test_preview_aba_change_conflicts_and_does_not_overwrite(engine):
++    row = make_loop()
++    db = MemorySession([row])
++    operation_id = str(uuid4())
++    preview = await svc.run_snapshot_batch(
++        db,
++        [row.id],
++        {"engineering_template_id": "new"},
++        "admin",
++        operation_id=operation_id,
++        dry_run=True,
++    )
++    token = preview["results"][0]["stateToken"]
++    assert db.commits == 0 and not db.logs
++    row.updated_at += timedelta(seconds=1)  # 编辑后又恢复原值，仍不允许旧预览覆盖。
++    result = await svc.run_snapshot_batch(
++        db,
++        [row.id],
++        {"engineering_template_id": "new"},
++        "admin",
++        operation_id=operation_id,
++        dry_run=False,
++        expected_state_tokens={row.id: token},
++    )
++    assert result["results"][0]["status"] == "CONFLICT"
++    assert row.engineering_template_id is None
++
++
++@pytest.mark.asyncio
++async def test_restore_conflict_and_partial_failure_are_per_loop(engine, monkeypatch):
++    rows = [make_loop(index) for index in range(4)]
++    db = MemorySession(rows)
++    applied, _ = await execute(db, [row.id for row in rows])
++    rows[0].op_output_lower_limit = 23
++    rows[0].updated_at += timedelta(seconds=1)
++    del db.rows[rows[1].id]
++
++    async def validate(_, state, lid):
++        if lid == rows[2].id:
++            raise BizError("ERR_TEMPLATE_VERSION", "原模板版本已删除", 409)
++
++    monkeypatch.setattr(svc, "_validate_restore", validate)
++    result = await svc.restore_batch_snapshot(
++        db, applied["snapshotId"], "admin", reason="部分失败", dry_run=False
++    )
++    assert [item["status"] for item in result["results"]] == ["CONFLICT", "NOT_FOUND", "FAIL", "OK"]
++    assert rows[0].op_output_lower_limit == 23
++    assert rows[2].engineering_template_id == "new-template"
++    assert rows[3].engineering_template_id is None
++    assert result["affected"] == 1
++
++
++@pytest.mark.asyncio
++async def test_already_restored_then_manual_edit_never_overwritten(engine):
++    row = make_loop()
++    db = MemorySession([row])
++    applied, _ = await execute(db, [row.id])
++    await svc.restore_batch_snapshot(
++        db, applied["snapshotId"], "admin", reason="回退", dry_run=False
++    )
++    row.engineering_template_id = "manual"
++    row.updated_at += timedelta(seconds=1)
++    result = await svc.restore_batch_snapshot(
++        db, applied["snapshotId"], "admin", reason="重复", dry_run=False
++    )
++    assert result["results"][0]["status"] == "CONFLICT"
++    assert row.engineering_template_id == "manual"
++
++
++@pytest.mark.asyncio
++@pytest.mark.parametrize("reader", ["other-admin", "pe_engineer"])
++async def test_snapshot_owner_is_enforced_for_read_and_restore(engine, reader):
++    row = make_loop()
++    db = MemorySession([row])
++    applied, _ = await execute(db, [row.id])
++    with pytest.raises(BizError) as exc:
++        await svc.get_batch_snapshot(db, applied["snapshotId"], reader, offset=0, limit=200)
++    assert exc.value.status_code == 404
++    with pytest.raises(BizError):
++        await svc.restore_batch_snapshot(
++            db, applied["snapshotId"], reader, reason="越权", dry_run=False
++        )
++
++
++@pytest.mark.asyncio
++async def test_restore_scope_and_request_limits(engine, monkeypatch):
++    row = make_loop()
++    db = MemorySession([row])
++    applied, _ = await execute(db, [row.id])
++    denied = AsyncMock(side_effect=BizError("ERR_SCOPE_FORBIDDEN", "越权", 403))
++    monkeypatch.setattr(svc, "ensure_loops_in_scope", denied)
++    with pytest.raises(BizError) as exc:
++        await svc.restore_batch_snapshot(
++            db, applied["snapshotId"], "admin", reason="范围", dry_run=False, scope=object()
++        )
++    assert exc.value.status_code == 403
++    with pytest.raises(BizError):
++        await svc.restore_batch_snapshot(
++            db,
++            applied["snapshotId"],
++            "admin",
++            reason="非法",
++            dry_run=False,
++            loop_ids=[str(uuid4())],
++        )
++    with pytest.raises(BizError):
++        await svc.run_snapshot_batch(
++            db,
++            [str(uuid4()) for _ in range(201)],
++            {"engineering_template_id": "new"},
++            "admin",
++            operation_id=str(uuid4()),
++            dry_run=True,
++        )
++
++
++@pytest.mark.asyncio
++async def test_legacy_batch_mode_remains_none_noop_but_snapshot_mode_clears_null():
++    row = make_loop(1)
++    row.is_active = True
++    row.importance_level = 2
++    row.include_in_evaluation = True
++    row.op_output_lower_limit = 5
++    row.dcs_model_id = str(uuid4())
++    db = AsyncMock()
++    result = MagicMock()
++    result.scalars.return_value.all.return_value = [row]
++    result.first.return_value = None
++    db.execute.return_value = result
++    db.add = MagicMock()
++    updates = {
++        "engineering_template_id": None,
++        "engineering_template_version": None,
++        "dcs_model_id": None,
++        "op_output_lower_limit": None,
++    }
++    legacy = await batch_update_loops(db, [row.id], updates, "admin", dry_run=True)
++    assert legacy["affected"] == 0
++    assert row.engineering_template_id is not None and row.dcs_model_id is not None
++    actual = await batch_update_loops(
++        db, [row.id], updates, "admin", commit=False, allow_null_engineering=True
++    )
++    assert actual["affected"] == 1
++    assert row.engineering_template_id is None and row.engineering_template_version is None
++    assert row.dcs_model_id is None and row.op_output_lower_limit is None
++    db.commit.assert_not_awaited()
++
++
++def test_snapshot_request_requires_tokens_and_preserves_explicit_null():
++    payload = {
++        "loopIds": [str(uuid4())],
++        "updates": {"engineeringTemplateId": None},
++        "operationId": str(uuid4()),
++    }
++    with pytest.raises(ValidationError, match="expectedStateTokens"):
++        LoopBatchConfigRequest.model_validate(payload)
++    parsed = LoopBatchConfigRequest.model_validate({**payload, "dryRun": True})
++    assert parsed.updates.model_dump(exclude_unset=True) == {"engineering_template_id": None}
++    with pytest.raises(ValidationError):
++        LoopBatchRestoreRequest(reason=" ", dryRun=True)
++
++
++@pytest.mark.asyncio
++async def test_unknown_or_unsupported_snapshot_fails_closed(engine):
++    db = MemorySession([])
++    with pytest.raises(BizError) as exc:
++        await svc.get_batch_snapshot(db, str(uuid4()), "admin", offset=0, limit=200)
++    assert exc.value.status_code == 404
++    log = SysAuditLog(
++        id=str(uuid4()),
++        operator="admin",
++        operation_type=svc.SNAPSHOT_OPERATION,
++        before_value=json.dumps({"version": 0, "ownerId": "admin"}),
++        after_value="{}",
++    )
++    db.add(log)
++    with pytest.raises(BizError) as exc:
++        await svc.restore_batch_snapshot(db, log.id, "admin", reason="旧格式", dry_run=False)
++    assert exc.value.status_code == 409
++
++
++@pytest.mark.asyncio
++async def test_stable_user_id_blocks_recreated_same_name_and_allows_owner_rename(engine):
++    row = make_loop()
++    db = MemorySession([row])
++    operation_id = str(uuid4())
++    preview = await svc.run_snapshot_batch(
++        db,
++        [row.id],
++        {"engineering_template_id": "new"},
++        "admin",
++        operation_id=operation_id,
++        dry_run=True,
++        operator_id="user-1",
++    )
++    await svc.run_snapshot_batch(
++        db,
++        [row.id],
++        {"engineering_template_id": "new"},
++        "admin",
++        operation_id=operation_id,
++        dry_run=False,
++        operator_id="user-1",
++        expected_state_tokens={row.id: preview["results"][0]["stateToken"]},
++    )
++    with pytest.raises(BizError) as exc:
++        await svc.get_batch_snapshot(
++            db, operation_id, "admin", offset=0, limit=200, operator_id="user-2"
++        )
++    assert exc.value.status_code == 404
++    detail = await svc.get_batch_snapshot(
++        db, operation_id, "admin-renamed", offset=0, limit=200, operator_id="user-1"
++    )
++    assert detail["total"] == 1
++
++
++@pytest.mark.parametrize("role", ["ic_engineer", "pe_engineer", "sponsor"])
++@pytest.mark.parametrize("mode", ["list", "read", "restore", "apply"])
++def test_snapshot_endpoints_reject_users_without_batch_permission(client, role, mode):
++    snapshot_id = str(uuid4())
++    with mock_current_user(TEST_USERS[role]):
++        if mode == "list":
++            response = client.get(
++                "/api/v1/loops/batch-snapshots", headers={"Authorization": "Bearer fake-token"}
++            )
++        elif mode == "read":
++            response = client.get(
++                f"/api/v1/loops/batch-snapshots/{snapshot_id}",
++                headers={"Authorization": "Bearer fake-token"},
++            )
++        elif mode == "restore":
++            response = client.post(
++                f"/api/v1/loops/batch-snapshots/{snapshot_id}/restore",
++                json={"reason": "越权", "dryRun": True},
++                headers={"Authorization": "Bearer fake-token"},
++            )
++        else:
++            response = client.post(
++                "/api/v1/loops/batch-config",
++                json={
++                    "loopIds": [str(uuid4())],
++                    "updates": {"engineeringTemplateId": None},
++                    "operationId": snapshot_id,
++                    "dryRun": True,
++                },
++                headers={"Authorization": "Bearer fake-token"},
++            )
++    assert response.status_code == 403
+diff --git a/frontend/apps/web-antd/src/api/engineering-template.ts b/frontend/apps/web-antd/src/api/engineering-template.ts
+index 65c0fe56..84e8c39a 100644
+--- a/frontend/apps/web-antd/src/api/engineering-template.ts
++++ b/frontend/apps/web-antd/src/api/engineering-template.ts
+@@ -155,7 +155,13 @@ export namespace EngineeringTemplateApi {
+   }
+ 
+   /** 逐回路结果状态：OK=将更新/已更新；UNCHANGED=无差异；FAIL=回路级校验失败；NOT_FOUND=不存在 */
+-  export type LoopBatchStatus = 'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED';
++  export type LoopBatchStatus =
++    | 'ALREADY_RESTORED'
++    | 'CONFLICT'
++    | 'FAIL'
++    | 'NOT_FOUND'
++    | 'OK'
++    | 'UNCHANGED';
+ 
+   /** 逐回路结果条目（成功/失败项逐条呈现契约） */
+   export interface LoopBatchResultItem {
+@@ -164,15 +170,17 @@ export namespace EngineeringTemplateApi {
+     status: LoopBatchStatus;
+     changes: LoopBatchChangeItem[];
+     error: null | string;
++    beforeState?: null | Record<string, unknown>;
++    stateToken?: null | string;
+   }
+ 
+   /** 批量工程属性更新字段（None=不更新该字段；模板版本 pin 须同时给模板 ID） */
+   export interface LoopBatchEngineeringUpdates {
+-    engineeringTemplateId?: string;
+-    engineeringTemplateVersion?: number;
++    engineeringTemplateId?: null | string;
++    engineeringTemplateVersion?: null | number;
+     controlActionDirection?: 'DIRECT' | 'REVERSE' | 'UNKNOWN';
+-    opOutputLowerLimit?: number;
+-    opOutputUpperLimit?: number;
++    opOutputLowerLimit?: null | number;
++    opOutputUpperLimit?: null | number;
+   }
+ 
+   /** 批量应用请求（dryRun=true 预览零写入；loopIds 单批上限 200） */
+@@ -180,6 +188,8 @@ export namespace EngineeringTemplateApi {
+     loopIds: string[];
+     updates: LoopBatchEngineeringUpdates;
+     dryRun?: boolean;
++    operationId?: string;
++    expectedStateTokens?: Record<string, string>;
+   }
+ 
+   /** 批量应用响应（dryRun/执行同形；results 为逐回路条目） */
+@@ -189,6 +199,31 @@ export namespace EngineeringTemplateApi {
+     loopIds: string[];
+     dryRun: boolean;
+     results: LoopBatchResultItem[] | null;
++    snapshotId?: null | string;
++    replayed?: boolean;
++  }
++
++  export interface BatchSnapshotSummary {
++    snapshotId: string;
++    operator: string;
++    createdAt: string;
++    affected: number;
++  }
++
++  export interface BatchSnapshotEntry {
++    loopId: string;
++    tagName: string;
++    before: Record<string, unknown>;
++    after: Record<string, unknown>;
++    afterToken: string;
++  }
++
++  export interface BatchSnapshotDetail {
++    snapshotId: string;
++    items: BatchSnapshotEntry[];
++    total: number;
++    offset: number;
++    limit: number;
+   }
+ }
+ 
+@@ -262,7 +297,10 @@ export function rollbackEngineeringTemplateVersionApi(
+ }
+ 
+ /** 模板关联回路清单（limit 上限 200；total 为精确总数） */
+-export function getEngineeringTemplateLoopsApi(templateId: string, limit = 200) {
++export function getEngineeringTemplateLoopsApi(
++  templateId: string,
++  limit = 200,
++) {
+   return requestClient.get<{
+     items: EngineeringTemplateApi.TemplateLoopItem[];
+     total: number;
+@@ -345,9 +383,45 @@ export function rollbackConfigPublicationApi(
+  * 携带 P2-04 工程属性与 dryRun/results 契约（维护 UI 专用），旧绑定仅为
+  * 监控/级别字段且未暴露逐回路结果，互不替代。
+  */
+-export function batchApplyLoopsApi(data: EngineeringTemplateApi.LoopBatchRunParams) {
++export function batchApplyLoopsApi(
++  data: EngineeringTemplateApi.LoopBatchRunParams,
++) {
+   return requestClient.post<EngineeringTemplateApi.LoopBatchRunResult>(
+     '/loops/batch-config',
+     data,
+   );
+ }
++
++/** 本人工程批次历史；可在重开页面后继续恢复，total 为完整分母。 */
++export function getLoopBatchSnapshotsApi(offset = 0, limit = 20) {
++  return requestClient.get<{
++    items: EngineeringTemplateApi.BatchSnapshotSummary[];
++    total: number;
++  }>('/loops/batch-snapshots', { params: { offset, limit } });
++}
++
++export function getLoopBatchSnapshotApi(
++  snapshotId: string,
++  offset = 0,
++  limit = 200,
++) {
++  return requestClient.get<EngineeringTemplateApi.BatchSnapshotDetail>(
++    `/loops/batch-snapshots/${snapshotId}`,
++    { params: { offset, limit } },
++  );
++}
++
++/** 恢复服务端快照原值（含 NULL）；真实恢复前必须重新 dry-run。 */
++export function restoreLoopBatchSnapshotApi(
++  snapshotId: string,
++  data: {
++    dryRun: boolean;
++    loopIds?: string[];
++    reason: string;
++  },
++) {
++  return requestClient.post<EngineeringTemplateApi.LoopBatchRunResult>(
++    `/loops/batch-snapshots/${snapshotId}/restore`,
++    data,
++  );
++}
+diff --git a/frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue b/frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue
+index b7242ee6..c2faa2a0 100644
+--- a/frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue
++++ b/frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue
+@@ -44,6 +44,7 @@ import { getLoopListApi } from '#/api/loop';
+ import { getPlantNodeTreeApi } from '#/api/plant-node';
+ import { flattenNodes } from '#/utils/plant-node';
+ 
++import BatchRestoreModal from './batch-restore-modal.vue';
+ import {
+   BATCH_STATUS_LABEL,
+   canConfirmPublish,
+@@ -100,6 +101,16 @@ const resultItems = ref<ResultItem[]>([]);
+ /** 已完成分批数（失败时如实展示进度） */
+ const doneChunks = ref(0);
+ const totalChunks = ref(0);
++const snapshotIds = ref<string[]>([]);
++const restoreOpen = ref(false);
++const previewChunks = ref<
++  {
++    ids: string[];
++    operationId: string;
++    tokens: Record<string, string>;
++    updates: EngineeringTemplateApi.LoopBatchEngineeringUpdates;
++  }[]
++>([]);
+ 
+ const summary = computed(() => summarizeBatchResults(resultItems.value));
+ 
+@@ -153,9 +164,7 @@ async function loadPlantNodes() {
+       let current: (typeof nodes)[number] | undefined = node;
+       while (current) {
+         path.unshift(current.name);
+-        current = current.parentId
+-          ? nodeMap.get(current.parentId)
+-          : undefined;
++        current = current.parentId ? nodeMap.get(current.parentId) : undefined;
+       }
+       return { label: path.join(' / '), value: node.id };
+     });
+@@ -176,7 +185,9 @@ async function loadContext() {
+     ]);
+     versions.value = versionRes.items;
+     pinVersion.value =
+-      props.template.currentVersion ?? versionRes.items[0]?.version ?? undefined;
++      props.template.currentVersion ??
++      versionRes.items[0]?.version ??
++      undefined;
+   } catch (error: any) {
+     flowError.value = `加载回路/版本失败：${errorMessage(error)}`;
+   } finally {
+@@ -195,6 +206,8 @@ watch(
+       doneChunks.value = 0;
+       totalChunks.value = 0;
+       flowError.value = '';
++      previewChunks.value = [];
++      snapshotIds.value = [];
+       loopFilters.keyword = '';
+       loopFilters.plantNodeId = undefined;
+       loadContext();
+@@ -232,6 +245,7 @@ function mergeSelection(keys: string[]) {
+ function buildUpdates(): EngineeringTemplateApi.LoopBatchEngineeringUpdates {
+   const updates: EngineeringTemplateApi.LoopBatchEngineeringUpdates = {
+     engineeringTemplateId: props.template?.id,
++    engineeringTemplateVersion: null,
+   };
+   if (pinMode.value === 'pin' && pinVersion.value !== undefined) {
+     updates.engineeringTemplateVersion = pinVersion.value;
+@@ -248,12 +262,29 @@ async function startPreview() {
+   loading.value = true;
+   flowError.value = '';
+   try {
+-    const res = await batchApplyLoopsApi({
+-      loopIds: selectedLoopIds.value,
+-      updates: buildUpdates(),
+-      dryRun: true,
+-    });
+-    resultItems.value = res.results ?? [];
++    previewChunks.value = [];
++    resultItems.value = [];
++    for (const ids of chunkLoopIds(selectedLoopIds.value)) {
++      const chunk = {
++        ids,
++        operationId: crypto.randomUUID(),
++        tokens: {} as Record<string, string>,
++        updates: buildUpdates(),
++      };
++      const res = await batchApplyLoopsApi({
++        loopIds: ids,
++        updates: chunk.updates,
++        operationId: chunk.operationId,
++        dryRun: true,
++      });
++      const items = res.results ?? [];
++      checkCompleteResults(ids, items);
++      for (const item of items) {
++        if (item.stateToken) chunk.tokens[item.loopId] = item.stateToken;
++      }
++      previewChunks.value.push(chunk);
++      resultItems.value.push(...items);
++    }
+     step.value = reducePublishFlow(step.value, 'PREVIEW_OK');
+   } catch (error: any) {
+     flowError.value = `dry-run 预览失败：${errorMessage(error)}`;
+@@ -267,10 +298,24 @@ function backToEdit() {
+   step.value = reducePublishFlow(step.value, 'BACK_TO_EDIT');
+ }
+ 
++function checkCompleteResults(ids: string[], items: ResultItem[]) {
++  const returned = new Set(items.map((item) => item.loopId));
++  if (
++    items.length !== ids.length ||
++    returned.size !== ids.length ||
++    ids.some((id) => !returned.has(id))
++  ) {
++    throw new Error(
++      `批次结果不完整：请求 ${ids.length} 条，收到 ${items.length} 条，已停止后续操作`,
++    );
++  }
++}
++
+ /** 步骤 3→4/5：确认执行（顺序分批 ≤200/批；FAIL 跳过、OK 应用） */
+ async function confirmExecute() {
+   if (!props.template || !canConfirmPublish(step.value)) return;
+-  const chunks = chunkLoopIds(selectedLoopIds.value);
++  const chunks = previewChunks.value;
++  if (chunks.length === 0) return;
+   step.value = reducePublishFlow(step.value, 'CONFIRM_PUBLISH');
+   executing.value = true;
+   flowError.value = '';
+@@ -279,12 +324,22 @@ async function confirmExecute() {
+   const merged: ResultItem[] = [];
+   try {
+     for (let i = 0; i < chunks.length; i++) {
+-      executeProgress.value = `第 ${i + 1}/${chunks.length} 批（${chunks[i]?.length ?? 0} 条）`;
++      const chunk = chunks[i]!;
++      executeProgress.value = `第 ${i + 1}/${chunks.length} 批（${chunk.ids.length} 条）`;
+       const res = await batchApplyLoopsApi({
+-        loopIds: chunks[i] ?? [],
+-        updates: buildUpdates(),
++        loopIds: chunk.ids,
++        updates: chunk.updates,
++        operationId: chunk.operationId,
++        expectedStateTokens: chunk.tokens,
+         dryRun: false,
+       });
++      checkCompleteResults(chunk.ids, res.results ?? []);
++      if (!res.snapshotId)
++        throw new Error(
++          '服务端未返回恢复快照引用，请到批次历史核对，禁止盲目重试',
++        );
++      if (!snapshotIds.value.includes(res.snapshotId))
++        snapshotIds.value.push(res.snapshotId);
+       merged.push(...(res.results ?? []));
+       doneChunks.value = i + 1;
+     }
+@@ -302,6 +357,7 @@ async function confirmExecute() {
+ }
+ 
+ function handleClose() {
++  if (executing.value) return;
+   open.value = false;
+ }
+ 
+@@ -310,6 +366,8 @@ const STATUS_COLOR: Record<string, string> = {
+   UNCHANGED: 'default',
+   FAIL: 'red',
+   NOT_FOUND: 'orange',
++  CONFLICT: 'red',
++  ALREADY_RESTORED: 'default',
+ };
+ 
+ const loopColumns: TableColumnsType = [
+@@ -336,7 +394,10 @@ function changesText(item: ResultItem): string {
+   if (item.error) return item.error;
+   if (item.changes.length === 0) return '—';
+   return item.changes
+-    .map((c) => `${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`)
++    .map(
++      (c) =>
++        `${c.field}: ${JSON.stringify(c.before)} → ${JSON.stringify(c.after)}`,
++    )
+     .join('；');
+ }
+ </script>
+@@ -347,6 +408,8 @@ function changesText(item: ResultItem): string {
+     :title="`批量应用 — ${template?.name ?? ''}（${template?.templateKey ?? ''}）`"
+     :footer="null"
+     width="780px"
++    :closable="!executing"
++    :mask-closable="false"
+     @cancel="handleClose"
+   >
+     <Spin :spinning="loading && step === 'edit'">
+@@ -385,7 +448,8 @@ function changesText(item: ResultItem): string {
+           </span>
+           <!-- DEF-4：指引与实际能力对齐（选择面含未关联回路；筛选+翻页+自动分批） -->
+           <span class="text-xs text-gray-400" data-testid="loops-note">
+-            选择面为全部回路（含未关联本模板的回路）；可按装置/位号筛选并翻页，跨页勾选自动保留；执行按单批 ≤200 自动分批提交
++            选择面为全部回路（含未关联本模板的回路）；可按装置/位号筛选并翻页，跨页勾选自动保留；执行按单批
++            ≤200 自动分批提交
+           </span>
+         </div>
+         <!-- DEF-1：选择面筛选复用 /loops 既有参数（装置 + 位号） -->
+@@ -443,9 +507,15 @@ function changesText(item: ResultItem): string {
+             </template>
+             <template v-else-if="column.key === 'isActive'">
+               <Tag
+-                :color="(record as LoopApi.LoopListItem).isActive ? 'green' : 'default'"
++                :color="
++                  (record as LoopApi.LoopListItem).isActive
++                    ? 'green'
++                    : 'default'
++                "
+               >
+-                {{ (record as LoopApi.LoopListItem).isActive ? '监控中' : '停用' }}
++                {{
++                  (record as LoopApi.LoopListItem).isActive ? '监控中' : '停用'
++                }}
+               </Tag>
+             </template>
+           </template>
+@@ -462,7 +532,7 @@ function changesText(item: ResultItem): string {
+           type="info"
+           show-icon
+           class="mb-2"
+-          message="dry-run 预览（零写入）：以下为将发生的逐回路差异与部分失败状态，确认后执行。"
++          message="操作前快照预览（零写入）：逐回路原值与差异可审查；确认后快照与变更同事务保存。预览后发生修改的回路会报冲突并跳过。"
+         />
+         <Alert
+           v-else-if="step === 'done'"
+@@ -493,7 +563,9 @@ function changesText(item: ResultItem): string {
+         >
+           <template #bodyCell="{ column, record }">
+             <template v-if="column.key === 'tagName'">
+-              {{ (record as ResultItem).tagName ?? (record as ResultItem).loopId }}
++              {{
++                (record as ResultItem).tagName ?? (record as ResultItem).loopId
++              }}
+             </template>
+             <template v-else-if="column.key === 'status'">
+               <Tag
+@@ -504,9 +576,22 @@ function changesText(item: ResultItem): string {
+               </Tag>
+             </template>
+             <template v-else-if="column.key === 'detail'">
++              <details
++                v-if="(record as ResultItem).beforeState"
++                class="mb-1 text-xs"
++              >
++                <summary>操作前完整工程属性（null 为原始空值）</summary>
++                <pre>{{
++                  JSON.stringify((record as ResultItem).beforeState, null, 2)
++                }}</pre>
++              </details>
+               <span
+                 class="text-xs"
+-                :class="(record as ResultItem).status === 'FAIL' ? 'text-red-500' : 'text-gray-500'"
++                :class="
++                  (record as ResultItem).status === 'FAIL'
++                    ? 'text-red-500'
++                    : 'text-gray-500'
++                "
+               >
+                 {{ changesText(record as ResultItem) }}
+               </span>
+@@ -517,6 +602,12 @@ function changesText(item: ResultItem): string {
+ 
+       <!-- 底部操作条 -->
+       <div class="mt-4 flex items-center justify-end gap-2">
++        <Button
++          v-if="snapshotIds.length > 0 && !executing"
++          data-testid="btn-review-restore"
++          @click="restoreOpen = true"
++          >审查并恢复操作前快照（{{ snapshotIds.length }} 批）</Button
++        >
+         <span v-if="executing" class="mr-auto text-xs text-gray-500">
+           {{ executeProgress }}
+         </span>
+@@ -531,7 +622,9 @@ function changesText(item: ResultItem): string {
+         >
+           dry-run 预览
+         </Button>
+-        <Button v-if="step === 'previewed'" @click="backToEdit">返回修改</Button>
++        <Button v-if="step === 'previewed'" @click="backToEdit"
++          >返回修改</Button
++        >
+         <Button
+           v-if="step === 'previewed'"
+           type="primary"
+@@ -553,8 +646,15 @@ function changesText(item: ResultItem): string {
+         >
+           重试执行
+         </Button>
+-        <Button v-if="step === 'done'" type="primary" @click="handleClose">完成</Button>
++        <Button v-if="step === 'done'" type="primary" @click="handleClose"
++          >完成</Button
++        >
+       </div>
+     </Spin>
+   </Modal>
++  <BatchRestoreModal
++    v-model:open="restoreOpen"
++    :snapshot-ids="snapshotIds"
++    @restored="emit('applied')"
++  />
+ </template>
+diff --git a/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue b/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue
+new file mode 100644
+index 00000000..3d3d00a5
+--- /dev/null
++++ b/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue
+@@ -0,0 +1,310 @@
++<script lang="ts" setup>
++/** 工程批次恢复：本人历史 → 完整快照 → 逐回路预检 → 确认恢复。 */
++import type { EngineeringTemplateApi } from '#/api/engineering-template';
++
++import { computed, ref, watch } from 'vue';
++
++import { Alert, Button, Input, Modal, Table } from 'ant-design-vue';
++
++import {
++  getLoopBatchSnapshotApi,
++  getLoopBatchSnapshotsApi,
++  restoreLoopBatchSnapshotApi,
++} from '#/api/engineering-template';
++
++import {
++  BATCH_STATUS_LABEL,
++  chunkLoopIds,
++  summarizeBatchResults,
++} from './template-utils';
++
++const props = withDefaults(
++  defineProps<{ open: boolean; snapshotIds?: string[] }>(),
++  { snapshotIds: () => [] },
++);
++const emit = defineEmits<{
++  (e: 'update:open', value: boolean): void;
++  (e: 'restored'): void;
++}>();
++const open = computed({
++  get: () => props.open,
++  set: (value: boolean) => {
++    if (!busy.value) emit('update:open', value);
++  },
++});
++const history = ref<EngineeringTemplateApi.BatchSnapshotSummary[]>([]);
++const totalHistory = ref(0);
++const historyPage = ref(1);
++const selected = ref<string[]>([]);
++const entries = ref<
++  (EngineeringTemplateApi.BatchSnapshotEntry & { snapshotId: string })[]
++>([]);
++const groups = ref<{ loopIds: string[]; snapshotId: string }[]>([]);
++const results = ref<EngineeringTemplateApi.LoopBatchResultItem[]>([]);
++const busy = ref(false);
++const previewReady = ref(false);
++const restored = ref(false);
++const reason = ref('');
++const error = ref('');
++const progress = ref('');
++const summary = computed(() => summarizeBatchResults(results.value));
++
++function messageOf(e: any) {
++  return e?.response?.data?.message ?? e?.message ?? '请求失败';
++}
++
++async function loadHistory(page = 1) {
++  try {
++    const res = await getLoopBatchSnapshotsApi((page - 1) * 20, 20);
++    history.value = res.items;
++    totalHistory.value = res.total;
++    historyPage.value = page;
++  } catch (error_) {
++    error.value = `读取本人批次历史失败：${messageOf(error_)}`;
++  }
++}
++
++async function loadSelected() {
++  if (busy.value || selected.value.length === 0) return;
++  busy.value = true;
++  previewReady.value = false;
++  restored.value = false;
++  entries.value = [];
++  groups.value = [];
++  results.value = [];
++  error.value = '';
++  try {
++    for (const snapshotId of selected.value) {
++      let offset = 0;
++      const batch: EngineeringTemplateApi.BatchSnapshotEntry[] = [];
++      let total = 0;
++      do {
++        const page = await getLoopBatchSnapshotApi(snapshotId, offset, 200);
++        total = page.total;
++        if (page.items.length === 0 && offset < total)
++          throw new Error('快照分页提前为空，已停止');
++        batch.push(...page.items);
++        offset += page.items.length;
++      } while (offset < total);
++      if (
++        batch.length !== total ||
++        new Set(batch.map((row) => row.loopId)).size !== total
++      ) {
++        throw new Error('快照分母或回路 ID 不一致，已停止');
++      }
++      entries.value.push(...batch.map((row) => ({ ...row, snapshotId })));
++      for (const loopIds of chunkLoopIds(batch.map((row) => row.loopId)))
++        groups.value.push({ snapshotId, loopIds });
++    }
++  } catch (error_) {
++    groups.value = [];
++    error.value = `读取快照失败：${messageOf(error_)}`;
++  } finally {
++    busy.value = false;
++  }
++}
++
++async function runRestore(dryRun: boolean) {
++  if (
++    busy.value ||
++    !reason.value.trim() ||
++    groups.value.length === 0 ||
++    (!dryRun && !previewReady.value)
++  )
++    return;
++  busy.value = true;
++  error.value = '';
++  previewReady.value = false;
++  results.value = [];
++  try {
++    for (const [index, group] of groups.value.entries()) {
++      progress.value = `第 ${index + 1}/${groups.value.length} 批（每批 ≤200）`;
++      const res = await restoreLoopBatchSnapshotApi(group.snapshotId, {
++        reason: reason.value.trim(),
++        dryRun,
++        loopIds: group.loopIds,
++      });
++      const items = res.results ?? [];
++      const ids = new Set(items.map((row) => row.loopId));
++      if (
++        items.length !== group.loopIds.length ||
++        ids.size !== group.loopIds.length ||
++        group.loopIds.some((id) => !ids.has(id))
++      ) {
++        throw new Error('恢复结果不完整，请保留快照并重新预检核对');
++      }
++      results.value.push(...items);
++    }
++    previewReady.value = dryRun;
++    restored.value = !dryRun;
++    if (!dryRun) emit('restored');
++  } catch (error_) {
++    error.value = `恢复中途失败，已收到 ${results.value.length} 条结果；重新预检后可幂等重试：${messageOf(error_)}`;
++  } finally {
++    busy.value = false;
++    progress.value = '';
++  }
++}
++
++watch(
++  () => props.open,
++  async (value) => {
++    if (!value) return;
++    selected.value = [...props.snapshotIds];
++    entries.value = [];
++    groups.value = [];
++    results.value = [];
++    previewReady.value = false;
++    restored.value = false;
++    reason.value = '';
++    error.value = '';
++    await loadHistory();
++    if (selected.value.length > 0) await loadSelected();
++  },
++  { immediate: true },
++);
++
++const selection = computed(() => ({
++  selectedRowKeys: selected.value,
++  preserveSelectedRowKeys: true,
++  getCheckboxProps: () => ({ disabled: busy.value }),
++  onChange: (keys: (number | string)[]) => {
++    if (busy.value) return;
++    selected.value = keys.map(String);
++    // 历史选择和已读取快照必须同源；改选后禁止继续预检旧批次。
++    entries.value = [];
++    groups.value = [];
++    results.value = [];
++    previewReady.value = false;
++    restored.value = false;
++    error.value = '';
++  },
++}));
++const historyColumns = [
++  { title: '快照 ID', dataIndex: 'snapshotId', key: 'snapshotId' },
++  { title: '时间', dataIndex: 'createdAt', key: 'createdAt' },
++  { title: '实际变更数', dataIndex: 'affected', key: 'affected' },
++];
++const entryColumns = [
++  { title: '回路', dataIndex: 'tagName', key: 'tagName' },
++  { title: '原始属性 / 操作后属性', key: 'state' },
++];
++const resultColumns = [
++  { title: '回路', dataIndex: 'tagName', key: 'tagName' },
++  { title: '状态 / 原因', key: 'result' },
++];
++</script>
++
++<template>
++  <Modal
++    v-model:open="open"
++    title="恢复本人批量维护快照"
++    :footer="null"
++    width="960px"
++    :closable="!busy"
++    :mask-closable="false"
++  >
++    <Alert
++      type="info"
++      show-icon
++      message="仅可读取和恢复本人且在当前授权范围内的批次。恢复原始 NULL、DCS 型号和各回路模板/pin；后来编辑的回路明确冲突并保留当前值。审计保留期内可从历史重新进入。"
++    />
++    <Alert v-if="error" type="error" show-icon :message="error" class="my-2" />
++    <Table
++      :columns="historyColumns"
++      :data-source="history"
++      row-key="snapshotId"
++      :row-selection="selection"
++      :pagination="{
++        current: historyPage,
++        pageSize: 20,
++        total: totalHistory,
++        onChange: loadHistory,
++      }"
++      size="small"
++    />
++    <Button
++      :disabled="busy || selected.length === 0"
++      data-testid="btn-load-snapshots"
++      @click="loadSelected"
++      >读取已选快照（{{ selected.length }} 批）</Button
++    >
++    <div class="my-2" data-testid="restore-denominator">
++      完整快照 {{ entries.length }} 条 / {{ groups.length }} 个恢复批次，每批
++      ≤200
++    </div>
++    <Table
++      :columns="entryColumns"
++      :data-source="entries"
++      :row-key="(row: any) => `${row.snapshotId}:${row.loopId}`"
++      :pagination="{ pageSize: 20 }"
++      size="small"
++    >
++      <template #bodyCell="{ column, record }">
++        <template v-if="column.key === 'state'"
++          ><details>
++            <summary>审查操作前 / 后原值</summary>
++            <pre>{{
++              JSON.stringify(
++                { before: record.before, after: record.after },
++                null,
++                2,
++              )
++            }}</pre>
++          </details></template
++        >
++      </template>
++    </Table>
++    <Input
++      v-model:value="reason"
++      placeholder="填写恢复原因（必填）"
++      :disabled="busy"
++      data-testid="restore-reason"
++    />
++    <div class="my-2 flex gap-2">
++      <Button
++        :disabled="busy || !reason.trim() || groups.length === 0"
++        data-testid="btn-preview-restore"
++        @click="runRestore(true)"
++        >预览恢复（零写入）</Button
++      >
++      <Button
++        type="primary"
++        :disabled="busy || !previewReady || !reason.trim()"
++        data-testid="btn-confirm-restore"
++        @click="runRestore(false)"
++        >确认恢复可通过项</Button
++      >
++      <span>{{ progress }}</span>
++    </div>
++    <Alert
++      v-if="restored"
++      type="success"
++      message="恢复请求完成，请逐条核对冲突和失败项；已恢复回路再次恢复会幂等跳过。"
++    />
++    <div v-if="results.length > 0" data-testid="restore-summary">
++      结果 {{ summary.total }} 条：恢复/可恢复 {{ summary.ok }}，已恢复/无变化
++      {{ summary.unchanged }}，失败/冲突 {{ summary.failed }}，不存在
++      {{ summary.notFound }}
++    </div>
++    <Table
++      v-if="results.length > 0"
++      :columns="resultColumns"
++      :data-source="results"
++      :row-key="(row: any, index?: number) => `${row.loopId}:${index}`"
++      :pagination="{ pageSize: 20 }"
++      size="small"
++    >
++      <template #bodyCell="{ column, record }"
++        ><template v-if="column.key === 'result'"
++          >{{
++            BATCH_STATUS_LABEL[
++              record.status as EngineeringTemplateApi.LoopBatchStatus
++            ]
++          }}
++          {{ record.error }}</template
++        ></template
++      >
++    </Table>
++  </Modal>
++</template>
+diff --git a/frontend/apps/web-antd/src/views/config/engineering-templates/index.vue b/frontend/apps/web-antd/src/views/config/engineering-templates/index.vue
+index a8a5ab5a..59b37bfe 100644
+--- a/frontend/apps/web-antd/src/views/config/engineering-templates/index.vue
++++ b/frontend/apps/web-antd/src/views/config/engineering-templates/index.vue
+@@ -50,6 +50,7 @@ import { hasPermission } from '#/directives/permission';
+ import { formatTime } from '#/utils/format';
+ 
+ import BatchApplyModal from './batch-apply-modal.vue';
++import BatchRestoreModal from './batch-restore-modal.vue';
+ import OverridePublishModal from './override-publish-modal.vue';
+ import PublicationsTab from './publications-tab.vue';
+ import PublishVersionModal from './publish-version-modal.vue';
+@@ -77,6 +78,7 @@ const BATCH_ONLY_TIP = '需要 loop:batch-config 权限（ADMIN）';
+ 
+ // ===== 模板列表 =====
+ const loading = ref(false);
++const restoreOpen = ref(false);
+ const loadError = ref('');
+ const templates = ref<EngineeringTemplateApi.TemplateItem[]>([]);
+ const lastRefresh = ref('');
+@@ -104,8 +106,20 @@ const columns: TableColumnsType = [
+   { title: '名称', dataIndex: 'name', key: 'name', width: 180 },
+   { title: '类别', key: 'category', width: 100, align: 'center' },
+   { title: '当前版本', key: 'currentVersion', width: 90, align: 'center' },
+-  { title: '版本数', dataIndex: 'versionCount', key: 'versionCount', width: 80, align: 'center' },
+-  { title: '关联回路', dataIndex: 'loopCount', key: 'loopCount', width: 90, align: 'center' },
++  {
++    title: '版本数',
++    dataIndex: 'versionCount',
++    key: 'versionCount',
++    width: 80,
++    align: 'center',
++  },
++  {
++    title: '关联回路',
++    dataIndex: 'loopCount',
++    key: 'loopCount',
++    width: 90,
++    align: 'center',
++  },
+   { title: '更新时间', key: 'updatedAt', width: 170 },
+   { title: '操作', key: 'action', width: 90, fixed: 'right' },
+ ];
+@@ -158,7 +172,9 @@ async function submitCreate() {
+       templateKey: form.templateKey.trim(),
+       name: form.name.trim(),
+       category: form.category,
+-      ...(form.description.trim() ? { description: form.description.trim() } : {}),
++      ...(form.description.trim()
++        ? { description: form.description.trim() }
++        : {}),
+     });
+     createOpen.value = false;
+     message.success('模板已创建（尚未发布版本）');
+@@ -227,7 +243,9 @@ onMounted(loadTemplates);
+     <div class="mt-4 flex flex-col gap-3 p-3">
+       <div class="flex items-center justify-between">
+         <span class="text-xs text-gray-500">
+-          共 {{ templates.length }} 个模板；版本追加式不可变，固定引用（pin）不受新发布影响。
++          共
++          {{ templates.length }}
++          个模板；版本追加式不可变，固定引用（pin）不受新发布影响。
+         </span>
+         <Tooltip :title="isAdmin ? '' : ADMIN_ONLY_TIP">
+           <Button
+@@ -266,21 +284,34 @@ onMounted(loadTemplates);
+           </template>
+           <template v-else-if="column.key === 'category'">
+             <Tag>
+-              {{ TEMPLATE_CATEGORY_LABEL[(record as EngineeringTemplateApi.TemplateItem).category] ?? (record as EngineeringTemplateApi.TemplateItem).category }}
++              {{
++                TEMPLATE_CATEGORY_LABEL[
++                  (record as EngineeringTemplateApi.TemplateItem).category
++                ] ?? (record as EngineeringTemplateApi.TemplateItem).category
++              }}
+             </Tag>
+           </template>
+           <template v-else-if="column.key === 'currentVersion'">
+             <Tag
+-              v-if="(record as EngineeringTemplateApi.TemplateItem).currentVersion !== null"
++              v-if="
++                (record as EngineeringTemplateApi.TemplateItem)
++                  .currentVersion !== null
++              "
+               color="blue"
+             >
+-              v{{ (record as EngineeringTemplateApi.TemplateItem).currentVersion }}
++              v{{
++                (record as EngineeringTemplateApi.TemplateItem).currentVersion
++              }}
+             </Tag>
+             <span v-else class="text-xs text-gray-400">未发布</span>
+           </template>
+           <template v-else-if="column.key === 'updatedAt'">
+             <span class="text-xs">
+-              {{ formatTime((record as EngineeringTemplateApi.TemplateItem).updatedAt) }}
++              {{
++                formatTime(
++                  (record as EngineeringTemplateApi.TemplateItem).updatedAt,
++                )
++              }}
+             </span>
+           </template>
+           <template v-else-if="column.key === 'action'">
+@@ -300,7 +331,11 @@ onMounted(loadTemplates);
+     <!-- 模板维护抽屉 -->
+     <Drawer
+       v-model:open="detailOpen"
+-      :title="activeTemplate ? `${activeTemplate.name}（${activeTemplate.templateKey}）` : ''"
++      :title="
++        activeTemplate
++          ? `${activeTemplate.name}（${activeTemplate.templateKey}）`
++          : ''
++      "
+       width="920"
+     >
+       <template v-if="activeTemplate">
+@@ -378,7 +413,9 @@ onMounted(loadTemplates);
+     >
+       <div class="space-y-3">
+         <div>
+-          <div class="mb-1 text-sm">模板键（全局唯一，TEMPLATE 层作用域标识）</div>
++          <div class="mb-1 text-sm">
++            模板键（全局唯一，TEMPLATE 层作用域标识）
++          </div>
+           <Input
+             v-model:value="createForm.templateKey"
+             :maxlength="64"
+@@ -408,7 +445,11 @@ onMounted(loadTemplates);
+         </div>
+         <div>
+           <div class="mb-1 text-sm">描述（可选）</div>
+-          <Textarea v-model:value="createForm.description" :rows="2" :maxlength="500" />
++          <Textarea
++            v-model:value="createForm.description"
++            :rows="2"
++            :maxlength="500"
++          />
+         </div>
+         <Alert
+           v-if="createError"
+@@ -425,6 +466,13 @@ onMounted(loadTemplates);
+       :template="activeTemplate"
+       @published="handleChanged"
+     />
++    <Button
++      :disabled="!canBatchApply"
++      data-testid="btn-batch-history-restore"
++      @click="restoreOpen = true"
++      >本人批量维护历史与恢复</Button
++    >
++    <BatchRestoreModal v-model:open="restoreOpen" @restored="loadTemplates" />
+     <BatchApplyModal
+       v-model:open="batchOpen"
+       :template="activeTemplate"
+diff --git a/frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts b/frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts
+index a3ad661d..c1dbc288 100644
+--- a/frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts
++++ b/frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts
+@@ -48,8 +48,10 @@ export function diffProfileEntries(
+   return keys.map((key) => {
+     const inBefore = Object.prototype.hasOwnProperty.call(b, key);
+     const inAfter = Object.prototype.hasOwnProperty.call(a, key);
+-    if (!inBefore) return { key, kind: 'added', before: undefined, after: a[key] };
+-    if (!inAfter) return { key, kind: 'removed', before: b[key], after: undefined };
++    if (!inBefore)
++      return { key, kind: 'added', before: undefined, after: a[key] };
++    if (!inAfter)
++      return { key, kind: 'removed', before: b[key], after: undefined };
+     return profileValueEqual(b[key], a[key])
+       ? { key, kind: 'unchanged', before: b[key], after: a[key] }
+       : { key, kind: 'changed', before: b[key], after: a[key] };
+@@ -175,7 +177,15 @@ export interface BatchSummary {
+ 
+ /** 逐条结果汇总（成功/失败项计数；跨分批合并口径） */
+ export function summarizeBatchResults(
+-  items: { status: 'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED' }[],
++  items: {
++    status:
++      | 'ALREADY_RESTORED'
++      | 'CONFLICT'
++      | 'FAIL'
++      | 'NOT_FOUND'
++      | 'OK'
++      | 'UNCHANGED';
++  }[],
+ ): BatchSummary {
+   const summary: BatchSummary = {
+     total: items.length,
+@@ -187,41 +197,45 @@ export function summarizeBatchResults(
+   };
+   for (const item of items) {
+     switch (item.status) {
+-    case 'FAIL': {
+-      summary.failed += 1;
+-    
+-    break;
+-    }
+-    case 'NOT_FOUND': {
+-      summary.notFound += 1;
+-    
+-    break;
+-    }
+-    case 'OK': {
+-      summary.ok += 1;
+-      summary.affected += 1;
+-    
+-    break;
+-    }
+-    case 'UNCHANGED': {
+-      summary.unchanged += 1;
+-    
+-    break;
+-    }
+-    // No default
++      case 'ALREADY_RESTORED':
++      case 'UNCHANGED': {
++        summary.unchanged += 1;
++
++        break;
++      }
++      case 'CONFLICT':
++      case 'FAIL': {
++        summary.failed += 1;
++
++        break;
++      }
++      case 'NOT_FOUND': {
++        summary.notFound += 1;
++
++        break;
++      }
++      case 'OK': {
++        summary.ok += 1;
++        summary.affected += 1;
++
++        break;
++      }
++      // No default
+     }
+   }
+   return summary;
+ }
+ 
+ export const BATCH_STATUS_LABEL: Record<
+-  'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED',
++  'ALREADY_RESTORED' | 'CONFLICT' | 'FAIL' | 'NOT_FOUND' | 'OK' | 'UNCHANGED',
+   string
+ > = {
+   OK: '成功',
+   UNCHANGED: '无变化',
+   FAIL: '失败',
+   NOT_FOUND: '不存在',
++  CONFLICT: '并发冲突（未写入）',
++  ALREADY_RESTORED: '已恢复（幂等跳过）',
+ };
+ 
+ // ===========================================================================
+@@ -257,7 +271,10 @@ export function parseProfileJson(text: string): {
+   try {
+     const value = JSON.parse(trimmed);
+     if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+-      return { ok: false, error: 'profile 必须是 JSON 对象（键值对），不支持数组或标量' };
++      return {
++        ok: false,
++        error: 'profile 必须是 JSON 对象（键值对），不支持数组或标量',
++      };
+     }
+     return { ok: true, value: value as Record<string, any> };
+   } catch (error) {
+diff --git a/frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts b/frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts
+index 7fa01347..dac6889a 100644
+--- a/frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts
++++ b/frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts
+@@ -39,6 +39,9 @@ const api = vi.hoisted(() => ({
+   getEngineeringTemplateLoopsApi: vi.fn(),
+   getEngineeringTemplateVersionsApi: vi.fn(),
+   getEngineeringTemplatesApi: vi.fn(),
++  getLoopBatchSnapshotsApi: vi.fn(),
++  getLoopBatchSnapshotApi: vi.fn(),
++  restoreLoopBatchSnapshotApi: vi.fn(),
+   previewConfigOverrideApi: vi.fn(),
+   publishConfigOverrideApi: vi.fn(),
+   publishEngineeringTemplateVersionApi: vi.fn(),
+@@ -84,7 +87,8 @@ vi.mock('#/api/plant-node', async () => {
+   const actual = await vi.importActual<any>('#/api/plant-node');
+   return {
+     ...actual,
+-    getPlantNodeTreeApi: (...a: any[]) => plantNodeApi.getPlantNodeTreeApi(...a),
++    getPlantNodeTreeApi: (...a: any[]) =>
++      plantNodeApi.getPlantNodeTreeApi(...a),
+   };
+ });
+ 
+@@ -94,8 +98,7 @@ vi.mock('@vben/common-ui', () => ({
+ 
+ vi.mock('#/components/clpm', () => ({
+   ClpmPageToolbar: {
+-    template:
+-      '<div class="toolbar-stub"><slot /><slot name="actions" /></div>',
++    template: '<div class="toolbar-stub"><slot /><slot name="actions" /></div>',
+   },
+   ClpmStandardActions: { template: '<div class="actions-stub" />' },
+ }));
+@@ -163,7 +166,14 @@ vi.mock('ant-design-vue', async () => {
+       template: '<span class="switch-stub" />',
+     },
+     Table: {
+-      props: ['columns', 'dataSource', 'loading', 'rowSelection', 'rowKey', 'pagination'],
++      props: [
++        'columns',
++        'dataSource',
++        'loading',
++        'rowSelection',
++        'rowKey',
++        'pagination',
++      ],
+       methods: {
+         selectAllRows(this: any) {
+           const key = typeof this.rowKey === 'string' ? this.rowKey : 'loopId';
+@@ -215,9 +225,14 @@ vi.mock('ant-design-vue', async () => {
+   };
+ });
+ 
++// oxlint-disable-next-line import/first
++import { Table } from 'ant-design-vue';
++
+ // oxlint-disable-next-line import/first -- Vitest mocks must be registered before these imports
+ import BatchApplyModal from '#/views/config/engineering-templates/batch-apply-modal.vue';
+ // oxlint-disable-next-line import/first
++import BatchRestoreModal from '#/views/config/engineering-templates/batch-restore-modal.vue';
++// oxlint-disable-next-line import/first
+ import IndexPage from '#/views/config/engineering-templates/index.vue';
+ // oxlint-disable-next-line import/first
+ import OverridePublishModal from '#/views/config/engineering-templates/override-publish-modal.vue';
+@@ -337,7 +352,12 @@ const DETAIL: EngineeringTemplateApi.TemplateDetail = {
+ function setAccount(roles: string[], codes: string[]) {
+   const userStore = useUserStore();
+   const accessStore = useAccessStore();
+-  userStore.setUserInfo({ realName: 'T', roles, userId: 'u-1', username: 't' } as any);
++  userStore.setUserInfo({
++    realName: 'T',
++    roles,
++    userId: 'u-1',
++    username: 't',
++  } as any);
+   accessStore.setAccessCodes(codes);
+ }
+ 
+@@ -666,6 +686,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
+         { field: 'engineering_template_id', before: null, after: 'tpl-1' },
+       ],
+       error: null,
++      beforeState: {
++        engineering_template_id: null,
++        engineering_template_version: null,
++      },
++      stateToken: 'token-1',
+     },
+     {
+       loopId: 'loop-2',
+@@ -673,6 +698,7 @@ describe('批量应用向导（batch-apply-modal）', () => {
+       status: 'FAIL',
+       changes: [],
+       error: 'OP 输出下限 90 与该回路既有上限 80 颠倒',
++      stateToken: 'token-2',
+     },
+   ];
+ 
+@@ -695,7 +721,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
+ 
+     expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
+       loopIds: ['loop-1', 'loop-2'],
+-      updates: { engineeringTemplateId: 'tpl-1' },
++      updates: {
++        engineeringTemplateId: 'tpl-1',
++        engineeringTemplateVersion: null,
++      },
++      operationId: expect.any(String),
+       dryRun: true,
+     });
+     // 失败项呈现：FAIL 徽标 + error 文本；汇总计数对得上
+@@ -704,7 +734,7 @@ describe('批量应用向导（batch-apply-modal）', () => {
+     expect(wrapper.find('[data-testid="batch-summary"]').text()).toContain(
+       '失败 1',
+     );
+-    expect(wrapper.text()).toContain('dry-run 预览（零写入）');
++    expect(wrapper.text()).toContain('操作前快照预览（零写入）');
+   });
+ 
+   it('确认执行：dryRun:false 调用 → done 汇总渲染 + applied 事件', async () => {
+@@ -721,10 +751,8 @@ describe('批量应用向导（batch-apply-modal）', () => {
+         action: 'update',
+         loopIds: ['loop-1'],
+         dryRun: false,
+-        results: [
+-          { ...DRY_RUN_RESULTS[0]! },
+-          { ...DRY_RUN_RESULTS[1]! },
+-        ],
++        snapshotId: 'snapshot-1',
++        results: [{ ...DRY_RUN_RESULTS[0]! }, { ...DRY_RUN_RESULTS[1]! }],
+       });
+     const wrapper = mountModal();
+     await flushPromises();
+@@ -737,7 +765,12 @@ describe('批量应用向导（batch-apply-modal）', () => {
+ 
+     expect(api.batchApplyLoopsApi).toHaveBeenLastCalledWith({
+       loopIds: ['loop-1', 'loop-2'],
+-      updates: { engineeringTemplateId: 'tpl-1' },
++      updates: {
++        engineeringTemplateId: 'tpl-1',
++        engineeringTemplateVersion: null,
++      },
++      operationId: expect.any(String),
++      expectedStateTokens: { 'loop-1': 'token-1', 'loop-2': 'token-2' },
+       dryRun: false,
+     });
+     expect(wrapper.find('[data-testid="batch-summary"]').text()).toContain(
+@@ -795,7 +828,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
+ 
+     expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
+       loopIds: ['loop-1', 'loop-2'],
+-      updates: { engineeringTemplateId: 'tpl-1' },
++      updates: {
++        engineeringTemplateId: 'tpl-1',
++        engineeringTemplateVersion: null,
++      },
++      operationId: expect.any(String),
+       dryRun: true,
+     });
+   });
+@@ -869,7 +906,11 @@ describe('批量应用向导（batch-apply-modal）', () => {
+ 
+     expect(api.batchApplyLoopsApi).toHaveBeenCalledWith({
+       loopIds: ['loop-1', 'loop-2', 'loop-3'],
+-      updates: { engineeringTemplateId: 'tpl-1' },
++      updates: {
++        engineeringTemplateId: 'tpl-1',
++        engineeringTemplateVersion: null,
++      },
++      operationId: expect.any(String),
+       dryRun: true,
+     });
+   });
+@@ -884,6 +925,284 @@ describe('批量应用向导（batch-apply-modal）', () => {
+     // 旧断头指引（回路配置页批量表单不支持模板字段）不得再出现
+     expect(note.text()).not.toContain('回路配置页');
+   });
++
++  it('1000 条跨页选择的预览和执行均分 5 批，丢响应后沿原 operationId 幂等重试', async () => {
++    loopApi.getLoopListApi.mockImplementation(async ({ page }: any) => ({
++      items: Array.from({ length: 50 }, (_, i) =>
++        makeLoopListItem(
++          `loop-${(page - 1) * 50 + i}`,
++          `FIC-${(page - 1) * 50 + i}`,
++        ),
++      ),
++      total: 1000,
++      page,
++      pageSize: 50,
++    }));
++    const written = new Map<string, any>();
++    let lostResponse = false;
++    api.batchApplyLoopsApi.mockImplementation(
++      async (request: EngineeringTemplateApi.LoopBatchRunParams) => {
++        const result = {
++          affected: request.loopIds.length,
++          action: 'update',
++          dryRun: request.dryRun,
++          snapshotId: request.dryRun ? null : request.operationId,
++          results: request.loopIds.map((loopId) => ({
++            loopId,
++            tagName: loopId,
++            status: 'OK',
++            changes: [],
++            error: null,
++            stateToken: `token-${loopId}`,
++            beforeState: {
++              engineering_template_id: null,
++              engineering_template_version: null,
++            },
++          })),
++        };
++        if (!request.dryRun) {
++          if (written.has(request.operationId!))
++            return written.get(request.operationId!);
++          written.set(request.operationId!, result);
++          if (written.size === 2 && !lostResponse) {
++            lostResponse = true;
++            throw new Error('transport response lost');
++          }
++        }
++        return result;
++      },
++    );
++    const wrapper = mountModal();
++    await flushPromises();
++    for (let page = 1; page <= 20; page++) {
++      if (page > 1) {
++        const pagination = wrapper.findComponent(Table).props('pagination');
++        if (pagination && pagination.onChange) pagination.onChange(page, 50);
++        await flushPromises();
++      }
++      await wrapper.find('.select-all-stub').trigger('click');
++    }
++    await wrapper.find('[data-testid="btn-dry-run"]').trigger('click');
++    await flushPromises();
++    const previews = api.batchApplyLoopsApi.mock.calls.map(
++      ([request]) => request,
++    );
++    expect(previews).toHaveLength(5);
++    expect(previews.map((request) => request.loopIds.length)).toEqual([
++      200, 200, 200, 200, 200,
++    ]);
++    expect(wrapper.find('[data-testid="batch-summary"]').text()).toContain(
++      '共 1000 条',
++    );
++    expect(wrapper.text()).toContain('操作前完整工程属性');
++    await wrapper.find('[data-testid="btn-confirm-execute"]').trigger('click');
++    await flushPromises();
++    expect(wrapper.text()).toContain('transport response lost');
++    await wrapper.find('[data-testid="btn-retry-execute"]').trigger('click');
++    await flushPromises();
++    expect(written.size).toBe(5);
++    expect(new Set(written.keys())).toEqual(
++      new Set(previews.map((request) => request.operationId)),
++    );
++    expect(wrapper.find('[data-testid="btn-review-restore"]').text()).toContain(
++      '5 批',
++    );
++    expect(wrapper.emitted('applied')).toHaveLength(1);
++    wrapper.unmount();
++  });
++
++  it('缺少逐回路结果时拒绝进入确认，避免静默截断', async () => {
++    api.batchApplyLoopsApi.mockResolvedValue({
++      results: [],
++      affected: 0,
++      dryRun: true,
++    });
++    const wrapper = mountModal();
++    await flushPromises();
++    await wrapper.find('.select-all-stub').trigger('click');
++    await wrapper.find('[data-testid="btn-dry-run"]').trigger('click');
++    await flushPromises();
++    expect(wrapper.text()).toContain('批次结果不完整');
++    expect(wrapper.find('[data-testid="btn-confirm-execute"]').exists()).toBe(
++      false,
++    );
++  });
++});
++
++describe('批量维护快照恢复（F04）', () => {
++  beforeEach(() => {
++    setActivePinia(createPinia());
++    for (const fn of Object.values(api)) fn.mockReset();
++    api.getLoopBatchSnapshotsApi.mockResolvedValue({ items: [], total: 0 });
++  });
++
++  it('5 批共1000条原始NULL/pin可审查，零写入预检后确认分批恢复并呈现冲突/幂等状态', async () => {
++    const snapshotIds = Array.from({ length: 5 }, (_, i) => `snapshot-${i}`);
++    api.getLoopBatchSnapshotApi.mockImplementation(
++      async (snapshotId: string, offset: number, limit: number) => ({
++        snapshotId,
++        offset,
++        limit,
++        total: 200,
++        items: Array.from(
++          { length: Math.min(limit, 200 - offset) },
++          (_, i) => ({
++            loopId: `${snapshotId}-loop-${offset + i}`,
++            tagName: `FIC-${offset + i}`,
++            before: {
++              engineering_template_id: i % 2 ? 'old-template' : null,
++              engineering_template_version: i % 2 ? 2 : null,
++            },
++            after: {
++              engineering_template_id: 'new-template',
++              engineering_template_version: null,
++            },
++            afterToken: `token-${i}`,
++          }),
++        ),
++      }),
++    );
++    api.restoreLoopBatchSnapshotApi.mockImplementation(
++      async (snapshotId: string, request: any) => ({
++        snapshotId,
++        affected: 198,
++        dryRun: request.dryRun,
++        results: request.loopIds.map((loopId: string, index: number) => ({
++          loopId,
++          tagName: loopId,
++          status: ['CONFLICT', 'ALREADY_RESTORED'][index] ?? 'OK',
++          changes: [],
++          error: index === 0 ? '原动作后已被编辑，保留当前值' : null,
++        })),
++      }),
++    );
++    const wrapper = mount(BatchRestoreModal, {
++      props: { open: true, snapshotIds },
++    });
++    await flushPromises();
++    expect(api.getLoopBatchSnapshotApi).toHaveBeenCalledTimes(5);
++    expect(
++      wrapper.find('[data-testid="restore-denominator"]').text(),
++    ).toContain('完整快照 1000 条 / 5 个恢复批次');
++    expect(wrapper.text()).toContain('"engineering_template_version": 2');
++    expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalled();
++    expect(
++      wrapper
++        .find('[data-testid="btn-confirm-restore"]')
++        .attributes('disabled'),
++    ).toBeDefined();
++    await wrapper
++      .find('[data-testid="restore-reason"]')
++      .setValue('回到维护前状态');
++    await wrapper.find('[data-testid="btn-preview-restore"]').trigger('click');
++    await flushPromises();
++    expect(
++      api.restoreLoopBatchSnapshotApi.mock.calls.every(
++        ([, request]) => request.dryRun,
++      ),
++    ).toBe(true);
++    await wrapper.find('[data-testid="btn-confirm-restore"]').trigger('click');
++    await flushPromises();
++    expect(
++      api.restoreLoopBatchSnapshotApi.mock.calls.filter(
++        ([, request]) => !request.dryRun,
++      ),
++    ).toHaveLength(5);
++    expect(wrapper.find('[data-testid="restore-summary"]').text()).toContain(
++      '结果 1000 条',
++    );
++    expect(wrapper.text()).toContain('并发冲突（未写入）');
++    expect(wrapper.text()).toContain('已恢复（幂等跳过）');
++    expect(wrapper.emitted('restored')).toHaveLength(1);
++    wrapper.unmount();
++  });
++
++  it('快照分页若提前为空，阻止恢复而不把局部数据冒充完整快照', async () => {
++    api.getLoopBatchSnapshotApi.mockResolvedValue({
++      items: [],
++      total: 1000,
++      offset: 0,
++      limit: 200,
++    });
++    const wrapper = mount(BatchRestoreModal, {
++      props: { open: true, snapshotIds: ['snapshot-1'] },
++    });
++    await flushPromises();
++    expect(wrapper.text()).toContain('快照分页提前为空');
++    expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalled();
++    expect(
++      wrapper
++        .find('[data-testid="btn-preview-restore"]')
++        .attributes('disabled'),
++    ).toBeDefined();
++  });
++});
++
++// ---------------------------------------------------------------------------
++// F04：历史选择不得沿用另一批已读取快照
++// ---------------------------------------------------------------------------
++
++it('读取A后改选B会清空原快照并禁止预检，重读后只预检B', async () => {
++  setActivePinia(createPinia());
++  for (const fn of Object.values(api)) fn.mockReset();
++  api.getLoopBatchSnapshotsApi.mockResolvedValue({ items: [], total: 0 });
++  api.getLoopBatchSnapshotApi.mockImplementation(
++    async (snapshotId: string) => ({
++      snapshotId,
++      total: 1,
++      items: [
++        {
++          loopId: `${snapshotId}-loop`,
++          tagName: snapshotId,
++          before: {},
++          after: {},
++        },
++      ],
++    }),
++  );
++  api.restoreLoopBatchSnapshotApi.mockImplementation(
++    async (snapshotId: string, request: any) => ({
++      snapshotId,
++      affected: 1,
++      dryRun: true,
++      results: request.loopIds.map((loopId: string) => ({
++        loopId,
++        status: 'OK',
++        changes: [],
++        error: null,
++      })),
++    }),
++  );
++  const wrapper = mount(BatchRestoreModal, {
++    props: { open: true, snapshotIds: ['snapshot-A'] },
++  });
++  await flushPromises();
++  wrapper.findComponent(Table).props('rowSelection')!.onChange!(
++    ['snapshot-B'],
++    [],
++  );
++  await flushPromises();
++  expect(wrapper.find('[data-testid="restore-denominator"]').text()).toContain(
++    '完整快照 0 条 / 0 个恢复批次',
++  );
++  await wrapper.find('[data-testid="restore-reason"]').setValue('核对改选');
++  expect(
++    wrapper.find('[data-testid="btn-preview-restore"]').attributes('disabled'),
++  ).toBeDefined();
++  expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalled();
++  await wrapper.find('[data-testid="btn-load-snapshots"]').trigger('click');
++  await flushPromises();
++  await wrapper.find('[data-testid="btn-preview-restore"]').trigger('click');
++  await flushPromises();
++  expect(api.restoreLoopBatchSnapshotApi).toHaveBeenCalledExactlyOnceWith(
++    'snapshot-B',
++    {
++      reason: '核对改选',
++      dryRun: true,
++      loopIds: ['snapshot-B-loop'],
++    },
++  );
++  wrapper.unmount();
+ });
+ 
+ // ---------------------------------------------------------------------------

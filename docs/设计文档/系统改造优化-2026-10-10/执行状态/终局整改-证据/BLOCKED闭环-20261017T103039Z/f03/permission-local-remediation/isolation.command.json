@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "e2e/scripts/test_critical_fixture.py",
+    "-v"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "envOverrides": {},
+  "startedAt": "2026-10-17T12:20:23.154176+00:00",
+  "rc": 0,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "f3aaeff92220d96167d00f10a8b50a6fad5cbe010bf477ab62dfedf468339d30"
+}

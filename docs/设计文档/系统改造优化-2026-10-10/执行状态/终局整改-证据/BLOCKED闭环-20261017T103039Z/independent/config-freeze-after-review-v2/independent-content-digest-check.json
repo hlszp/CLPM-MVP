@@ -1,0 +1,119 @@
+{
+  "checkedAt": "2026-10-17T14:01:25.295323+00:00",
+  "cases": [
+    {
+      "case": "mvcc-0-changed-0-api-1",
+      "status": "FROZEN",
+      "originalStatusUnchanged": true,
+      "configDigestUnchanged": true,
+      "sqlTranscriptUnchanged": true,
+      "phases": [
+        {
+          "phase": "before",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        },
+        {
+          "phase": "after",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        }
+      ]
+    },
+    {
+      "case": "mvcc-0-changed-0-api-2",
+      "status": "BLOCKED",
+      "originalStatusUnchanged": true,
+      "configDigestUnchanged": true,
+      "sqlTranscriptUnchanged": true,
+      "phases": [
+        {
+          "phase": "before",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        },
+        {
+          "phase": "after",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        }
+      ]
+    },
+    {
+      "case": "mvcc-0-changed-1-api-1",
+      "status": "BLOCKED",
+      "originalStatusUnchanged": true,
+      "configDigestUnchanged": true,
+      "sqlTranscriptUnchanged": true,
+      "phases": [
+        {
+          "phase": "before",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        },
+        {
+          "phase": "after",
+          "tables": 25,
+          "contentDigest": "8e9dd257ddac86c74de5900ae3dd68518dbda5b197090be963a33074416fe828"
+        }
+      ]
+    },
+    {
+      "case": "mvcc-1-changed-0-api-1",
+      "status": "FROZEN",
+      "originalStatusUnchanged": true,
+      "configDigestUnchanged": true,
+      "sqlTranscriptUnchanged": true,
+      "phases": [
+        {
+          "phase": "before",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        },
+        {
+          "phase": "after",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        }
+      ]
+    },
+    {
+      "case": "mvcc-1-changed-0-api-2",
+      "status": "BLOCKED",
+      "originalStatusUnchanged": true,
+      "configDigestUnchanged": true,
+      "sqlTranscriptUnchanged": true,
+      "phases": [
+        {
+          "phase": "before",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        },
+        {
+          "phase": "after",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        }
+      ]
+    },
+    {
+      "case": "mvcc-1-changed-1-api-1",
+      "status": "BLOCKED",
+      "originalStatusUnchanged": true,
+      "configDigestUnchanged": true,
+      "sqlTranscriptUnchanged": true,
+      "phases": [
+        {
+          "phase": "before",
+          "tables": 25,
+          "contentDigest": "9e0cebc3be6f4d15a327790c53ad71f8a169a7097a331151cc7f1dd623150107"
+        },
+        {
+          "phase": "after",
+          "tables": 25,
+          "contentDigest": "8e9dd257ddac86c74de5900ae3dd68518dbda5b197090be963a33074416fe828"
+        }
+      ]
+    }
+  ]
+}

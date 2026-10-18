@@ -1,0 +1,11 @@
+{
+  "observedAt": "2026-10-17T11:47:01.793381+00:00",
+  "oldEvidenceManifestSha256": "30dd2f59435031f4f556e9f89a3851e49421ab15282cdfa1427a444d7162aecc",
+  "oldEvidenceAll242Unchanged": true,
+  "before": {
+    "root-arx-list-extreme-probe.json": "65b8a3a51bcf36c646562abc96fe8783672ed93d9a68a8373d770065c542b0c2",
+    "tests-before.py": "18b3a3201bcb2ff8cc5705603028b9333176151b5e03ac6a3d115dd164b74b5e",
+    "legacy-arx.py": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0",
+    "first-vectorized-arx.py": "5645aa9c47dbe525f4b0112d00edbbc453c8d5ee49074a5c431bfc8b3a9abe85"
+  }
+}

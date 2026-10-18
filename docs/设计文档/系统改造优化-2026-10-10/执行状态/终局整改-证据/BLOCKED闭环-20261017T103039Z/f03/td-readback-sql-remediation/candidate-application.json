@@ -1,0 +1,13 @@
+{
+  "capturedAt": "2026-10-17T13:48:32.405465+00:00",
+  "baseHead": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+  "sourcePath": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py",
+  "sha256": "431e8df1763f0b847e8e8d2ef0d29d87f699b5310186091157eb4f7cf1b8becc",
+  "bytes": 28015,
+  "testSha256Unchanged": "55f507d8dd6bff5b48b45d8770dd5815c8f24a25bf92e80d0b87526356890110",
+  "changedTrackedFiles": [
+    "e2e/scripts/prepare-critical-fixture.py"
+  ],
+  "diffCommandRc": 0,
+  "diffSha256": "d68053058a35e8e684d73d97ebd8949c8ee8308aeba87412e8c662cd422d394c"
+}

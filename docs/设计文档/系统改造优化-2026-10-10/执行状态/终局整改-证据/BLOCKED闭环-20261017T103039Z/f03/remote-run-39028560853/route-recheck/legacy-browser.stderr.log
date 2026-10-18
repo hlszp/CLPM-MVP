@@ -1,0 +1,8 @@
+page.waitForURL: Timeout 350ms exceeded.
+=========================== logs ===========================
+waiting for navigation until "load"
+============================================================
+    at /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39028560853/route-recheck/verify-route.mjs:59:18 {
+  log: [],
+  name: 'TimeoutError'
+}

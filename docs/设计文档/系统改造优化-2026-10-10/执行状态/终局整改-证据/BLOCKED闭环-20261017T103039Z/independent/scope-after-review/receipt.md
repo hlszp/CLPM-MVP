@@ -1,0 +1,9 @@
+# Scope-after v2 非作者复验
+
+结论：冻结baseline身份前门与只读scope比较的局部工具 PASS，实际series末scope与全程稳定尚未执行。
+
+旧源1aa3809e…仅信任pg-canonical文件，缺它们与冻结manifest的绑定。独立原反例在own original-counter-fixture中保留FROZEN报告及原manifest，只将canonical节点开关替换为当前已变scope；旧源真的连接fakePG并报SCOPE_UNCHANGED，独立断言rc1。没有修改作者源或实际数据库。
+
+修后源 SHA461d509da2cdbae5b4663db5a65c39eb90bbba02be69befe77969b069c375e82，使用同一全部反例原件及原expected manifest SHA，连接PG前拒绝被换canonical，独立断言rc0。合法未变original阳性对照亦rc0。源前后SHA不变，format/lint rc0；完整command、stdout/stderr、fakePG结果与原始夹具在案。
+
+静态核强制外部--config-freeze-manifest-sha256、清单原字节SHA/重复路径、required3文件size/SHA，保已核原字节在内存后再connectPG；RR READ ONLY核实际原列，输出原manifest引用。实际参数必须从独立锁定finalprotocol取，不能采用待验目录自报的新manifest。末端相等只证明两时点持久化列相同，须再结合唯一Keeper无scope写记录、真实request/事件、20NODE完整链，不单凭相等自称全程稳定。

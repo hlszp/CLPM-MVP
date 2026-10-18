@@ -1,0 +1,37 @@
+{
+  "workflows": {
+    "ci.yml": {
+      "sha256": "a8176633f8470b326b99fd120148a0d48d0287c73266da833fffc182dec3eb04",
+      "triggers": {
+        "push": {
+          "branches": [
+            "main",
+            "develop"
+          ]
+        },
+        "pull_request": {
+          "branches": [
+            "main",
+            "develop"
+          ]
+        }
+      },
+      "permissions": {
+        "contents": "read"
+      }
+    }
+  },
+  "critical": {
+    "serviceConfigurationStep": 6,
+    "realLifespanStartupStep": 7,
+    "testMode": "0",
+    "services": [
+      "postgres",
+      "redis",
+      "tdengine"
+    ],
+    "workerLogsPreserved": true,
+    "criticalContinueOnError": false,
+    "productionDeploymentActions": []
+  }
+}

@@ -1,0 +1,1 @@
+import{dt as e}from"./vendor-icons-BCZTPUK2.js";import{t}from"./request-ktOI-m9r.js";var n=[`page`,`pageSize`],r=`/monitor`;function i(e){return t.get(`${r}/attention`,{params:e,timeout:3e4})}function a(i){let{page:a,pageSize:o}=i,s=e(i,n);return t.download(`${r}/attention/export`,{params:s,timeout:6e4})}export{i as n,a as t};

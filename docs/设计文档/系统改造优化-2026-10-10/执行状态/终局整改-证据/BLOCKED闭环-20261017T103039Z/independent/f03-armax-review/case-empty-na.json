@@ -1,0 +1,369 @@
+{
+  "oldSha256": "22cc3ddf0aee6339a91b4e54c02b2a9d907273dc585bfa31debc6227224dc11b",
+  "newSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
+  "arxDependencySha256": "2fdf77affb47d8edfb451e6445c5d8e2e818cfd450afc5204321cff923a9e011",
+  "cases": [
+    {
+      "case": "empty-na",
+      "parameters": {
+        "d": 1,
+        "na": 0,
+        "nb": 2,
+        "nc": 2,
+        "max_iter": 4
+      },
+      "old": {
+        "value": {
+          "a_coeffs": [],
+          "b_coeffs": [
+            0.08816767738310528,
+            0.23650160423007782
+          ],
+          "c_coeffs": [
+            -0.1247383418333458,
+            0.05337091379376057
+          ],
+          "d": 1,
+          "residual_var": 1.0321871059183558,
+          "n_samples": 125,
+          "r_squared": 0.05356088821824345,
+          "iterations": 4
+        },
+        "warnings": [],
+        "leastSquares": [
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c4fdebd70df21271582fd0f82e76af0fbf34a615ff7b4f73cfb987a43842dbec"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "5a15cdfdcd08edd3e62b9d3ec2200c28be216a37693ba954b88849877dad30f0"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "53b5513f49e809266db4f1d3c8156793f9eea5d0f21877cd7826b3dafc5d3831"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "9ef0c336cb522e19b85104fd8d4ae1f4e74578a0e09436a5cfc619740ba21769"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "78bc150b01af597cb26599f749517217734c9335f2901922e038ecb04c0c7e76"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7eef89c248c7e095ff9f0f1ea9ab7c30615bdd56a3bfa7d1ee4d2a8c2798d186"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "d2cbaa08b05814a0959f133a875950a935c0f93b794f0b009d28227c5101541a"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "9e0e8edb94e1c43daddb543b09b447eb8495a2a7d5e342da59abc5636173ee51"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "87c7e3bbb8d63af6c02d06b8b867cd31b13060bf043782ba19a249caddb36c13"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "e7d9e1b23671c0aa7252d4dee488e957b880fd572b6d3b5655c131e065d9a70c"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7ddc99f255eeb37e1d8f120ecbd7600489f3516b1b8a1706290fb55518ae7140"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "efeee4d97c6ba8baf69a6a90ea1c77f3cfb974388566a4c94c4457131e1c6365"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "62620126df6d14aaeb0ae62813cfe941fb914d8d599e528c3a44ad5a9f44aa57"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          }
+        ]
+      },
+      "new": {
+        "value": {
+          "a_coeffs": [],
+          "b_coeffs": [
+            0.08816767738310528,
+            0.23650160423007782
+          ],
+          "c_coeffs": [
+            -0.1247383418333458,
+            0.05337091379376057
+          ],
+          "d": 1,
+          "residual_var": 1.0321871059183558,
+          "n_samples": 125,
+          "r_squared": 0.05356088821824345,
+          "iterations": 4
+        },
+        "warnings": [],
+        "leastSquares": [
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c4fdebd70df21271582fd0f82e76af0fbf34a615ff7b4f73cfb987a43842dbec"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "5a15cdfdcd08edd3e62b9d3ec2200c28be216a37693ba954b88849877dad30f0"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "53b5513f49e809266db4f1d3c8156793f9eea5d0f21877cd7826b3dafc5d3831"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "9ef0c336cb522e19b85104fd8d4ae1f4e74578a0e09436a5cfc619740ba21769"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "78bc150b01af597cb26599f749517217734c9335f2901922e038ecb04c0c7e76"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7eef89c248c7e095ff9f0f1ea9ab7c30615bdd56a3bfa7d1ee4d2a8c2798d186"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "d2cbaa08b05814a0959f133a875950a935c0f93b794f0b009d28227c5101541a"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "9e0e8edb94e1c43daddb543b09b447eb8495a2a7d5e342da59abc5636173ee51"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "87c7e3bbb8d63af6c02d06b8b867cd31b13060bf043782ba19a249caddb36c13"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "e7d9e1b23671c0aa7252d4dee488e957b880fd572b6d3b5655c131e065d9a70c"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                2
+              ],
+              "dtype": "float64",
+              "bytesSha256": "7ddc99f255eeb37e1d8f120ecbd7600489f3516b1b8a1706290fb55518ae7140"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "efeee4d97c6ba8baf69a6a90ea1c77f3cfb974388566a4c94c4457131e1c6365"
+            }
+          },
+          {
+            "matrix": {
+              "shape": [
+                125,
+                4
+              ],
+              "dtype": "float64",
+              "bytesSha256": "62620126df6d14aaeb0ae62813cfe941fb914d8d599e528c3a44ad5a9f44aa57"
+            },
+            "target": {
+              "shape": [
+                125
+              ],
+              "dtype": "float64",
+              "bytesSha256": "c0040a0c4395a97561b8dfc2e8a4065e22193ddd71523f76887252da5d5c876d"
+            }
+          }
+        ]
+      },
+      "exact": true
+    }
+  ],
+  "passed": 1,
+  "failed": 0,
+  "scope": "Exact boundary and least-squares input comparison; not the original 22 full integration cases or critical business KPI oracle"
+}

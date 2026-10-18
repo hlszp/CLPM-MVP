@@ -1,0 +1,26 @@
+{
+  "frozenAtUtc": "2026-10-17T14:46:30.827749+00:00",
+  "files": [
+    {
+      "path": "prepare_bindings.py",
+      "bytes": 21752,
+      "sha256": "e70bbe5ee5a4022a4c1c4e027bedbc2fee1693991e857b618030c25e238bb3f3"
+    },
+    {
+      "path": "test_prepare_bindings.py",
+      "bytes": 10372,
+      "sha256": "186affc72fa60a0b83188a86c4c3e9f2668e12ff9c7eb393d9bf210f5800a1dd"
+    },
+    {
+      "path": "offline-plan/plan.json",
+      "bytes": 10997,
+      "sha256": "bb0a2d9f2b787d8e21ecd9baabe3410e15e58b4aa5bf499ba08337ecf3334e52"
+    },
+    {
+      "path": "offline-plan/reference.json",
+      "bytes": 9492998,
+      "sha256": "7f4f1bd130d8143806e73f3e3d02a8802477bab7ab0fccbb0cd5caa2a63bad2a"
+    }
+  ],
+  "boundary": "E-only author pure controls; no actual DB/Redis/TD connection, no product edits, no service operations"
+}

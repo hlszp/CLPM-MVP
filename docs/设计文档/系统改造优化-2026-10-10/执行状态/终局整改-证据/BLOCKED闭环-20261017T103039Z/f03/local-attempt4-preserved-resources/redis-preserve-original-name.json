@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "docker",
+    "rename",
+    "77939e08d878e969e33f46c9bdbf1210a15bfe7f584411bec3b5f795442b2649",
+    "clpm-f03-redis-20261017-local-attempt4"
+  ],
+  "startedAt": "2026-10-17T14:18:32.393687+00:00",
+  "finishedAt": "2026-10-17T14:18:32.463092+00:00",
+  "rc": 0,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

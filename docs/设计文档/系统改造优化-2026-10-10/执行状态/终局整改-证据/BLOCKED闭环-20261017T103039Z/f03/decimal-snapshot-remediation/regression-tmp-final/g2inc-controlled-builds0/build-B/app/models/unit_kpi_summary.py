@@ -1,0 +1,95 @@
+"""``unit_kpi_summary`` model — 装置级 KPI 汇总表.
+
+承载装置（plant_node 中 type=UNIT 的节点）级 KPI 汇总快照，按周期对装置下
+所有启用回路的 ``kpi_snapshot_hourly`` 进行加权聚合。
+
+**装置级汇总仅基于标准任务（kpi_snapshot_hourly），自定义任务
+（kpi_snapshot_custom）不参与聚合。**
+
+设计依据：DDS §2.17, 算法说明 §4.11, PRD §4.3.3
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from decimal import Decimal
+from uuid import uuid4
+
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    String,
+    UniqueConstraint,
+    func,
+)
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.models.base import Base
+
+
+class UnitKpiSummary(Base):
+    """Unit-level KPI summary (DDS §2.17).
+
+    装置级 KPI 汇总快照，按回路级别权重（一级=3, 二级=2, 三级=1）
+    加权平均聚合。INCONCLUSIVE 回路不参与聚合，单独统计。
+
+    设计依据：DDS §2.17, 算法说明 §4.11, PRD §4.3.3
+    """
+
+    __tablename__ = "unit_kpi_summary"
+
+    id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False), primary_key=True, default=lambda: str(uuid4())
+    )
+    node_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        ForeignKey("plant_node.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    snapshot_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    avg_score: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    auto_mode_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    effective_auto_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    stability_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    accuracy_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    fast_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    good_value_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    oscillation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    saturation_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    # Phase 1 新增：仪表故障率（AGGREGATABLE，参与装置级聚合）
+    instrument_fault_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
+    total_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    evaluated_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inconclusive_loops: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # v5.3 新增（对齐 DDS v4.1）：不参评回路数 + 聚合状态
+    excluded_loops: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="SUCCESS",
+        comment="聚合状态: SUCCESS=全部回路有效评分, "
+        "PARTIAL=部分回路 INCONCLUSIVE, EMPTY=无有效评分",
+    )
+    algorithm_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    created_at: Mapped[datetime | None] = mapped_column(
+        DateTime, server_default=func.timezone("UTC", func.now()), nullable=True
+    )
+
+    __table_args__ = (
+        UniqueConstraint("node_id", "snapshot_time", name="uq_unit_kpi_summary_node_time"),
+        CheckConstraint(
+            "status IN ('SUCCESS', 'PARTIAL', 'EMPTY')",
+            name="ck_unit_kpi_summary_status",
+        ),
+        Index("ix_unit_kpi_summary_node_time", "node_id", "snapshot_time"),
+        # P5-03（03 号文 §8）：数据源代数读取 max(snapshot_time)（每聚合请求
+        # 一次）与 precalc 60d 跨窗单查的时间范围过滤走本索引——反向索引
+        # 扫描取 max，避免全表聚合
+        Index("ix_unit_kpi_summary_snapshot_time", "snapshot_time"),
+        {"comment": "装置级KPI汇总表：仅基于标准任务（kpi_snapshot_hourly）聚合，自定义任务不参与"},
+    )

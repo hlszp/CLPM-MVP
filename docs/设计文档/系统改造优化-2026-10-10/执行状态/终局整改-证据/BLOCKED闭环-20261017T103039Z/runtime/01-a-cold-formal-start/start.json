@@ -1,0 +1,56 @@
+{
+  "label": "01-a-cold-formal-start",
+  "started_at": 1792273087.137844,
+  "api_pid": 80191,
+  "command": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-m",
+    "uvicorn",
+    "app.main:app",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "17101",
+    "--timeout-graceful-shutdown",
+    "15",
+    "--no-access-log"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend",
+  "candidate_sha": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e",
+  "backend_tree": "281f306b4201add82d1d87ece841f57c1f39ba7e",
+  "env_sha256": "27d6fc10cc68376b056d1c7803f1b6361e48c11bc3de46c4e8a46cc4b2abe04b",
+  "postgres_db": "clpm_capacity_20261017_s01",
+  "tdengine_db": "clpm_capacity_20261017_s01",
+  "redis_port": "17123",
+  "beat_paused_for_capacity": true,
+  "log": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/01-a-cold-formal-start/api.log",
+  "controlledRuntimeEnvironment": {
+    "CLPM_TEST_MODE": "0",
+    "CLPM_SKIP_EXIT_HOOKS": "0",
+    "CLPM_BUILD_CODE_SHA": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e",
+    "CLPM_G5_TRACE": "0",
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "beat_pid": 80254,
+  "beat_paused_at": 1792273090.487521,
+  "health": {
+    "status": "ok",
+    "version": "7.1.0"
+  },
+  "ready_at": 1792273090.489275,
+  "processes": [
+    "78475 78474 \u65e5 10\u6708/18 05:37:43 2026   SN   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -B run_capacity_series.py --protocol /Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/series-s01/protocol-12e821a8.json",
+    "80166 78475 \u65e5 10\u6708/18 05:38:06 2026   SN   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/start_capacity_api_formal_with_wait.py 01-a-cold-formal-start",
+    "80168 80166 \u65e5 10\u6708/18 05:38:07 2026   SN   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/start_capacity_api_formal.py 01-a-cold-formal-start",
+    "80191 80168 \u65e5 10\u6708/18 05:38:07 2026   SNs  /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 17101 --timeout-graceful-shutdown 15 --no-access-log",
+    "80254 80191 \u65e5 10\u6708/18 05:38:09 2026   TNs  /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule",
+    "80256 80191 \u65e5 10\u6708/18 05:38:09 2026   RNs  /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "80299 80256 \u65e5 10\u6708/18 05:38:10 2026   SN   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "80300 80256 \u65e5 10\u6708/18 05:38:10 2026   RN   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h",
+    "80301 80256 \u65e5 10\u6708/18 05:38:10 2026   RN   /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+  ]
+}

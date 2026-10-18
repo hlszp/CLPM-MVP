@@ -1,0 +1,58 @@
+FFFFF.F........
+=================================== FAILURES ===================================
+_____ test_before_after_originals_preserved_even_when_blocked[False-False] _____
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_____ test_before_after_originals_preserved_even_when_blocked[False-True] ______
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_____ test_before_after_originals_preserved_even_when_blocked[True-False] ______
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+______ test_before_after_originals_preserved_even_when_blocked[True-True] ______
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+_____________ test_after_originals_survive_api_revision_rejection ______________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+___________________ test_legacy_digest_and_sql_are_unchanged ___________________
+async def functions are not natively supported.
+You need to install a suitable plugin for your async framework, for example:
+  - anyio
+  - pytest-asyncio
+  - pytest-tornasync
+  - pytest-trio
+  - pytest-twisted
+=========================== short test summary info ============================
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[False-False]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[False-True]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[True-False]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_before_after_originals_preserved_even_when_blocked[True-True]
+FAILED ../test_freeze_configuration_after_snapshot.py::test_after_originals_survive_api_revision_rejection
+FAILED ../test_freeze_configuration_after_snapshot.py::test_legacy_digest_and_sql_are_unchanged
+6 failed, 9 passed in 1.14s

@@ -1,0 +1,33 @@
+--- candidate/node_performance.py
++++ isolated/remove-classifier.py
+@@ -2035,30 +2035,6 @@
+     }
+ 
+ 
+-def _classify_node_results(results: list) -> dict[str, int]:
+-    """节点聚合结果分类计数（G-c B1，2026-10-14 裁决 / 2026-10-16 修复）.
+-
+-    原逐分支内联计数（``isinstance(r, Exception)`` / None / else）对
+-    BaseException 系不命中 Exception 分支、直接落入 else 计为 success——
+-    取消节点"静默误收"（快照缺失但计数成功，failed 漏报）。现单列
+-    ``cancelled``（诚实化：取消≠成功也≠失败，快照缺失可观测）；
+-    CancelledError 之外的 BaseException（KeyboardInterrupt/SystemExit）
+-    为理论项一并落 cancelled（防御性兜底，与 B2 登记口径一致）。
+-    提取为纯函数便于取消注入回归（裁决书 §复现矩阵形态）。
+-    """
+-    counts = {"success": 0, "skipped": 0, "failed": 0, "cancelled": 0}
+-    for r in results:
+-        if isinstance(r, Exception):
+-            counts["failed"] += 1
+-            logger.warning("[批量节点聚合] 节点聚合失败: %s", r)
+-        elif isinstance(r, BaseException):
+-            counts["cancelled"] += 1
+-            logger.warning("[批量节点聚合] 节点聚合被取消/中断（快照未写入）: %r", r)
+-        elif r is None:
+-            counts["skipped"] += 1
+-        else:
+-            counts["success"] += 1
+-    return counts
+ 
+ 
+ async def batch_calculate_and_save_node_snapshots(

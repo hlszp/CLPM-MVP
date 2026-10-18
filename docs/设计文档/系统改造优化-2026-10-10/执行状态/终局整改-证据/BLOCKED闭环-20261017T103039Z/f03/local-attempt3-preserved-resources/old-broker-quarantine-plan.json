@@ -1,0 +1,22 @@
+{
+  "at": "2026-10-17T13:54:15.085179+00:00",
+  "actualBrokerSnapshot": {
+    "actualBroker": {
+      "host": "127.0.0.1",
+      "port": 17124,
+      "db": "/1",
+      "resultDb": "/2"
+    },
+    "redis": {
+      "role": "master",
+      "runId": "be11208b29f57657d53cf185936a276ac4d3bcf7",
+      "dbsize": 1,
+      "brokerLists": {},
+      "unacked": 0,
+      "unackedIndex": 0
+    }
+  },
+  "originalBrokerEmpty": true,
+  "treatment": "preserve complete RDB and stop/rename old container with pending messages; never purge or consume them",
+  "originalRunPassed": false
+}

@@ -1,0 +1,9 @@
+{
+  "argv": [
+    "node_modules/.bin/tsc",
+    "--noEmit"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "rc": 0,
+  "seconds": 0.6763809580000002
+}

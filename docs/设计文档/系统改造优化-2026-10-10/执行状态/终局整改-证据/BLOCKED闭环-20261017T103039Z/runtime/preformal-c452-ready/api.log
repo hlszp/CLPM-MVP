@@ -1,0 +1,37 @@
+INFO:     Started server process [87714]
+INFO:     Waiting for application startup.
+2026-10-17 20:12:28,308 | INFO     | app.main | Starting CLPM-MVP v7.1.0
+2026-10-17 20:12:28,308 | INFO     | app.main | 数据源: 计算=本地 TDengine（性能评估/诊断/整定），远端 API 仅历史数据导入任务调用
+2026-10-17 20:12:28,348 | INFO     | app.main | Celery Beat 调度进程已启动 (PID=87811)，定时任务将自动执行，日志: logs/celery-beat.log
+2026-10-17 20:12:28,383 | INFO     | app.main | Celery Worker 进程已启动 (PID=87813)，任务队列开始消费，日志: logs/celery-worker.log
+2026-10-17 20:12:28,406 | INFO     | app.main | 数据源配置已从 sys_config 预载（network_mode=lan, signalr_enabled=False, history_api_url=已配置, signalr_hub_url=已配置）
+2026-10-17 20:12:28,422 | INFO     | app.main | 模块启用状态已预载: assess, config, diagnosis, handling, monitor, reports, system, tuning
+2026-10-17 20:12:28,438 | INFO     | app.services.preprocessing.thresholds | 异常值检测阈值覆盖已更新: overridden_types=[]
+2026-10-17 20:12:28,438 | INFO     | app.services.preprocessing.thresholds | 异常值检测开关已更新: disabled=无（全部启用）
+2026-10-17 20:12:28,439 | INFO     | app.services.preprocessing.outlier_params | 异常值检测参数已预载: 无配置，使用算法默认
+2026-10-17 20:12:28,459 | INFO     | app.services.algorithm_config | 算法参数配置已预载: metrics=['accuracy_rate', 'effective_auto_rate', 'fast_rate', 'oscillation_rate', 'output_trip_index', 'saturation_rate', 'setpoint_crossing_count', 'settling_time', 'stability_rate'], table_overridden={}, metric_thresholds=[]
+2026-10-17 20:12:28,484 | INFO     | app.services.alert_rule_engine.service | 预制预警规则已补建 ALL 订阅 12 条
+2026-10-17 20:12:28,507 | INFO     | app.services.confidence_evaluator | [confidence-sync pid=87714] 阈值已重置为算法默认: {'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}
+2026-10-17 20:12:28,507 | INFO     | app.services.confidence_evaluator | [confidence-sync pid=87714] set_thresholds 完成: version 0→0, 当前阈值={'A': 0.95, 'B': 0.8, 'C': 0.6, 'D': 0.2}
+2026-10-17 20:12:28,507 | INFO     | app.services.confidence_evaluator | [confidence-sync pid=87714] 阈值预载：sys_config 无配置，使用算法默认值
+2026-10-17 20:12:28,510 | INFO     | app.services.confidence_evaluator | [confidence-sync pid=87714] 可信度阈值订阅守护线程已启动 (thread=confidence-threshold-subscriber)
+2026-10-17 20:12:28,511 | INFO     | app.services.confidence_evaluator | [confidence-sync pid=87714] 订阅线程已连接 Redis，监听频道: confidence:thresholds:updated
+2026-10-17 20:12:28,511 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=87714] 订阅线程收到非 message 类型: type=subscribe
+2026-10-17 20:12:28,526 | INFO     | app.services.algorithm_config | 算法参数运行时缓存已刷新: 36 个 (metric, control_type) 组合
+2026-10-17 20:12:28,527 | INFO     | app.services.config_publish | [config-publish pid=87714] 运行时缓存已同步至 revision=3
+2026-10-17 20:12:28,528 | INFO     | app.services.config_publish | [config-publish pid=87714] 配置 revision 订阅守护线程已启动 (thread=config-revision-subscriber)
+2026-10-17 20:12:28,529 | INFO     | app.services.data_source.realtime_subscriber | 实时数据订阅已禁用（SIGNALR_ENABLED=False）
+2026-10-17 20:12:28,530 | INFO     | app.services.config_publish | [config-publish pid=87714] 配置 revision 订阅线程已连接 Redis，频道: config:revision:updated
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:17101 (Press CTRL+C to quit)
+[aac26a09-494b-4b88-9749-c6078ea4cde0] 2026-10-17 20:13:39,499 | INFO     | app.services.authz_runtime | 授权矩阵缓存已重载: revision=26 roles=5
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+2026-10-17 20:16:03,073 | INFO     | app.main | Shutting down CLPM-MVP
+2026-10-17 20:16:03,073 | INFO     | app.main | 停止 Celery Worker 进程...
+2026-10-17 20:16:18,271 | INFO     | app.main | Celery Worker 已停止（进程组=87813，PID=87813）
+2026-10-17 20:16:18,271 | INFO     | app.main | 停止 Celery Beat 调度进程...
+2026-10-17 20:16:18,271 | INFO     | app.main | Celery Beat 已停止（进程组=-，PID=87811）
+2026-10-17 20:16:18,272 | INFO     | app.services.data_source.realtime_subscriber | 实时数据订阅已停止
+INFO:     Application shutdown complete.
+INFO:     Finished server process [87714]

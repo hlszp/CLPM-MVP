@@ -1,0 +1,11 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+│  ruff staged (skip) no files for inspection
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.05 seconds)
+[fix/final-audit-remediation 6c5c222e] feat(e2e): 保存远端输入原始证据
+ 3 files changed, 450 insertions(+)
+ create mode 100644 e2e/scripts/capture-critical-input-evidence.py
+ create mode 100644 e2e/scripts/critical-input-dataset-row.sql
+ create mode 100644 e2e/scripts/critical-input-policy.sql

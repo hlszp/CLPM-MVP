@@ -1,0 +1,52 @@
+{
+  "run": {
+    "id": 39037226096,
+    "event": "pull_request",
+    "head_sha": "f29b57338688ca9f9c0900f4c10338d3ad54cc2f",
+    "status": "completed",
+    "conclusion": "failure"
+  },
+  "jobs": [
+    {
+      "id": 117409399118,
+      "name": "Critical E2E Gate (blocking)",
+      "status": "completed",
+      "conclusion": "failure",
+      "currentOrFailedSteps": [
+        {
+          "name": "Prepare isolated synthetic inputs (no KPI result seeding)",
+          "status": "completed",
+          "conclusion": "failure"
+        }
+      ]
+    },
+    {
+      "id": 117409398990,
+      "name": "Frontend CI",
+      "status": "completed",
+      "conclusion": "success",
+      "currentOrFailedSteps": []
+    },
+    {
+      "id": 117409399162,
+      "name": "Backend CI",
+      "status": "completed",
+      "conclusion": "success",
+      "currentOrFailedSteps": []
+    }
+  ],
+  "downloaded": [
+    {
+      "job": "Backend CI",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037226096/job-logs/117409399162.log",
+      "checkoutShaFromGitLog": [
+        "adc74b7a365b480f234dd6e5a2df7ac5592335ef"
+      ]
+    }
+  ],
+  "pullRequest": {
+    "head": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+    "base": "86301e5e3083db0feb5f2d9db8fb9eacc8d3165d",
+    "mergeCommitSha": "820aba1aecc204578b34d7892b543a21369d650c"
+  }
+}

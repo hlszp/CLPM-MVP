@@ -1,0 +1,3 @@
+[fix/final-audit-remediation 7d6907c6] feat(batch): add snapshot restore client
+ 3 files changed, 443 insertions(+), 34 deletions(-)
+ create mode 100644 frontend/apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue

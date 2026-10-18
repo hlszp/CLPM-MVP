@@ -1,0 +1,35 @@
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/web-antd/src/__tests__/f04-independent-selection-093240.test.ts > changing selected snapshot A to B must never preview stale A without rereading
+AssertionError: expected "vi.fn()" to not be called with arguments: [ 'snapshot-A', Anything ]
+
+Received:
+
+  1st vi.fn() call:
+
+  [
+    "snapshot-A",
+-   Anything,
++   {
++     "dryRun": true,
++     "loopIds": [
++       "snapshot-A-loop",
++     ],
++     "reason": "AUDIT-F04 selection isolation",
++   },
+  ]
+
+
+Number of calls: 1
+
+ ❯ apps/web-antd/src/__tests__/f04-independent-selection-093240.test.ts:40:47
+     38|   await flushPromises();
+     39|   console.log('AUDIT_F04_RESTORE_CALLS', JSON.stringify(api.restoreLoo…
+     40|   expect(api.restoreLoopBatchSnapshotApi).not.toHaveBeenCalledWith('sn…
+       |                                               ^
+     41|   wrapper.unmount();
+     42| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

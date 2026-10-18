@@ -1,0 +1,4 @@
+{"api_pid": 98666, "sha": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e"}
+OWN_BEAT_PAUSED 98728
+{"ready": true, "api_pid": 98666, "beat_pid": 98728, "candidate_sha": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e", "postgres_db": "clpm_capacity_20261017_s01"}
+WORKERS_READY clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro

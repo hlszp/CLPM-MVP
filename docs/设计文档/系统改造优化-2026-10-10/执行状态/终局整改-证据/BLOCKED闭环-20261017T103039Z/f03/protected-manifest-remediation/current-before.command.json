@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-c",
+    "from tests.refactor.protected_manifest import manifest_with_meta; import json; print(json.dumps(manifest_with_meta(), ensure_ascii=False, indent=2, sort_keys=True))"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAtOrRecordedAt": "2026-10-17T12:04:33.918230+00:00",
+  "exitCode": 0,
+  "stdoutSha256": "711325dabe6aa9e1e0f33d09808434694725c61e0ef57b3cf5fdf549f83543cd",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

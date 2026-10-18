@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "synthetic": true,
+  "inputOnly": true,
+  "environment": "disposable-local",
+  "executionLocation": "local-keeper",
+  "candidateSha": "9f356782ef4076dabb91a86f56e054e514e341ea",
+  "loopId": "9244a9dc-22ed-4e95-ac29-52d670659544",
+  "loopTagName": "CRITICAL-LOCAL-20261017215608-1-FLOW001",
+  "windowStart": "2026-10-17T12:00:00",
+  "windowEnd": "2026-10-17T13:00:00",
+  "syntheticBindingDeclaration": {
+    "artifact": "fixture.bindings.json",
+    "sha256": "7e1751d7188655107c6ec88aebdfd097c212976558dfb98c20beccfd9061ecc5",
+    "validFrom": "2026-10-17T12:00:00+00:00",
+    "validTo": null,
+    "basis": "SYNTHETIC_FIXTURE"
+  },
+  "tdReadbackArtifact": "fixture.td-readback.json",
+  "tdReadbackSha256": "012173fec1e79b6e4568bbc533c89dfb660457c248b307b098eac725fdc68dd4",
+  "generator": "generate_capacity_dataset.synth_series(seed=1,normal,steady,span=100)",
+  "inputs": {
+    "PV": {
+      "pointId": "89bdc756-f2d6-47bb-8605-4d4bcb496325",
+      "count": 3600,
+      "sha256": "b2944b3107ebed9800c87b8abfecbe183b2ec89a5c8704a06389b150d27de7ea"
+    },
+    "SP": {
+      "pointId": "2ab289f2-1daf-4841-8164-b8b722ae44fc",
+      "count": 3,
+      "sha256": "8801ac3c2afe2a541f833a6919c309a297dfe3c2a2c594b4292892ab4a49b70b"
+    },
+    "OP": {
+      "pointId": "34acd6fd-77ee-455b-af71-ce0181c5aa70",
+      "count": 3600,
+      "sha256": "5dbe2dd798b6539aa11cc35b4fb6511c07fd74cb4fa06f2b284b3dff85728c19"
+    },
+    "MODE": {
+      "pointId": "4978fcc5-4372-4c66-ac16-ec5db66441e9",
+      "count": 1,
+      "sha256": "83a1e3efa4561cb08b41220539a1e1e2fb9fe0a4040990f3026c1a116bb15c61"
+    },
+    "PID_P": {
+      "pointId": "7ccf8d01-beed-413b-bf2f-08ed2c6f08b9",
+      "count": 1,
+      "sha256": "c36ed1f03275a86b67a3323facf240174817cceaed0cff1058f3ce9a2839f2b0"
+    },
+    "PID_I": {
+      "pointId": "4fc6af1b-2b3d-4d2f-8950-32c60b948b52",
+      "count": 1,
+      "sha256": "eb6f3e8d55c180dc3a0014f688d209c80924897f5c4ebc2ecea541025444ffa5"
+    },
+    "PID_D": {
+      "pointId": "d8bcfff4-b3c1-4333-9e2d-62ffd1785828",
+      "count": 1,
+      "sha256": "14026c0173534f0bb012e1eaef07dff356151d0a0c3d1f8b152ce3cd0a5f5ff4"
+    }
+  },
+  "rawInputArtifact": "fixture.inputs.json",
+  "rawInputSha256": "203a9a4fa84513c07cad289ec344af630358c79c956ca728af289ce09acf1dc5"
+}

@@ -1,0 +1,1 @@
+var e=`Demos`,t={title:`Project`,about:`About`},n={title:e,vben:t};export{n as default,e as title,t as vben};

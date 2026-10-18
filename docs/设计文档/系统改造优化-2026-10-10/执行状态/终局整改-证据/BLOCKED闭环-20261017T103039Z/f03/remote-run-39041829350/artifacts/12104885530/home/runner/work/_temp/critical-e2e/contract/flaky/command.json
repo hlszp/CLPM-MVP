@@ -1,0 +1,11 @@
+{
+  "args": [
+    "/tmp/clpm-gate-contract-mYohWx/fixture/e2e/node_modules/.bin/playwright",
+    "test",
+    "--config=playwright.critical.config.ts",
+    "--retries=1",
+    "--reporter=json"
+  ],
+  "code": 0,
+  "signal": null
+}

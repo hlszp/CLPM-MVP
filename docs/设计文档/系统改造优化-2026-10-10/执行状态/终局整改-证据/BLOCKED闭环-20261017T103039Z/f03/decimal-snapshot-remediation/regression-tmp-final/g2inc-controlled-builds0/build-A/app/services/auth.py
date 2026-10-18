@@ -1,0 +1,597 @@
+"""Authentication business logic.
+
+Handles login, token refresh, logout, password change, and role-permission
+mapping. Uses Redis for login-failure counting, token blacklist, and
+user-token tracking.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from uuid import uuid4
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.exceptions import BizError
+from app.core.redis import redis_client
+from app.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_token,
+    get_token_remaining_ttl,
+    hash_password,
+    verify_password,
+    verify_refresh_token,
+)
+from app.models.audit import SysAuditLog
+from app.models.sys_user import SysUser
+from app.schemas.auth import AuthTokens
+
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+LOGIN_FAIL_MAX_ATTEMPTS = 5
+LOGIN_FAIL_WINDOW_MINUTES = 15
+
+# Redis key templates.
+KEY_LOGIN_FAIL = "login_fail:{username}"
+KEY_TOKEN_BLACKLIST = "token_blacklist:{jti}"
+KEY_USER_TOKENS = "user_tokens:{user_id}"
+KEY_TOKEN_PAIR = "token_pair:{access_jti}"
+# 刷新轮换幂等记录：refresh_rotated:{旧 refresh_jti} → 新 token 对（JSON）
+KEY_REFRESH_ROTATED = "refresh_rotated:{jti}"
+
+# 轮换幂等窗口：并发/多标签页用同一旧 refresh token 重复刷新时，
+# 窗口内返回同一新 token 对而非 401（2026-07-29 双刷新竞态修复）
+REFRESH_ROTATION_GRACE_SECONDS = 120
+
+# Blacklist TTL upper bound: the longest possible token lifetime
+# (remember-me refresh token = 30 days).
+MAX_BLACKLIST_TTL = 30 * 24 * 3600
+
+# ---------------------------------------------------------------------------
+# Role → permissions mapping (aligned with PRD §3 and IDS §5.4).
+# ---------------------------------------------------------------------------
+
+ROLE_PERMISSIONS: dict[str, list[str]] = {
+    "ADMIN": ["*"],
+    "IC_ENGINEER": [
+        "loop:*",
+        "metric:*",
+        "diagnosis:*",
+        "tuning:*",
+        "alert:*",
+        "handling:*",
+        "portal:view",
+    ],
+    "PE_ENGINEER": [
+        # WS-D 性能#7 R1：放开回路配置入口（create/edit/export），对齐后端 require_roles
+        # 不含 loop:delete（ADMIN 专属）、loop:import（IC_ENGINEER 专属）
+        "loop:view",
+        "loop:create",
+        "loop:edit",
+        "loop:export",
+        "metric:view",
+        "diagnosis:view",
+        "alert:view",
+        # 处置模块 Phase 1：流转操作角色含 PE_ENGINEER（08-处置模块设计方案 §7）
+        "handling:*",
+        "portal:view",
+        "tracker:*",
+        # P1-04/AUTH-02：PE 可 POST /tuning/identify/history（require_roles 白名单含
+        # PE_ENGINEER），但缺 tuning:view 导致任务状态轮询/详情/历史记录全部 403，
+        # 提交→轮询→结果/记录链断裂。tuning:view 仅覆盖只读 GET 端点，不扩写。
+        "tuning:view",
+    ],
+    "SPONSOR": [
+        "portal:view",
+        "metric:view",
+        "diagnosis:view",
+        "alert:view",
+        "handling:view",
+        # P1-04/AUTH-02：模块查看五角色（2026-10-11 裁决）——回路监视
+        # /monitor/loops（GET /loops 等）与整定三页（GET /tuning/*）前端路由
+        # authority 均含 SPONSOR，缺码则页面可进、数据必 403。两码均只读 GET。
+        "loop:view",
+        "tuning:view",
+    ],
+    "EXPERT": [
+        "portal:view",
+        "metric:view",
+        "diagnosis:view",
+        "alert:view",
+        "handling:view",
+        "tracker:review",
+        # 实现契约 §5：EXPERT 可查看整定相关页面（整定写端点本就对 EXPERT 开放）
+        "tuning:view",
+        # MW-P5-03：工作台 authority 含 EXPERT，左栏 /loops/monitor 需 loop:view 只读权限，
+        # 否则进入工作台时左栏列表 403 触发"无权限访问"toast（权限不一致 bug 修复）
+        "loop:view",
+    ],
+}
+
+# FP-P0-08：默认首页事实源统一——前端 store/auth.ts 的 ROLE_DEFAULT_HOME 为准。
+#
+# 2026-09-24 修正：此前注释声称"已对齐前端"，实际两张表并不一致
+# （前端 IC_ENGINEER/PE_ENGINEER/SPONSOR → /cockpit，后端却给 /dashboard、
+# /reports/overview）。前端 resolveHomePath 以自身映射优先，故用户可见行为
+# 一直取自前端；后端这张表只在 API 响应 defaultHome 与其它消费方生效，
+# 长期静默漂移。现按方案 11 号文 §3.1（驾驶舱默认落地）与前端表对齐。
+#
+# 2026-09-29 总览收敛：/dashboard 装置总览下线，ADMIN→/workbench 工作台。
+# 2026-09-30 用户口径：默认落地统一 /workbench 工作台（驾驶舱保留菜单首位可进入）。
+# 2026-10-14 P6-06（IAR-D1/D2 已采纳）：工程师（IC/PE/EXPERT）首页为我的工作
+# /my-work，管理员/观察者（ADMIN/SPONSOR）为驾驶舱 /cockpit；前端表同批对齐。
+ROLE_DEFAULT_HOME: dict[str, str] = {
+    "ADMIN": "/cockpit",
+    "IC_ENGINEER": "/my-work",
+    "PE_ENGINEER": "/my-work",
+    "SPONSOR": "/cockpit",
+    "EXPERT": "/my-work",
+}
+
+
+def get_permissions(role: str) -> list[str]:
+    """Return the permission list for a role."""
+    return ROLE_PERMISSIONS.get(role, [])
+
+
+def get_default_home(role: str) -> str:
+    """Return the default home path for a role."""
+    return ROLE_DEFAULT_HOME.get(role, "/cockpit")
+
+
+# ---------------------------------------------------------------------------
+# Redis helpers
+# ---------------------------------------------------------------------------
+
+
+async def _check_login_lock(username: str) -> int:
+    """Return current failure count. Raises BizError if locked."""
+    key = KEY_LOGIN_FAIL.format(username=username)
+    count_str = await redis_client.get(key)
+    count = int(count_str) if count_str else 0
+    if count >= LOGIN_FAIL_MAX_ATTEMPTS:
+        ttl = await redis_client.ttl(key)
+        raise BizError(
+            code="ERR_TOO_MANY_ATTEMPTS",
+            message=f"登录失败次数过多，请 {max(ttl, 0) // 60 + 1} 分钟后再试",
+            status_code=429,
+        )
+    return count
+
+
+async def _record_login_fail(username: str) -> int:
+    """Increment failure counter. Returns new count."""
+    key = KEY_LOGIN_FAIL.format(username=username)
+    count = await redis_client.incr(key)
+    if count == 1:
+        await redis_client.expire(key, LOGIN_FAIL_WINDOW_MINUTES * 60)
+    return count
+
+
+async def _clear_login_fails(username: str) -> None:
+    """Clear failure counter on successful login."""
+    key = KEY_LOGIN_FAIL.format(username=username)
+    await redis_client.delete(key)
+
+
+async def _is_token_blacklisted(jti: str) -> bool:
+    """Check if a token jti is in the blacklist."""
+    key = KEY_TOKEN_BLACKLIST.format(jti=jti)
+    return bool(await redis_client.exists(key))
+
+
+async def _blacklist_token(jti: str, ttl: int) -> None:
+    """Add a token jti to the blacklist with the given TTL (seconds)."""
+    key = KEY_TOKEN_BLACKLIST.format(jti=jti)
+    await redis_client.setex(key, ttl, "1")
+
+
+async def _track_user_token(user_id: str, jti: str, ttl: int) -> None:
+    """Track a jti under the user's token set (for batch revocation).
+
+    Each member is stored as ``"{jti}:{exp_epoch}"`` so batch revocation can
+    blacklist every token for exactly its remaining lifetime (remember-me
+    refresh tokens live 30 days, well beyond a plain 7-day blacklist TTL).
+    """
+    key = KEY_USER_TOKENS.format(user_id=user_id)
+    exp_epoch = int(datetime.now(UTC).timestamp()) + ttl
+    await redis_client.sadd(key, f"{jti}:{exp_epoch}")
+    await redis_client.expire(key, ttl)
+
+
+async def _track_token_pair(access_jti: str, refresh_jti: str, refresh_ttl: int) -> None:
+    """Record which refresh token was issued together with an access token.
+
+    The pair key expires together with the refresh token, so its remaining
+    TTL mirrors the refresh token's remaining lifetime — used by ``logout``
+    to blacklist the paired refresh token for exactly as long as needed.
+    """
+    key = KEY_TOKEN_PAIR.format(access_jti=access_jti)
+    await redis_client.setex(key, refresh_ttl, refresh_jti)
+
+
+async def _store_rotated_pair(old_refresh_jti: str, tokens: AuthTokens) -> None:
+    """Persist a refresh-rotation result for idempotent duplicate refreshes."""
+    import json
+
+    key = KEY_REFRESH_ROTATED.format(jti=old_refresh_jti)
+    payload = {
+        "accessToken": tokens.accessToken,
+        "refreshToken": tokens.refreshToken,
+        "accessJti": tokens.accessJti,
+        "refreshJti": tokens.refreshJti,
+        "expiresIn": tokens.expiresIn,
+    }
+    await redis_client.setex(key, REFRESH_ROTATION_GRACE_SECONDS, json.dumps(payload))
+
+
+async def _get_rotated_pair(old_refresh_jti: str) -> AuthTokens | None:
+    """Return the token pair produced by a recent rotation, if within grace."""
+    import json
+
+    key = KEY_REFRESH_ROTATED.format(jti=old_refresh_jti)
+    raw = await redis_client.get(key)
+    if not raw:
+        return None
+    data = json.loads(raw if isinstance(raw, str) else raw.decode())
+    return AuthTokens(**data)
+
+
+async def _revoke_all_user_tokens(user_id: str) -> None:
+    """Blacklist all tracked jtis for a user (used on password change).
+
+    Each blacklist entry lives for the token's actual remaining lifetime
+    (capped at 30 days) so a remember-me refresh token cannot resurrect
+    after a short fixed TTL expires.
+    """
+    key = KEY_USER_TOKENS.format(user_id=user_id)
+    members = await redis_client.smembers(key)
+    now = int(datetime.now(UTC).timestamp())
+    for member in members:
+        member_str = member if isinstance(member, str) else member.decode()
+        jti, sep, exp_str = member_str.rpartition(":")
+        if not sep or not exp_str.isdigit():
+            # Legacy member without expiry info — fall back to the max lifetime.
+            jti, ttl = member_str, MAX_BLACKLIST_TTL
+        else:
+            ttl = min(max(int(exp_str) - now, 1), MAX_BLACKLIST_TTL)
+        await _blacklist_token(jti, ttl)
+    await redis_client.delete(key)
+
+
+# ---------------------------------------------------------------------------
+# Core auth operations
+# ---------------------------------------------------------------------------
+
+
+async def authenticate(
+    db: AsyncSession,
+    username: str,
+    password: str,
+    remember_me: bool = False,
+    device_ip: str | None = None,
+) -> tuple[SysUser, AuthTokens]:
+    """Authenticate a user and return ``(user, tokens)``.
+
+    Raises ``BizError`` with appropriate error codes on failure.
+
+    Args:
+        device_ip: 客户端 IP 地址（用于 Refresh Token 设备绑定 S4-C2）
+    """
+    # Check lock before querying DB.
+    await _check_login_lock(username)
+
+    # Query user.
+    result = await db.execute(select(SysUser).where(SysUser.username == username))
+    user = result.scalar_one_or_none()
+
+    if user is None:
+        await _record_login_fail(username)
+        # 登录失败审计日志（S1-B8）
+        db.add(
+            SysAuditLog(
+                id=str(uuid4()),
+                operator=username,
+                operation_type="LOGIN_FAILED",
+                target_type="User",
+                target_id=None,
+                after_value="reason=user_not_found",
+                operated_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
+        await db.commit()
+        # 统一错误信息，防止用户名枚举攻击（S1-B6）
+        raise BizError(
+            code="ERR_INVALID_CREDENTIALS",
+            message="用户名或密码错误",
+            status_code=400,
+        )
+
+    # Verify password.
+    if not verify_password(password, user.password_hash):
+        await _record_login_fail(username)
+        # 登录失败审计日志（S1-B8）
+        db.add(
+            SysAuditLog(
+                id=str(uuid4()),
+                operator=username,
+                operation_type="LOGIN_FAILED",
+                target_type="User",
+                target_id=str(user.id),
+                after_value="reason=wrong_password",
+                operated_at=datetime.now(UTC).replace(tzinfo=None),
+            )
+        )
+        await db.commit()
+        raise BizError(
+            code="ERR_INVALID_CREDENTIALS",
+            message="用户名或密码错误",
+            status_code=400,
+        )
+
+    # Check if account is active.
+    if not user.is_active:
+        raise BizError(
+            code="ERR_ACCOUNT_DISABLED",
+            message="账户已禁用，请联系管理员",
+            status_code=403,
+        )
+
+    # Success — clear failure counter.
+    await _clear_login_fails(username)
+
+    # Issue tokens.
+    tokens = await _issue_tokens(user, remember_me, device_ip=device_ip)
+
+    # Update last_login_at (DB column is TIMESTAMP WITHOUT TIME ZONE).
+    await db.execute(
+        update(SysUser)
+        .where(SysUser.id == str(user.id))
+        .values(last_login_at=datetime.now(UTC).replace(tzinfo=None))
+    )
+    # 登录成功审计日志（S1-B8）
+    db.add(
+        SysAuditLog(
+            id=str(uuid4()),
+            operator=user.username,
+            operation_type="LOGIN",
+            target_type="User",
+            target_id=str(user.id),
+            after_value=f"role={user.role}",
+            operated_at=datetime.now(UTC).replace(tzinfo=None),
+        )
+    )
+    await db.commit()
+
+    return user, tokens
+
+
+async def _issue_tokens(
+    user: SysUser, remember_me: bool = False, device_ip: str | None = None
+) -> AuthTokens:
+    """Issue access + refresh tokens and track them in Redis.
+
+    Args:
+        device_ip: 客户端 IP 地址（绑定到 Refresh Token，S4-C2）
+    """
+    user_id = str(user.id)
+    access_token, access_jti, expires_in = create_access_token(
+        subject=user_id, username=user.username, role=user.role
+    )
+    refresh_token, refresh_jti, _ = create_refresh_token(
+        subject=user_id, remember_me=remember_me, device_ip=device_ip
+    )
+
+    # Track jtis for batch revocation.
+    refresh_ttl = 30 * 24 * 3600 if remember_me else 7 * 24 * 3600
+    await _track_user_token(user_id, access_jti, expires_in)
+    await _track_user_token(user_id, refresh_jti, refresh_ttl)
+    # Pair access → refresh so logout can revoke both (P1 token lifecycle).
+    await _track_token_pair(access_jti, refresh_jti, refresh_ttl)
+
+    return AuthTokens(
+        accessToken=access_token,
+        refreshToken=refresh_token,
+        accessJti=access_jti,
+        refreshJti=refresh_jti,
+        expiresIn=expires_in,
+    )
+
+
+async def refresh_tokens(
+    refresh_token_str: str,
+    device_ip: str | None = None,
+) -> AuthTokens:
+    """Validate a refresh token and issue a new token pair.
+
+    Raises ``BizError`` with ``ERR_TOKEN_EXPIRED`` or ``ERR_TOKEN_INVALID``.
+
+    Args:
+        device_ip: 当前请求的客户端 IP（用于设备绑定校验 S4-C2，
+            为 None 时跳过校验，向后兼容）
+    """
+    from app.core.security import JWTError
+
+    try:
+        payload = verify_refresh_token(refresh_token_str, device_ip=device_ip)
+    except JWTError as exc:
+        # pyjwt raises ExpiredSignatureError (subclass of PyJWTError) for expired.
+        err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
+        msg = (
+            "Refresh Token 已过期，请重新登录" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效"
+        )
+        raise BizError(
+            code=err_code,
+            message=msg,
+            status_code=401,
+        ) from exc
+    except ValueError:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 类型错误，非 Refresh Token",
+            status_code=401,
+        ) from None
+
+    jti = payload.get("jti", "")
+    if not jti:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 缺少 jti",
+            status_code=401,
+        )
+
+    if await _is_token_blacklisted(jti):
+        # 轮换竞态容忍：该 refresh token 已被吊销，但如果是刚才一次成功
+        # 刷新轮换掉的（多标签页/并行请求同时用同一旧 token 刷新），
+        # 窗口内返回同一份新 token 对而不是 401——否则第二个刷新请求会把
+        # 第一次刚签发的新 token 也误判失效，用户被强制登出。
+        rotated = await _get_rotated_pair(jti)
+        if rotated is not None:
+            return rotated
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 已被吊销",
+            status_code=401,
+        )
+
+    user_id = payload.get("sub", "")
+    if not user_id:
+        raise BizError(
+            code="ERR_TOKEN_INVALID",
+            message="Token 缺少用户信息",
+            status_code=401,
+        )
+
+    # We need the user's role/username for the new access token.
+    # Query the DB to get fresh user info.
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        result = await db.execute(select(SysUser).where(SysUser.id == user_id))
+        user = result.scalar_one_or_none()
+        if user is None:
+            raise BizError(
+                code="ERR_USER_NOT_FOUND",
+                message="用户不存在",
+                status_code=404,
+            )
+        if not user.is_active:
+            raise BizError(
+                code="ERR_ACCOUNT_DISABLED",
+                message="账户已禁用",
+                status_code=403,
+            )
+
+        # Blacklist old refresh token.
+        old_ttl = get_token_remaining_ttl(payload)
+        await _blacklist_token(jti, old_ttl)
+
+        # Issue new tokens（继承设备绑定）.
+        tokens = await _issue_tokens(user, remember_me=False, device_ip=device_ip)
+        # 记录轮换结果（幂等窗口内重复刷新返回同一对，见 KEY_REFRESH_ROTATED）
+        await _store_rotated_pair(jti, tokens)
+        return tokens
+
+
+async def logout(access_token_str: str) -> None:
+    """Blacklist the current access token and its paired refresh token.
+
+    The paired refresh token is located via the ``token_pair:{access_jti}``
+    key recorded at issuance; without this, a logged-out session could keep
+    minting new access tokens for up to 7/30 days.
+
+    Raises ``BizError`` if the token is invalid.
+    """
+    from app.core.security import JWTError
+
+    try:
+        payload = decode_token(access_token_str)
+    except JWTError as exc:
+        err_code = "ERR_TOKEN_EXPIRED" if "expired" in str(exc).lower() else "ERR_TOKEN_INVALID"
+        raise BizError(
+            code=err_code,
+            message="Token 已过期" if err_code == "ERR_TOKEN_EXPIRED" else "Token 无效",
+            status_code=401,
+        ) from exc
+
+    jti = payload.get("jti", "")
+    if not jti:
+        return
+
+    ttl = get_token_remaining_ttl(payload)
+    await _blacklist_token(jti, ttl)
+
+    # Revoke the refresh token issued together with this access token.
+    pair_key = KEY_TOKEN_PAIR.format(access_jti=jti)
+    refresh_jti = await redis_client.get(pair_key)
+    if refresh_jti:
+        refresh_jti_str = refresh_jti if isinstance(refresh_jti, str) else refresh_jti.decode()
+        # The pair key expires with the refresh token, so its remaining TTL
+        # mirrors the refresh token's remaining lifetime.
+        refresh_ttl = max(await redis_client.ttl(pair_key), 1)
+        await _blacklist_token(refresh_jti_str, refresh_ttl)
+        await redis_client.delete(pair_key)
+
+
+async def change_password(
+    db: AsyncSession,
+    user: SysUser,
+    old_password: str,
+    new_password: str,
+) -> None:
+    """Change the current user's password and revoke all existing tokens.
+
+    Raises ``BizError`` with ``ERR_INVALID_CREDENTIALS`` or ``ERR_PASSWORD_SAME``.
+    """
+    # Verify old password.
+    if not verify_password(old_password, user.password_hash):
+        raise BizError(
+            code="ERR_INVALID_CREDENTIALS",
+            message="当前密码错误",
+            status_code=400,
+        )
+
+    # Check new != old.
+    if old_password == new_password:
+        raise BizError(
+            code="ERR_PASSWORD_SAME",
+            message="新密码不能与旧密码相同",
+            status_code=400,
+        )
+
+    # Update password.
+    new_hash = hash_password(new_password)
+    user_id_str = str(user.id)
+    await db.execute(
+        update(SysUser).where(SysUser.id == user_id_str).values(password_hash=new_hash)
+    )
+    await db.commit()
+
+    # Revoke all existing tokens for this user.
+    await _revoke_all_user_tokens(user_id_str)
+
+
+async def is_token_blacklisted(jti: str) -> bool:
+    """Public accessor for the blacklist check (used by deps)."""
+    return await _is_token_blacklisted(jti)
+
+
+__all__ = [
+    "KEY_LOGIN_FAIL",
+    "KEY_TOKEN_BLACKLIST",
+    "KEY_USER_TOKENS",
+    "LOGIN_FAIL_MAX_ATTEMPTS",
+    "ROLE_DEFAULT_HOME",
+    "ROLE_PERMISSIONS",
+    "authenticate",
+    "change_password",
+    "get_default_home",
+    "get_permissions",
+    "is_token_blacklisted",
+    "logout",
+    "refresh_tokens",
+]

@@ -1,0 +1,5 @@
+{
+  "verdict": "BLOCKED",
+  "reason": "need one unambiguous stability_rate input block, got 0",
+  "businessOperations": false
+}

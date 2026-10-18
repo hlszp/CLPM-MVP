@@ -1,0 +1,13 @@
+{
+  "statement": "SELECT row_to_json(x)::text FROM (SELECT current_database() AS database_name, current_setting('transaction_read_only') AS read_only, current_setting('transaction_isolation') AS isolation, txid_current() AS txid, txid_current_snapshot()::text AS snapshot, clock_timestamp() AT TIME ZONE 'UTC' AS observed_utc) x",
+  "rawRow": "{\"database_name\":\"clpm_capacity_20261017_s01\",\"read_only\":\"on\",\"isolation\":\"repeatable read\",\"txid\":1051067,\"snapshot\":\"1051067:1051067:\",\"observed_utc\":\"2026-10-17T13:09:57.144094\"}",
+  "parsed": {
+    "database_name": "clpm_capacity_20261017_s01",
+    "read_only": "on",
+    "isolation": "repeatable read",
+    "txid": 1051067,
+    "snapshot": "1051067:1051067:",
+    "observed_utc": "2026-10-17T13:09:57.144094"
+  },
+  "guarantee": "one independent RR READ ONLY transaction per observation; before and after are distinct"
+}

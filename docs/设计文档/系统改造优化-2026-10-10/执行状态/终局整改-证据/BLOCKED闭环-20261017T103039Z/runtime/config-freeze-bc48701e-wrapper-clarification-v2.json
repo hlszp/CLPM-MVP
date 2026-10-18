@@ -1,0 +1,12 @@
+{
+  "recordedAtUtc": "2026-10-17T15:31:13.330341+00:00",
+  "originalScript": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/freeze_config_bc48701e_root.py",
+  "originalScriptSha256": "3a522d684fae34322067383e66c960aed36932440346c0f96721ec2445080783",
+  "originalActualExitCode": 1,
+  "originalExecChunk": "06c044",
+  "failure": "AssertionError: 0 at wrapper integer0 requirement; actual successful API code is string0",
+  "helperExecutedInOriginal": false,
+  "newScript": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/freeze_config_bc48701e_root_v2.py",
+  "newScriptSha256": "abdfe1d6c4fa4f0dd8def7c5b1b55f905361fbb12743eca309b7b4693b0f2fa8",
+  "delta": "Reuse protected original successful HTTP response; accept documented success code int0/string0; do not perform another login; new wrapper evidence directory; frozen actual config helper remains byte-identical"
+}

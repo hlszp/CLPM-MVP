@@ -1,0 +1,23 @@
+test_redis_outofmemoryerror_is_resource_failure (test_resource_gate_independent.ResourceGateCounterexamples.test_redis_outofmemoryerror_is_resource_failure) ... FAIL
+test_redis_oom_command_is_resource_failure (test_resource_gate_independent.ResourceGateCounterexamples.test_redis_oom_command_is_resource_failure) ... FAIL
+
+======================================================================
+FAIL: test_redis_outofmemoryerror_is_resource_failure (test_resource_gate_independent.ResourceGateCounterexamples.test_redis_outofmemoryerror_is_resource_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/keeper-ops-review-v5/test_resource_gate_independent.py", line 132, in test_redis_outofmemoryerror_is_resource_failure
+    self.assertNotEqual(self.validate()["status"], "LOCAL_CHECKS_PASS")
+AssertionError: 'LOCAL_CHECKS_PASS' == 'LOCAL_CHECKS_PASS'
+
+======================================================================
+FAIL: test_redis_oom_command_is_resource_failure (test_resource_gate_independent.ResourceGateCounterexamples.test_redis_oom_command_is_resource_failure)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/keeper-ops-review-v5/test_resource_gate_independent.py", line 138, in test_redis_oom_command_is_resource_failure
+    self.assertNotEqual(self.validate()["status"], "LOCAL_CHECKS_PASS")
+AssertionError: 'LOCAL_CHECKS_PASS' == 'LOCAL_CHECKS_PASS'
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.018s
+
+FAILED (failures=2)

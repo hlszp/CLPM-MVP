@@ -1,0 +1,1 @@
+{"Id":"4ec91098b6ce86a4a6edc34ffa7ef9dcad5e92ade6206db3df9d9ef7561aa3c0","Name":"/clpm-mvp-postgres","Image":"postgres:16","Ports":{"5432/tcp":[{"HostIp":"0.0.0.0","HostPort":"17102"},{"HostIp":"::","HostPort":"17102"}]}}

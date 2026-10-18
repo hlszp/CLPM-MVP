@@ -1,0 +1,24 @@
+{
+  "committed": false,
+  "persistedReadbackVerified": false,
+  "commitAttempted": false,
+  "allowedColumns": [
+    "valid_from",
+    "basis"
+  ],
+  "rows": 7000,
+  "database": "clpm_capacity_20261017_s01",
+  "tasksBefore": {
+    "taskKeys": [],
+    "brokerPendingOrUnacked": 0,
+    "celeryResultKeys": []
+  },
+  "backup": {
+    "pureTestOnly": true,
+    "bytes": 36
+  },
+  "error": {
+    "type": "ValueError",
+    "message": "actual private task/broker/result observation is not empty"
+  }
+}

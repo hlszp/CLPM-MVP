@@ -1,0 +1,43 @@
+{
+  "actualInputsUnmodified": true,
+  "controls": [
+    {
+      "rawCodes": [
+        "stability_rate"
+      ],
+      "matchCount": 1,
+      "admittedByExactlyOneGate": true
+    },
+    {
+      "rawCodes": [
+        "steady_rate"
+      ],
+      "matchCount": 1,
+      "admittedByExactlyOneGate": true
+    },
+    {
+      "rawCodes": [
+        "steady_rate",
+        "stability_rate"
+      ],
+      "matchCount": 2,
+      "admittedByExactlyOneGate": false
+    },
+    {
+      "rawCodes": [
+        "steady_rate",
+        "steady_rate"
+      ],
+      "matchCount": 2,
+      "admittedByExactlyOneGate": false
+    },
+    {
+      "rawCodes": [
+        "unknown"
+      ],
+      "matchCount": 0,
+      "admittedByExactlyOneGate": false
+    }
+  ],
+  "actualOutputsRead": false
+}

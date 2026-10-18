@@ -1,0 +1,33 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-c",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/pyproject.toml",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_calc_snapshot.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_api_tasks.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_kpi_calc.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_g5_data_acquisition_failure.py",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_p5_02_batch_io_budget.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly",
+  "startedAt": "2026-10-17T13:22:10.545504+00:00",
+  "elapsedSeconds": 6.819167833018582,
+  "rc": 0,
+  "stdoutSha256": "bb6f1e43bd61b73ae53b557fec8f1ba4f7d488e262a8116858dc61bed2f4cfaf",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "sourceSha256Before": {
+    "backend/app/api/v1/endpoints/tasks.py": "2f472afb8fe75722b35cd13200e894f1203b53f8db5585daebbf5c620f0c63dc",
+    "backend/app/services/calc_snapshot.py": "ed09e17551c299c2c257c1e4bfaee780f1a185f07e2026f4a20f29a0fd6df028",
+    "backend/app/tasks/kpi_calc.py": "116d5db6f073bc9ec352a6348b6eda943f5e385df3736874b5acb88097d58172",
+    "backend/tests/test_custom_evaluation_completion.py": "47b26fc4db93b05ba99a91bd7f077bf894e7abaff2467ae54419eebe6f48d445",
+    "backend/tests/test_g5_data_acquisition_failure.py": "2987328b1031641dd3e78112ff5ef344d65202ec2c3a204184c2b874ef7834f5",
+    "backend/tests/test_calc_snapshot.py": "d6fe4f4ae515c8bda08664b6d237449d74c232b8bdae3cecb5fadf2ca7a3a225"
+  },
+  "noBusinessDotEnv": true,
+  "CLPM_TEST_MODE": "1",
+  "CLPM_SKIP_EXIT_HOOKS": "1"
+}

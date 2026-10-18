@@ -1,0 +1,25 @@
+celery beat v5.6.3 (recovery) is starting.
+__    -    ... __   -        _
+LocalTime -> 2026-10-17 21:42:56
+Configuration ->
+    . broker -> redis://127.0.0.1:17124/1
+    . loader -> celery.loaders.app.AppLoader
+    . scheduler -> celery.beat.PersistentScheduler
+    . db -> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017213911-8a438372d213/runtime/clpm-remediation-20261017/backend/logs/celerybeat-schedule
+    . logfile -> [stderr]@%INFO
+    . maxinterval -> 5.00 minutes (300s)
+{"timestamp": "2026-10-17T13:42:56.795301+00:00", "level": "INFO", "logger": "celery.beat", "message": "beat: Starting..."}
+{"timestamp": "2026-10-17T13:42:56.891704+00:00", "level": "INFO", "logger": "app.tasks.beat_registry", "message": "beat_registry: 模块条件化完成，已启用模块=assess, config, diagnosis, handling, monitor, reports, system, tuning"}
+{"timestamp": "2026-10-17T13:42:56.911146+00:00", "level": "INFO", "logger": "app.tasks.kpi_calc", "message": "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = 60 分钟"}
+{"timestamp": "2026-10-17T13:42:56.911804+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[beat] 父进程看门狗已启动（监视 PID=70494）"}
+{"timestamp": "2026-10-17T13:42:56.914812+00:00", "level": "INFO", "logger": "app.tasks.kpi_calc", "message": "Beat reload listener 已启动，订阅频道=clpm:beat:reload"}
+{"timestamp": "2026-10-17T13:43:00.002836+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task alert-patrol (app.tasks.alert_patrol.run_alert_patrol)"}
+{"timestamp": "2026-10-17T13:43:00.015607+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task wb-cache-cleanup (app.tasks.workbench.wb_cache_cleanup)"}
+{"timestamp": "2026-10-17T13:44:00.000224+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task workbench-loop-latest (app.tasks.workbench.workbench_loop_latest_refresh)"}
+{"timestamp": "2026-10-17T13:44:00.008027+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task wb-cache-cleanup (app.tasks.workbench.wb_cache_cleanup)"}
+{"timestamp": "2026-10-17T13:44:00.016162+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task alert-patrol (app.tasks.alert_patrol.run_alert_patrol)"}
+{"timestamp": "2026-10-17T13:45:00.000108+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task workbench-precalc (app.tasks.workbench.workbench_precalc)"}
+{"timestamp": "2026-10-17T13:45:00.002425+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task lowfreq-anchor (app.tasks.lowfreq_anchor.run_lowfreq_anchor)"}
+{"timestamp": "2026-10-17T13:45:00.003259+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task import-task-sweep (app.tasks.data_link_monitor.sweep_import_tasks)"}
+{"timestamp": "2026-10-17T13:45:00.004274+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task alert-patrol (app.tasks.alert_patrol.run_alert_patrol)"}
+{"timestamp": "2026-10-17T13:45:00.004795+00:00", "level": "INFO", "logger": "celery.beat", "message": "Scheduler: Sending due task wb-cache-cleanup (app.tasks.workbench.wb_cache_cleanup)"}

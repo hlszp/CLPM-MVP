@@ -1,0 +1,15 @@
+celery beat v5.6.3 (recovery) is starting.
+__    -    ... __   -        _
+LocalTime -> 2026-10-17 21:59:28
+Configuration ->
+    . broker -> redis://127.0.0.1:17124/1
+    . loader -> celery.loaders.app.AppLoader
+    . scheduler -> celery.beat.PersistentScheduler
+    . db -> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40/runtime/clpm-remediation-20261017/backend/logs/celerybeat-schedule
+    . logfile -> [stderr]@%INFO
+    . maxinterval -> 5.00 minutes (300s)
+{"timestamp": "2026-10-17T13:59:28.590307+00:00", "level": "INFO", "logger": "celery.beat", "message": "beat: Starting..."}
+{"timestamp": "2026-10-17T13:59:28.675305+00:00", "level": "INFO", "logger": "app.tasks.beat_registry", "message": "beat_registry: 模块条件化完成，已启用模块=assess, config, diagnosis, handling, monitor, reports, system, tuning"}
+{"timestamp": "2026-10-17T13:59:28.693627+00:00", "level": "INFO", "logger": "app.tasks.kpi_calc", "message": "beat_schedule: EVAL_CALC_CYCLE 已应用，kpi-calc-hourly 周期 = 60 分钟"}
+{"timestamp": "2026-10-17T13:59:28.694336+00:00", "level": "INFO", "logger": "app.tasks.parent_watchdog", "message": "[beat] 父进程看门狗已启动（监视 PID=91036）"}
+{"timestamp": "2026-10-17T13:59:28.697099+00:00", "level": "INFO", "logger": "app.tasks.kpi_calc", "message": "Beat reload listener 已启动，订阅频道=clpm:beat:reload"}

@@ -1,0 +1,14 @@
+{
+  "command": [
+    "git",
+    "commit",
+    "-m",
+    "fix(ci): initialize runner paths at step scope",
+    "-m",
+    "Use RUNNER_TEMP through GITHUB_ENV so GitHub accepts the isolated critical E2E workflow. Preserve the rejected run as evidence."
+  ],
+  "exit_code": 0,
+  "head": "148dd21ac8450cd85d763f89a557adf68fd29fdb",
+  "stdout_sha256": "23db7807f398ae1dcf25bb0b7815b54b044f527243b39dff92e574240044e377",
+  "stderr_sha256": "c193d9d1ce0625a0d046b4bf52bb655841784832f1616e3b3bbf51595bba9edb"
+}

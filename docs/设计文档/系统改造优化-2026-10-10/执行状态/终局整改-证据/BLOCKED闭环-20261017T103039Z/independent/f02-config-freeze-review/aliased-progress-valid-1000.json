@@ -1,0 +1,167 @@
+{
+  "status": "ALL_INPUTS_PASS",
+  "passed": 20,
+  "required": 20,
+  "results": [
+    {
+      "batch": 1,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 2,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 3,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 4,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 5,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 6,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 7,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 8,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 9,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 10,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 11,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 12,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 13,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 14,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 15,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 16,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 17,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 18,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 19,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    },
+    {
+      "batch": 20,
+      "status": "PASS",
+      "rc": 0,
+      "existingOutput": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+      "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+      "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657"
+    }
+  ]
+}

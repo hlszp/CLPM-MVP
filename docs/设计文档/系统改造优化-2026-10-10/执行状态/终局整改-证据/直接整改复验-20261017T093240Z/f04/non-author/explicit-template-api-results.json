@@ -1,0 +1,670 @@
+{
+  "startedAt": "2026-10-17T10:09:29.345708+00:00",
+  "requests": [
+    {
+      "label": "login-owner",
+      "method": "POST",
+      "path": "/auth/login",
+      "request": {
+        "username": "AUDIT-F04-9a39acf-renamed",
+        "password": "REDACTED"
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "tokens": "REDACTED"
+      },
+      "responseSha256": "cce3cddc88be75fa35533d8a4b756d8b480236f819a1a4ce392400c05927200f"
+    },
+    {
+      "label": "seed-A-pin2-preview",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "6f225754-5937-4205-a0b0-a8bf99d41070",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": "03653f1d-de80-5217-a28b-cc5156eb1674",
+          "engineeringTemplateVersion": 2
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "244b9d121872f3d900855dc0712208840e6117118d5b32deaea6fd465d818189"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "批量操作预览（零写入）",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": true,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "1277e528-b1e1-5f07-a282-94af5ede159c",
+                  "after": "03653f1d-de80-5217-a28b-cc5156eb1674"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": null,
+                  "after": 2
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "1277e528-b1e1-5f07-a282-94af5ede159c",
+                "engineering_template_version": null
+              },
+              "stateToken": "244b9d121872f3d900855dc0712208840e6117118d5b32deaea6fd465d818189"
+            }
+          ],
+          "snapshotId": null,
+          "replayed": false
+        }
+      },
+      "responseSha256": "0b11e1fdfe0ebcb82934ec52a5dce35d1e83f19337f11f2d11f32116564116ef"
+    },
+    {
+      "label": "seed-A-pin2-execute",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "6f225754-5937-4205-a0b0-a8bf99d41070",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": "03653f1d-de80-5217-a28b-cc5156eb1674",
+          "engineeringTemplateVersion": 2
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "244b9d121872f3d900855dc0712208840e6117118d5b32deaea6fd465d818189"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "工程快照批次已记录",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": false,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "1277e528-b1e1-5f07-a282-94af5ede159c",
+                  "after": "03653f1d-de80-5217-a28b-cc5156eb1674"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": null,
+                  "after": 2
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "1277e528-b1e1-5f07-a282-94af5ede159c",
+                "engineering_template_version": null
+              },
+              "stateToken": "244b9d121872f3d900855dc0712208840e6117118d5b32deaea6fd465d818189"
+            }
+          ],
+          "snapshotId": "6f225754-5937-4205-a0b0-a8bf99d41070",
+          "replayed": false
+        }
+      },
+      "responseSha256": "1178f1470e0a4006c882baf05b3a8c5f16054c72213c38b1c26fb0d7b8c20188"
+    },
+    {
+      "label": "explicit-unlink-no-version-field-preview",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "114eeeaa-ab47-4a2b-8201-0eef953cdfaa",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": null
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "793aac4513e1a46563db89f66dbf4fe34c2664c68950f9f6d9b53115dd1baada"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "批量操作预览（零写入）",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": true,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                  "after": null
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": 2,
+                  "after": null
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                "engineering_template_version": 2
+              },
+              "stateToken": "793aac4513e1a46563db89f66dbf4fe34c2664c68950f9f6d9b53115dd1baada"
+            }
+          ],
+          "snapshotId": null,
+          "replayed": false
+        }
+      },
+      "responseSha256": "e471cc9f205082a760641d334faf65a1edc33212e951d559a5b0b604f0ab1b15"
+    },
+    {
+      "label": "explicit-unlink-no-version-field-execute",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "114eeeaa-ab47-4a2b-8201-0eef953cdfaa",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": null
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "793aac4513e1a46563db89f66dbf4fe34c2664c68950f9f6d9b53115dd1baada"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "工程快照批次已记录",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": false,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                  "after": null
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": 2,
+                  "after": null
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                "engineering_template_version": 2
+              },
+              "stateToken": "793aac4513e1a46563db89f66dbf4fe34c2664c68950f9f6d9b53115dd1baada"
+            }
+          ],
+          "snapshotId": "114eeeaa-ab47-4a2b-8201-0eef953cdfaa",
+          "replayed": false
+        }
+      },
+      "responseSha256": "2a0c92533e82403dc30dcbeee493145779d5d37b957aed515282577883c4cd1a"
+    },
+    {
+      "label": "restore-unlink-to-A-pin2",
+      "method": "POST",
+      "path": "/loops/batch-snapshots/114eeeaa-ab47-4a2b-8201-0eef953cdfaa/restore",
+      "request": {
+        "reason": "AUDIT-F04-9a39acf explicit pin check",
+        "dryRun": false
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "success",
+        "data": {
+          "snapshotId": "114eeeaa-ab47-4a2b-8201-0eef953cdfaa",
+          "affected": 1,
+          "dryRun": false,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": null,
+                  "after": "03653f1d-de80-5217-a28b-cc5156eb1674"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": null,
+                  "after": 2
+                }
+              ],
+              "error": null
+            }
+          ]
+        }
+      },
+      "responseSha256": "868cc3e8598978d646c7cae41f9b9d133a30e31b0fcac6c8dd0598665b59ab72"
+    },
+    {
+      "label": "switch-B-follow-no-version-field-preview",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "6bff42f4-13ef-45f7-b08b-6bcfbf144852",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": "1277e528-b1e1-5f07-a282-94af5ede159c"
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "f3a8f2cf7a8cffbfb5a84bdb4450bf701e8e59d7237e840fa0ad7fe213ee9719"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "批量操作预览（零写入）",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": true,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                  "after": "1277e528-b1e1-5f07-a282-94af5ede159c"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": 2,
+                  "after": null
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                "engineering_template_version": 2
+              },
+              "stateToken": "f3a8f2cf7a8cffbfb5a84bdb4450bf701e8e59d7237e840fa0ad7fe213ee9719"
+            }
+          ],
+          "snapshotId": null,
+          "replayed": false
+        }
+      },
+      "responseSha256": "ce9ef10236cec9e5e14cf77d0c2b077ea4ec2c542479d91f310a9e32c2523219"
+    },
+    {
+      "label": "switch-B-follow-no-version-field-execute",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "6bff42f4-13ef-45f7-b08b-6bcfbf144852",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": "1277e528-b1e1-5f07-a282-94af5ede159c"
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "f3a8f2cf7a8cffbfb5a84bdb4450bf701e8e59d7237e840fa0ad7fe213ee9719"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "工程快照批次已记录",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": false,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                  "after": "1277e528-b1e1-5f07-a282-94af5ede159c"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": 2,
+                  "after": null
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                "engineering_template_version": 2
+              },
+              "stateToken": "f3a8f2cf7a8cffbfb5a84bdb4450bf701e8e59d7237e840fa0ad7fe213ee9719"
+            }
+          ],
+          "snapshotId": "6bff42f4-13ef-45f7-b08b-6bcfbf144852",
+          "replayed": false
+        }
+      },
+      "responseSha256": "f0a759c3265c07717a085dc9ab2c47e2478b41f133eb63ce513f0db11321810b"
+    },
+    {
+      "label": "restore-follow-to-A-pin2",
+      "method": "POST",
+      "path": "/loops/batch-snapshots/6bff42f4-13ef-45f7-b08b-6bcfbf144852/restore",
+      "request": {
+        "reason": "AUDIT-F04-9a39acf explicit pin check",
+        "dryRun": false
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "success",
+        "data": {
+          "snapshotId": "6bff42f4-13ef-45f7-b08b-6bcfbf144852",
+          "affected": 1,
+          "dryRun": false,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "1277e528-b1e1-5f07-a282-94af5ede159c",
+                  "after": "03653f1d-de80-5217-a28b-cc5156eb1674"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": null,
+                  "after": 2
+                }
+              ],
+              "error": null
+            }
+          ]
+        }
+      },
+      "responseSha256": "0b095afd445833c5492639d77a2353db085a5fde40a0241bd2847d14a7b64b34"
+    },
+    {
+      "label": "restore-aux-fixture-original-B-follow-preview",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "af9c9ea5-38d4-440c-8b12-435bd3d5fdfd",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": "1277e528-b1e1-5f07-a282-94af5ede159c"
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "0a69c8f703492009b589a6250210170269efaba6c20538eefb8f8c8d87812f72"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "批量操作预览（零写入）",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": true,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                  "after": "1277e528-b1e1-5f07-a282-94af5ede159c"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": 2,
+                  "after": null
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                "engineering_template_version": 2
+              },
+              "stateToken": "0a69c8f703492009b589a6250210170269efaba6c20538eefb8f8c8d87812f72"
+            }
+          ],
+          "snapshotId": null,
+          "replayed": false
+        }
+      },
+      "responseSha256": "aa0390924855ec4cd4dd919275243b4e1abab0fde63b5d2bebf6c77640f2f220"
+    },
+    {
+      "label": "restore-aux-fixture-original-B-follow-execute",
+      "method": "POST",
+      "path": "/loops/batch-config",
+      "request": {
+        "operationId": "af9c9ea5-38d4-440c-8b12-435bd3d5fdfd",
+        "loopIds": [
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+        ],
+        "updates": {
+          "engineeringTemplateId": "1277e528-b1e1-5f07-a282-94af5ede159c"
+        },
+        "dryRun": false,
+        "expectedStateTokens": {
+          "39423b46-9289-5b6d-a2be-5bd36d0a50bc": "0a69c8f703492009b589a6250210170269efaba6c20538eefb8f8c8d87812f72"
+        }
+      },
+      "status": 200,
+      "response": {
+        "code": "0",
+        "message": "工程快照批次已记录",
+        "data": {
+          "affected": 1,
+          "action": "update",
+          "loopIds": [
+            "39423b46-9289-5b6d-a2be-5bd36d0a50bc"
+          ],
+          "skipped": null,
+          "dryRun": false,
+          "results": [
+            {
+              "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+              "tagName": "AUDIT-F04-9a39acf-LOOP-1007",
+              "status": "OK",
+              "changes": [
+                {
+                  "field": "engineering_template_id",
+                  "before": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                  "after": "1277e528-b1e1-5f07-a282-94af5ede159c"
+                },
+                {
+                  "field": "engineering_template_version",
+                  "before": 2,
+                  "after": null
+                }
+              ],
+              "error": null,
+              "beforeState": {
+                "control_action_direction": "UNKNOWN",
+                "op_output_lower_limit": 8.0,
+                "op_output_upper_limit": 95.0,
+                "dcs_model_id": "5c4a8005-ebe4-5c07-930c-bfdec2f4f1d2",
+                "engineering_template_id": "03653f1d-de80-5217-a28b-cc5156eb1674",
+                "engineering_template_version": 2
+              },
+              "stateToken": "0a69c8f703492009b589a6250210170269efaba6c20538eefb8f8c8d87812f72"
+            }
+          ],
+          "snapshotId": "af9c9ea5-38d4-440c-8b12-435bd3d5fdfd",
+          "replayed": false
+        }
+      },
+      "responseSha256": "d480f08f19609fed6f160ed7f28f44cd662334e3ee640cec4a8eb6fadbb7e10b"
+    }
+  ],
+  "checks": [
+    {
+      "name": "seed_is_actual_A_pin2",
+      "passed": true,
+      "evidence": {
+        "template": "03653f1d-de80-5217-a28b-cc5156eb1674",
+        "version": 2
+      }
+    },
+    {
+      "name": "explicit_unlink_clears_template_and_pin",
+      "passed": true,
+      "evidence": {
+        "template": null,
+        "version": null
+      }
+    },
+    {
+      "name": "snapshot_restores_A_pin2_after_unlink",
+      "passed": true,
+      "evidence": {
+        "template": "03653f1d-de80-5217-a28b-cc5156eb1674",
+        "version": 2
+      }
+    },
+    {
+      "name": "switch_to_B_follow_clears_A_pin2",
+      "passed": true,
+      "evidence": {
+        "template": "1277e528-b1e1-5f07-a282-94af5ede159c",
+        "version": null
+      }
+    },
+    {
+      "name": "snapshot_restores_A_pin2_after_B_follow",
+      "passed": true,
+      "evidence": {
+        "template": "03653f1d-de80-5217-a28b-cc5156eb1674",
+        "version": 2
+      }
+    },
+    {
+      "name": "aux_fixture_original_state_restored",
+      "passed": true,
+      "evidence": {
+        "template": "1277e528-b1e1-5f07-a282-94af5ede159c",
+        "version": null
+      }
+    }
+  ],
+  "database": "clpm_final_reverify_20261017_093240_phase2",
+  "api": "http://127.0.0.1:17261/api/v1",
+  "loopId": "39423b46-9289-5b6d-a2be-5bd36d0a50bc",
+  "run": "AUDIT-F04-9a39acf",
+  "status": "PASS",
+  "finishedAt": "2026-10-17T10:09:29.991184+00:00"
+}

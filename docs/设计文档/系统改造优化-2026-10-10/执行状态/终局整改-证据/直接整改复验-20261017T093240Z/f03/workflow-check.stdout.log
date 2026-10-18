@@ -1,0 +1,29 @@
+{
+  "yamlUniqueKeys": true,
+  "criticalE2eBlocking": true,
+  "ownLockInstallBeforePlaywright": true,
+  "isolatedPostgres": "clpm_critical_e2e",
+  "isolatedTDengine": "clpm_critical_e2e_ts",
+  "stepNames": [
+    "Checkout code",
+    "Setup Python",
+    "Install uv",
+    "Sync backend dependencies",
+    "Apply bootstrap SQL + stamp",
+    "Initialize disposable TDengine database",
+    "Start backend",
+    "Install pnpm",
+    "Setup Node.js",
+    "Install frontend dependencies",
+    "Install E2E dependencies from its own lockfile",
+    "Validate fail-closed gate contract (no product DB writes)",
+    "Build frontend",
+    "Start frontend preview",
+    "Prepare isolated synthetic inputs (no KPI result seeding)",
+    "Install Playwright browsers",
+    "Run critical E2E gate (blocking)",
+    "Preserve reports, raw exits, task/result attachments and input manifest",
+    "Cleanup"
+  ],
+  "remoteCIExecuted": false
+}

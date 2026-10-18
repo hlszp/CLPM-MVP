@@ -1,0 +1,26 @@
+{
+  "runId": 39037226096,
+  "headSha": "f29b57338688ca9f9c0900f4c10338d3ad54cc2f",
+  "actualCheckout": "adc74b7a365b480f234dd6e5a2df7ac5592335ef",
+  "artifactId": 12102817123,
+  "artifactFileCount": 78,
+  "artifactBytes": 107482,
+  "artifactSha256": "82a6bea3590ad44afbc55b6f947b3d955de115bf7d35642fb7dc2fbcde9900e7",
+  "githubDigest": "sha256:82a6bea3590ad44afbc55b6f947b3d955de115bf7d35642fb7dc2fbcde9900e7",
+  "allArtifactFileHashesAndBytesVerified": true,
+  "actualSourceSha256": "e39f0b972b9e636151c6389238420eee30145ab23155ba8736974269d1e0c326",
+  "criticalJobLogSha256": "8c01c6b5526210e72402417c031d3750d847f3e4f542d2074c6394e37936ddfa",
+  "failureLines": [
+    {
+      "line": 3010,
+      "raw": "2026-10-17T13:38:32.6502935Z taosrest.errors.ConnectError: [0x2600]: syntax error near \"value,quality_class,quality_raw,point_id from clpm_critical_e2e_ts.p_855724f2da33493bb7534e55987c710c where ts>=1792234800000 and ts<1792238401000 order by ts\""
+    },
+    {
+      "line": 3011,
+      "raw": "2026-10-17T13:38:32.8912403Z ##[error]Process completed with exit code 1."
+    }
+  ],
+  "realBusinessTestsExecuted": 0,
+  "realCalcNpz": 0,
+  "scope": "Input-only preparation failed. Contract fixtures are not business E2E evidence."
+}

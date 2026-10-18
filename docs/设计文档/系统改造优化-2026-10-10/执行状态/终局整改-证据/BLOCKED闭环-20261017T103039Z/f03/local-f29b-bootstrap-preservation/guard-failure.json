@@ -1,0 +1,7 @@
+{
+  "at": "2026-10-17T13:35:40.988840+00:00",
+  "rc": 1,
+  "mutationReached": false,
+  "sourceSha256": "e08d761a6c23587bb6ae11af16e087061d1f93fb06afb522851b38fa2c9f2a80",
+  "reason": "guard expected no loop rows, but canonical bootstrap SQL seeds 27 loops; no service or fixture seed ran"
+}

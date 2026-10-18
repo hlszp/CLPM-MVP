@@ -1,0 +1,756 @@
+.                                        |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+
+> @vben/web-antd@5.7.0 build /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd
+> pnpm vite build --mode production
+
+../..                                    |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+../..                                    |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
+vite v8.0.13 building client environment for production...
+[2Ktransforming...✓ 8473 modules transformed.
+rendering chunks...
+✨configuration file is build successfully!
+dist/_app.config.js                                      0.20 kB
+dist/index.html                                          2.72 kB
+dist/png/login-control-room-BHaLtEVO.png             2,410.88 kB
+dist/css/drill-trend-modal-BsvCLZwR.css                  0.04 kB
+dist/css/history-tab-B6tfpW4u.css                        0.04 kB
+dist/css/tuning-Cqq24wjt.css                             0.05 kB
+dist/css/handling-uvhlt31h.css                           0.05 kB
+dist/css/confirm-section-BS3-ml7g.css                    0.06 kB
+dist/css/diagnosis-result-panel-CXgUCBqi.css             0.06 kB
+dist/css/loop-evaluation-QgAX-_4x.css                    0.09 kB
+dist/css/LoopEditDrawer-CMKUPITm.css                     0.10 kB
+dist/css/DeltaScatter-DL2-Lf7P.css                       0.17 kB
+dist/css/confidence-threshold-lBOGfGzd.css               0.17 kB
+dist/css/identify-section-C570rKHJ.css                   0.19 kB
+dist/css/event-snapshot-view-CzhegVk6.css                0.20 kB
+dist/css/matrix-section-BtC7iMoH.css                     0.21 kB
+dist/css/cockpit-radar-CvMJxXju.css                      0.21 kB
+dist/css/config-BxvA21dj.css                             0.22 kB
+dist/css/performance-CJMksUN0.css                        0.25 kB
+dist/css/workbench-radar6-Dr6SV0ua.css                   0.26 kB
+dist/css/fitness-donut-Sr3yAQJQ.css                      0.27 kB
+dist/css/workbench-kpi-history-Db-hQq67.css              0.27 kB
+dist/css/trend-panel-DEOYVIrk.css                        0.27 kB
+dist/css/workbench-process-trend-kiqGV8g1.css            0.27 kB
+dist/css/benefit-D2WZb6z1.css                            0.30 kB
+dist/css/records-BLJWT5JB.css                            0.30 kB
+dist/css/alert-statistics-D1i8ncyg.css                   0.32 kB
+dist/css/data-quality-DuVwhSbh.css                       0.32 kB
+dist/css/handling-BlR0gUQp.css                           0.32 kB
+dist/css/record-detail-drawer-JRQHOFYx.css               0.32 kB
+dist/css/performance-CWPWgkDu.css                        0.33 kB
+dist/css/VerifyDrawer-BVaz9OOE.css                       0.37 kB
+dist/css/OrderCreateModal-COmlVClC.css                   0.41 kB
+dist/css/use-latest-overview-cache-oI1i7Dv9.css          0.42 kB
+dist/css/overview-DJ2ErdkK.css                           0.47 kB
+dist/css/indicator-analysis-CK-53xYM.css                 0.48 kB
+dist/css/records-Bif4kH3c.css                            0.52 kB
+dist/css/unit-auto-pareto-BeDm0mQ5.css                   0.52 kB
+dist/css/tab-placeholder-BmkXo7kY.css                    0.53 kB
+dist/css/section-placeholder-EPjEJnYP.css                0.55 kB
+dist/css/login-Cfd-3JqJ.css                              0.55 kB
+dist/css/config-mg_WkEd9.css                             0.56 kB
+dist/css/loading-DXYS4l2z.css                            0.56 kB
+dist/css/tuning-verify-compare-CHuaE7Sf.css              0.59 kB
+dist/css/StatusBar-eMQh0Pg4.css                          0.60 kB
+dist/css/diagnosis-Dd--LT9B.css                          0.60 kB
+dist/css/loop-pager-CUB-opin.css                         0.61 kB
+dist/css/drill-sla-modal-Da93pViC.css                    0.68 kB
+dist/css/use-authz-live-Cm6L_mVc.css                     0.69 kB
+dist/css/block-state-overlay-oBkUX_VI.css                0.70 kB
+dist/css/node-radar-panel-gZgSqI37.css                   0.70 kB
+dist/css/simulate-section-lJ2czAld.css                   0.76 kB
+dist/css/grading-threshold-D6yvmVwM.css                  0.83 kB
+dist/css/SplitBar-DB9UIIII.css                           0.84 kB
+dist/css/AllLoopWorkbenchHost-BuFOMfIh.css               0.85 kB
+dist/css/workbench-diagnosis-card-Cw-g_nqO.css           0.92 kB
+dist/css/monitor-Dt9jDSyt.css                            0.99 kB
+dist/css/loops-Ca_JT9aa.css                              1.02 kB
+dist/css/plant-node-tree-BDPapCbj.css                    1.07 kB
+dist/css/matrix-tab-C0CMf2ak.css                         1.12 kB
+dist/css/cockpit-modal-Cy0tPHst.css                      1.17 kB
+dist/css/workbench-metric-bars-3I_6aQ-e.css              1.19 kB
+dist/css/toolbar-button-D88UArcs.css                     1.20 kB
+dist/css/list-modal-EX03mfCA.css                         1.31 kB
+dist/css/work-item-list-HmxfwqiW.css                     1.35 kB
+dist/css/workbench360-Dhgriddj.css                       1.42 kB
+dist/css/WbDrawer-F9hXAN3z.css                           1.42 kB
+dist/css/ThumbStrip-kBih4Xle.css                         1.43 kB
+dist/css/unit-steady-bars-5o_cR-Mr.css                   1.44 kB
+dist/css/history-drawer-ujki0YnL.css                     1.46 kB
+dist/css/device-tree-DHVKnGAa.css                        1.51 kB
+dist/css/event-detail-modal-CQMcBNHn.css                 1.53 kB
+dist/css/kpi-band-B7LgmNIw.css                           1.57 kB
+dist/css/theme-toggle-BKQ46UDU.css                       1.63 kB
+dist/css/cohort-compare-drawer-BduDhIEQ.css              1.67 kB
+dist/css/AttentionDrawer-BRhn8xhG.css                    1.72 kB
+dist/css/loops-DChMH-Pr.css                              1.73 kB
+dist/css/overview-CI_WKVWq.css                           1.86 kB
+dist/css/gate-health-panel-CQw4zTDe.css                  1.87 kB
+dist/css/alert-stream-B2VSuHcH.css                       1.94 kB
+dist/css/batch-diagnose-modal-j6SVxScO.css               1.99 kB
+dist/css/loop-card-DtPgUJEs.css                          2.05 kB
+dist/css/overview-C3ikxsSE.css                           2.24 kB
+dist/css/my-work-Dc2TC_0p.css                            2.27 kB
+dist/css/list-Bz7V9u5S.css                               2.41 kB
+dist/css/rank-tab-hUjTqR7c.css                           2.46 kB
+dist/css/todo-panel-DzfWFiU6.css                         2.50 kB
+dist/css/todo-detail-modal-DLkPsNIs.css                  2.50 kB
+dist/css/basic-info-BaXUFeuC.css                         2.56 kB
+dist/css/page-toolbar-BGSgM5qY.css                       2.63 kB
+dist/css/modules-BtPlE5nP.css                            2.65 kB
+dist/css/LoopHeader-DH2BjuUw.css                         2.73 kB
+dist/css/JourneyRail-DxWAGfcS.css                        2.75 kB
+dist/css/diagnosis-C3tWczMG.css                          2.82 kB
+dist/css/TrendChart-CLdlnbeG.css                         2.97 kB
+dist/css/device-rank-bars-CqhQvgRn.css                   2.99 kB
+dist/css/loop-detail-panel-BxVDbvdv.css                  3.06 kB
+dist/css/coverage-panel-BHVIXXqZ.css                     3.17 kB
+dist/css/loop-detail-modal-CbZJO0hR.css                  3.18 kB
+dist/css/LoopSpine-Bm09_ikq.css                          3.49 kB
+dist/css/data-DlYFK1Df.css                               3.53 kB
+dist/css/cockpit-header-Bf04NrN4.css                     3.80 kB
+dist/css/use-page-toolbar-Bolga5ic.css                   4.07 kB
+dist/css/TuningSection-CqM1tjq0.css                      4.51 kB
+dist/css/loop-archive-drawer-D43PhlWP.css                4.88 kB
+dist/css/manage-COchFqV-.css                             5.46 kB
+dist/css/HandlingSection-B219bxAJ.css                    5.79 kB
+dist/css/SingleLoopWorkbench-80_P5cU4.css                6.03 kB
+dist/css/auth-xLBJndD4.css                               6.13 kB
+dist/css/AssessSection-Cx43r_KD.css                      6.23 kB
+dist/css/DiagSection-BlGGwdhv.css                        6.47 kB
+dist/css/vendor-misc-DkTQMyWH.css                        6.65 kB
+dist/css/diagnosis-detail-modal-Cqvqktks.css             7.81 kB
+dist/css/pid-dashboard-Bk0_PsDq.css                      8.89 kB
+dist/css/clpm-BKbRE52g.css                              16.16 kB
+dist/css/basic-BQ88AUi_.css                             22.29 kB
+dist/css/bootstrap-Bro-f5iP.css                        202.35 kB
+dist/js/polling-BVaPZ_i2.js                              0.03 kB
+dist/js/_plugin-vue_export-helper-BS_FnM7m.js            0.08 kB
+dist/js/demos-BiP_UX0n.js                                0.10 kB
+dist/js/demos-DZzPQvTu.js                                0.11 kB
+dist/js/plant-node-C1lBX3wW.js                           0.11 kB
+dist/js/profile-CtWItKjT.js                              0.15 kB
+dist/js/profile-BoYYbOGh.js                              0.15 kB
+dist/js/src-DnNzVU4P.js                                  0.22 kB
+dist/js/coming-soon-DVhJwTzF.js                          0.22 kB
+dist/js/auth-Duf9ooxD.js                                 0.23 kB
+dist/js/cockpit-BchLklai.js                              0.24 kB
+dist/js/forbidden-DlCQJkZ6.js                            0.26 kB
+dist/js/internal-error-CMq7AiPf.js                       0.26 kB
+dist/js/offline-DwhXi7uN.js                              0.26 kB
+dist/js/src-BGb4PnHF2.js                                 0.27 kB
+dist/js/page-BHVJIrEY.js                                 0.27 kB
+dist/js/page-V6EYg4uG.js                                 0.28 kB
+dist/js/use-config-access-SkIF9OqZ.js                    0.29 kB
+dist/js/extends-DiOqE10O.js                              0.29 kB
+dist/js/monitor-CICuUYdH.js                              0.32 kB
+dist/js/assessment-labels-CC2DBMKp.js                    0.36 kB
+dist/js/not-found-MZTTMle9.js                            0.41 kB
+dist/js/format-BzfVUA2C.js                               0.45 kB
+dist/js/auth-title-B3ZU2WV4.js                           0.46 kB
+dist/js/motion-CC0_GgCH.js                               0.49 kB
+dist/js/concurrency-KITR0D9P.js                          0.49 kB
+dist/js/dict-Ct4JWq8o.js                                 0.51 kB
+dist/js/render-content-BwetGond.js                       0.55 kB
+dist/js/authorization-ZepsIyae.js                        0.57 kB
+dist/js/use-table-density-DhWzHydS.js                    0.59 kB
+dist/js/use-latest-request-Dqh9myNt.js                   0.60 kB
+dist/js/tab-placeholder-CE-N-GDD.js                      0.64 kB
+dist/js/tag-BeMTEeEX.js                                  0.65 kB
+dist/js/rolldown-runtime-B7dzfUhG.js                     0.69 kB
+dist/js/drill-trend-modal-CgHhoVdn.js                    0.70 kB
+dist/js/block-state-overlay-DAmaywrM.js                  0.71 kB
+dist/js/use-loop-palettes-frMFLRpN.js                    0.72 kB
+dist/js/reports-DujvtgQn.js                              0.74 kB
+dist/js/use-clpm-roles-Dipj4dts.js                       0.75 kB
+dist/js/section-placeholder-CgonIoFL.js                  0.77 kB
+dist/js/tuning-C-hgAxvr.js                               0.78 kB
+dist/js/common-DRQIMANE.js                               0.78 kB
+dist/js/handling-Dh_uc73l.js                             0.78 kB
+dist/js/use-modules-CTxcT08B.js                          0.79 kB
+dist/js/common-D6h0Q9_0.js                               0.81 kB
+dist/js/use-score-color-CJt88WiY.js                      0.81 kB
+dist/js/constants-Bj6lANm9.js                            0.83 kB
+dist/js/token-freshness-_hyEWhP6.js                      0.85 kB
+dist/js/plant-node-CFxnG5Iq.js                           0.91 kB
+dist/js/format-Di6KvXua.js                               0.95 kB
+dist/js/loop-pager-Db4qQX_L.js                           0.95 kB
+dist/js/permission-C1V4a9ZM.js                           0.97 kB
+dist/js/cockpit-CfwxDfhn.js                              1.06 kB
+dist/js/engineering-template-DOiExPJt.js                 1.06 kB
+dist/js/use-polling-CcbTMV5F.js                          1.09 kB
+dist/js/dcs-bUergSH2.js                                  1.16 kB
+dist/js/src-f6gpCYWp.js                                  1.16 kB
+dist/js/HelpBubble-BwRbkHQu.js                           1.20 kB
+dist/js/use-cockpit-theme-Dka4yoEs.js                    1.25 kB
+dist/js/Switch-CpV3yWvH.js                               1.29 kB
+dist/js/Spark-DGq3c30i.js                                1.29 kB
+dist/js/cockpit-modal--4hFp4KH.js                        1.29 kB
+dist/js/SplitBar-HrRIu0F0.js                             1.29 kB
+dist/js/GateBanner-CZUPmAJL.js                           1.30 kB
+dist/js/icon-button-D9j77eZm.js                          1.31 kB
+dist/js/loading-D5M0wEyy.js                              1.31 kB
+dist/js/use-clpm-theme-CNFbygVx.js                       1.35 kB
+dist/js/OpsKanban-BkiFH4p1.js                            1.36 kB
+dist/js/device-tree-DPtH2w8r.js                          1.50 kB
+dist/js/use-site-branding-5r7N43fc.js                    1.51 kB
+dist/js/handling-b_ahJRfv.js                             1.54 kB
+dist/js/precheck-badge-DWZbF6rP.js                       1.56 kB
+dist/js/export-C64Sjdt0.js                               1.59 kB
+dist/js/drill-modals-IgPBOhPc.js                         1.61 kB
+dist/js/LaneCol-D_j0I00Z.js                              1.70 kB
+dist/js/qrcode-login-1Kgfjnq4.js                         1.71 kB
+dist/js/notification-setting-BpkCpNt9.js                 1.74 kB
+dist/js/base-setting-BtyR22il.js                         1.76 kB
+dist/js/workbench-fitness-badge-8RRnnNCq.js              1.82 kB
+dist/js/personal-work-By3TDVaa.js                        1.86 kB
+dist/js/use-echarts-preset-DofsRtCN.js                   1.89 kB
+dist/js/diagnosis-D9AR61_l.js                            1.89 kB
+dist/js/security-setting-Bb5wwSe5.js                     1.96 kB
+dist/js/button-g0h4Whll.js                               1.97 kB
+dist/js/tuning-CgovhyMp.js                               1.97 kB
+dist/js/FormLabel-C9dbjcvI.js                            1.98 kB
+dist/js/list-modal-BZ8gne3r.js                           2.02 kB
+dist/js/tippy-C1ivoYKP.js                                2.05 kB
+dist/js/profile-diff-view-DZEMnN15.js                    2.05 kB
+dist/js/workbench-metric-bars-CLGQHHZU.js                2.06 kB
+dist/js/page-DXObzzv-.js                                 2.08 kB
+dist/js/use-echarts-CCTxVW2h.js                          2.09 kB
+dist/js/alert-ws-MJeR13CP.js                             2.13 kB
+dist/js/drill-sla-modal-C9uievJH.js                      2.15 kB
+dist/js/password-setting-BZPixEH0.js                     2.17 kB
+dist/js/WbDrawer-C8bPfnKM.js                             2.20 kB
+dist/js/forget-password-DkkqoZlL.js                      2.22 kB
+dist/js/template-utils-BWC_ovmt.js                       2.33 kB
+dist/js/workbench-radar6-CSsD6Zbb.js                     2.35 kB
+dist/js/alert-CBPKAJ66.js                                2.37 kB
+dist/js/StatusBar-B0QOv7e6.js                            2.44 kB
+dist/js/TaskCard-BbsIEKGT.js                             2.44 kB
+dist/js/use-wb360-session-dOz61cYn.js                    2.55 kB
+dist/js/src-DWCr9uCU.js                                  2.62 kB
+dist/js/tasks-BdhAgPu9.js                                2.65 kB
+dist/js/ThumbStrip-BT8m_b0j.js                           2.67 kB
+dist/js/node-radar-panel-DwHmfgWF.js                     2.68 kB
+dist/js/code-login-CQ-TB-wb.js                           2.70 kB
+dist/js/VerifyDrawer-8jQySde2.js                         2.72 kB
+dist/js/review-drawer-BR4MliC4.js                        2.74 kB
+dist/js/page-toolbar-By_J3oxx.js                         2.77 kB
+dist/js/workbench-diagnosis-card-Te8h3VAx.js             2.79 kB
+dist/js/history-drawer-BB8wCOc6.js                       2.82 kB
+dist/js/loop-card-DEDtVZLE.js                            2.86 kB
+dist/js/constants-faGT2a2V.js                            2.90 kB
+dist/js/confirm-section-DW1cSVlQ.js                      2.90 kB
+dist/js/AttentionDrawer-A5Y3C5cq.js                      2.92 kB
+dist/js/tooltip-C2JAg33E.js                              2.97 kB
+dist/js/DgRuleStats-NIVW9xmf.js                          3.09 kB
+dist/js/unit-steady-bars-CzFl5AUD.js                     3.16 kB
+dist/js/trend-panel-BucrBqGI.js                          3.20 kB
+dist/js/fallback--z-haUQV.js                             3.22 kB
+dist/js/constants-B1afP5Fk.js                            3.25 kB
+dist/js/register-DQPf8wE2.js                             3.31 kB
+dist/js/use-loop-follow-UqKJxRXL.js                      3.34 kB
+dist/js/fitness-donut-DgbpVG5A.js                        3.38 kB
+dist/js/authentication-jEIx64Er.js                       3.40 kB
+dist/js/todo-panel-DzI1MOn3.js                           3.41 kB
+dist/js/HandlingReopenList-Bpg-8Lew.js                   3.41 kB
+dist/js/loop-performance-shared-Drt6sprr.js              3.48 kB
+dist/js/workbench-context-9wlZGqEV.js                    3.49 kB
+dist/js/authentication-DIjkUW6O.js                       3.53 kB
+dist/js/JourneyRail-OG2MvwUm.js                          3.63 kB
+dist/js/workbench-kpi-history-BPMTHZyi.js                3.63 kB
+dist/js/profile-pVSL0AAx.js                              3.63 kB
+dist/js/avatar-BynSXg3F.js                               3.64 kB
+dist/js/EvalHeatMatrix-BPySCl4z.js                       3.68 kB
+dist/js/alert-stream-ZefPAkkl.js                         3.84 kB
+dist/js/workbench360-D4C9nu80.js                         3.86 kB
+dist/js/loop-evaluation-vnF7tM6D.js                      3.89 kB
+dist/js/StaffHBar-I-aiZi_q.js                            3.91 kB
+dist/js/toolbar-button-Dwk5kQTZ.js                       4.07 kB
+dist/js/batch-runs-drawer-r0RIH81g.js                    4.08 kB
+dist/js/tasks-CYyYnRCV.js                                4.16 kB
+dist/js/verification-DIcheyPW.js                         4.18 kB
+dist/js/evidence-drawer-C8OSHhVp.js                      4.22 kB
+dist/js/use-latest-overview-cache-cNbFpXjU.js            4.29 kB
+dist/js/unit-auto-pareto-V6Eyp-2C.js                     4.30 kB
+dist/js/diagnosis-ZGbQxC_I.js                            4.33 kB
+dist/js/TuneQueueRow-QWZ6baMw.js                         4.39 kB
+dist/js/ui-CNfTnTV8.js                                   4.39 kB
+dist/js/LoopHeader-GAHYYn25.js                           4.42 kB
+dist/js/event-detail-modal-CQ9gHDc6.js                   4.49 kB
+dist/js/assess-trigger-modal-CNhPWOTU.js                 4.51 kB
+dist/js/TuningRootCauseDist-DahQ37_0.js                  4.51 kB
+dist/js/performance-CG70zKO4.js                          4.56 kB
+dist/js/OrderCreateModal-BH-So0yK.js                     4.61 kB
+dist/js/EvalSummary-bb8p9Cpa.js                          4.64 kB
+dist/js/ui-DbuALmIO.js                                   4.64 kB
+dist/js/todo-detail-modal-CDhVOgYQ.js                    4.65 kB
+dist/js/cockpit-header-CUn2TEQ_.js                       4.87 kB
+dist/js/TuningFitnessCard-Db38LQ2K.js                    4.89 kB
+dist/js/LoopSpine-xOCzSBCw.js                            4.91 kB
+dist/js/gate-health-panel-q2eS_zmh.js                    4.91 kB
+dist/js/use-page-toolbar-G0e_Q_AT.js                     5.06 kB
+dist/js/DeltaScatter-C2n89aBS.js                         5.17 kB
+dist/js/AbnormalLoopsTable-DHbp5qfN.js                   5.20 kB
+dist/js/DgSummaryBand-DbN8Ctt9.js                        5.22 kB
+dist/js/modules-C4r0N1Mj.js                              5.24 kB
+dist/js/publications-tab-CdtZCAqc.js                     5.26 kB
+dist/js/matrix-section-T6LeZRLk.js                       5.41 kB
+dist/js/device-rank-bars-Dw8MqPue.js                     5.47 kB
+dist/js/workbench-process-trend-7hCwdnR_.js              5.59 kB
+dist/js/cockpit-radar-BDBPrj0m.js                        5.62 kB
+dist/js/HandlingSlaSummary-CWZgoXqC.js                   5.66 kB
+dist/js/TaskDetailCard-DMSAXHpX.js                       5.76 kB
+dist/js/batch-detail-drawer-CexpAWFF.js                  5.83 kB
+dist/js/ParetoBarLine-CZM8ddKx.js                        5.92 kB
+dist/js/LoopDetailDrawer-Dy1dVz5U.js                     6.02 kB
+dist/js/EvalDistributions-BxNkpdg6.js                    6.11 kB
+dist/js/kpi-band-CYBM01CD.js                             6.35 kB
+dist/js/version-history-tab-B8ss2J4N.js                  6.36 kB
+dist/js/batch-diagnose-modal-BJE-geoQ.js                 6.64 kB
+dist/js/attention-group-drawer-jbMYAen0.js               6.65 kB
+dist/js/coverage-panel-Bt5D_9Ea.js                       6.70 kB
+dist/js/DgUnitStackedBar-BAZwBvL1.js                     6.72 kB
+dist/js/batch-restore-modal-oclGCX40.js                  6.75 kB
+dist/js/AllLoopWorkbenchHost-DKtJq_W0.js                 6.76 kB
+dist/js/overview-MZdOt7YT.js                             6.78 kB
+dist/js/config-BwvFedEj.js                               6.82 kB
+dist/js/metrics-panel-anhPrm8k.js                        6.84 kB
+dist/js/TuningLoopDetail-3ACTIqHW.js                     7.01 kB
+dist/js/tuning-verify-compare-DhdIARfC.js                7.03 kB
+dist/js/handling-archive-drawer-B_T8rb8C.js              7.05 kB
+dist/js/handling-detail-drawer-BVyUAaUO.js               7.05 kB
+dist/js/icon-500-BJdfWIrX.js                             7.09 kB
+dist/js/cohort-compare-drawer-7bhjBMNZ.js                7.20 kB
+dist/js/preferences-CQTR6Knd.js                          7.26 kB
+dist/js/preferences-C_sDwEDf.js                          7.30 kB
+dist/js/backfill-task-drawer-BwZlTkAJ.js                 7.30 kB
+dist/js/task-strategy-NXei_vcy.js                        7.64 kB
+dist/js/record-detail-drawer-DJSmsLO-.js                 7.74 kB
+dist/js/plant-node-tree-DexnkYey.js                      7.92 kB
+dist/js/DiagTriggerModal-CLC4Kk73.js                     7.98 kB
+dist/js/icon-offline-DK1ZTJ3j.js                         8.09 kB
+dist/js/use-loop-realtime-C81_VeU4.js                    8.19 kB
+dist/js/use-clpm-preferences-hqvVhnti.js                 8.37 kB
+dist/js/identify-section-BjeqwQrp.js                     8.42 kB
+dist/js/loop-detail-modal-DCTngn9L.js                    8.53 kB
+dist/js/archive-BQC5fP6_.js                              8.59 kB
+dist/js/publish-version-modal-DFdC9-Aw.js                8.61 kB
+dist/js/dict-CW8muBRu.js                                 8.73 kB
+dist/js/confidence-threshold-Bd7BO9e6.js                 8.84 kB
+dist/js/EvalTrendChart-DZHfGdEB.js                       8.90 kB
+dist/js/about-KXI50gBg.js                                8.93 kB
+dist/js/basic-info-DQSrS62o.js                           8.93 kB
+dist/js/detail-Cm6RFzo8.js                               8.95 kB
+dist/js/alert-statistics-CgQY8xNU.js                     9.35 kB
+dist/js/icon-403-BLQJFMSI.js                             9.40 kB
+dist/js/subscription-B_TQ1bst.js                         9.52 kB
+dist/js/waveform-chart-C-8dmK6Q.js                       9.59 kB
+dist/js/loop-confidence-content-BxaMPWFq.js              9.60 kB
+dist/js/records-BaKkXvh0.js                              9.63 kB
+dist/js/grading-threshold-DySiFNB9.js                    9.68 kB
+dist/js/EvalRankTable-C0thvFRz.js                        9.71 kB
+dist/js/event-snapshot-view-CHcwfbdg.js                  9.88 kB
+dist/js/theme-toggle-C-WUE_7y.js                        10.35 kB
+dist/js/clpm-ui-CI0jDVZ6.js                             10.68 kB
+dist/js/loop-detail-panel-Dnoueyeo.js                   10.69 kB
+dist/js/handling-tab-BQ082GJw.js                        10.88 kB
+dist/js/diagnosis-UblZlnRY.js                           11.04 kB
+dist/js/my-work-CAbAZI_y.js                             11.04 kB
+dist/js/engineering-templates-BFRBPk6V.js               11.09 kB
+dist/js/TuningSection-BlFEH9WD.js                       11.12 kB
+dist/js/rules-fgvewcrQ.js                               11.60 kB
+dist/js/auth-C4PEyO-G.js                                11.62 kB
+dist/js/outlier-params-WkATau77.js                      11.65 kB
+dist/js/loops-Cuj7bEn8.js                               11.70 kB
+dist/js/use-tuning-workbench-B-sZWjsr.js                11.74 kB
+dist/js/fitness-threshold-C4vO00Qr.js                   12.08 kB
+dist/js/algorithm-params-Bn8VFFN9.js                    12.28 kB
+dist/js/override-publish-modal-DJ80h9av.js              12.29 kB
+dist/js/data-quality-CGOemX6f.js                        12.72 kB
+dist/js/tuning-tab-BHa_6-8T.js                          12.75 kB
+dist/js/batch-apply-modal-BCe6rLNS.js                   12.80 kB
+dist/js/overview-CXZ5sRk9.js                            12.81 kB
+dist/js/loop-performance-detail-content-CaE3d_uc.js     12.85 kB
+dist/js/icon-coming-soon-_i0B3h0O.js                    12.90 kB
+dist/js/config-definition-BJlrkBRj.js                   13.15 kB
+dist/js/simulate-section-DsmdrMiG.js                    13.26 kB
+dist/js/use-drill-BeTPmr6l.js                           13.52 kB
+dist/js/audit-B7sl2ebg.js                               14.46 kB
+dist/js/AssessSection-aP49wEjk.js                       14.80 kB
+dist/js/config-C9sBgp9u.js                              14.93 kB
+dist/js/handling-BjD13Get.js                            15.12 kB
+dist/js/work-item-list-B8ewQqgp.js                      15.12 kB
+dist/js/HandlingSection-CihabOZy.js                     15.24 kB
+dist/js/benefit-M9-7jm88.js                             16.20 kB
+dist/js/TrendChart-CSzgVfG_.js                          16.27 kB
+dist/js/loop-archive-drawer-DLp0W96X.js                 16.57 kB
+dist/js/diagnosis-result-panel-DcX680oK.js              17.09 kB
+dist/js/list-D_M3aPAl.js                                17.24 kB
+dist/js/data-_GN-r2CM.js                                18.12 kB
+dist/js/permissions-DNZVyyHo.js                         18.74 kB
+dist/js/DiagSection-C95Yorxx.js                         19.38 kB
+dist/js/users-879GekEa.js                               19.49 kB
+dist/js/overview-CHbzvU12.js                            19.75 kB
+dist/js/weight-config-CZlb-O7M.js                       20.20 kB
+dist/js/performance-C34c9NaW.js                         20.22 kB
+dist/js/events-D2_0zulg.js                              20.24 kB
+dist/js/records--VyFAeSs.js                             20.51 kB
+dist/js/config-C9yNxzw9.js                              21.22 kB
+dist/js/matrix-tab-CPgn1dEo.js                          21.62 kB
+dist/js/history-tab-B9v5uVJb.js                         22.56 kB
+dist/js/icon-404-AEuvkeNU.js                            24.35 kB
+dist/js/list-CmlniYiA.js                                24.45 kB
+dist/js/attention-DeEvZjlD.js                           24.58 kB
+dist/js/order-detail-drawer-ufWHvHIT.js                 25.71 kB
+dist/js/config-Dg9FUboi.js                              25.83 kB
+dist/js/indicator-analysis-BiMdvaj5.js                  26.15 kB
+dist/js/rank-tab-Bu74wY6b.js                            26.71 kB
+dist/jse/index-index-DGRmFaJk.js                        27.33 kB
+dist/js/request-D7VO-I_w.js                             27.64 kB
+dist/js/SingleLoopWorkbench-00xpcLg1.js                 28.19 kB
+dist/js/workbench-B86amc_o.js                           29.99 kB
+dist/js/diagnosis-detail-modal-DeJYn8qQ.js              30.06 kB
+dist/js/login-CN3D8RjM.js                               31.55 kB
+dist/js/vendor-icons-BCZTPUK2.js                        31.72 kB
+dist/js/use-vben-form-D23QQWDD.js                       31.73 kB
+dist/js/vendor-vue-BizDB4cN.js                          33.86 kB
+dist/js/aas-kVCR6qsC.js                                 34.24 kB
+dist/js/loops-CajNZlir.js                               34.39 kB
+dist/js/monitor-CmmML93o.js                             34.63 kB
+dist/js/vendor-utils-tzym-DzF.js                        38.47 kB
+dist/js/pid-dashboard-ClIhTVjq.js                       39.09 kB
+dist/js/manage-kTAtMw2N.js                              41.81 kB
+dist/js/LoopEditDrawer-D-bYgefb.js                      42.06 kB
+dist/js/routes-C7oQPOUw.js                              45.89 kB
+dist/js/use-authz-live-D4ivmTNP.js                      72.22 kB
+dist/js/clpm-BUurJHCV.js                                85.78 kB
+dist/js/bootstrap-BVXONIyO.js                           90.91 kB
+dist/js/src-CrYCCxCf.js                                129.77 kB
+dist/js/basic-3y6GViYi.js                              244.28 kB
+dist/js/vendor-misc-CCR-E-Fl.js                        738.13 kB
+dist/js/vendor-echarts-9efhoxzl.js                     753.41 kB
+dist/js/vendor-antd-C7EWqXIS.js                      1,267.88 kB
+
+✓ built in 3.71s
+
+✨ [vite-plugin-compression]:algorithm=gzip - compressed file successfully: 
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/AttentionDrawer-BRhn8xhG.css.gz                 1.68kb / gzip: 0.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/DiagSection-BlGGwdhv.css.gz                     6.32kb / gzip: 1.30kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/AssessSection-Cx43r_KD.css.gz                   6.09kb / gzip: 1.38kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/SingleLoopWorkbench-80_P5cU4.css.gz             5.89kb / gzip: 1.34kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/LoopHeader-DH2BjuUw.css.gz                      2.67kb / gzip: 0.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/HandlingSection-B219bxAJ.css.gz                 5.66kb / gzip: 1.32kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/LoopSpine-Bm09_ikq.css.gz                       3.41kb / gzip: 0.90kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/JourneyRail-DxWAGfcS.css.gz                     2.69kb / gzip: 0.84kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/ThumbStrip-kBih4Xle.css.gz                      1.40kb / gzip: 0.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/TrendChart-CLdlnbeG.css.gz                      2.91kb / gzip: 0.89kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/WbDrawer-F9hXAN3z.css.gz                        1.40kb / gzip: 0.54kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/alert-stream-B2VSuHcH.css.gz                    1.90kb / gzip: 0.60kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/TuningSection-CqM1tjq0.css.gz                   4.40kb / gzip: 1.00kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/basic-info-BaXUFeuC.css.gz                      2.50kb / gzip: 0.73kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/auth-xLBJndD4.css.gz                            5.99kb / gzip: 1.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/batch-diagnose-modal-j6SVxScO.css.gz            1.95kb / gzip: 0.58kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/cockpit-modal-Cy0tPHst.css.gz                   1.15kb / gzip: 0.48kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/cockpit-header-Bf04NrN4.css.gz                  3.71kb / gzip: 1.01kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/coverage-panel-BHVIXXqZ.css.gz                  3.10kb / gzip: 0.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/data-DlYFK1Df.css.gz                            3.45kb / gzip: 0.27kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/device-tree-DHVKnGAa.css.gz                     1.48kb / gzip: 0.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/cohort-compare-drawer-BduDhIEQ.css.gz           1.64kb / gzip: 0.50kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/diagnosis-C3tWczMG.css.gz                       2.76kb / gzip: 0.87kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/device-rank-bars-CqhQvgRn.css.gz                2.93kb / gzip: 0.84kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/event-detail-modal-CQMcBNHn.css.gz              1.50kb / gzip: 0.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/clpm-BKbRE52g.css.gz                            15.79kb / gzip: 3.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/diagnosis-detail-modal-Cqvqktks.css.gz          7.63kb / gzip: 1.38kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/gate-health-panel-CQw4zTDe.css.gz               1.83kb / gzip: 0.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/history-drawer-ujki0YnL.css.gz                  1.43kb / gzip: 0.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/kpi-band-B7LgmNIw.css.gz                        1.54kb / gzip: 0.55kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/list-modal-EX03mfCA.css.gz                      1.28kb / gzip: 0.46kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/basic-BQ88AUi_.css.gz                           21.78kb / gzip: 3.47kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/list-Bz7V9u5S.css.gz                            2.36kb / gzip: 0.41kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-archive-drawer-D43PhlWP.css.gz             4.77kb / gzip: 1.18kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-detail-modal-CbZJO0hR.css.gz               3.11kb / gzip: 0.74kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-detail-panel-BxVDbvdv.css.gz               2.99kb / gzip: 0.83kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/manage-COchFqV-.css.gz                          5.33kb / gzip: 0.72kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loops-DChMH-Pr.css.gz                           1.70kb / gzip: 0.60kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/loop-card-DtPgUJEs.css.gz                       2.01kb / gzip: 0.63kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/matrix-tab-C0CMf2ak.css.gz                      1.10kb / gzip: 0.44kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/modules-BtPlE5nP.css.gz                         2.60kb / gzip: 0.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/overview-C3ikxsSE.css.gz                        2.19kb / gzip: 0.62kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/page-toolbar-BGSgM5qY.css.gz                    2.57kb / gzip: 0.62kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/my-work-Dc2TC_0p.css.gz                         2.22kb / gzip: 0.56kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/overview-CI_WKVWq.css.gz                        1.82kb / gzip: 0.61kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/rank-tab-hUjTqR7c.css.gz                        2.41kb / gzip: 0.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/plant-node-tree-BDPapCbj.css.gz                 1.05kb / gzip: 0.43kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/theme-toggle-BKQ46UDU.css.gz                    1.60kb / gzip: 0.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/todo-detail-modal-DLkPsNIs.css.gz               2.45kb / gzip: 0.74kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/pid-dashboard-Bk0_PsDq.css.gz                   8.69kb / gzip: 1.62kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/todo-panel-DzfWFiU6.css.gz                      2.44kb / gzip: 0.66kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/toolbar-button-D88UArcs.css.gz                  1.18kb / gzip: 0.36kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/unit-steady-bars-5o_cR-Mr.css.gz                1.41kb / gzip: 0.54kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/work-item-list-HmxfwqiW.css.gz                  1.32kb / gzip: 0.44kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/workbench-metric-bars-3I_6aQ-e.css.gz           1.17kb / gzip: 0.46kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/use-page-toolbar-Bolga5ic.css.gz                3.97kb / gzip: 0.96kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/workbench360-Dhgriddj.css.gz                    1.39kb / gzip: 0.48kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/vendor-misc-DkTQMyWH.css.gz                     6.50kb / gzip: 1.16kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/index.html.gz                                       2.66kb / gzip: 1.25kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AbnormalLoopsTable-DHbp5qfN.js.gz                5.09kb / gzip: 2.33kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AllLoopWorkbenchHost-DKtJq_W0.js.gz              6.61kb / gzip: 2.82kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DeltaScatter-C2n89aBS.js.gz                      5.05kb / gzip: 2.49kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DgRuleStats-NIVW9xmf.js.gz                       3.02kb / gzip: 1.43kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AttentionDrawer-A5Y3C5cq.js.gz                   2.86kb / gzip: 1.60kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DgSummaryBand-DbN8Ctt9.js.gz                     5.10kb / gzip: 1.94kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/AssessSection-aP49wEjk.js.gz                     14.46kb / gzip: 5.77kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DgUnitStackedBar-BAZwBvL1.js.gz                  6.57kb / gzip: 2.93kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalDistributions-BxNkpdg6.js.gz                 5.98kb / gzip: 2.48kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalSummary-bb8p9Cpa.js.gz                       4.53kb / gzip: 2.06kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/GateBanner-CZUPmAJL.js.gz                        1.27kb / gzip: 0.78kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DiagTriggerModal-CLC4Kk73.js.gz                  7.80kb / gzip: 3.55kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/FormLabel-C9dbjcvI.js.gz                         1.94kb / gzip: 0.88kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HandlingReopenList-Bpg-8Lew.js.gz                3.34kb / gzip: 1.74kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalRankTable-C0thvFRz.js.gz                     9.48kb / gzip: 3.55kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HelpBubble-BwRbkHQu.js.gz                        1.17kb / gzip: 0.71kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalHeatMatrix-BPySCl4z.js.gz                    3.60kb / gzip: 1.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/EvalTrendChart-DZHfGdEB.js.gz                    8.69kb / gzip: 3.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/DiagSection-C95Yorxx.js.gz                       18.93kb / gzip: 6.98kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/JourneyRail-OG2MvwUm.js.gz                       3.54kb / gzip: 1.63kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HandlingSlaSummary-CWZgoXqC.js.gz                5.53kb / gzip: 2.48kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopDetailDrawer-Dy1dVz5U.js.gz                  5.88kb / gzip: 2.61kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopHeader-GAHYYn25.js.gz                        4.33kb / gzip: 2.05kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LaneCol-D_j0I00Z.js.gz                           1.67kb / gzip: 0.90kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/OpsKanban-BkiFH4p1.js.gz                         1.33kb / gzip: 0.78kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopSpine-xOCzSBCw.js.gz                         4.80kb / gzip: 2.24kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/SplitBar-HrRIu0F0.js.gz                          1.27kb / gzip: 0.71kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/HandlingSection-CihabOZy.js.gz                   14.88kb / gzip: 5.30kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/Spark-DGq3c30i.js.gz                             1.27kb / gzip: 0.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/OrderCreateModal-BH-So0yK.js.gz                  4.51kb / gzip: 2.05kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/StatusBar-B0QOv7e6.js.gz                         2.39kb / gzip: 1.27kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/Switch-CpV3yWvH.js.gz                            1.27kb / gzip: 0.67kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ParetoBarLine-CZM8ddKx.js.gz                     5.79kb / gzip: 2.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/StaffHBar-I-aiZi_q.js.gz                         3.82kb / gzip: 1.91kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TaskCard-BbsIEKGT.js.gz                          2.39kb / gzip: 1.29kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ThumbStrip-BT8m_b0j.js.gz                        2.61kb / gzip: 1.22kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TaskDetailCard-DMSAXHpX.js.gz                    5.63kb / gzip: 2.34kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuneQueueRow-QWZ6baMw.js.gz                      4.29kb / gzip: 1.69kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningLoopDetail-3ACTIqHW.js.gz                  6.85kb / gzip: 3.22kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningFitnessCard-Db38LQ2K.js.gz                 4.78kb / gzip: 2.30kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/VerifyDrawer-8jQySde2.js.gz                      2.66kb / gzip: 1.50kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningRootCauseDist-DahQ37_0.js.gz               4.41kb / gzip: 2.16kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-CBPKAJ66.js.gz                             2.32kb / gzip: 0.70kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/LoopEditDrawer-D-bYgefb.js.gz                    41.08kb / gzip: 12.67kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/WbDrawer-C8bPfnKM.js.gz                          2.16kb / gzip: 1.10kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TrendChart-CSzgVfG_.js.gz                        15.89kb / gzip: 6.46kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-stream-ZefPAkkl.js.gz                      3.75kb / gzip: 1.87kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/SingleLoopWorkbench-00xpcLg1.js.gz               27.53kb / gzip: 10.44kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/TuningSection-BlFEH9WD.js.gz                     10.86kb / gzip: 4.50kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-ws-MJeR13CP.js.gz                          2.08kb / gzip: 0.89kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/about-KXI50gBg.js.gz                             8.72kb / gzip: 3.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/alert-statistics-CgQY8xNU.js.gz                  9.13kb / gzip: 3.74kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/assess-trigger-modal-CNhPWOTU.js.gz              4.41kb / gzip: 2.18kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/archive-BQC5fP6_.js.gz                           8.39kb / gzip: 3.64kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/algorithm-params-Bn8VFFN9.js.gz                  11.99kb / gzip: 5.06kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/attention-group-drawer-jbMYAen0.js.gz            6.50kb / gzip: 2.71kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/audit-B7sl2ebg.js.gz                             14.12kb / gzip: 5.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/authentication-DIjkUW6O.js.gz                    3.45kb / gzip: 1.48kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/auth-C4PEyO-G.js.gz                              11.35kb / gzip: 4.16kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/attention-DeEvZjlD.js.gz                         24.01kb / gzip: 8.88kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/avatar-BynSXg3F.js.gz                            3.56kb / gzip: 1.46kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/base-setting-BtyR22il.js.gz                      1.72kb / gzip: 0.97kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/aas-kVCR6qsC.js.gz                               33.45kb / gzip: 9.72kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/authentication-jEIx64Er.js.gz                    3.32kb / gzip: 1.66kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/basic-info-DQSrS62o.js.gz                        8.73kb / gzip: 3.14kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/backfill-task-drawer-BwZlTkAJ.js.gz              7.14kb / gzip: 2.95kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-diagnose-modal-BJE-geoQ.js.gz              6.49kb / gzip: 2.93kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-detail-drawer-CexpAWFF.js.gz               5.70kb / gzip: 2.43kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/button-g0h4Whll.js.gz                            1.93kb / gzip: 0.88kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-runs-drawer-r0RIH81g.js.gz                 3.99kb / gzip: 1.95kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-restore-modal-oclGCX40.js.gz               6.60kb / gzip: 2.96kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-CfwxDfhn.js.gz                           1.04kb / gzip: 0.54kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/batch-apply-modal-BCe6rLNS.js.gz                 12.50kb / gzip: 4.98kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-radar-BDBPrj0m.js.gz                     5.50kb / gzip: 2.46kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/benefit-M9-7jm88.js.gz                           15.82kb / gzip: 6.00kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/clpm-ui-CI0jDVZ6.js.gz                           10.43kb / gzip: 5.02kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/code-login-CQ-TB-wb.js.gz                        2.64kb / gzip: 1.23kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-header-CUn2TEQ_.js.gz                    4.76kb / gzip: 2.30kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cockpit-modal--4hFp4KH.js.gz                     1.27kb / gzip: 0.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/cohort-compare-drawer-7bhjBMNZ.js.gz             7.03kb / gzip: 3.38kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-BwvFedEj.js.gz                            6.66kb / gzip: 2.55kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/confidence-threshold-Bd7BO9e6.js.gz              8.64kb / gzip: 3.79kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/constants-B1afP5Fk.js.gz                         3.17kb / gzip: 1.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-C9yNxzw9.js.gz                            20.73kb / gzip: 7.50kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-Dg9FUboi.js.gz                            25.22kb / gzip: 8.19kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-C9sBgp9u.js.gz                            14.59kb / gzip: 4.66kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/confirm-section-DW1cSVlQ.js.gz                   2.84kb / gzip: 1.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/coverage-panel-Bt5D_9Ea.js.gz                    6.55kb / gzip: 2.73kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/dcs-bUergSH2.js.gz                               1.13kb / gzip: 0.40kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/config-definition-BJlrkBRj.js.gz                 12.84kb / gzip: 4.49kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/data-quality-CGOemX6f.js.gz                      12.43kb / gzip: 5.08kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/constants-faGT2a2V.js.gz                         2.83kb / gzip: 1.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/detail-Cm6RFzo8.js.gz                            8.74kb / gzip: 3.30kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/device-tree-DPtH2w8r.js.gz                       1.46kb / gzip: 0.89kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/data-_GN-r2CM.js.gz                              17.70kb / gzip: 6.64kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-D9AR61_l.js.gz                         1.85kb / gzip: 0.63kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/device-rank-bars-Dw8MqPue.js.gz                  5.35kb / gzip: 2.29kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-ZGbQxC_I.js.gz                         4.24kb / gzip: 1.90kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/drill-modals-IgPBOhPc.js.gz                      1.58kb / gzip: 0.70kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-UblZlnRY.js.gz                         10.78kb / gzip: 4.23kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-result-panel-DcX680oK.js.gz            16.69kb / gzip: 6.41kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/dict-CW8muBRu.js.gz                              8.53kb / gzip: 3.55kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/engineering-template-DOiExPJt.js.gz              1.04kb / gzip: 0.41kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/drill-sla-modal-C9uievJH.js.gz                   2.11kb / gzip: 1.20kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/event-detail-modal-CQ9gHDc6.js.gz                4.39kb / gzip: 1.95kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/engineering-templates-BFRBPk6V.js.gz             10.84kb / gzip: 4.33kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/evidence-drawer-C8OSHhVp.js.gz                   4.12kb / gzip: 2.03kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/fallback--z-haUQV.js.gz                          3.15kb / gzip: 1.23kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/diagnosis-detail-modal-DeJYn8qQ.js.gz            29.36kb / gzip: 9.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/event-snapshot-view-CHcwfbdg.js.gz               9.66kb / gzip: 3.83kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/export-C64Sjdt0.js.gz                            1.56kb / gzip: 0.85kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/fitness-donut-DgbpVG5A.js.gz                     3.30kb / gzip: 1.79kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/forget-password-DkkqoZlL.js.gz                   2.17kb / gzip: 1.09kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/gate-health-panel-q2eS_zmh.js.gz                 4.80kb / gzip: 2.24kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-b_ahJRfv.js.gz                          1.50kb / gzip: 0.43kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/fitness-threshold-C4vO00Qr.js.gz                 11.80kb / gzip: 4.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/events-D2_0zulg.js.gz                            19.77kb / gzip: 7.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-archive-drawer-B_T8rb8C.js.gz           6.89kb / gzip: 2.49kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-detail-drawer-BVyUAaUO.js.gz            6.89kb / gzip: 2.79kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/history-drawer-BB8wCOc6.js.gz                    2.76kb / gzip: 1.50kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-500-BJdfWIrX.js.gz                          6.93kb / gzip: 2.26kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/grading-threshold-DySiFNB9.js.gz                 9.46kb / gzip: 3.99kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-button-D9j77eZm.js.gz                       1.28kb / gzip: 0.59kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-tab-BQ082GJw.js.gz                      10.63kb / gzip: 4.35kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/handling-BjD13Get.js.gz                          14.77kb / gzip: 5.68kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-403-BLQJFMSI.js.gz                          9.18kb / gzip: 4.04kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-offline-DK1ZTJ3j.js.gz                      7.91kb / gzip: 3.88kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-coming-soon-_i0B3h0O.js.gz                  12.60kb / gzip: 4.16kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/identify-section-BjeqwQrp.js.gz                  8.23kb / gzip: 3.23kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/kpi-band-CYBM01CD.js.gz                          6.21kb / gzip: 2.39kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/history-tab-B9v5uVJb.js.gz                       22.04kb / gzip: 7.57kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/list-modal-BZ8gne3r.js.gz                        1.98kb / gzip: 0.99kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loading-D5M0wEyy.js.gz                           1.29kb / gzip: 0.77kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/indicator-analysis-BiMdvaj5.js.gz                25.55kb / gzip: 9.29kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/list-D_M3aPAl.js.gz                              16.84kb / gzip: 5.92kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/list-CmlniYiA.js.gz                              23.89kb / gzip: 8.06kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-card-DEDtVZLE.js.gz                         2.80kb / gzip: 1.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-detail-panel-Dnoueyeo.js.gz                 10.44kb / gzip: 4.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-confidence-content-BxaMPWFq.js.gz           9.38kb / gzip: 3.79kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/icon-404-AEuvkeNU.js.gz                          23.78kb / gzip: 10.14kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-detail-modal-DCTngn9L.js.gz                 8.33kb / gzip: 3.62kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-evaluation-vnF7tM6D.js.gz                   3.80kb / gzip: 1.86kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-archive-drawer-DLp0W96X.js.gz               16.19kb / gzip: 6.02kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-performance-shared-Drt6sprr.js.gz           3.40kb / gzip: 1.57kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/matrix-section-T6LeZRLk.js.gz                    5.29kb / gzip: 2.37kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loops-Cuj7bEn8.js.gz                             11.43kb / gzip: 4.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loop-performance-detail-content-CaE3d_uc.js.gz   12.55kb / gzip: 4.20kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/login-CN3D8RjM.js.gz                             30.82kb / gzip: 9.92kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/metrics-panel-anhPrm8k.js.gz                     6.69kb / gzip: 3.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/modules-C4r0N1Mj.js.gz                           5.12kb / gzip: 2.33kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/node-radar-panel-DwHmfgWF.js.gz                  2.62kb / gzip: 1.39kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/matrix-tab-CPgn1dEo.js.gz                        21.12kb / gzip: 7.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/notification-setting-BpkCpNt9.js.gz              1.71kb / gzip: 0.89kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/loops-CajNZlir.js.gz                             33.58kb / gzip: 11.59kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/my-work-CAbAZI_y.js.gz                           10.79kb / gzip: 4.46kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/outlier-params-WkATau77.js.gz                    11.38kb / gzip: 4.64kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/override-publish-modal-DJ80h9av.js.gz            12.00kb / gzip: 4.58kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/page-DXObzzv-.js.gz                              2.04kb / gzip: 0.95kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/page-toolbar-By_J3oxx.js.gz                      2.71kb / gzip: 1.04kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/manage-kTAtMw2N.js.gz                            40.83kb / gzip: 12.72kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/password-setting-BZPixEH0.js.gz                  2.12kb / gzip: 1.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/monitor-CmmML93o.js.gz                           33.82kb / gzip: 11.49kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/performance-CG70zKO4.js.gz                       4.46kb / gzip: 1.86kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/overview-CXZ5sRk9.js.gz                          12.51kb / gzip: 5.01kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/personal-work-By3TDVaa.js.gz                     1.82kb / gzip: 0.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/order-detail-drawer-ufWHvHIT.js.gz               25.12kb / gzip: 8.03kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/overview-MZdOt7YT.js.gz                          6.62kb / gzip: 2.84kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/precheck-badge-DWZbF6rP.js.gz                    1.53kb / gzip: 1.02kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/overview-CHbzvU12.js.gz                          19.29kb / gzip: 7.27kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/plant-node-tree-DexnkYey.js.gz                   7.73kb / gzip: 2.96kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/profile-pVSL0AAx.js.gz                           3.55kb / gzip: 1.67kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/performance-C34c9NaW.js.gz                       19.75kb / gzip: 6.86kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/preferences-CQTR6Knd.js.gz                       7.09kb / gzip: 2.91kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/permissions-DNZVyyHo.js.gz                       18.30kb / gzip: 7.08kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/profile-diff-view-DZEMnN15.js.gz                 2.01kb / gzip: 1.13kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/qrcode-login-1Kgfjnq4.js.gz                      1.67kb / gzip: 0.85kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/publications-tab-CdtZCAqc.js.gz                  5.14kb / gzip: 2.47kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/publish-version-modal-DFdC9-Aw.js.gz             8.41kb / gzip: 3.45kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/record-detail-drawer-DJSmsLO-.js.gz              7.56kb / gzip: 3.18kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/records-BaKkXvh0.js.gz                           9.41kb / gzip: 3.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/review-drawer-BR4MliC4.js.gz                     2.68kb / gzip: 1.51kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/preferences-C_sDwEDf.js.gz                       7.13kb / gzip: 3.35kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/register-DQPf8wE2.js.gz                          3.24kb / gzip: 1.35kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/rank-tab-Bu74wY6b.js.gz                          26.09kb / gzip: 9.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/records--VyFAeSs.js.gz                           20.04kb / gzip: 8.15kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/security-setting-Bb5wwSe5.js.gz                  1.92kb / gzip: 1.00kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/pid-dashboard-ClIhTVjq.js.gz                     38.18kb / gzip: 12.88kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/src-DWCr9uCU.js.gz                               2.56kb / gzip: 1.18kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/rules-fgvewcrQ.js.gz                             11.33kb / gzip: 4.14kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/task-strategy-NXei_vcy.js.gz                     7.46kb / gzip: 2.79kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/simulate-section-DsmdrMiG.js.gz                  12.96kb / gzip: 4.94kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tasks-BdhAgPu9.js.gz                             2.59kb / gzip: 1.42kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/subscription-B_TQ1bst.js.gz                      9.30kb / gzip: 3.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/template-utils-BWC_ovmt.js.gz                    2.28kb / gzip: 1.23kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tippy-C1ivoYKP.js.gz                             2.00kb / gzip: 0.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tasks-CYyYnRCV.js.gz                             4.06kb / gzip: 2.06kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/request-D7VO-I_w.js.gz                           26.99kb / gzip: 8.90kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/todo-detail-modal-CDhVOgYQ.js.gz                 4.55kb / gzip: 2.04kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/theme-toggle-C-WUE_7y.js.gz                      10.11kb / gzip: 3.67kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/todo-panel-DzI1MOn3.js.gz                        3.33kb / gzip: 1.65kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/toolbar-button-Dwk5kQTZ.js.gz                    3.98kb / gzip: 1.50kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tuning-CgovhyMp.js.gz                            1.93kb / gzip: 0.93kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/trend-panel-BucrBqGI.js.gz                       3.13kb / gzip: 1.69kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tooltip-C2JAg33E.js.gz                           2.91kb / gzip: 1.15kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/src-f6gpCYWp.js.gz                               1.14kb / gzip: 0.59kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tuning-tab-BHa_6-8T.js.gz                        12.46kb / gzip: 4.90kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ui-CNfTnTV8.js.gz                                4.29kb / gzip: 2.24kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/unit-steady-bars-CzFl5AUD.js.gz                  3.09kb / gzip: 1.52kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/unit-auto-pareto-V6Eyp-2C.js.gz                  4.20kb / gzip: 2.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/tuning-verify-compare-DhdIARfC.js.gz             6.87kb / gzip: 3.00kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/ui-DbuALmIO.js.gz                                4.54kb / gzip: 1.95kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-cockpit-theme-Dka4yoEs.js.gz                 1.23kb / gzip: 0.69kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-clpm-theme-CNFbygVx.js.gz                    1.33kb / gzip: 0.59kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-echarts-preset-DofsRtCN.js.gz                1.85kb / gzip: 0.88kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-clpm-preferences-hqvVhnti.js.gz              8.17kb / gzip: 2.90kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-loop-follow-UqKJxRXL.js.gz                   3.26kb / gzip: 1.53kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/routes-C7oQPOUw.js.gz                            44.82kb / gzip: 11.73kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-echarts-CCTxVW2h.js.gz                       2.05kb / gzip: 1.09kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-site-branding-5r7N43fc.js.gz                 1.48kb / gzip: 0.69kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-drill-BeTPmr6l.js.gz                         13.20kb / gzip: 4.74kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-polling-CcbTMV5F.js.gz                       1.07kb / gzip: 0.55kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-page-toolbar-G0e_Q_AT.js.gz                  4.95kb / gzip: 2.12kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-loop-realtime-C81_VeU4.js.gz                 8.00kb / gzip: 2.92kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-wb360-session-dOz61cYn.js.gz                 2.49kb / gzip: 1.15kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-tuning-workbench-B-sZWjsr.js.gz              11.47kb / gzip: 4.17kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/users-879GekEa.js.gz                             19.04kb / gzip: 6.68kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-latest-overview-cache-cNbFpXjU.js.gz         4.20kb / gzip: 2.24kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-vben-form-D23QQWDD.js.gz                     30.99kb / gzip: 10.39kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/verification-DIcheyPW.js.gz                      4.09kb / gzip: 2.05kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/version-history-tab-B8ss2J4N.js.gz               6.22kb / gzip: 2.75kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/waveform-chart-C-8dmK6Q.js.gz                    9.37kb / gzip: 3.74kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-vue-BizDB4cN.js.gz                        33.07kb / gzip: 12.70kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-diagnosis-card-Te8h3VAx.js.gz          2.73kb / gzip: 1.44kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/weight-config-CZlb-O7M.js.gz                     19.73kb / gzip: 6.79kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-fitness-badge-8RRnnNCq.js.gz           1.78kb / gzip: 1.07kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/work-item-list-B8ewQqgp.js.gz                    14.77kb / gzip: 5.26kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-utils-tzym-DzF.js.gz                      37.57kb / gzip: 13.44kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-context-9wlZGqEV.js.gz                 3.41kb / gzip: 1.66kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-process-trend-7hCwdnR_.js.gz           5.46kb / gzip: 2.40kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-radar6-CSsD6Zbb.js.gz                  2.30kb / gzip: 1.27kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-metric-bars-CLGQHHZU.js.gz             2.02kb / gzip: 1.05kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-kpi-history-BPMTHZyi.js.gz             3.55kb / gzip: 1.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench-B86amc_o.js.gz                         29.29kb / gzip: 9.13kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-icons-BCZTPUK2.js.gz                      30.98kb / gzip: 11.40kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/workbench360-D4C9nu80.js.gz                      3.78kb / gzip: 1.76kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/jse/index-index-DGRmFaJk.js.gz                      26.69kb / gzip: 9.40kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/clpm-BUurJHCV.js.gz                              83.77kb / gzip: 26.17kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/css/bootstrap-Bro-f5iP.css.gz                       197.61kb / gzip: 31.13kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/bootstrap-BVXONIyO.js.gz                         88.78kb / gzip: 26.42kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/use-authz-live-D4ivmTNP.js.gz                    70.53kb / gzip: 19.01kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/basic-3y6GViYi.js.gz                             238.56kb / gzip: 58.49kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/src-CrYCCxCf.js.gz                               126.73kb / gzip: 48.66kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-misc-CCR-E-Fl.js.gz                       720.83kb / gzip: 212.89kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-echarts-9efhoxzl.js.gz                    735.75kb / gzip: 244.78kb
+dist//Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/js/vendor-antd-C7EWqXIS.js.gz                       1238.17kb / gzip: 373.83kb
+
+
+ZIP file created: /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/dist.zip (6518770 total bytes)
+Folder has been zipped to: /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd/dist.zip

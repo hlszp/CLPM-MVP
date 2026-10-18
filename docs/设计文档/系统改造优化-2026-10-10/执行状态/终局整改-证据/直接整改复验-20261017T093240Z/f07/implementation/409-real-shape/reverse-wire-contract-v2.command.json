@@ -1,0 +1,16 @@
+{
+  "argv": [
+    "node_modules/.bin/vitest",
+    "run",
+    "--dom",
+    "--no-cache",
+    "apps/web-antd/src/__tests__/personal-work-conflict.test.ts",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f07/implementation/409-real-shape/reverse-wire-contract-v2.results.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "rc": 1,
+  "observedAt": "2026-10-17T10:04:57.289936+00:00",
+  "sourceSha256": "695caa12a5b431dfaed9039815ac3fa4d3884e2030896f9002205a6ff5fa525b"
+}

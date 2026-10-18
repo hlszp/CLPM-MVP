@@ -1,0 +1,20 @@
+{
+  "storage": "rounded2dp",
+  "originalFrozenTolerancePercentagePoints": 0.005,
+  "reason": "frozen candidate _make_result precision default 2 and KpiSnapshotCustom three columns Numeric(5,2)",
+  "notAClaimOfUnroundedActual1eMinus8Verification": true,
+  "sourceRefs": [
+    {
+      "gitSha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+      "gitPath": "backend/app/models/metric.py",
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-local-numeric-review/run-20261017223757-c6fa2b489af6/actual-storage-source/metric.py",
+      "sha256": "c2f96305d050eade599d441847a667b00c808544157b3e4ac63ded864eca9dde"
+    },
+    {
+      "gitSha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+      "gitPath": "backend/app/services/metric_calculator/base.py",
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-local-numeric-review/run-20261017223757-c6fa2b489af6/actual-storage-source/base.py",
+      "sha256": "24e3c166e864a14c0abb0db9772c7c1691469c0a4ff2e0a570b7a1641947d903"
+    }
+  ]
+}

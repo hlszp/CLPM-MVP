@@ -1,0 +1,5 @@
+{
+  "sha256": "179ceb64ce75ad72732d4b0a63639c2871d39df486d4e4a7a3f26339fd6186f6",
+  "mutationsExecuted": false,
+  "actualBlocker": "owned static server still present; API timeout had prevented original frontend cleanup"
+}

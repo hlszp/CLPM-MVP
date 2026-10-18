@@ -1,0 +1,176 @@
+{
+  "generatedAt": "2026-10-17T13:30:58.717426+00:00",
+  "scope": "fixed six-file backend CALC contract only; no real business PASS",
+  "files": [
+    {
+      "path": "freeze-check.json",
+      "bytes": 180,
+      "sha256": "5d235e8a740539ecd083bafbdb1106a55d785a0bf2f2ea0f4004dce454507941"
+    },
+    {
+      "path": "frozen/backend/app/api/v1/endpoints/tasks.py",
+      "bytes": 65682,
+      "sha256": "2f472afb8fe75722b35cd13200e894f1203b53f8db5585daebbf5c620f0c63dc"
+    },
+    {
+      "path": "frozen/backend/app/services/calc_snapshot.py",
+      "bytes": 82854,
+      "sha256": "ed09e17551c299c2c257c1e4bfaee780f1a185f07e2026f4a20f29a0fd6df028"
+    },
+    {
+      "path": "frozen/backend/app/tasks/kpi_calc.py",
+      "bytes": 255572,
+      "sha256": "116d5db6f073bc9ec352a6348b6eda943f5e385df3736874b5acb88097d58172"
+    },
+    {
+      "path": "frozen/backend/tests/test_calc_snapshot.py",
+      "bytes": 45621,
+      "sha256": "d6fe4f4ae515c8bda08664b6d237449d74c232b8bdae3cecb5fadf2ca7a3a225"
+    },
+    {
+      "path": "frozen/backend/tests/test_custom_evaluation_completion.py",
+      "bytes": 10350,
+      "sha256": "849915cd421285e4d7fda934e5ba33c5c7a07ce20ef429396e9a9ed8cc8267e8"
+    },
+    {
+      "path": "frozen/backend/tests/test_g5_data_acquisition_failure.py",
+      "bytes": 18821,
+      "sha256": "2987328b1031641dd3e78112ff5ef344d65202ec2c3a204184c2b874ef7834f5"
+    },
+    {
+      "path": "frozen-local-target-worker-originals.json",
+      "bytes": 27355,
+      "sha256": "99abf70c32f11f9d4698dc1e2dcc6ed65154f737484f6da98aa8fcbc57fbfed9"
+    },
+    {
+      "path": "frozen-patched-source-v2.json",
+      "bytes": 3580,
+      "sha256": "b58b3100b6c85dc37a8498c4ecc6d4fa603e57772c7de489e137adcfa61e5e01"
+    },
+    {
+      "path": "frozen-remote-target-worker-originals.json",
+      "bytes": 27412,
+      "sha256": "a8a80b9013dacb0b64f61508bd9122fc01411b06676722f54527cd69f6e06f26"
+    },
+    {
+      "path": "old-edfa/backend/app/api/v1/endpoints/tasks.py",
+      "bytes": 65190,
+      "sha256": "391610b03b4b6c503a611acc451984b179424f13038f2e922eb62a8eaeddf32a"
+    },
+    {
+      "path": "old-edfa/backend/app/services/calc_snapshot.py",
+      "bytes": 81697,
+      "sha256": "39e67b9af522ccf694513bac11307d7002f6acb7d0092d34b3016e4dbe2a9850"
+    },
+    {
+      "path": "old-edfa/backend/app/tasks/kpi_calc.py",
+      "bytes": 254612,
+      "sha256": "a222a53c9e2ae40581461ba63a22e0ce81edacaa7324aa82916c1dc3f9e66bc8"
+    },
+    {
+      "path": "own-contracts-forward-initial.command.json",
+      "bytes": 1427,
+      "sha256": "603bcc8d5ada6410fc9e5f278696ae59058d9d37f2a8b6ced4469227f758776f"
+    },
+    {
+      "path": "own-contracts-forward-initial.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "own-contracts-forward-initial.stdout.log",
+      "bytes": 3259,
+      "sha256": "b44970e3f73ca7ad8b0be40d9b12543740248deed4701ad9711b6809f3de7b29"
+    },
+    {
+      "path": "own-contracts-forward.command.json",
+      "bytes": 1427,
+      "sha256": "91932f142d87d7b7ab8a5448f99621c5a041efde1036ef3a79d21a32255056cd"
+    },
+    {
+      "path": "own-contracts-forward.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "own-contracts-forward.stdout.log",
+      "bytes": 660,
+      "sha256": "647f7539d8be7c6b7a4a0fdc76ef458bad9536548624b46a6b7fd1bf9fbe9f7c"
+    },
+    {
+      "path": "own-contracts-original-reverse.command.json",
+      "bytes": 1475,
+      "sha256": "cf8484dc8db0eb22daee3a8da144f72691fd9139cf7d9945799136826b2a3621"
+    },
+    {
+      "path": "own-contracts-original-reverse.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "own-contracts-original-reverse.stdout.log",
+      "bytes": 23743,
+      "sha256": "219c97dfd48b924a6dc7050c7de38259cf784c3724b1a6fb48c22eccf6bdc7d7"
+    },
+    {
+      "path": "receipt.md",
+      "bytes": 3404,
+      "sha256": "ef1dcc7878fdfca780157534f00f83c48494ded3c8721f697f646e285b6bd9ae"
+    },
+    {
+      "path": "restore_old_functions_for_test.py",
+      "bytes": 1431,
+      "sha256": "6f159f67c83c44364b4b924ffdda64d2e9b3fd546246eae92136cd211de835e7"
+    },
+    {
+      "path": "six-file-regression.command.json",
+      "bytes": 1907,
+      "sha256": "93eb07b5c9f6173f5818f21703c9df4501ab2b8d34021f1a98e667d379066a26"
+    },
+    {
+      "path": "six-file-regression.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "six-file-regression.stdout.log",
+      "bytes": 2542,
+      "sha256": "a06af2732fc4ac1e45ddda4f263858760491e4b38a9d1cb1106b4a4fc1d2d3cb"
+    },
+    {
+      "path": "source-after-regression.json",
+      "bytes": 121,
+      "sha256": "0add4e0d60342a0632fa153c57fbc74acac7a06c7407378d0638e56c742f1016"
+    },
+    {
+      "path": "source-scope-and-failure-raw-check.json",
+      "bytes": 1993,
+      "sha256": "28e18f273cf4992cb5491f47fd0b1ad0ee0b85ba58a69a68a69486f30742e19d"
+    },
+    {
+      "path": "test_independent_custom_repair-initial.py",
+      "bytes": 10792,
+      "sha256": "e84bcb45ecdd39e00d100186c0551188ceeeaaa71f0c159938d4c15261b65cab"
+    },
+    {
+      "path": "test_independent_custom_repair.py",
+      "bytes": 11295,
+      "sha256": "7f43d5ed66cdf984e136a80ae5547f67bc0d16dfb680538a8738aa1ec33f6df5"
+    },
+    {
+      "path": "unchanged-dependencies/backend/app/services/data_planner.py",
+      "bytes": 52004,
+      "sha256": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6"
+    },
+    {
+      "path": "unchanged-dependencies/backend/app/services/task_tracker.py",
+      "bytes": 29282,
+      "sha256": "34305a2123c84dff37e7ed1969912f88081aa9088a9e6abc798e917b58ecd45e"
+    },
+    {
+      "path": "unchanged-dependencies.json",
+      "bytes": 379,
+      "sha256": "816a48bad61e1d0d2f2883f499534607fc4aa58bffd5cd293e7e1f5b77e9624f"
+    }
+  ]
+}

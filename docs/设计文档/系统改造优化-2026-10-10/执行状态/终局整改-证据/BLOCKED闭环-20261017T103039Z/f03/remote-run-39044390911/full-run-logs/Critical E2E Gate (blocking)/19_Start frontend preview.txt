@@ -1,0 +1,48 @@
+﻿2026-10-17T15:19:33.9863656Z ##[group]Run pnpm -F @vben/web-antd preview --port 15666 > /tmp/critical-frontend.log 2>&1 &
+2026-10-17T15:19:33.9864052Z [36;1mpnpm -F @vben/web-antd preview --port 15666 > /tmp/critical-frontend.log 2>&1 &[0m
+2026-10-17T15:19:33.9864291Z [36;1mecho $! > /tmp/frontend.pid[0m
+2026-10-17T15:19:33.9864441Z [36;1mfor i in $(seq 1 30); do[0m
+2026-10-17T15:19:33.9864629Z [36;1m  curl -sf http://localhost:15666 && break[0m
+2026-10-17T15:19:33.9864793Z [36;1m  sleep 2[0m
+2026-10-17T15:19:33.9864924Z [36;1mdone[0m
+2026-10-17T15:19:33.9921822Z shell: /usr/bin/bash -e {0}
+2026-10-17T15:19:33.9921998Z env:
+2026-10-17T15:19:33.9922111Z   CI: true
+2026-10-17T15:19:33.9922222Z   ENV: development
+2026-10-17T15:19:33.9922338Z   CLPM_TEST_MODE: 0
+2026-10-17T15:19:33.9922469Z   E2E_EXECUTION_ENV: disposable-github-ci
+2026-10-17T15:19:33.9922628Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:19:33.9922757Z   OMP_NUM_THREADS: 1
+2026-10-17T15:19:33.9922871Z   MKL_NUM_THREADS: 1
+2026-10-17T15:19:33.9922989Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:19:33.9923155Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:19:33.9923291Z   POSTGRES_HOST: localhost
+2026-10-17T15:19:33.9923418Z   POSTGRES_PORT: 5432
+2026-10-17T15:19:33.9923539Z   POSTGRES_USER: clpm
+2026-10-17T15:19:33.9923667Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T15:19:33.9923819Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T15:19:33.9923957Z   REDIS_HOST: localhost
+2026-10-17T15:19:33.9924078Z   REDIS_PORT: 6379
+2026-10-17T15:19:33.9924189Z   REDIS_DB: 0
+2026-10-17T15:19:33.9924458Z   REDIS_PASSWORD: 
+2026-10-17T15:19:33.9924575Z   TDENGINE_HOST: localhost
+2026-10-17T15:19:33.9924703Z   TDENGINE_PORT: 6030
+2026-10-17T15:19:33.9924821Z   TDENGINE_USER: root
+2026-10-17T15:19:33.9924942Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T15:19:33.9936752Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T15:19:33.9936992Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T15:19:33.9937207Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T15:19:33.9937464Z   CLPM_BUILD_CODE_SHA: bc48701efe90e2a27555a4f8794f0965e82b0902
+2026-10-17T15:19:33.9937739Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T15:19:33.9937988Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T15:19:33.9938229Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T15:19:33.9938470Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:33.9938699Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:19:33.9938934Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:33.9939147Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:33.9939360Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:19:33.9939570Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:19:33.9939775Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:19:33.9939972Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T15:19:33.9940138Z ##[endgroup]
+2026-10-17T15:19:36.0209188Z <!doctype html><html lang="zh"><head><script src="/_app.config.js?v=5.7.0-5d7903e0"></script><meta charset="UTF-8"><meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"><meta name="renderer" content="webkit"><meta name="description" content="CLPM 控制回路性能管理系统"><meta name="keywords" content="CLPM,控制回路,性能管理,工业治理"><meta name="author" content="CLPM"><meta name="viewport" content="width=device-width,initial-scale=1"><title>CLPM 控制回路性能评估与优化平台</title><link rel="icon" href="/favicon.ico"><script type="module" crossorigin src="/jse/index-index-BWu1dID0.js"></script><link rel="modulepreload" crossorigin href="/js/rolldown-runtime-B7dzfUhG.js"><link rel="modulepreload" crossorigin href="/js/vendor-antd-C7EWqXIS.js"><link rel="modulepreload" crossorigin href="/js/vendor-icons-BCZTPUK2.js"><link rel="modulepreload" crossorigin href="/js/vendor-misc-CCR-E-Fl.js"><link rel="modulepreload" crossorigin href="/js/vendor-utils-tzym-DzF.js"><link rel="stylesheet" crossorigin href="/css/vendor-misc-DkTQMyWH.css"></head><body><script data-app-loading="inject-js">var theme=localStorage.getItem("undefined-5.7.0-prod-preferences-theme");document.documentElement.classList.toggle("dark",/dark/.test(theme))</script><style data-app-loading="inject-css">html{line-height:1.15}.loading{position:fixed;top:0;left:0;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;width:100%;height:100%;overflow:hidden;background-color:#f4f7f9}.loading.hidden{visibility:hidden;pointer-events:none;opacity:0;transition:all .8s ease-out}.dark .loading{background:#0d0d10}.title{margin-top:66px;font-size:28px;font-weight:600;color:rgb(0 0 0 / 85%)}.dark .title{color:#fff}.loader{position:relative;width:48px;height:48px}.loader::before{position:absolute;top:60px;left:0;width:48px;height:5px;content:'';background:hsl(var(--primary,210 100% 50%) / 50%);border-radius:50%;animation:shadow-ani .5s linear infinite}.loader::after{position:absolute;top:0;left:0;width:100%;height:100%;content:'';background:hsl(var(--primary,210 100% 50%));border-radius:4px;animation:jump-ani .5s linear infinite}@keyframes jump-ani{15%{border-bottom-right-radius:3px}25%{transform:translateY(9px) rotate(22.5deg)}50%{border-bottom-right-radius:40px;transform:translateY(18px) scale(1,.9) rotate(45deg)}75%{transform:translateY(9px) rotate(67.5deg)}100%{transform:translateY(0) rotate(90deg)}}@keyframes shadow-ani{0%,100%{transform:scale(1,1)}50%{transform:scale(1.2,1)}}</style><div class="loading" id="__app-loading__"><div class="loader"></div><div class="title">CLPM 控制回路性能评估与优化平台</div></div><div id="app"></div></body></html>

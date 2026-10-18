@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:09:36.022857+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "run-code",
+    "async (page) => { await page.reload(); const row=page.getByRole('row').filter({hasText:'AUDIT-F04-UI-1017'});await row.waitFor(); const initialCells=await row.getByRole('cell').allTextContents();if(initialCells[5]!=='0')throw new Error('template count not restored');await row.getByTestId('btn-open-detail').click();await page.getByTestId('btn-batch-apply').click();await page.getByTestId('loop-filter-keyword').fill('AUDIT-F04-UI-0001');await page.getByTestId('loop-filter-keyword').press('Enter');const edit=page.getByTestId('batch-edit');await edit.getByText('共 1 条',{exact:true}).waitFor();await edit.getByRole('checkbox').first().check();await page.getByTestId('pin-fixed').click();await page.getByTestId('pin-version-select').click();return {initialTemplateCells:initialCells}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 2.79443499998888,
+  "stdout": "### Result\n{\"initialTemplateCells\":[\"AUDIT-F04-UI-1017\",\"独立浏览器复验零关联模板\",\"响应特征\",\" v1\",\"1\",\"0\",\"2026/10/17 18:04:06\",\"维护\"]}\n### Ran Playwright code\n```js\nawait (async (page) => { await page.reload(); const row=page.getByRole('row').filter({hasText:'AUDIT-F04-UI-1017'});await row.waitFor(); const initialCells=await row.getByRole('cell').allTextContents();if(initialCells[5]!=='0')throw new Error('template count not restored');await row.getByTestId('btn-open-detail').click();await page.getByTestId('btn-batch-apply').click();await page.getByTestId('loop-filter-keyword').fill('AUDIT-F04-UI-0001');await page.getByTestId('loop-filter-keyword').press('Enter');const edit=page.getByTestId('batch-edit');await edit.getByText('共 1 条',{exact:true}).waitFor();await edit.getByRole('checkbox').first().check();await page.getByTestId('pin-fixed').click();await page.getByTestId('pin-version-select').click();return {initialTemplateCells:initialCells}; })(page);\n```\n### Page\n- Page URL: http://127.0.0.1:17266/config/eng-templates\n- Page Title: 工程模板 - iCLPM 系统\n- Console: 0 errors, 1 warnings\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T10-03-16-655Z.log#L7\n",
+  "stderr": ""
+}

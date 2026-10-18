@@ -1,0 +1,11 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "format",
+    "--check",
+    "../e2e/scripts/prepare-critical-fixture.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 1,
+  "seconds": 0.01457545799999993
+}

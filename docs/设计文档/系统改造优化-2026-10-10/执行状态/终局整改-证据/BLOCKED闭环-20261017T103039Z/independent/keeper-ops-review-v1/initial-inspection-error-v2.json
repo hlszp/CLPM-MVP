@@ -1,0 +1,6 @@
+{
+  "rc": 1,
+  "stderr": "NameError: destination is not defined: eval generator reads globals rather than separate locals",
+  "productFailure": false,
+  "correctedInspectorOnly": true
+}

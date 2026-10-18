@@ -1,0 +1,100 @@
+2026-10-16 07:08:13,548 | WARNING  | app.tasks.kpi_calc | DataPlanner 取数失败（回路 PERF-T0639）: [0x073a]: Query memory exhausted
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/tasks/kpi_calc.py", line 2497, in _calculate_loop_kpi
+    bundles = await data_planner.request_bundles(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 387, in request_bundles
+    data_blocks = await self._execute_query_plan(
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 659, in _execute_query_plan
+    results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 638, in _process_non_reuse
+    data_block = await self._query_and_preprocess(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_planner.py", line 722, in _query_and_preprocess
+    raw = await self._query_fn(
+          ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 128, in _query_fn_point
+    return await _point_or_mixed_query(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/tdengine_provider.py", line 202, in _point_or_mixed_query
+    raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 79, in wrapped
+    return await fn(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/logical_wide_builder.py", line 315, in build_logical_wide
+    per_point = await asyncio.gather(
+                ^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 117, in awaited
+    return await operation
+           ^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/services/data_source/point_history_repository.py", line 263, in read_events
+    rows = await execute_native(sql)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 182, in execute_native
+    return await asyncio.wait_for(
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/asyncio/tasks.py", line 520, in wait_for
+    return await fut
+           ^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/g5_trace.py", line 143, in threaded
+    return await asyncio.get_running_loop().run_in_executor(executor, fn, *args)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/app/core/tdengine_native.py", line 166, in _execute
+    cursor.execute(sql)
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/cursor.py", line 55, in execute
+    self._response = self._c.sql(operation, req_id=req_id)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/lib/python3.12/site-packages/taosrest/restclient.py", line 129, in sql
+    raise ConnectError(resp["desc"], resp["code"])
+taosrest.errors.ConnectError: [0x073a]: Query memory exhausted
+2026-10-16 07:08:13,639 | INFO     | app.tasks.kpi_calc | 迟到历史窗口不更新 loop_confidence_latest（回路 5ed28b6f-bf25-4c67-9cb3-246bf420262a：incoming=2026-10-15 23:00:00 < current=2026-10-16 03:00:00）
+2026-10-16 07:08:13,687 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=0f2c5eef-cdf5-42f6-b171-927ad1731861, tagGroup=PVOP_HF, points=3601, controlType=PC
+2026-10-16 07:08:13,695 | DEBUG    | app.services.preprocessing.outlier_detection | HF_NOISE detected: hf_ratio=0.544, cutoff=0.10Hz, freq=0.5Hz
+2026-10-16 07:08:13,696 | INFO     | app.services.task_tracker | 任务状态更新: task_id=e7173271-ded8-4e67-86ab-8d4aa2ecff72, RUNNING→RUNNING
+2026-10-16 07:08:13,697 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=3601, reasons={0: ['HF_NOISE'], 1: ['HF_NOISE'], 2: ['HF_NOISE'], 3: ['HF_NOISE'], 4: ['HF_NOISE']}
+2026-10-16 07:08:13,697 | INFO     | app.services.task_tracker | 任务状态更新: task_id=e7173271-ded8-4e67-86ab-8d4aa2ecff72, RUNNING→RUNNING
+2026-10-16 07:08:13,701 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=85da142f-8d5c-4e14-95d5-fe95f3d928ac, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-16T03:00:00~2026-10-16T04:00:00, control=FC
+2026-10-16 07:08:13,705 | DEBUG    | app.services.data_planner | DataPlanner.request_bundles: loop=ac56e4e9-6bac-49ae-9538-66e03bde7c99, metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'effective_auto_rate', 'good_value_rate', 'oscillation_rate', 'saturation_rate', 'stiction_index', 'output_trip_index', 'auto_mode_rate', 'settling_time', 'ideal_settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'op_mean', 'op_std', 'error_mean', 'error_std', 'valve_linearity', 'valve_nonlinearity', 'valve_operating_range', 'setpoint_crossing_count', 'oscillation_amplitude', 'time_constant'], window=2026-10-16T03:00:00~2026-10-16T04:00:00, control=TC
+2026-10-16 07:08:13,712 | DEBUG    | app.services.cache.l2_bundle | L2 cache SET: key=pdb_l2:c4a01ade-cb34-4405-b617-3af1bde31a6f:8990decd:0a10a742:FC:50075686:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3, ttl=600s, bundles=25, payload_bytes=112564
+2026-10-16 07:08:13,713 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=3601, anomalous=5, reasons={3056: ['FROZEN'], 3057: ['FROZEN'], 3058: ['FROZEN'], 3059: ['FROZEN'], 3060: ['FROZEN']}
+2026-10-16 07:08:13,713 | DEBUG    | app.services.data_planner | DataPlanner L2 写入: key=pdb_l2:c4a01ade-cb34-4405-b617-3af1bde31a6f:8990decd:0a10a742:FC:50075686:cfg_1791816697_opr0.0_100.0:mf-6d7cd99f02dd:tqpv3, bundles=25
+2026-10-16 07:08:13,724 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-16 07:08:13,727 | INFO     | app.services.data_planner | DataPlanner 完成: loop=c4a01ade-cb34-4405-b617-3af1bde31a6f, bundles=25, cached_blocks=5
+2026-10-16 07:08:13,731 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=1776] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-16 07:08:13,732 | DEBUG    | app.services.metric_calculator.accuracy | [准确率] 输入: masked_points=3601
+2026-10-16 07:08:13,733 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_0f2c5eef-cdf5-42f6-b171-927ad1731861_PVOP_HF_1s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-16 07:08:13,733 | DEBUG    | app.services.metric_calculator.accuracy | [准确率] mean_abs_error=4.223832, e_max=2.0000(tolerance_ratio), r=2.1119, decay=0.8790, A=0.00
+2026-10-16 07:08:13,734 | DEBUG    | app.services.metric_calculator.base | [accuracy_rate] value=0.00, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,735 | DEBUG    | app.services.metric_calculator.effective_auto | [有效自控率] 输入: masked_points=3601
+2026-10-16 07:08:13,761 | DEBUG    | app.services.metric_calculator.base | [effective_auto_rate] value=63.87, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,761 | DEBUG    | app.services.metric_calculator.good_value | [好值率] 输入: point_count=3601
+2026-10-16 07:08:13,774 | DEBUG    | app.services.metric_calculator.good_value | [好值率] 使用 quality_summary: rate=100.00%
+2026-10-16 07:08:13,780 | DEBUG    | app.services.metric_calculator.base | [good_value_rate] value=100.00, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,788 | DEBUG    | app.services.metric_calculator.oscillation | [振荡率] 输入: masked_points=3601
+2026-10-16 07:08:13,807 | DEBUG    | app.services.metric_calculator.oscillation | [振荡率] SP 阶跃剔除: steps=2, excluded=120/3601, window=60pts(legacy_points)
+2026-10-16 07:08:13,816 | DEBUG    | app.services.metric_calculator.oscillation | [振荡率] s_a=0.5785, s_b=0.9802, s_ta=0.6008, s_tb=0.8164, mean_half=15.1pts, amp=1.3121(0.01312), osc=57.85%, is_osc=True, period=31.3s
+2026-10-16 07:08:13,817 | DEBUG    | app.services.metric_calculator.base | [oscillation_rate] value=57.85, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,817 | DEBUG    | app.services.metric_calculator.saturation | [饱和率] 输入: masked_points=3601
+2026-10-16 07:08:13,834 | DEBUG    | app.services.metric_calculator.base | [saturation_rate] value=0.00, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,835 | DEBUG    | app.services.metric_calculator.stiction | [粘滞系数] 输入: masked_points=3601
+2026-10-16 07:08:13,836 | DEBUG    | app.services.metric_calculator.stiction | [粘滞系数] 非极限环振荡段（平稳回路），返回无粘滞: {'zero_crossings': 163, 'mean_half_period': 20.36, 's_a': 0.0, 's_b': 0.9276}
+2026-10-16 07:08:13,836 | DEBUG    | app.services.metric_calculator.base | [stiction_index] value=0.00, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,837 | DEBUG    | app.services.metric_calculator.output_trip | [输出行程] 输入: masked_points=3601
+2026-10-16 07:08:13,838 | DEBUG    | app.services.metric_calculator.output_trip | [输出行程] total_trip=8912.4550, duration=3600.0, op_range=100.0, trip=0.024757, level=NORMAL
+2026-10-16 07:08:13,838 | DEBUG    | app.services.metric_calculator.base | [output_trip_index] value=0.02, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,838 | DEBUG    | app.services.metric_calculator.auto_mode | [自控率] 输入: masked_points=3601
+2026-10-16 07:08:13,889 | DEBUG    | app.services.metric_calculator.auto_mode | [自控率] auto=3601.0, total=3601.0, unknown=0.0, rate=100.00%
+2026-10-16 07:08:13,893 | DEBUG    | app.services.metric_calculator.base | [auto_mode_rate] value=100.00, metric_vr=1.0000, loop_confidence=A
+2026-10-16 07:08:13,895 | DEBUG    | app.services.metric_calculator.settling_time | [稳态时间] 输入: masked_points=3601

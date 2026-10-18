@@ -1,0 +1,1 @@
+{"verdict": "BLOCKED", "error": "Different PG snapshots need the original after table export; a summary stable flag is insufficient"}

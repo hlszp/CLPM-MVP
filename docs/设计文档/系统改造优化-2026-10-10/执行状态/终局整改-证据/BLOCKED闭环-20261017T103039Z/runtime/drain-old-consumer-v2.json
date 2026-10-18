@@ -1,0 +1,282 @@
+[
+  {
+    "at": 1792234317.553546,
+    "initial_active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234317.556472,
+    "cancel_consumer_default": [
+      {
+        "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": {
+          "ok": "no longer consuming from default"
+        }
+      }
+    ]
+  },
+  {
+    "at": 1792234317.559231,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234322.5745869,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234327.5912151,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234332.608313,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234337.6253288,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234342.6411111,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234347.65783,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234352.672307,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234357.688473,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234362.707635,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": [
+        {
+          "id": "fa55efa0-896e-415a-92e2-bc0e0340c761",
+          "name": "app.tasks.alert_patrol.run_alert_patrol",
+          "args": [],
+          "kwargs": {},
+          "type": "app.tasks.alert_patrol.run_alert_patrol",
+          "hostname": "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro",
+          "time_start": 1792234260.0023136,
+          "acknowledged": false,
+          "delivery_info": {
+            "exchange": "",
+            "routing_key": "default",
+            "priority": 0,
+            "redelivered": false
+          },
+          "worker_pid": 64137
+        }
+      ]
+    }
+  },
+  {
+    "at": 1792234367.725219,
+    "active": {
+      "clpm-g5-runtime-20261015@zhangpingdeMacBook-Pro": []
+    }
+  }
+]

@@ -1,0 +1,14 @@
+{
+  "at": "2026-10-17T13:46:55.513383+00:00",
+  "cleanupOnly": true,
+  "originalSeedRc": 1,
+  "originalStopRc": 1,
+  "actualApiExit": {
+    "pid": 70494,
+    "rc": -15,
+    "at": "2026-10-17T13:46:54.013045+00:00"
+  },
+  "ownedProductProcessesRemaining": 0,
+  "brokerEmpty": true,
+  "businessGateExecuted": false
+}

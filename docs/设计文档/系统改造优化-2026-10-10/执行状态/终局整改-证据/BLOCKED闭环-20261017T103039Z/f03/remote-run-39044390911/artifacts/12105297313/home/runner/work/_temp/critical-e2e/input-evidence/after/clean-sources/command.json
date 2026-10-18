@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "git",
+    "diff",
+    "--quiet",
+    "HEAD"
+  ],
+  "startedAtUtc": "2026-10-17T15:20:10.325639+00:00",
+  "rc": 0,
+  "finishedAtUtc": "2026-10-17T15:20:10.333153+00:00",
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

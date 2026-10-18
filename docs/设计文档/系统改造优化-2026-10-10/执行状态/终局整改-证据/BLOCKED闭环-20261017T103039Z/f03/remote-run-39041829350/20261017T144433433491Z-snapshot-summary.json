@@ -1,0 +1,73 @@
+{
+  "observedAt": "2026-10-17T14:44:33.433130+00:00",
+  "run": {
+    "id": 39041829350,
+    "head_sha": "c6fa2b489af66da392ea72fa387629f1607ba613",
+    "run_attempt": 1,
+    "status": "in_progress",
+    "conclusion": null,
+    "event": "pull_request"
+  },
+  "jobs": [
+    {
+      "id": 117422708786,
+      "name": "Critical E2E Gate (blocking)",
+      "status": "in_progress",
+      "conclusion": null,
+      "activeSteps": [
+        {
+          "number": 21,
+          "name": "Install Playwright browsers",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
+    },
+    {
+      "id": 117422708873,
+      "name": "Backend CI",
+      "status": "in_progress",
+      "conclusion": null,
+      "activeSteps": [
+        {
+          "number": 13,
+          "name": "Pytest with coverage",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
+    },
+    {
+      "id": 117422708914,
+      "name": "Frontend CI",
+      "status": "in_progress",
+      "conclusion": null,
+      "activeSteps": [
+        {
+          "number": 9,
+          "name": "Build",
+          "status": "in_progress",
+          "conclusion": null
+        }
+      ]
+    }
+  ],
+  "availableArtifacts": [],
+  "rawSnapshotRefs": {
+    "run": {
+      "path": "requests/20261017T144432556619Z-run.json",
+      "bytes": 11960,
+      "sha256": "ecbafb839ee182c07bc349a44485c22cfdc4fe54e2163c8c32e0c00b939b34ab"
+    },
+    "jobs": {
+      "path": "requests/20261017T144432556691Z-jobs.json",
+      "bytes": 12056,
+      "sha256": "73bc659c8f8913dc8fd39d8610bb0f9c818d935c78bbb52091297dfa06bf9213"
+    },
+    "artifacts": {
+      "path": "requests/20261017T144432556814Z-artifacts.json",
+      "bytes": 32,
+      "sha256": "244563f989470892c537c9a4622920af0d228ee4528f7d00c64a06d6cd95856c"
+    }
+  }
+}

@@ -1,0 +1,198 @@
+base_url=http://127.0.0.1:35521
+api_url=http://127.0.0.1:35521/api/v1
+artifacts=/home/runner/work/_temp/critical-e2e/contract/failed
+PLAYWRIGHT_COLLECT_EXIT=0
+{
+  "mode": "collect",
+  "passed": true,
+  "exitCode": 0,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T14:43:18.376Z",
+    "duration": 95.29100000000005,
+    "expected": 0,
+    "skipped": 4,
+    "unexpected": 0,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "skipped",
+      "results": []
+    }
+  ],
+  "violations": []
+}
+{
+  "mode": "run",
+  "passed": false,
+  "exitCode": 1,
+  "required": 4,
+  "collected": 4,
+  "stats": {
+    "startTime": "2026-10-17T14:43:19.064Z",
+    "duration": 1105.681,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  },
+  "rows": [
+    {
+      "id": "CRITICAL-AUTH-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "unexpected",
+      "results": [
+        {
+          "workerIndex": 0,
+          "parallelIndex": 0,
+          "status": "failed",
+          "duration": 11,
+          "error": {
+            "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+            "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at /tmp/clpm-gate-contract-mYohWx/fixture/e2e/tests/critical-business.spec.ts:5:21",
+            "location": {
+              "file": "/tmp/clpm-gate-contract-mYohWx/fixture/e2e/tests/critical-business.spec.ts",
+              "column": 21,
+              "line": 5
+            },
+            "snippet": "\u001b[0m \u001b[90m 3 |\u001b[39m     test(\u001b[32m'CRITICAL-AUTH-001: gate-contract fixture'\u001b[39m\u001b[33m,\u001b[39m \u001b[36masync\u001b[39m ({}\u001b[33m,\u001b[39m testInfo) \u001b[33m=>\u001b[39m {\n \u001b[90m 4 |\u001b[39m       \n\u001b[31m\u001b[1m>\u001b[22m\u001b[39m\u001b[90m 5 |\u001b[39m       expect(\u001b[36mfalse\u001b[39m)\u001b[33m.\u001b[39mtoBe(\u001b[36mtrue\u001b[39m)\u001b[33m;\u001b[39m\n \u001b[90m   |\u001b[39m                     \u001b[31m\u001b[1m^\u001b[22m\u001b[39m\n \u001b[90m 6 |\u001b[39m     })\u001b[33m;\u001b[39m\n \u001b[90m 7 |\u001b[39m   \n \u001b[90m 8 |\u001b[39m\u001b[0m"
+          },
+          "errors": [
+            {
+              "location": {
+                "file": "/tmp/clpm-gate-contract-mYohWx/fixture/e2e/tests/critical-business.spec.ts",
+                "column": 21,
+                "line": 5
+              },
+              "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\n  3 |     test('CRITICAL-AUTH-001: gate-contract fixture', async ({}, testInfo) => {\n  4 |       \n> 5 |       expect(false).toBe(true);\n    |                     ^\n  6 |     });\n  7 |   \n  8 |\n    at /tmp/clpm-gate-contract-mYohWx/fixture/e2e/tests/critical-business.spec.ts:5:21"
+            }
+          ],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T14:43:19.541Z",
+          "annotations": [],
+          "attachments": [
+            {
+              "name": "error-context",
+              "contentType": "text/markdown",
+              "path": "/home/runner/work/_temp/critical-e2e/contract/failed/test-results/critical-business-CRITICAL-AUTH-001-gate-contract-fixture-chromium/error-context.md"
+            }
+          ],
+          "errorLocation": {
+            "file": "/tmp/clpm-gate-contract-mYohWx/fixture/e2e/tests/critical-business.spec.ts",
+            "column": 21,
+            "line": 5
+          }
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-PERM-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 1,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 8,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T14:43:20.042Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-CALC-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 1,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 4,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T14:43:20.100Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    },
+    {
+      "id": "CRITICAL-EVIDENCE-001",
+      "file": "critical-business.spec.ts",
+      "project": "chromium",
+      "expectedStatus": "passed",
+      "status": "expected",
+      "results": [
+        {
+          "workerIndex": 1,
+          "parallelIndex": 0,
+          "status": "passed",
+          "duration": 3,
+          "errors": [],
+          "stdout": [],
+          "stderr": [],
+          "retry": 0,
+          "startTime": "2026-10-17T14:43:20.128Z",
+          "annotations": [],
+          "attachments": []
+        }
+      ]
+    }
+  ],
+  "violations": [
+    "CRITICAL-AUTH-001: outcome=unexpected",
+    "CRITICAL-AUTH-001: status=failed",
+    "unexpected=1",
+    "passed=3, required=4"
+  ]
+}
+PLAYWRIGHT_EXIT=1
+CONTRACT_EXIT=1
+CRITICAL_E2E_GATE=FAIL

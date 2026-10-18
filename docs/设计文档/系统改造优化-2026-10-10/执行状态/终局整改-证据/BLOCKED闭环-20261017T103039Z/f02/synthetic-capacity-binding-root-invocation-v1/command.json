@@ -1,0 +1,43 @@
+{
+  "startedAtUtc": "2026-10-17T15:09:06.955230+00:00",
+  "commandFile": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/synthetic-capacity-binding-root-apply-command-v1.json",
+  "commandFileSha256": "6d4d8df9e812fdcd0a40b8694ae706840878389c098bbb28882bf6da4d285113",
+  "executed": true,
+  "verifiedSourcePins": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/synthetic-capacity-binding-preparation/redis-url-guard-v2/prepare_bindings.py",
+      "sha256": "e213f27d9abc631ad3cb11233366e6f631a9fb4d88bcbf3b81cdf0d60464650b"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/synthetic-capacity-dump-adapter-root/pg_dump_test_container.py",
+      "sha256": "c27d789a2c8308cfbeebc692d4565d2460b6c65fe2f3bc295fc72f51469fb3c8"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f02-synthetic-binding-preparation-review/receipt.md",
+      "sha256": "14428de424cce1f1201926e37da3a931128c54a05d7ce624fe456ef0c3526d89"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/f02-pgdump-adapter-review/evidence-manifest.json",
+      "sha256": "9671b7d1fcef6c9ff81008c0f5da5d6ccfada3ff75ec2215992e8c7b615aa394"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+      "sha256": "27d6fc10cc68376b056d1c7803f1b6361e48c11bc3de46c4e8a46cc4b2abe04b"
+    }
+  ],
+  "actualServicePreflight": {
+    "startedAtUtc": "2026-10-17T15:09:06.955916+00:00",
+    "argv": [
+      "lsof",
+      "-nP",
+      "-iTCP:17101",
+      "-iTCP:17261",
+      "-iTCP:17266",
+      "-sTCP:LISTEN"
+    ],
+    "rc": 1,
+    "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "commandFilePreflightTimestampIsInformalOnly": "The exact new observation above is authoritative; command-file preflight timestamp was a handoff label."
+}

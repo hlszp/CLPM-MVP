@@ -1,0 +1,16 @@
+{
+  "name": "backend-ruff",
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "check",
+    "app/services/loop_batch_restore.py",
+    "app/services/loop_batch.py",
+    "app/schemas/loop_batch.py",
+    "app/api/v1/endpoints/loops.py",
+    "tests/test_loop_batch_restore.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T09:45:58.288947+00:00",
+  "elapsedSeconds": 0.023,
+  "exitCode": 0
+}

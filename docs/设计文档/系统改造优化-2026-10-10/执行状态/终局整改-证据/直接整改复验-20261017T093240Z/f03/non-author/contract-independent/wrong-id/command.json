@@ -1,0 +1,8 @@
+{
+  "args": [
+    "bash",
+    "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-VWQpMl/fixture/scripts/run-critical-e2e.sh"
+  ],
+  "code": 3,
+  "signal": null
+}

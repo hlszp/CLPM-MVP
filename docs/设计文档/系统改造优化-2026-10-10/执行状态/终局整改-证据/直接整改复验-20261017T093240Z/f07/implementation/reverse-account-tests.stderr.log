@@ -1,0 +1,34 @@
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/web-antd/src/__tests__/loop-follow.test.ts > 关注账户隔离与晚到响应（F07） > A 已加载的星标在换 B 时同步清空；B 不复用 A 的 ready 缓存
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ apps/web-antd/src/__tests__/loop-follow.test.ts:300:41
+    298|
+    299|     setAccount('user-b');
+    300|     expect(follow.isFollowed('loop-a')).toBe(false);
+       |                                         ^
+    301|     expect(follow.followedLoopIds.value.size).toBe(0);
+    302|     expect(follow.followLoadState.value).toBe('idle');
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  apps/web-antd/src/__tests__/loop-follow.test.ts > 关注账户隔离与晚到响应（F07） > A 的晚到 409 不得使用 B 的令牌重试写入
+AssertionError: expected "vi.fn()" to be called 1 times, but got 2 times
+ ❯ apps/web-antd/src/__tests__/loop-follow.test.ts:401:34
+    399|     a.reject(conflict409({ currentRevision: 5, isFollowed: false, loop…
+    400|     expect((await old).ok).toBe(false);
+    401|     expect(api.setLoopFollowApi).toHaveBeenCalledTimes(1);
+       |                                  ^
+    402|     expect(msg.success).not.toHaveBeenCalled();
+    403|     expect(msg.warning).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+

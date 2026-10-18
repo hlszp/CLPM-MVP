@@ -1,0 +1,13 @@
+{
+  "argv": [
+    "bash",
+    "scripts/run-critical-e2e.sh"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "startedAt": "2026-10-17T13:08:12.667398+00:00",
+  "finishedAt": "2026-10-17T13:08:21.470831+00:00",
+  "rc": 1,
+  "stdoutSha256": "35b9388dd71f914aeeff9f6749ae9f3bcc89427d24d1ae0b21e1bcd6a35fd29c",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environmentReference": "environment-safe.json; credentials never logged"
+}

@@ -1,0 +1,36 @@
+{
+  "createdAt": "2026-10-17T11:14:43.050144+00:00",
+  "scope": "Independent evidence-only tools; no product source change",
+  "sourceFiles": [
+    {
+      "path": "independent_support.py",
+      "size": 3959,
+      "sha256": "19c67efd3d33f3cf77d86303921b57eb4be16f5e5ce619dc62c2367ff13848df",
+      "mtimeUtc": "2026-10-17T10:50:59.672352+00:00"
+    },
+    {
+      "path": "verify_capacity_series.py",
+      "size": 38063,
+      "sha256": "785921c0d9c4dab274cd82135db83783cebb2e49204d3459a9b079c241169326",
+      "mtimeUtc": "2026-10-17T10:57:08.953038+00:00"
+    },
+    {
+      "path": "independent_kpi_oracle.py",
+      "size": 30288,
+      "sha256": "3e7f74a511db0abac0b1c49dc8e1f9c9ee7b04011774f6dfc283fcba4ff4b42a",
+      "mtimeUtc": "2026-10-17T10:57:08.953079+00:00"
+    },
+    {
+      "path": "test_independent_tools.py",
+      "size": 28047,
+      "sha256": "4d112894c5f7c41114de16a899bc1d873799e6c2262adfaf985d5c95ce8798b5",
+      "mtimeUtc": "2026-10-17T10:57:08.952817+00:00"
+    }
+  ],
+  "latestSelfTest": {
+    "path": "tool-selftest-v3.command.json",
+    "endedAt": "2026-10-17T10:57:09.767878+00:00",
+    "rc": 0
+  },
+  "protocolOriginalSha256": "2a4798f13c31e8e81c3a858a852199104a5ee51d9f1b23e24c5c0edc7e7396de"
+}

@@ -1,0 +1,356 @@
+{
+  "observedAt": "2026-10-17T13:15:04.685698+00:00",
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/runtime/clpm-remediation-20261017/backend/logs/celery-worker.log",
+  "bytesRead": 32492,
+  "sourceSha256AtObservation": "aed076d468722d2273ac3cf739b1e05fbf2b5e1d51b90c9d52da3b211ca5df4d",
+  "selectedByLiteralIds": [
+    "4594bd54-6f14-45b7-b6ab-80cac41fc114",
+    "52bfbc07-bba7-40c7-83d8-6b9d9f95a8a5",
+    "fce99c7c-46e7-4ff5-aaae-42ff5381acb0"
+  ],
+  "lines": [
+    {
+      "lineNumber": 122,
+      "byteOffset": 16548,
+      "byteLength": 497,
+      "lineSha256": "aaa74eac3242b100330c566977514560c96f4972b122fb93b090be884534c19b",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.255114+00:00\", \"level\": \"INFO\", \"logger\": \"celery.worker.strategy\", \"message\": \"Task app.tasks.kpi_calc.calculate_custom_batch_kpi[fce99c7c-46e7-4ff5-aaae-42ff5381acb0] received\", \"data\": {\"id\": \"fce99c7c-46e7-4ff5-aaae-42ff5381acb0\", \"name\": \"app.tasks.kpi_calc.calculate_custom_batch_kpi\", \"args\": \"['52bfbc07-bba7-40c7-83d8-6b9d9f95a8a5', ['c87ea558-f4bd-4c97-9607-435297fcf3a7'], '2026-10-17T11:00:00', '2026-10-17T12:00:00']\", \"kwargs\": \"{}\", \"eta\": null}}\n"
+    },
+    {
+      "lineNumber": 123,
+      "byteOffset": 17045,
+      "byteLength": 318,
+      "lineSha256": "de57cf0a464bae2ae211edf0a73bff53f79927ee6cb3fff0c9ff927e00c6d9e1",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.259116+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"自定义任务批量 KPI 计算, task_id=52bfbc07-bba7-40c7-83d8-6b9d9f95a8a5, loop_count=1, ts_start=2026-10-17T11:00:00, ts_end=2026-10-17T12:00:00\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 124,
+      "byteOffset": 17363,
+      "byteLength": 189,
+      "lineSha256": "41e18de765f3415c0b4b7ab438d17ccff1989e8d8c1c6df0cc9884f6152f78ab",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.278226+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"待计算回路数: 1\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 125,
+      "byteOffset": 17552,
+      "byteLength": 227,
+      "lineSha256": "46c853f17914cc896f4d3d8e7fcc6d078937e5337af23fd19818442f0f8a5360",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.286783+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"批量预加载回路配置: 1 回路, 1 PV tags, 1 OP tags\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 126,
+      "byteOffset": 17779,
+      "byteLength": 277,
+      "lineSha256": "17dd5a9a588bfae4f84b6c2ce91d5185228902dcf0fce40fa399a81b07923436",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.317568+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_source.factory\", \"message\": \"数据源: TDengineProvider（计算一律本地 TDengine，远端 API 仅导入任务调用）\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 127,
+      "byteOffset": 18056,
+      "byteLength": 222,
+      "lineSha256": "35538ce1dd63687f24417849c47fa920db8ae2d91f215f548299e14e4bf7088b",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.334512+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner 指标契约缓存已刷新: 26 条\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 128,
+      "byteOffset": 18278,
+      "byteLength": 1065,
+      "lineSha256": "05e901ac7c7a1c24f0bf2d7947594859029f6822d489e12adcc43c3b33f1e14a",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.334693+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner 查询计划: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, metrics=27→tagGroups=5, tasks=[\\\"BASE(metrics=['accuracy_rate', 'fast_rate', 'steady_rate', 'oscillation_rate', 'settling_time', 'instrument_fault_rate', 'pv_mean', 'pv_std', 'sp_mean', 'sp_std', 'error_mean', 'error_std', 'setpoint_crossing_count', 'oscillation_amplitude'],tags=['mode', 'op', 'pv', 'pv_quality', 'sp'],interval=1s,reuse=None)\\\", \\\"MODE_HF(metrics=['effective_auto_rate', 'saturation_rate', 'auto_mode_rate'],tags=['mode', 'op', 'pv', 'sp'],interval=1s,reuse=BASE)\\\", \\\"OP_HF(metrics=['output_trip_index', 'op_mean', 'op_std', 'valve_operating_range'],tags=['op'],interval=1s,reuse=BASE)\\\", \\\"PVOP_HF(metrics=['stiction_index', 'valve_linearity', 'valve_nonlinearity'],tags=['op', 'pv'],interval=1s,reuse=BASE)\\\", \\\"QUALITY_HF(metrics=['good_value_rate'],tags=['pv_quality'],interval=1s,reuse=BASE)\\\"]\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 129,
+      "byteOffset": 19343,
+      "byteLength": 317,
+      "lineSha256": "9405a373e8784b6f49b5e28b292c0e5f96c1913eca3272b8508616b3dd608853",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.335775+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner 回源查询: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, tagGroup=BASE, tags=['mode', 'op', 'pv', 'pv_quality', 'sp'], interval=1s\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 130,
+      "byteOffset": 19660,
+      "byteLength": 638,
+      "lineSha256": "a8daa81e55e35aa93538993c95314980cdfc3d7595405dd115be57b735b623a2",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.507641+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.preprocessing.pipeline\", \"message\": \"[Pipeline] loop_confidence=E: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, tagGroup=BASE, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=0/3601, sp=0/3601, op=0/3601, mode=0/3601}, validity_keys=['mode_valid', 'op_valid', 'pv_valid', 'pv_quality_valid', 'sp_valid'], signals_keys=['mode', 'op', 'pv', 'pv_quality', 'sp'], zero_valid_reasons={'pv': {'QC_BAD': 7202, 'NaN': 3601}, 'sp': {'NaN': 3601}, 'op': {'NaN': 3601}, 'mode': {'NaN': 3601}}\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 131,
+      "byteOffset": 20298,
+      "byteLength": 307,
+      "lineSha256": "6166482ba08b902f0d74ce495c37138ec31929c586988b59d769bdcc5632fb14",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.508235+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner 取数+预处理: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, tagGroup=BASE, points=3601, query=0.085s, preprocess=0.088s\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 132,
+      "byteOffset": 20605,
+      "byteLength": 242,
+      "lineSha256": "b00ccb184a8fea5270b172d727520b46810d608e96d7cead234e94a868259e2d",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.515307+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.cache.l1_datablock\", \"message\": \"L1 cache Pipeline 批量写入: total=1, written=1, skipped=0\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 133,
+      "byteOffset": 20847,
+      "byteLength": 263,
+      "lineSha256": "6de2b415e9f5e578b25b44e7f3f582bee58cf8e7d4f92ccd65284c436ce64937",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.515428+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner 缓存写入: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, blocks=1, written=1\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 134,
+      "byteOffset": 21110,
+      "byteLength": 265,
+      "lineSha256": "904b57b9258fe00f0b0611132c734566dda0ceccc24446b4e4155d2fe4173ff7",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.762796+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner 完成: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, bundles=25, cached_blocks=5\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 135,
+      "byteOffset": 21375,
+      "byteLength": 249,
+      "lineSha256": "77d78831e82fd6de03796e0fbdbd9ddac907b46c4ce78dc3b2142a0ae9fb7bae",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.765247+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"自定义批量缓存预热完成: total=1, succeeded=1, failed=0, elapsed=0.471s\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 136,
+      "byteOffset": 21624,
+      "byteLength": 273,
+      "lineSha256": "0041301a475008a86f44d96da5e0e497e9e24e99df6d501fab7eda7f889ec131",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.855911+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.data_planner\", \"message\": \"DataPlanner L2 命中，跳过查询+组装: loop=c87ea558-f4bd-4c97-9607-435297fcf3a7, bundles=25\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 137,
+      "byteOffset": 21897,
+      "byteLength": 1063,
+      "lineSha256": "b1f79ced2f08a71ddcc87049a3b27b9f477630de1583106b058eab7fda39c5f3",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.869261+00:00\", \"level\": \"WARNING\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"输入包保存失败（回路 CRITICAL-LOCAL-20261017210240-1-FLOW001 窗口 2026-10-17 11:00:00~2026-10-17 12:00:00），record 将标记不可完整复现\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\", \"exc_info\": \"Traceback (most recent call last):\\n  File \\\"/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/tasks/kpi_calc.py\\\", line 2607, in _calculate_loop_kpi\\n    arrays, blocks_meta = cs.serialize_data_blocks(bundles)\\n                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\\n  File \\\"/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py\\\", line 829, in serialize_data_blocks\\n    serialize_signal(list(values), f\\\"{prefix}__sig_{name}\\\", arrays)\\n  File \\\"/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py\\\", line 807, in serialize_signal\\n    arr[i] = float(v)\\n             ^^^^^^^^\\nValueError: could not convert string to float: 'LOOP_FIELD'\"}\n"
+    },
+    {
+      "lineNumber": 138,
+      "byteOffset": 22960,
+      "byteLength": 264,
+      "lineSha256": "30fdb48e85f46bb3e74775040ab3c724b9d705e4c0689de5fde0513ee494bf53",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872711+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[accuracy_rate] INCONCLUSIVE: reason=no_valid_pv_sp_pairs, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 139,
+      "byteOffset": 23224,
+      "byteLength": 267,
+      "lineSha256": "b4ef65b2fda8549973fcad32c76d6aa587d6a391239e8174713f6eb177bee1e5",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872787+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[effective_auto_rate] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 140,
+      "byteOffset": 23491,
+      "byteLength": 277,
+      "lineSha256": "7bb818cceaaa5e5b6df9c91553e0c0b60ed9a788d920a71554c5f072cfb96cc0",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872835+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[good_value_rate] INCONCLUSIVE: reason=good_value_rate_below_threshold, valid_rate=1.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 141,
+      "byteOffset": 23768,
+      "byteLength": 264,
+      "lineSha256": "9f72f7adf13ad9a1bb0723136e653a87d8f39822ad47132dc6422dc5911c1e57",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872880+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[oscillation_rate] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 142,
+      "byteOffset": 24032,
+      "byteLength": 271,
+      "lineSha256": "14e409b1603c87fb4d6a25309171969ae0c3deaa862905941657a2faa3aee11e",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872912+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[saturation_rate] INCONCLUSIVE: reason=insufficient_op_mode_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 143,
+      "byteOffset": 24303,
+      "byteLength": 262,
+      "lineSha256": "79e3059cc7b6f12481ff2a38b651a8b8d22468bee8f6349ba27331839fdb5a8c",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872949+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[stiction_index] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 144,
+      "byteOffset": 24565,
+      "byteLength": 268,
+      "lineSha256": "8b00066cb83f05f9bb2b4485093434e79ec0a137c29d69ebe4820bba79402f11",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.872977+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[output_trip_index] INCONCLUSIVE: reason=insufficient_op_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 145,
+      "byteOffset": 24833,
+      "byteLength": 267,
+      "lineSha256": "a490e26ef5c6f8dbc2607ca2730518ebc87ef6b4641f1e7cdf3da08470cce199",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.873018+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[auto_mode_rate] INCONCLUSIVE: reason=insufficient_mode_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 146,
+      "byteOffset": 25100,
+      "byteLength": 261,
+      "lineSha256": "581c1505db10a43e60519ff9682d3a3290c1e43e06a5b204eb689043ab4c5ae3",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.874307+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[settling_time] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 147,
+      "byteOffset": 25361,
+      "byteLength": 260,
+      "lineSha256": "1487b19ddcaff6a4767b187e807e4727230bb3c0aaffbafefa27024081a4d6d2",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895678+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[instrument_fault_rate] INCONCLUSIVE: valid_rate=0.0000 < threshold=0.20\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 148,
+      "byteOffset": 25621,
+      "byteLength": 269,
+      "lineSha256": "a4d2048f5c780fca7e39da26998d5d625bbb7394dcb9b5879566c8009d8da8b2",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895775+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[instrument_fault_rate] INCONCLUSIVE: reason=data_insufficient, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 149,
+      "byteOffset": 25890,
+      "byteLength": 255,
+      "lineSha256": "b40038bb1af704ab0e882d4a6896f6a0516f9e9b31d06b78a9846da2e4e41714",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895834+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[pv_mean] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 150,
+      "byteOffset": 26145,
+      "byteLength": 254,
+      "lineSha256": "65aadbcdddf72cb1f4d807a16adce619189ea82bf62c1d17811601e84c5ffa83",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895865+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[pv_std] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 151,
+      "byteOffset": 26399,
+      "byteLength": 255,
+      "lineSha256": "28cec74b10e137e85a75c9cc99441761faca63c4d2a99c32745bf69c4499a2de",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895891+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[sp_mean] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 152,
+      "byteOffset": 26654,
+      "byteLength": 254,
+      "lineSha256": "a0455d0fe35c023ffe06d724a18a7856b1ece256e417a2083c8a901c820e954d",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895914+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[sp_std] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 153,
+      "byteOffset": 26908,
+      "byteLength": 255,
+      "lineSha256": "393c802904503242b64222a6944aa0ed956458d79dbb70555ce0d56aacc40443",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895935+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[op_mean] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 154,
+      "byteOffset": 27163,
+      "byteLength": 254,
+      "lineSha256": "6305d8599d08fed35eb42b403c3fa2425c369c517ade027d5e9ac740f79bfb81",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895956+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[op_std] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 155,
+      "byteOffset": 27417,
+      "byteLength": 258,
+      "lineSha256": "d0cc1d2a4c27a4cab51d560a287cc2343d01114e8ffd46d5793c72c2895ec487",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.895979+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[error_mean] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 156,
+      "byteOffset": 27675,
+      "byteLength": 257,
+      "lineSha256": "e35392f106b477bacd7349e15174909a9b6bcbc7d8e82e08d54f6d1f3e0d4614",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896001+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[error_std] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 157,
+      "byteOffset": 27932,
+      "byteLength": 263,
+      "lineSha256": "3c49a573b623981632a82752269e034de4485477890d47cc21a0d0490d1378ba",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896036+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[valve_linearity] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 158,
+      "byteOffset": 28195,
+      "byteLength": 269,
+      "lineSha256": "ed33b22478e0c2c8ccf9ed4fed1d95bb80f82483e17a9c466de8f1f1946704c4",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896059+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[valve_operating_range] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 159,
+      "byteOffset": 28464,
+      "byteLength": 271,
+      "lineSha256": "4bb950b4d7b723fa82488a3f678257d478517e36ed82eaad65b5a1be3a7fcadb",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896080+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[setpoint_crossing_count] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 160,
+      "byteOffset": 28735,
+      "byteLength": 269,
+      "lineSha256": "351bc634c2b65817f518b0891745e7b28fde59d33475d14bcb0a1a262d990e0a",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896113+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[oscillation_amplitude] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 161,
+      "byteOffset": 29004,
+      "byteLength": 262,
+      "lineSha256": "a285265e7c5b9ba72d021da4626b9135675c8fc078818365f8d0e5483463fafe",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896175+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[stability_rate] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 162,
+      "byteOffset": 29266,
+      "byteLength": 257,
+      "lineSha256": "92b0290a2319e98734c439b114b469dd8c29f71ff800effca77afd3a25bac2ee",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896212+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[fast_rate] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 163,
+      "byteOffset": 29523,
+      "byteLength": 266,
+      "lineSha256": "be63c0c7288d7fa65d1412d049d778d64461596c991c8c8d44a578be0c682293",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896245+00:00\", \"level\": \"WARNING\", \"logger\": \"app.services.metric_calculator.base\", \"message\": \"[valve_nonlinearity] INCONCLUSIVE: reason=insufficient_data, valid_rate=0.0000\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 164,
+      "byteOffset": 29789,
+      "byteLength": 272,
+      "lineSha256": "bfd0985f1e6a213e6f34b1d2f90e3837bb16ec0c93069860dd2bfb4342f8df5b",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896272+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.confidence_evaluator\", \"message\": \"[综合评分] 输入: A=None, F=None, S=None, R=None, weights(a=0.375, f=0.250, s=0.375)\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 165,
+      "byteOffset": 30061,
+      "byteLength": 286,
+      "lineSha256": "aee10134e42f0b547bc2510767071f3100061593b4774b41cdefaeeb21abb4ec",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896299+00:00\", \"level\": \"INFO\", \"logger\": \"app.services.confidence_evaluator\", \"message\": \"[综合评分] R 缺失或可信度 E 级，评分留空（INCONCLUSIVE）: r_result=value=None, conf=E\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 166,
+      "byteOffset": 30347,
+      "byteLength": 268,
+      "lineSha256": "f35c5cf5d962c1c9c92d1ac7538429dc179a94762150e73b68ae10bc7b441692",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.896388+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"回路 CRITICAL-LOCAL-20261017210240-1-FLOW001 综合评分为 None（E 级），返回 INCONCLUSIVE\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 167,
+      "byteOffset": 30615,
+      "byteLength": 356,
+      "lineSha256": "4810c00d18976dcee305f1b1bccc930eefddb3262995bab8e0cde2cd41dd83b8",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.938952+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"[批量计时] 窗口=10-17 11:00 回路=1/1 | read p50=0.06s p95=0.06s max=0.06s sum=0.1s | compute p50=0.04s p95=0.04s max=0.04s sum=0.0s | persist p50=0.02s p95=0.02s max=0.02s sum=0.0s\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 168,
+      "byteOffset": 30971,
+      "byteLength": 247,
+      "lineSha256": "f83196d2620a9cb58ad2914f884060c973185fab3d57c36d6d50e489bd8055cf",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.939042+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"自定义批量计算: loops=1, concurrency=12, elapsed=0.151s, avg=0.151s/loop\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 169,
+      "byteOffset": 31218,
+      "byteLength": 240,
+      "lineSha256": "27f012a094b6c5f07dcddb02d7b739aa7bba3ac9595b4631c396dc0f2557789d",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.960306+00:00\", \"level\": \"INFO\", \"logger\": \"app.tasks.kpi_calc\", \"message\": \"自定义批量计算完成(含 attempt 日志): loops=1, elapsed=0.195s\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\"}\n"
+    },
+    {
+      "lineNumber": 170,
+      "byteOffset": 31458,
+      "byteLength": 997,
+      "lineSha256": "9a2df7d227ddfdaf40fc9bc55773b74148b2bc2a236542a125d9618245efd08f",
+      "rawLine": "{\"timestamp\": \"2026-10-17T13:08:20.963471+00:00\", \"level\": \"INFO\", \"logger\": \"celery.app.trace\", \"message\": \"Task app.tasks.kpi_calc.calculate_custom_batch_kpi[fce99c7c-46e7-4ff5-aaae-42ff5381acb0] succeeded in 0.7078234579821583s: {'total': 1, 'success': 0, 'inconclusive': 1, 'failed': 0, 'prewarm': {'total': 1, 'succeeded': 1, 'failed': 0, 'errors': []}, 'ts_start': '2026-10-17T11:00:00', 'ts_end': '2026-10-17T12:00:00'}\", \"request_id\": \"4594bd54-6f14-45b7-b6ab-80cac41fc114\", \"data\": {\"id\": \"fce99c7c-46e7-4ff5-aaae-42ff5381acb0\", \"name\": \"app.tasks.kpi_calc.calculate_custom_batch_kpi\", \"return_value\": \"{'total': 1, 'success': 0, 'inconclusive': 1, 'failed': 0, 'prewarm': {'total': 1, 'succeeded': 1, 'failed': 0, 'errors': []}, 'ts_start': '2026-10-17T11:00:00', 'ts_end': '2026-10-17T12:00:00'}\", \"runtime\": 0.7078234579821583, \"args\": \"['52bfbc07-bba7-40c7-83d8-6b9d9f95a8a5', ['c87ea558-f4bd-4c97-9607-435297fcf3a7'], '2026-10-17T11:00:00', '2026-10-17T12:00:00']\", \"kwargs\": \"{}\"}}\n"
+    }
+  ]
+}

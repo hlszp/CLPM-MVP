@@ -1,0 +1,10 @@
+{
+  "sourceSha256": "0e1fc40d5e79a85992c4c99f1c60e09ed38dceb00f57ab366c2b2ab8de00edb7",
+  "actualFakeTransactionWriteCommits": 1,
+  "readonlyRecheckAttempted": true,
+  "writerRefusedReadbackMismatch": "persisted synthetic binding readback differs",
+  "artifactCommitted": true,
+  "connectionClosed": true,
+  "guardActuallyAcceptedSyntheticSevenRows": true,
+  "scope": "Pure fake asyncpg; no real connection or database mutation"
+}

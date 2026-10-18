@@ -1,0 +1,26 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "-B",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/local-startup-v6/keeper-local-f03-v6.py",
+    "seed",
+    "--checkout",
+    "/Users/zhangping/DEV/clpm-remediation-20261017",
+    "--expected-sha",
+    "c6fa2b489af66da392ea72fa387629f1607ba613",
+    "--run-id",
+    "20261017223757",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/local-business-20261017223757-c6fa2b489af6",
+    "--native-env-file",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env",
+    "--python",
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python"
+  ],
+  "startedAt": "2026-10-17T14:45:12.030019+00:00",
+  "finishedAt": "2026-10-17T14:45:30.566817+00:00",
+  "rc": 0,
+  "driverSha256": "87c985f311f804c80a3beb84d78e342143e277fe18d8f5041c5fcb54c81e405f",
+  "stdoutSha256": "abdb1f708d0b8143daae2e9790a43401037f7d23a4b0b21545331c6774dee61d",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

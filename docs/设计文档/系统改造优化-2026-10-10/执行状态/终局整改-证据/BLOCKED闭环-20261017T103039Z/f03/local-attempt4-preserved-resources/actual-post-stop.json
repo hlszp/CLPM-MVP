@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-17T14:18:29.091605+00:00",
+  "actualApiExit": {
+    "pid": 91036,
+    "rc": -15,
+    "at": "2026-10-17T14:16:05.377602+00:00"
+  },
+  "originalMembersStillPresent": [],
+  "selectedRawPsLines": [],
+  "psRc": 0,
+  "driverStopPassed": false,
+  "scope": "actual cleanup closure; original stop rc1 AccessDenied during API exit retained; native post-stop separately confirmed all gone"
+}

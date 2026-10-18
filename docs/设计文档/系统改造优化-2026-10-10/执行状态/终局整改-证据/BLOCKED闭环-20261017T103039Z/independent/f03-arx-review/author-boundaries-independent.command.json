@@ -1,0 +1,20 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-o",
+    "addopts=",
+    "--no-cov",
+    "-p",
+    "no:cacheprovider",
+    "tests/test_arx_vectorized_equivalence.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "startedAt": "2026-10-17T11:59:17.477193+00:00",
+  "endedAt": "2026-10-17T11:59:19.046253+00:00",
+  "rc": 0,
+  "expectedRc": 0,
+  "asExpected": true
+}

@@ -1,0 +1,51 @@
+[
+  {
+    "name": "actual_asyncpg_too_many_connections",
+    "type": "TooManyConnectionsError",
+    "message": "sorry, too many clients already",
+    "expected": true,
+    "actual": true
+  },
+  {
+    "name": "actual_sqlalchemy_wrapped_pg",
+    "type": "OperationalError",
+    "message": "(asyncpg.exceptions.TooManyConnectionsError) sorry, too many clients already\n[SQL: SELECT 1]\n(Background on this error at: https://sqlalche.me/e/20/e3q8)",
+    "expected": true,
+    "actual": true
+  },
+  {
+    "name": "actual_asyncpg_uppercase_message",
+    "type": "TooManyConnectionsError",
+    "message": "TOO MANY CLIENTS ALREADY",
+    "expected": true,
+    "actual": true
+  },
+  {
+    "name": "unknown_network_timeout",
+    "type": "TimeoutError",
+    "message": "connection timeout",
+    "expected": false,
+    "actual": false
+  },
+  {
+    "name": "unknown_cannot_connect_now",
+    "type": "CannotConnectNowError",
+    "message": "the database system is starting up",
+    "expected": false,
+    "actual": false
+  },
+  {
+    "name": "pg_syntax_error",
+    "type": "PostgresSyntaxError",
+    "message": "syntax error at or near SELECT",
+    "expected": false,
+    "actual": false
+  },
+  {
+    "name": "invalid_business_configuration",
+    "type": "ValueError",
+    "message": "invalid calculation config",
+    "expected": false,
+    "actual": false
+  }
+]

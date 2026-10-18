@@ -1,0 +1,144 @@
+diff --git a/e2e/scripts/prepare-critical-fixture.py b/e2e/scripts/prepare-critical-fixture.py
+index 423f1a79..133ea509 100644
+--- a/e2e/scripts/prepare-critical-fixture.py
++++ b/e2e/scripts/prepare-critical-fixture.py
+@@ -164,6 +164,7 @@ async def declare_synthetic_bindings(
+         "synthetic": True,
+         "inputOnly": True,
+         "committed": False,
++        "persistedReadbackVerified": False,
+         "loopId": loop_id,
+         "loopTagName": tag_name,
+         "validFrom": start.replace(tzinfo=UTC).isoformat(),
+@@ -264,6 +265,8 @@ async def declare_synthetic_bindings(
+                 dict(r) for r in await connection.fetch(history_sql, loop_uuid)
+             ]
+             persist()
++        payload["committed"] = True
++        persist()
+         async with connection.transaction(readonly=True):
+             after = [dict(r) for r in await connection.fetch(history_sql, loop_uuid)]
+             if (
+@@ -278,10 +281,14 @@ async def declare_synthetic_bindings(
+                 )
+             ):
+                 raise RuntimeError("persisted synthetic binding readback differs")
+-            payload.update(
+-                {"committed": True, "persistedReadback": after, "affectedRows": 7}
+-            )
+-            persist()
++        payload.update(
++            {
++                "persistedReadbackVerified": True,
++                "persistedReadback": after,
++                "affectedRows": 7,
++            }
++        )
++        persist()
+     finally:
+         await connection.close()
+     return {
+diff --git a/e2e/scripts/test_critical_fixture.py b/e2e/scripts/test_critical_fixture.py
+index fa7add39..fe3b58fe 100644
+--- a/e2e/scripts/test_critical_fixture.py
++++ b/e2e/scripts/test_critical_fixture.py
+@@ -327,15 +327,22 @@ class SyntheticBindingInputTests(unittest.TestCase):
+ 
+             async def __aenter__(self):
+                 self.old = copy.deepcopy(self.connection.rows)
++                self.connection.readonly = self.options.get("readonly", False)
+ 
+             async def __aexit__(self, kind, value, traceback):
+                 if kind:
+                     self.connection.rows = self.old
++                elif not self.options.get("readonly"):
++                    self.connection.write_commits += 1
++                elif self.connection.readback_failure == "exit":
++                    raise ConnectionError("readback transaction exit failed")
+ 
+         class Connection:
+-            def __init__(self, bad, empty):
++            def __init__(self, bad, empty, readback_failure):
+                 self.rows = [] if empty else copy.deepcopy(owner.histories)
+                 self.bad, self.closed, self.executions = bad, False, []
++                self.readonly, self.write_commits = False, 0
++                self.readback_failure = readback_failure
+ 
+             def transaction(self, **options):
+                 return Transaction(self, options)
+@@ -351,7 +358,12 @@ class SyntheticBindingInputTests(unittest.TestCase):
+                     return []
+                 if "FROM loop_tag_mapping m JOIN" in sql:
+                     return owner.mappings
+-                return self.rows
++                if self.readonly and self.readback_failure == "fetch":
++                    raise ConnectionError("committed readback disconnected")
++                rows = copy.deepcopy(self.rows)
++                if self.readonly and self.readback_failure == "mismatch":
++                    rows[0]["basis"] = "CONTROLLED_READBACK_MISMATCH"
++                return rows
+ 
+             async def execute(self, sql, *parameters):
+                 if sql.startswith("INSERT"):
+@@ -381,15 +393,28 @@ class SyntheticBindingInputTests(unittest.TestCase):
+             async def close(self):
+                 self.closed = True
+ 
+-        for bad, empty in ((False, False), (True, False), (False, True), (True, True)):
+-            connection = Connection(bad, empty)
++        cases = [
++            (bad, empty, None)
++            for bad, empty in (
++                (False, False),
++                (True, False),
++                (False, True),
++                (True, True),
++            )
++        ] + [
++            (False, empty, failure)
++            for empty in (False, True)
++            for failure in ("mismatch", "fetch", "exit")
++        ]
++        for bad, empty, readback_failure in cases:
++            connection = Connection(bad, empty, readback_failure)
+ 
+             async def connect(**credentials):
+                 self.assertEqual(credentials["database"], "clpm_critical_e2e")
+                 return connection
+ 
+             with (
+-                self.subTest(bad=bad),
++                self.subTest(bad=bad, empty=empty, readback_failure=readback_failure),
+                 tempfile.TemporaryDirectory() as tmp,
+                 patch.dict(os.environ, private, clear=True),
+                 patch.dict(
+@@ -410,11 +435,29 @@ class SyntheticBindingInputTests(unittest.TestCase):
+                     with self.assertRaises(RuntimeError):
+                         asyncio.run(call)
+                     self.assertEqual(connection.rows, [] if empty else self.histories)
++                elif readback_failure:
++                    message = {
++                        "mismatch": "persisted synthetic binding readback differs",
++                        "fetch": "committed readback disconnected",
++                        "exit": "readback transaction exit failed",
++                    }[readback_failure]
++                    error = (
++                        RuntimeError
++                        if readback_failure == "mismatch"
++                        else ConnectionError
++                    )
++                    with self.assertRaisesRegex(error, message):
++                        asyncio.run(call)
+                 else:
+                     result = asyncio.run(call)
+                     self.assertEqual(result["basis"], "SYNTHETIC_FIXTURE")
+                 saved = json.loads(output.with_suffix(".bindings.json").read_text())
+                 self.assertEqual(saved["committed"], not bad)
++                self.assertEqual(connection.write_commits, int(not bad))
++                self.assertEqual(
++                    saved["persistedReadbackVerified"],
++                    not bad and readback_failure is None,
++                )
+                 self.assertEqual(
+                     len(saved["statements"]), 7 if empty and not bad else 1
+                 )

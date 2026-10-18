@@ -1,0 +1,67 @@
+{
+  "checks": [
+    {
+      "label": "ruff-check",
+      "command": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "app/core/async_tasks.py",
+        "app/services/data_planner.py",
+        "app/services/data_source/logical_wide_builder.py",
+        "app/tasks/kpi_calc.py",
+        "tests/test_g5_data_acquisition_failure.py",
+        "tests/test_kpi_calc.py"
+      ],
+      "rc": 0,
+      "elapsed": 0.08537697792053223,
+      "stdoutSha256": "82b3e6a6c090a57601d22943bd23fca9218d1031dbe5a7b754092f9a156b4f18",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "ruff-format-check",
+      "command": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "-m",
+        "ruff",
+        "format",
+        "--check",
+        "app/core/async_tasks.py",
+        "app/services/data_planner.py",
+        "app/services/data_source/logical_wide_builder.py",
+        "app/tasks/kpi_calc.py",
+        "tests/test_g5_data_acquisition_failure.py",
+        "tests/test_kpi_calc.py"
+      ],
+      "rc": 0,
+      "elapsed": 0.04268598556518555,
+      "stdoutSha256": "ef7d13d02214e98ca902b05257cdbe6a8e84f3b4714508efdc19766460b54209",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "label": "boundary-final",
+      "command": [
+        "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "tests/test_g5_data_acquisition_failure.py",
+        "-p",
+        "no:cacheprovider"
+      ],
+      "rc": 0,
+      "elapsed": 2.5207369327545166,
+      "stdoutSha256": "f2dc656f7c1bc26d48c25830b17fadfa84a79b304e9710a87c05f4076559b1a8",
+      "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "sourceFiles": {
+    "app/core/async_tasks.py": "acb19e9e457cb738ba3115e814a9b55ad60f0a297926f6c36e9493e1306b4eca",
+    "app/services/data_planner.py": "8a0b31550b096f566fcc5ad0405824431cc01a4514b98e0d6062817ec1dadde6",
+    "app/services/data_source/logical_wide_builder.py": "0fd686cf47d38c530b003e164990e9e29f60f77346fdd542d5db3e628d1d011a",
+    "app/tasks/kpi_calc.py": "fd8976502b75eac9538ddb126fdf780a426fa381f2ab58273ff58fc58d77995b",
+    "tests/test_g5_data_acquisition_failure.py": "edf3a05f40a0aaf9e94dc040fe6064fa1769f0ee0af3f6f76c1b1b50c35679be",
+    "tests/test_kpi_calc.py": "1471480d96ba88c357de6094fd8b129adf22e273824a907b2f008bd6224dbe61"
+  }
+}

@@ -1,0 +1,11 @@
+--- candidate/run-critical-e2e.sh
++++ isolated/unreachable.sh
+@@ -22,7 +22,7 @@
+ set -euo pipefail
+ 
+ E2E_DIR="$(cd "$(dirname "$0")/../e2e" && pwd)"
+-BASE_URL="${E2E_BASE_URL:-http://localhost:15666}"
++BASE_URL="http://127.0.0.1:1"
+ API_URL="${E2E_API_BASE_URL:-http://localhost:17101}"
+ 
+ # 关键用例文件（稳定、覆盖权限/认证/证据链/计算）

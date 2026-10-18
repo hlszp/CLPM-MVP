@@ -1,0 +1,10 @@
+{
+  "sql": "DROP TABLE `clpm_critical_20261017_local_ts`.`p_4fc6af1b2b3d4d2f895032c60b948b52`",
+  "startedAt": "2026-10-17T14:18:33.012724+00:00",
+  "finishedAt": "2026-10-17T14:18:33.015295+00:00",
+  "httpStatus": 200,
+  "code": 0,
+  "rows": 1,
+  "bytes": 74,
+  "sha256": "602795105817e25bc58c99ec0c1323709ded7920522aaec9ad4487bd6e1c8c65"
+}

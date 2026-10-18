@@ -1,0 +1,31 @@
+Lockfile is up to date, resolution step is skipped
+Progress: resolved 1, reused 0, downloaded 0, added 0
+Packages: +7
++++++++
+Progress: resolved 7, reused 7, downloaded 0, added 7, done
+ EEXIST  EEXIST: file already exists, symlink '../.pnpm/@playwright+test@1.61.1/node_modules/@playwright/test' -> '/Users/zhangping/DEV/clpm-remediation-20261017/e2e/node_modules/@playwright/test'
+
+pnpm: EEXIST: file already exists, symlink '../.pnpm/@playwright+test@1.61.1/node_modules/@playwright/test' -> '/Users/zhangping/DEV/clpm-remediation-20261017/e2e/node_modules/@playwright/test'
+    at async Object.symlink (node:internal/fs/promises:1644:10)
+    at async forceSymlink (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:76100:7)
+    at async file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:148396:10
+    at async Promise.all (index 0)
+    at async linkDirectDepsOfProject (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:148384:3)
+    at async Promise.all (index 0)
+    at async linkDirectDeps (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:148325:30)
+    at async headlessInstall (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:154242:22)
+    at async tryFrozenInstall (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:156981:56)
+    at async _install (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:156748:33)
+ ERROR  Command failed with exit code 239: pnpm install
+
+pnpm: Command failed with exit code 239: pnpm install
+    at getFinalError (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:28540:14)
+    at makeError (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:30847:21)
+    at getSyncResult (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:32691:10)
+    at spawnSubprocessSync (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:32651:14)
+    at execaCoreSync (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:32581:23)
+    at callBoundExeca (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:35109:23)
+    at boundExeca (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:35086:49)
+    at sync (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:35241:14)
+    at runPnpmCli (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:208106:5)
+    at runDepsStatusCheck (file:///opt/homebrew/Cellar/pnpm/11.0.3/libexec/lib/node_modules/pnpm/dist/pnpm.mjs:209767:7)

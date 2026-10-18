@@ -1,0 +1,19 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-beat-start-review/probe_pure_test_boundary.py",
+    "--test-source",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-beat-start-review/fixed-test-runtime-regressions.py",
+    "--main-source",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/main.py",
+    "--out",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-beat-start-review/pure-fixed-independent"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-beat-start-review",
+  "startedAt": "2026-10-17T13:57:25.011962+00:00",
+  "finishedAt": "2026-10-17T13:57:25.110090+00:00",
+  "rc": 0,
+  "probeSha256": "fb942a9e653c61051ee4f468d41e32e86ed9952c9bd64a1d7d3e8fb0d3810dd9",
+  "stdoutSha256": "bc9fa2567f4d489f6f33a7a31a4c69ce6607b249e02f0892792ba4af7a25d9cd",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

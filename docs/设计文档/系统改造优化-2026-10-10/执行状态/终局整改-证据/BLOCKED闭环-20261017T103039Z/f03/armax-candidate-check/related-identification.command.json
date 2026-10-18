@@ -1,0 +1,22 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_tuning_identification.py",
+    "tests/test_p3_06a_identification_correctness.py",
+    "tests/test_annotated_loops_evaluation.py",
+    "tests/test_arx_vectorized_equivalence.py",
+    "tests/test_armax_vectorized_equivalence.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "startedAt": "2026-10-17T13:17:35.815882+00:00",
+  "finishedAt": "2026-10-17T13:18:08.370720+00:00",
+  "numericalThreads": 1,
+  "coverageGateScope": "targeted instrumentation only; full CI coverage60 unchanged",
+  "stdoutSha256": "d72dbc59ada4c2cd8ceae66166d171a5f355a35b8de24a5d0b41f2c1b081ab98",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

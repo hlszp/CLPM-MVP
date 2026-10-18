@@ -1,0 +1,79 @@
+﻿2026-10-17T15:32:42.4428375Z Print service container logs: cdc376b675564d2dbc1e3540b58d441b_redis7alpine_1a868e
+2026-10-17T15:32:42.4433247Z ##[command]/usr/bin/docker logs --details cc190b2e457e8cd2d7f596313d6b407117187a25aaad8dac48a0b6a1ae877f64
+2026-10-17T15:32:42.4555073Z  1:C 17 Oct 2026 15:17:40.458 # WARNING Memory overcommit must be enabled! Without it, a background save or replication may fail under low memory condition. Being disabled, it can also cause failures without low memory condition, see https://github.com/jemalloc/jemalloc/issues/1328. To fix this issue add 'vm.overcommit_memory = 1' to /etc/sysctl.conf and then reboot or run the command 'sysctl vm.overcommit_memory=1' for this to take effect.
+2026-10-17T15:32:42.4557033Z  1:C 17 Oct 2026 15:17:40.458 * oO0OoO0OoO0Oo Redis is starting oO0OoO0OoO0Oo
+2026-10-17T15:32:42.4567383Z  1:C 17 Oct 2026 15:17:40.458 * Redis version=7.4.11, bits=64, commit=00000000, modified=0, pid=1, just started
+2026-10-17T15:32:42.4569126Z  1:C 17 Oct 2026 15:17:40.458 # Warning: no config file specified, using the default config. In order to specify a config file use redis-server /path/to/redis.conf
+2026-10-17T15:32:42.4569985Z  1:M 17 Oct 2026 15:17:40.459 * monotonic clock: POSIX clock_gettime
+2026-10-17T15:32:42.4570409Z  1:M 17 Oct 2026 15:17:40.459 * Running mode=standalone, port=6379.
+2026-10-17T15:32:42.4570764Z  1:M 17 Oct 2026 15:17:40.459 * Server initialized
+2026-10-17T15:32:42.4571108Z  1:M 17 Oct 2026 15:17:40.460 * Ready to accept connections tcp
+2026-10-17T15:32:42.4576567Z Stop and remove container: cdc376b675564d2dbc1e3540b58d441b_redis7alpine_1a868e
+2026-10-17T15:32:42.4581716Z ##[command]/usr/bin/docker rm --force cc190b2e457e8cd2d7f596313d6b407117187a25aaad8dac48a0b6a1ae877f64
+2026-10-17T15:32:42.5641225Z cc190b2e457e8cd2d7f596313d6b407117187a25aaad8dac48a0b6a1ae877f64
+2026-10-17T15:32:42.5664860Z Print service container logs: 6e05f10deb8847f29ef648192b1086b0_postgres16_ab8c35
+2026-10-17T15:32:42.5665921Z ##[command]/usr/bin/docker logs --details 024a0bba5ab059e85b6b944ac1b0d530b89deab1f4d6a3cada27f4047c3bafc2
+2026-10-17T15:32:42.5794829Z  The files belonging to this database system will be owned by user "postgres".
+2026-10-17T15:32:42.5796994Z  initdb: warning: enabling "trust" authentication for local connections
+2026-10-17T15:32:42.5797896Z  This user must also own the server process.
+2026-10-17T15:32:42.5799221Z  initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-10-17T15:32:42.5800931Z  2026-10-17 15:17:48.122 UTC [1] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-17T15:32:42.5802205Z  2026-10-17 15:17:48.122 UTC [1] LOG:  listening on IPv4 address "0.0.0.0", port 5432
+2026-10-17T15:32:42.5802939Z  2026-10-17 15:17:48.122 UTC [1] LOG:  listening on IPv6 address "::", port 5432
+2026-10-17T15:32:42.5803462Z  2026-10-17 15:17:48.123 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-17T15:32:42.5804055Z  2026-10-17 15:17:48.126 UTC [64] LOG:  database system was shut down at 2026-10-17 15:17:48 UTC
+2026-10-17T15:32:42.5804554Z  2026-10-17 15:17:48.130 UTC [1] LOG:  database system is ready to accept connections
+2026-10-17T15:32:42.5804985Z  2026-10-17 15:22:48.226 UTC [62] LOG:  checkpoint starting: time
+2026-10-17T15:32:42.5806017Z  2026-10-17 15:24:12.221 UTC [62] LOG:  checkpoint complete: wrote 841 buffers (5.1%); 1 WAL file(s) added, 0 removed, 0 recycled; write=83.979 s, sync=0.005 s, total=83.996 s; sync files=656, longest=0.001 s, average=0.001 s; distance=5598 kB, estimate=5598 kB; lsn=0/1E96B90, redo lsn=0/1E96B58
+2026-10-17T15:32:42.5806962Z  
+2026-10-17T15:32:42.5807235Z  The database cluster will be initialized with locale "en_US.utf8".
+2026-10-17T15:32:42.5807670Z  The default database encoding has accordingly been set to "UTF8".
+2026-10-17T15:32:42.5808081Z  The default text search configuration will be set to "english".
+2026-10-17T15:32:42.5809159Z  
+2026-10-17T15:32:42.5809501Z  Data page checksums are disabled.
+2026-10-17T15:32:42.5809938Z  
+2026-10-17T15:32:42.5810447Z  fixing permissions on existing directory /var/lib/postgresql/data ... ok
+2026-10-17T15:32:42.5811126Z  creating subdirectories ... ok
+2026-10-17T15:32:42.5811664Z  selecting dynamic shared memory implementation ... posix
+2026-10-17T15:32:42.5812267Z  selecting default max_connections ... 100
+2026-10-17T15:32:42.5812778Z  selecting default shared_buffers ... 128MB
+2026-10-17T15:32:42.5813274Z  selecting default time zone ... Etc/UTC
+2026-10-17T15:32:42.5813759Z  creating configuration files ... ok
+2026-10-17T15:32:42.5814210Z  running bootstrap script ... ok
+2026-10-17T15:32:42.5814693Z  performing post-bootstrap initialization ... ok
+2026-10-17T15:32:42.5815212Z  syncing data to disk ... ok
+2026-10-17T15:32:42.5815598Z  
+2026-10-17T15:32:42.5815874Z  
+2026-10-17T15:32:42.5816249Z  Success. You can now start the database server using:
+2026-10-17T15:32:42.5816758Z  
+2026-10-17T15:32:42.5817153Z      pg_ctl -D /var/lib/postgresql/data -l logfile start
+2026-10-17T15:32:42.5817656Z  
+2026-10-17T15:32:42.5818988Z  waiting for server to start....2026-10-17 15:17:47.813 UTC [48] LOG:  starting PostgreSQL 16.15 (Debian 16.15-1.pgdg13+2) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-10-17T15:32:42.5820454Z  2026-10-17 15:17:47.813 UTC [48] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-10-17T15:32:42.5821325Z  2026-10-17 15:17:47.816 UTC [51] LOG:  database system was shut down at 2026-10-17 15:17:47 UTC
+2026-10-17T15:32:42.5822151Z  2026-10-17 15:17:47.819 UTC [48] LOG:  database system is ready to accept connections
+2026-10-17T15:32:42.5822789Z   done
+2026-10-17T15:32:42.5823092Z  server started
+2026-10-17T15:32:42.5823423Z  CREATE DATABASE
+2026-10-17T15:32:42.5823747Z  
+2026-10-17T15:32:42.5824041Z  
+2026-10-17T15:32:42.5824583Z  /usr/local/bin/docker-entrypoint.sh: ignoring /docker-entrypoint-initdb.d/*
+2026-10-17T15:32:42.5825685Z  
+2026-10-17T15:32:42.5826332Z  waiting for server to shut down...2026-10-17 15:17:48.000 UTC [48] LOG:  received fast shutdown request
+2026-10-17T15:32:42.5827096Z  .2026-10-17 15:17:48.001 UTC [48] LOG:  aborting any active transactions
+2026-10-17T15:32:42.5827706Z  2026-10-17 15:17:48.004 UTC [48] LOG:  background worker "logical replication launcher" (PID 54) exited with exit code 1
+2026-10-17T15:32:42.5828245Z  2026-10-17 15:17:48.005 UTC [49] LOG:  shutting down
+2026-10-17T15:32:42.5828947Z  2026-10-17 15:17:48.005 UTC [49] LOG:  checkpoint starting: shutdown immediate
+2026-10-17T15:32:42.5830045Z  2026-10-17 15:17:48.021 UTC [49] LOG:  checkpoint complete: wrote 926 buffers (5.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=0.014 s, sync=0.002 s, total=0.017 s; sync files=301, longest=0.001 s, average=0.001 s; distance=4273 kB, estimate=4273 kB; lsn=0/191F0E0, redo lsn=0/191F0E0
+2026-10-17T15:32:42.5831089Z  2026-10-17 15:17:48.027 UTC [48] LOG:  database system is shut down
+2026-10-17T15:32:42.5831423Z   done
+2026-10-17T15:32:42.5831611Z  server stopped
+2026-10-17T15:32:42.5831806Z  
+2026-10-17T15:32:42.5832041Z  PostgreSQL init process complete; ready for start up.
+2026-10-17T15:32:42.5832341Z  
+2026-10-17T15:32:42.5833244Z Stop and remove container: 6e05f10deb8847f29ef648192b1086b0_postgres16_ab8c35
+2026-10-17T15:32:42.5833992Z ##[command]/usr/bin/docker rm --force 024a0bba5ab059e85b6b944ac1b0d530b89deab1f4d6a3cada27f4047c3bafc2
+2026-10-17T15:32:42.6988318Z 024a0bba5ab059e85b6b944ac1b0d530b89deab1f4d6a3cada27f4047c3bafc2
+2026-10-17T15:32:42.7011173Z Remove container network: github_network_08af3236cca04f11a92532b299c13711
+2026-10-17T15:32:42.7016072Z ##[command]/usr/bin/docker network rm github_network_08af3236cca04f11a92532b299c13711
+2026-10-17T15:32:42.7913163Z github_network_08af3236cca04f11a92532b299c13711

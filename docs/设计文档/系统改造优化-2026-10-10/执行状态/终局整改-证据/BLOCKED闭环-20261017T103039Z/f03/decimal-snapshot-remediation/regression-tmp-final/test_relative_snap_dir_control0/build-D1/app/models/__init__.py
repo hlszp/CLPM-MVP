@@ -1,0 +1,184 @@
+"""SQLAlchemy 2.0 ORM models for CLPM.
+
+Imports all model modules so that ``Base.metadata`` is fully populated when
+``app.models`` is imported (required by Alembic autogenerate).
+"""
+
+from __future__ import annotations
+
+from app.models.alert import (
+    AlertEvent,
+    AlertRule,
+    AlertRuleAuditLog,
+    AlertRuleSubscription,
+    AlertSuppression,
+)
+from app.models.algorithm_parameter import AlgorithmParameter
+from app.models.assessment_release import AssessmentReleaseRegistry  # P3-08a
+from app.models.audit import SysAuditLog
+from app.models.authz import (  # P4-01
+    PolicyPublicationGuard,
+    SysAuthzPolicy,
+    SysPermission,
+    SysRolePermission,
+    SysUserScope,
+)
+from app.models.base import Base, TimestampMixin
+from app.models.calc_dataset_snapshot import CalculationDatasetSnapshot  # P2-03
+from app.models.calculation_result import (
+    CalculationResultAttempt,
+    CalculationResultLegacyMap,
+    CalculationResultRecord,
+)
+from app.models.config_publish import ConfigOverride, ConfigPublication  # P2-02
+from app.models.dcs_mode_mapping import DcsModeMapping
+from app.models.dcs_model import DcsModel
+from app.models.dcs_pid_structure import DcsPidStructure
+from app.models.dcs_vendor import DcsVendor
+from app.models.diagnosis import DiagnosisConfig, DiagnosisResult, DiagnosisTag
+from app.models.diagnosis_run import DiagnosisRun
+from app.models.engine import EngineRule
+from app.models.engineering_template import (  # P2-04
+    EngineeringTemplate,
+    EngineeringTemplateVersion,
+)
+from app.models.event_bus import EventBus  # Workbench v2.0
+from app.models.handling_order import HandlingOrder
+from app.models.loop import LoopLedger, LoopTagMapping
+from app.models.loop_action_item import LoopActionItem
+from app.models.loop_config import LoopLevelWeight, LoopModeMapping, LoopTypeWeight
+from app.models.loop_health_flag import LoopHealthFlag  # 运维健康标记
+from app.models.loop_investigation import LoopInvestigation  # P6-05 E1 核查最小实体
+from app.models.metric import (
+    KpiSnapshotCustom,
+    KpiSnapshotHourly,
+    LoopConfidenceLatest,
+    MetricConfig,
+)
+from app.models.metric_data_requirement import ClpmMetricDataRequirement
+from app.models.mode_definition import ModeDefinition
+from app.models.module_plugin import ModulePlugin  # Workbench v2.0
+from app.models.node_kpi import (
+    KpiNodeSnapshotDaily,
+    KpiNodeSnapshotHourly,
+    KpiNodeSnapshotMonthly,
+)
+from app.models.personal_workspace import (  # P6-05 个人关系分片
+    UserLoopFollow,
+    UserWorkResume,
+    UserWorkspacePreference,
+)
+from app.models.plant_node import PlantNode
+from app.models.point_history import (  # tag-timeseries-refactor P1
+    HistoryCoverageSegment,
+    HistoryLayoutManifest,
+    HistoryPointConflict,
+    HistoryWriteBatch,
+    LoopTagBindingHistory,
+    PointStateAnchor,
+)
+from app.models.process_model_version import ProcessModelVersion
+from app.models.report import ReportRecord
+from app.models.report_config import ReportConfig
+from app.models.sla_policy import SlaPolicy  # Workbench v2.0
+from app.models.sys_config import SysConfig
+from app.models.sys_dict_item import SysDictItem
+from app.models.sys_user import SysUser
+from app.models.tag import TagRegistry
+from app.models.tracker import ActionTracker
+from app.models.trend_flags import TrendFlag  # Workbench v2.0
+from app.models.tuning import TuningRecord
+from app.models.tuning_batch import TuningBatch, TuningBatchRecords  # Workbench v2.0
+from app.models.tuning_knowledge import TuningKnowledgeEntry
+from app.models.unit_kpi_summary import UnitKpiSummary
+from app.models.wb_cache_log import WbCacheLog  # Workbench v2.0
+from app.models.workbench_loop_latest import (  # 驾驶舱 P1 预计算
+    WorkbenchLoopLatest,
+)
+from app.models.workbench_summary import WorkbenchWindowSummary  # Workbench v2.0
+
+__all__ = [
+    "SysAuthzPolicy",
+    "SysPermission",
+    "SysRolePermission",
+    "SysUserScope",
+    "PolicyPublicationGuard",
+    "Base",
+    "LoopHealthFlag",
+    "LoopInvestigation",  # P6-05 E1 回路核查最小实体（来源+问题去重）
+    "TimestampMixin",
+    "AlgorithmParameter",
+    "AssessmentReleaseRegistry",  # P3-08a 评估发布代际登记
+    "SysDictItem",
+    "SysUser",
+    "PlantNode",
+    "UserLoopFollow",  # P6-05 回路关注（取消留版本墓碑）
+    "UserWorkspacePreference",  # P6-05 账号工作偏好（按 key 独立版本）
+    "UserWorkResume",  # P6-05 最近继续（generation 清空栅栏）
+    "HistoryCoverageSegment",  # tag-timeseries-refactor P1 覆盖区间
+    "HistoryLayoutManifest",  # 布局清单
+    "HistoryPointConflict",  # 同 ts 冲突登记
+    "HistoryWriteBatch",  # 写入批次生命周期
+    "LoopTagBindingHistory",  # 绑定历史
+    "PointStateAnchor",  # 状态锚点
+    "ProcessModelVersion",
+    "LoopLedger",
+    "LoopActionItem",
+    "HandlingOrder",
+    "LoopTagMapping",
+    "LoopModeMapping",
+    "LoopTypeWeight",
+    "LoopLevelWeight",
+    "TagRegistry",
+    "MetricConfig",
+    "CalculationResultRecord",  # P1-05 结果账本
+    "CalculationResultLegacyMap",  # P1-05 旧 ID 映射
+    "CalculationResultAttempt",  # P5-02 计算尝试日志（G2 遗留③）
+    "CalculationDatasetSnapshot",  # P2-03 不可变输入包元数据
+    "ConfigOverride",  # P2-02 分层配置覆盖
+    "ConfigPublication",  # P2-02 统一配置发布快照
+    "DiagnosisConfig",
+    "EngineRule",
+    "EngineeringTemplate",
+    "EngineeringTemplateVersion",
+    "KpiSnapshotHourly",
+    "KpiSnapshotCustom",
+    "LoopConfidenceLatest",
+    "ClpmMetricDataRequirement",
+    "DiagnosisTag",
+    "UnitKpiSummary",
+    "KpiNodeSnapshotHourly",
+    "KpiNodeSnapshotDaily",
+    "KpiNodeSnapshotMonthly",
+    "ActionTracker",
+    "DiagnosisResult",
+    "DiagnosisRun",
+    "TuningRecord",
+    "TuningKnowledgeEntry",
+    "ReportRecord",
+    "ReportConfig",
+    "SysAuditLog",
+    "SysConfig",
+    # DCS 配置（v6.1 新增）
+    "DcsVendor",
+    "DcsModel",
+    "ModeDefinition",
+    "DcsModeMapping",
+    "DcsPidStructure",
+    # 智能预警规则引擎（v2.6 新增）
+    "AlertRule",
+    "AlertRuleSubscription",
+    "AlertEvent",
+    "AlertRuleAuditLog",
+    "AlertSuppression",
+    # ---------- Workbench v2.0 工作台新增实体 ----------
+    "ModulePlugin",  # M-01 模块插件4态注册表
+    "WorkbenchWindowSummary",  # M-02 三窗口KPI预计算
+    "WorkbenchLoopLatest",  # 驾驶舱 P1 回路最新态预计算
+    "EventBus",  # M-03 跨模块事件归一总线
+    "SlaPolicy",  # M-04 SLA模板策略
+    "TuningBatch",  # M-05 整定批次
+    "TuningBatchRecords",  # M-05 批次-整定记录 N:M
+    "TrendFlag",  # M-06 趋势flags标注
+    "WbCacheLog",  # M-08 BFF缓存命中日志
+]

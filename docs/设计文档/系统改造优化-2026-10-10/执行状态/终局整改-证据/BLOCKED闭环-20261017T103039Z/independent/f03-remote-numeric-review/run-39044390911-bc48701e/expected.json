@@ -1,0 +1,2874 @@
+{
+  "kind": "independent-kpi-expectation",
+  "verdict": "PASS",
+  "candidateSha": "bc48701efe90e2a27555a4f8794f0965e82b0902",
+  "fixtureLoopId": "f352b903-a2a0-4cb9-a57b-fb5a139294d8",
+  "identity": {
+    "assessmentProfile": "LEGACY_V2",
+    "algorithmVersion": "KPI_CALC_v2.0",
+    "configRevision": "rev:0:4cc7116649a473df",
+    "executableBuildDigest": "7dd8a6a4c0427bbd"
+  },
+  "recomputedDatasetInputHash": "b7627b87f2997fbb0c31756a7c42a89b16a4e7b7e33546d5eeec43c6b577f634",
+  "datasetDbInputHashCompared": true,
+  "inclusiveRequestEnd": "2026-10-17T14:00:00",
+  "halfOpenWindow": {
+    "start": "2026-10-17T13:00:00+00:00",
+    "end": "2026-10-17T14:00:01+00:00",
+    "seconds": 3601.0
+  },
+  "expected": {
+    "goodValueRate": 100.0,
+    "autoModeRate": 100.0,
+    "steadyRate": 59.86430194720249
+  },
+  "details": {
+    "goodValueRate": {
+      "goodSeconds": 3601.0,
+      "denominatorSeconds": 3601.0
+    },
+    "autoModeRate": {
+      "numeratorSeconds": 3601.0,
+      "denominatorSeconds": 3601.0,
+      "knownSeconds": 3601.0,
+      "unknownSeconds": 0.0,
+      "autoModes": [
+        1,
+        2,
+        3,
+        4
+      ]
+    },
+    "steadyRate": {
+      "value": 59.86430194720249,
+      "mode": "exponential",
+      "decayRatio": 0.05,
+      "oscFactor": 1.0,
+      "oscillation": {
+        "value": 0.0,
+        "isOscillating": false,
+        "crossings": 453,
+        "positiveSimilarity": 0.6055524184905214,
+        "negativeSimilarity": 0.7740164761767129,
+        "meanHalfPeriodPoints": 7.606194690265487,
+        "amplitude": 1.0718892321975209,
+        "segments": [
+          {
+            "iae": 0.3037000000000063,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 12.324499999999901,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.577100000000037,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.0101999999999904,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 18.369100000000074,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.181799999999967,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 22.476500000000108,
+            "points": 17,
+            "seconds": 17.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.24669999999998282,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.8448000000000064,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.24339999999999407,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 27.707100000000125,
+            "points": 17,
+            "seconds": 17.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.34029999999999205,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 20.222700000000103,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.924799999999962,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 13.16040000000006,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.8106999999999758,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.4466999999999999,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6998999999999853,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.11340000000002,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.353299999999983,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.31450000000000955,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.18019999999999214,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.000700000000009,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.4017999999999944,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.768400000000021,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.8449999999999918,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 89.02240000000032,
+            "points": 41,
+            "seconds": 41.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.0107999999999535,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 5.489300000000043,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.79849999999999,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.17220000000000368,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 10.120699999999957,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.8034000000000319,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.8781999999999925,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.161800000000056,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 6.538599999999946,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7531000000000105,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.2854999999999848,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.1938000000000102,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3231999999999857,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 238.98050000000066,
+            "points": 87,
+            "seconds": 87.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.5601999999999663,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.444400000000023,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 9.713399999999915,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": 1
+          },
+          {
+            "iae": 44.56150000000012,
+            "points": 21,
+            "seconds": 21.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.0217000000000027,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 29.490400000000108,
+            "points": 18,
+            "seconds": 18.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3283999999999949,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.4954000000000178,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 18.176199999999874,
+            "points": 15,
+            "seconds": 15.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5112000000000165,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 33.28489999999984,
+            "points": 19,
+            "seconds": 19.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.1250000000000142,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3760999999999868,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5873000000000062,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.2020999999999944,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.818500000000014,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.1588999999999956,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.2271000000000143,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.126599999999968,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 15.978200000000093,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 24.379399999999897,
+            "points": 16,
+            "seconds": 16.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.818200000000026,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 178.52309999999963,
+            "points": 57,
+            "seconds": 57.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.6522000000000077,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.6376999999999882,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 6.787400000000062,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.05989999999998474,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.016900000000021,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.04989999999998673,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 6.897200000000041,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.1156999999999968,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.9609000000000094,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6856999999999829,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.019600000000004,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 11.361499999999971,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": 1
+          },
+          {
+            "iae": 16.228000000000073,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 29.788499999999893,
+            "points": 16,
+            "seconds": 16.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.8556000000000168,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 50.74379999999981,
+            "points": 21,
+            "seconds": 21.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.744500000000038,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.5933999999999884,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5770000000000053,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3207999999999984,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 97.29940000000015,
+            "points": 19,
+            "seconds": 19.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.24649999999997618,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.810900000000011,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.34609999999999275,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.871100000000034,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 59.30699999999978,
+            "points": 28,
+            "seconds": 28.0,
+            "sign": 1
+          },
+          {
+            "iae": 147.0115000000003,
+            "points": 39,
+            "seconds": 39.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.5138999999999996,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.1474000000000188,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.10569999999999169,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 132.7134000000002,
+            "points": 32,
+            "seconds": 32.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.2365999999999744,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.08930000000003,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.3039999999999665,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.4176000000000073,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.389099999999992,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 151.6329000000004,
+            "points": 57,
+            "seconds": 57.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.4590999999999852,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 89.27230000000026,
+            "points": 38,
+            "seconds": 38.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.1384999999999934,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.707200000000078,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 6.553799999999967,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.021900000000031,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 153.58029999999957,
+            "points": 51,
+            "seconds": 51.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.050600000000002865,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.7926999999999964,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 21.15739999999998,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.6635999999999953,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.5440999999999931,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.605699999999992,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3943999999999974,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 14.399899999999988,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.117000000000004,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6854000000000013,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 74.7334,
+            "points": 25,
+            "seconds": 25.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.5807000000000002,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.8718000000000004,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 11.363,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": 1
+          },
+          {
+            "iae": 88.47369999999995,
+            "points": 24,
+            "seconds": 24.0,
+            "sign": -1
+          },
+          {
+            "iae": 6.512800000000027,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.8016999999999967,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3646000000000029,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.3877999999999986,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.0611999999999995,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.338799999999999,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.08010000000000161,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5367999999999924,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.5683000000000078,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.11119999999998953,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.1828999999999894,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 16.662599999999983,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6128,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3438999999999979,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.004799999999996,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.13110000000001065,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 84.67109999999997,
+            "points": 44,
+            "seconds": 44.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.4742000000000033,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.809500000000007,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 27.520400000000038,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.4466000000000037,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.8853999999999971,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.694899999999997,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.031700000000015,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.009299999999989,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.2535999999999987,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 7.693400000000004,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.6661999999999892,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6582000000000079,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 5.099499999999999,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.420400000000008,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 53.42579999999998,
+            "points": 25,
+            "seconds": 25.0,
+            "sign": -1
+          },
+          {
+            "iae": 30.42030000000002,
+            "points": 18,
+            "seconds": 18.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5456000000000074,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.218599999999995,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": 1
+          },
+          {
+            "iae": 14.271699999999989,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 87.67979999999997,
+            "points": 29,
+            "seconds": 29.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.667500000000004,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.302900000000001,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.6332999999999913,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 115.01850000000007,
+            "points": 41,
+            "seconds": 41.0,
+            "sign": 1
+          },
+          {
+            "iae": 15.628800000000005,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.543900000000008,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5649000000000015,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.4797000000000011,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.01820000000000732,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.8385999999999996,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.855699999999999,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.019199999999997885,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.1998999999999995,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 58.18159999999999,
+            "points": 24,
+            "seconds": 24.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.557699999999976,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6221000000000032,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.9934999999999974,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.44950000000000045,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 40.65299999999997,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.40279999999999916,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.406099999999988,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.8785000000000025,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 6.678899999999992,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.9837999999999951,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.881200000000021,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 8.408099999999997,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": 1
+          },
+          {
+            "iae": 84.52440000000001,
+            "points": 27,
+            "seconds": 27.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.567700000000002,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.394200000000019,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.6308000000000078,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 98.83409999999998,
+            "points": 29,
+            "seconds": 29.0,
+            "sign": -1
+          },
+          {
+            "iae": 104.69980000000001,
+            "points": 26,
+            "seconds": 26.0,
+            "sign": 1
+          },
+          {
+            "iae": 6.3736999999999995,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.7028000000000034,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.046799999999990405,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.560299999999998,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.13480000000000558,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 15.309600000000017,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.2586000000000013,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 56.273400000000024,
+            "points": 20,
+            "seconds": 20.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.173100000000005,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.18849999999999767,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.42859999999998877,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.7212999999999994,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 16.893599999999985,
+            "points": 11,
+            "seconds": 11.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3066999999999993,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.89950000000001,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3334999999999937,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.8380999999999972,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.27900000000000347,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.0870000000000033,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.5364999999999895,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 52.42230000000001,
+            "points": 23,
+            "seconds": 23.0,
+            "sign": -1
+          },
+          {
+            "iae": 20.1976,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": 1
+          },
+          {
+            "iae": 13.988999999999969,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": -1
+          },
+          {
+            "iae": 13.538499999999992,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.134000000000015,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.13680000000000092,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.216000000000001,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.036200000000008004,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 13.067299999999996,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.6626000000000118,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.6206999999999994,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 27.86209999999999,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3171000000000035,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.5605000000000047,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 40.46900000000001,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 4.537099999999995,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 12.536300000000018,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 22.275400000000005,
+            "points": 18,
+            "seconds": 18.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.17439999999999856,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.1794000000000153,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7518999999999991,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.320999999999998,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 27.026799999999994,
+            "points": 17,
+            "seconds": 17.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.8299999999999912,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 5.358199999999989,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 118.5401,
+            "points": 37,
+            "seconds": 37.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.4735999999999976,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 90.40189999999998,
+            "points": 34,
+            "seconds": 34.0,
+            "sign": 1
+          },
+          {
+            "iae": 16.950099999999978,
+            "points": 11,
+            "seconds": 11.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.27200000000000557,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7638999999999996,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 30.801199999999994,
+            "points": 16,
+            "seconds": 16.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.4091000000000093,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 40.78680000000001,
+            "points": 15,
+            "seconds": 15.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.569800000000008,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 33.60180000000001,
+            "points": 18,
+            "seconds": 18.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.6776000000000053,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.10990000000000322,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.115199999999987,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.529699999999984,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 3.026600000000016,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.3427999999999969,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.043900000000000716,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 6.317699999999995,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.9207999999999998,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.04800000000000182,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.0604000000000013,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 114.92660000000001,
+            "points": 48,
+            "seconds": 48.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.877200000000002,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 7.588400000000014,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.269700000000022,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 88.8588,
+            "points": 31,
+            "seconds": 31.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.281800000000018,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 39.463499999999996,
+            "points": 21,
+            "seconds": 21.0,
+            "sign": 1
+          },
+          {
+            "iae": 22.9538,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6589999999999989,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 6.467800000000011,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.798099999999998,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.1276999999999973,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 25.756600000000006,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7697000000000003,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 22.991499999999995,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5578999999999965,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 19.037000000000013,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.6910999999999916,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.2779999999999987,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 80.94149999999999,
+            "points": 25,
+            "seconds": 25.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.12769999999999726,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.8795000000000002,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 11.38020000000001,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.551399999999994,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6089000000000127,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.242600000000024,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.7107000000000028,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.688299999999998,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.3562000000000012,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 14.603600000000007,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.3432999999999993,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.21809999999999974,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.5937999999999803,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.139800000000001,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.0707000000000022,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 50.85529999999998,
+            "points": 17,
+            "seconds": 17.0,
+            "sign": -1
+          },
+          {
+            "iae": 11.456300000000006,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.349299999999978,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.7830999999999975,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 10.568400000000018,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.8333999999999904,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 19.97109999999998,
+            "points": 15,
+            "seconds": 15.0,
+            "sign": -1
+          },
+          {
+            "iae": 14.078900000000012,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": 1
+          },
+          {
+            "iae": 13.063699999999983,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 90.99960000000004,
+            "points": 30,
+            "seconds": 30.0,
+            "sign": 1
+          },
+          {
+            "iae": 5.3507000000000104,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.6762000000000015,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.9062000000000054,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 23.62600000000002,
+            "points": 16,
+            "seconds": 16.0,
+            "sign": 1
+          },
+          {
+            "iae": 58.060300000000005,
+            "points": 30,
+            "seconds": 30.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.18240000000000123,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 28.13190000000003,
+            "points": 19,
+            "seconds": 19.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.7113999999999905,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 37.276,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.005700000000004479,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 6.639699999999976,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 10.885200000000012,
+            "points": 11,
+            "seconds": 11.0,
+            "sign": 1
+          },
+          {
+            "iae": 4.529300000000013,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.8780000000000001,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.390499999999996,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 26.773600000000016,
+            "points": 11,
+            "seconds": 11.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.02379999999999427,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 306.34929999999997,
+            "points": 77,
+            "seconds": 77.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.4939999999999998,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.14409999999999457,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 18.83189999999999,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.6038000000000068,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.877999999999986,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.013099999999994338,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 5.561100000000003,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 36.40219999999999,
+            "points": 19,
+            "seconds": 19.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.94939999999999,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.4654000000000025,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 19.6914,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 11.500000000000014,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.9629000000000048,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.5257000000000005,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 11.118800000000014,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.062100000000001,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 13.505800000000008,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.19379999999999598,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3538999999999959,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.9505999999999943,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.46009999999999707,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.6174000000000177,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 9.912700000000001,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6837000000000018,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.6055999999999955,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.054100000000005366,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 15.857700000000008,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.299899999999994,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 9.958400000000005,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.7759000000000071,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3879000000000019,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.0419999999999874,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 16.93100000000001,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.04000000000000625,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 86.66470000000001,
+            "points": 50,
+            "seconds": 50.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.05150000000000432,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 5.7761,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 22.439300000000003,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.4632999999999896,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 6.040400000000005,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 51.27720000000003,
+            "points": 30,
+            "seconds": 30.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.9830999999999932,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.311999999999998,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.180300000000003,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.9553999999999903,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 116.55390000000003,
+            "points": 32,
+            "seconds": 32.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.1113,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.946699999999993,
+            "points": 5,
+            "seconds": 5.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7302999999999997,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.768799999999999,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.5384999999999991,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 10.727699999999999,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.32030000000000314,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6517999999999944,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 20.213400000000007,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": -1
+          },
+          {
+            "iae": 125.56459999999997,
+            "points": 39,
+            "seconds": 39.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3037999999999954,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.4928000000000026,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.19639999999999,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.02410000000000423,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 27.778100000000016,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": -1
+          },
+          {
+            "iae": 8.254599999999996,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.4779000000000053,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.0216000000000065,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 22.575300000000013,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.397900000000007,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.171900000000001,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3024000000000058,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 12.629100000000001,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 21.546600000000012,
+            "points": 12,
+            "seconds": 12.0,
+            "sign": 1
+          },
+          {
+            "iae": 8.388500000000008,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.644500000000008,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 30.01029999999998,
+            "points": 19,
+            "seconds": 19.0,
+            "sign": -1
+          },
+          {
+            "iae": 92.7652,
+            "points": 41,
+            "seconds": 41.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.030199999999993565,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 31.30119999999998,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": 1
+          },
+          {
+            "iae": 43.91820000000001,
+            "points": 19,
+            "seconds": 19.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.017399999999994975,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.265900000000002,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.23789999999999623,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 13.927300000000017,
+            "points": 13,
+            "seconds": 13.0,
+            "sign": -1
+          },
+          {
+            "iae": 57.88719999999999,
+            "points": 22,
+            "seconds": 22.0,
+            "sign": 1
+          },
+          {
+            "iae": 15.698299999999996,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.2536000000000058,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.5701999999999998,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.14509999999999934,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.15269999999999584,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.7445000000000022,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 7.4646000000000114,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": -1
+          },
+          {
+            "iae": 2.3704999999999927,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 16.25299999999998,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.9205999999999932,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 27.40269999999998,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": -1
+          },
+          {
+            "iae": 34.7615,
+            "points": 14,
+            "seconds": 14.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7583000000000055,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.1477000000000004,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.2457999999999956,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 9.907899999999998,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.7751999999999981,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.5031000000000034,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.18120000000000402,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.29470000000000596,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.861699999999999,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 22.188300000000012,
+            "points": 10,
+            "seconds": 10.0,
+            "sign": 1
+          },
+          {
+            "iae": 2.854600000000005,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": -1
+          },
+          {
+            "iae": 194.80530000000002,
+            "points": 47,
+            "seconds": 47.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.4682999999999922,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.6174000000000035,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 103.45549999999994,
+            "points": 44,
+            "seconds": 44.0,
+            "sign": -1
+          },
+          {
+            "iae": 13.365800000000021,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.3025999999999982,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 5.253,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.797700000000006,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.39400000000000546,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 11.5156,
+            "points": 9,
+            "seconds": 9.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.5956999999999937,
+            "points": 2,
+            "seconds": 2.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.4609999999999985,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 6.409200000000013,
+            "points": 7,
+            "seconds": 7.0,
+            "sign": 1
+          },
+          {
+            "iae": 70.3065,
+            "points": 35,
+            "seconds": 35.0,
+            "sign": -1
+          },
+          {
+            "iae": 14.708999999999989,
+            "points": 8,
+            "seconds": 8.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.05639999999999645,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 3.134900000000002,
+            "points": 4,
+            "seconds": 4.0,
+            "sign": 1
+          },
+          {
+            "iae": 1.4526000000000039,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.3936000000000064,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 44.24440000000003,
+            "points": 24,
+            "seconds": 24.0,
+            "sign": -1
+          },
+          {
+            "iae": 7.933300000000003,
+            "points": 6,
+            "seconds": 6.0,
+            "sign": 1
+          },
+          {
+            "iae": 25.147600000000004,
+            "points": 15,
+            "seconds": 15.0,
+            "sign": -1
+          },
+          {
+            "iae": 0.2839000000000027,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": 1
+          },
+          {
+            "iae": 0.6170000000000044,
+            "points": 1,
+            "seconds": 1.0,
+            "sign": -1
+          },
+          {
+            "iae": 1.714800000000011,
+            "points": 3,
+            "seconds": 3.0,
+            "sign": 1
+          }
+        ]
+      },
+      "n": 3481,
+      "sigmaUnbiased": 2.565449096682854,
+      "meanError": -0.017597299626545923,
+      "excludedPoints": 120,
+      "excludedSeconds": 120.0,
+      "pvRange": 100.0,
+      "bandInSeconds": 1114.0,
+      "bandDenominatorSeconds": 3481.0
+    }
+  },
+  "rawToFrameChecks": {
+    "good_value_rate": [],
+    "auto_mode_rate": [
+      {
+        "role": "pv",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      },
+      {
+        "role": "sp",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      },
+      {
+        "role": "mode",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      }
+    ],
+    "stability_rate": [
+      {
+        "role": "pv",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      },
+      {
+        "role": "sp",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      },
+      {
+        "role": "mode",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      }
+    ],
+    "oscillation_rate": [
+      {
+        "role": "pv",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      },
+      {
+        "role": "sp",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      },
+      {
+        "role": "mode",
+        "count": 3601,
+        "knownSlots": 3601,
+        "rawValueMatch": true
+      }
+    ]
+  },
+  "preprocessingScope": "Raw held values/QC and mask-expression evaluation independently checked; exported validity flags are preserved preprocessed input facts, not a second implementation of every preprocessing classifier",
+  "tolerancesPercentagePoints": {
+    "unrounded": 1e-08,
+    "rounded2dp": 0.005
+  },
+  "readActualMetrics": false,
+  "productCalculatorImported": false,
+  "businessOperations": false,
+  "readSet": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.json",
+      "sha256": "9d150c116632f843bbbd9edeab9d7208d096fb8809f274a934f7c39d832a0fff",
+      "size": 2296
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/fixture.inputs.json",
+      "sha256": "8f524a3ad1e9b2a4ae65aa1d51093a4957f911f5331016bf241c76ea65edc15b",
+      "size": 581923
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.manifest.json",
+      "sha256": "6a9d8b6161a3e6e2ba50c4e612244a586a40043fa92bd9235ef47b6be64a3bf1",
+      "size": 2356229
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39044390911/artifacts/12105297313/home/runner/work/_temp/critical-e2e/calc-snapshots/202610/416c9576-d929-4afb-a404-24d0d5b83474.npz",
+      "sha256": "0bed77880aa58fdcd6257fafa9fafea527ff07e00298706f9ba9c2c253229f1f",
+      "size": 1177609
+    }
+  ],
+  "planSha256": "5b1449ee33423d885c9b692ce92ddc96549fdbbc00099663f67539039967bee6"
+}

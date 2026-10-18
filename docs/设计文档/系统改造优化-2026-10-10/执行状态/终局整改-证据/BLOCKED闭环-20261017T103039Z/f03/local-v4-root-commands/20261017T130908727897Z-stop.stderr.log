@@ -1,0 +1,8 @@
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/keeper-local-f03-v4.py", line 1191, in <module>
+    main()
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/keeper-local-f03-v4.py", line 1186, in main
+    globals()[ARGS.phase]()
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-lifespan-v4/keeper-local-f03-v4.py", line 1069, in stop
+    raise RuntimeError("stop failed: " + json.dumps(errors, ensure_ascii=False))
+RuntimeError: stop failed: [{"phase": "api-stop", "error": "RuntimeError(\"API real exit identity/rc={'pid': 39579, 'rc': -15, 'at': '2026-10-17T13:09:55.915252+00:00'}\")"}]

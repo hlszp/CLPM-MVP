@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "--method",
+    "GET",
+    "repos/hlszp/CLPM-MVP/actions/artifacts/12105065268/zip"
+  ],
+  "startedAt": "2026-10-17T14:54:56.004586+00:00",
+  "finishedAt": "2026-10-17T14:54:58.946565+00:00",
+  "processReturncode": 0,
+  "deadlineSeconds": 60,
+  "deadlineExceeded": false,
+  "stdout": {
+    "path": "requests/20261017T145456004458Z-artifact-12105065268.zip",
+    "bytes": 419498,
+    "sha256": "806cb820f002a5113b54e4c33b162cc7de3f4810b85079e18c27a3d1801cd4dc"
+  },
+  "stderr": {
+    "path": "requests/20261017T145456004458Z-artifact-12105065268.stderr.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "operation": "GET_ONLY_NO_RERUN_OR_EXTERNAL_MESSAGE"
+}

@@ -1,0 +1,29 @@
+{
+  "argv": [
+    "docker",
+    "exec",
+    "-i",
+    "4ec91098b6ce86a4a6edc34ffa7ef9dcad5e92ade6206db3df9d9ef7561aa3c0",
+    "pg_restore",
+    "--list"
+  ],
+  "startedAtUtc": "2026-10-17T15:09:39.308809+00:00",
+  "finishedAtUtc": "2026-10-17T15:09:39.389454+00:00",
+  "rc": 0,
+  "databaseConnection": false,
+  "dumpPath": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/synthetic-capacity-binding-actual-root-v1/before.dump",
+  "dumpSha256": "265c94e0244a392dceb78ae004d8e9fc21fc12a4df07404208b9b2546487edaf",
+  "dumpBytes": 12905207,
+  "logs": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/synthetic-capacity-dump-structure-root-v1/stdout.log",
+      "bytes": 65835,
+      "sha256": "152b1f154fe03ee74756605f12f4f52abd9e834235977da81f96018c189b13c4"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/synthetic-capacity-dump-structure-root-v1/stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

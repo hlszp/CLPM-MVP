@@ -1,0 +1,8 @@
+test_wrong_container_id_name_or_image_never_dump (independent_fixed_controls.AdapterControls.test_wrong_container_id_name_or_image_never_dump) ... ok
+test_missing_or_wrong_port_mapping_never_dump (independent_fixed_controls.AdapterControls.test_missing_or_wrong_port_mapping_never_dump) ... ok
+test_wrong_args_and_scope_are_refused_before_any_subprocess (independent_fixed_controls.AdapterControls.test_wrong_args_and_scope_are_refused_before_any_subprocess) ... ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.006s
+
+OK

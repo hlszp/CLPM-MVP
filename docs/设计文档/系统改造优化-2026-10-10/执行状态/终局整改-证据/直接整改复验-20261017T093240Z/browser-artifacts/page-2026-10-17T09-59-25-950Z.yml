@@ -1,0 +1,176 @@
+- generic [ref=f3e1]:
+  - generic [ref=f3e4]:
+    - complementary [ref=f3e5]:
+      - generic [ref=f3e6]:
+        - generic [ref=f3e7] [cursor=pointer]
+        - link "iCLPM 系统" [ref=f3e12] [cursor=pointer]:
+          - /url: javascript:void 0
+        - menu [ref=f3e16]:
+          - menuitem "我的工作" [ref=f3e17] [cursor=pointer]
+          - menuitem "驾驶舱" [ref=f3e22] [cursor=pointer]
+          - menuitem "回路工作台" [ref=f3e27] [cursor=pointer]
+          - listitem [ref=f3e34]:
+            - generic [ref=f3e35] [cursor=pointer]: 回路监控
+            - list [ref=f3e41]:
+              - menuitem "回路监视" [ref=f3e42] [cursor=pointer]
+              - menuitem "预警事件" [ref=f3e47] [cursor=pointer]
+              - menuitem "系统建议" [ref=f3e52] [cursor=pointer]
+          - listitem [ref=f3e57]:
+            - generic [ref=f3e58] [cursor=pointer]: 性能评估
+          - listitem [ref=f3e64]:
+            - generic [ref=f3e65] [cursor=pointer]: 回路诊断
+          - listitem [ref=f3e74]:
+            - generic [ref=f3e75] [cursor=pointer]: 参数整定
+          - listitem [ref=f3e81]:
+            - generic [ref=f3e82] [cursor=pointer]: 运维处置
+          - listitem [ref=f3e91]:
+            - generic [ref=f3e92] [cursor=pointer]: 统计分析
+          - listitem [ref=f3e100]:
+            - generic [ref=f3e101] [cursor=pointer]: 参数配置
+        - generic [ref=f3e111] [cursor=pointer]
+    - generic [ref=f3e116]:
+      - generic [ref=f3e117]:
+        - banner [ref=f3e118]:
+          - button [ref=f3e119] [cursor=pointer]
+          - button [ref=f3e122] [cursor=pointer]
+          - navigation "breadcrumb" [ref=f3e127]:
+            - list [ref=f3e128]:
+              - listitem [ref=f3e129]:
+                - link [ref=f3e130] [cursor=pointer]:
+                  - /url: javascript:void 0
+              - listitem [ref=f3e134]:
+                - link "回路监控" [ref=f3e135] [cursor=pointer]:
+                  - /url: javascript:void 0
+                - listitem [aria-hidden] [ref=f3e139]
+              - listitem [ref=f3e142]:
+                - link "回路监视" [disabled] [ref=f3e143]
+          - generic [ref=f3e148]:
+            - generic [ref=f3e149]: 在线
+            - generic [ref=f3e155] [cursor=pointer]
+            - generic [ref=f3e161] [cursor=pointer]:
+              - generic [ref=f3e165]: 搜索
+              - generic [ref=f3e166]: ⌘ K
+            - button [ref=f3e168] [cursor=pointer]
+            - button "dark" [ref=f3e173] [cursor=pointer]
+            - button [ref=f3e182] [cursor=pointer]
+            - button [ref=f3e185] [cursor=pointer]
+            - button [ref=f3e191] [cursor=pointer]:
+              - button [ref=f3e193]
+            - generic [ref=f3e197]:
+              - generic [ref=f3e198]: 仪控工程师
+              - button "程师" [expanded] [ref=f3e199] [cursor=pointer]
+        - generic [ref=f3e206]:
+          - generic [ref=f3e211]:
+            - generic [ref=f3e212] [cursor=pointer]: 我的工作
+            - generic [ref=f3e229] [cursor=pointer]: 回路监视
+          - generic [ref=f3e246]:
+            - button [ref=f3e247] [cursor=pointer]
+            - generic [ref=f3e254] [cursor=pointer]
+            - generic [ref=f3e258] [cursor=pointer]
+      - main [ref=f3e265]:
+        - generic [ref=f3e267]:
+          - generic [ref=f3e268]:
+            - generic [ref=f3e270]:
+              - heading "回路监视" [level=1] [ref=f3e271]
+              - generic [ref=f3e272]: 全厂回路绩效扫视，点击位号查看详情，锁定例外后进入工作台处置
+            - generic [ref=f3e274]:
+              - generic [ref=f3e276] [cursor=pointer]:
+                - combobox [ref=f3e278]
+                - generic: 全部装置
+              - generic [ref=f3e280] [cursor=pointer]:
+                - combobox [ref=f3e282]
+                - generic: 类型
+              - generic [ref=f3e284] [cursor=pointer]:
+                - combobox [ref=f3e286]
+                - generic: 性能等级
+              - generic [ref=f3e288] [cursor=pointer]:
+                - combobox [ref=f3e290]
+                - generic: 模式
+              - generic [ref=f3e291]:
+                - textbox "搜索位号、描述、装置" [ref=f3e294]: AUDIT-F07
+                - button [ref=f3e296] [cursor=pointer]:
+                  - img "close-circle" [ref=f3e297]
+              - generic [ref=f3e300]: "?"
+              - button "查 询" [ref=f3e301] [cursor=pointer]
+          - generic [ref=f3e304]:
+            - generic [ref=f3e307]:
+              - table [ref=f3e311]:
+                - rowgroup [ref=f3e326]:
+                  - row [ref=f3e327]:
+                    - columnheader "回路位号 caret-up caret-down" [ref=f3e328] [cursor=pointer]:
+                      - generic [ref=f3e329]:
+                        - generic [ref=f3e330]: 回路位号
+                        - generic [ref=f3e332]:
+                          - generic "caret-up" [ref=f3e333]
+                          - generic "caret-down" [ref=f3e336]
+                    - columnheader "描述" [ref=f3e339]
+                    - columnheader "装置·单元" [ref=f3e340]
+                    - columnheader "回路类型" [ref=f3e341]
+                    - columnheader "量程" [ref=f3e342]
+                    - columnheader "模式" [ref=f3e343]
+                    - columnheader "设定值 SP" [ref=f3e344]
+                    - columnheader "测量值 PV" [ref=f3e345]
+                    - columnheader "输出值 OP(%)" [ref=f3e346]
+                    - columnheader "性能等级" [ref=f3e347]
+                    - columnheader "性能评分 caret-up caret-down" [ref=f3e348] [cursor=pointer]:
+                      - generic [ref=f3e349]:
+                        - generic [ref=f3e350]: 性能评分
+                        - generic [ref=f3e352]:
+                          - generic "caret-up" [ref=f3e353]
+                          - generic "caret-down" [ref=f3e356]
+                    - columnheader "适用性" [ref=f3e359]
+                    - columnheader "操作" [ref=f3e360]
+                - rowgroup [ref=f3e361]:
+                  - row [ref=f3e411]:
+                    - cell [ref=f3e363]:
+                      - button "AUDIT-F07-0001" [ref=f3e364] [cursor=pointer]
+                    - cell "isolated test input, no plant data" [ref=f3e365]
+                    - cell [ref=f3e366]
+                    - cell "其他" [ref=f3e367]
+                    - cell "—" [ref=f3e369]
+                    - cell "—" [ref=f3e370]
+                    - cell "—" [ref=f3e371]
+                    - cell "—" [ref=f3e372]
+                    - cell "—" [ref=f3e373]
+                    - cell "—" [ref=f3e374]
+                    - cell "—" [ref=f3e376]
+                    - cell "待评估" [ref=f3e377]
+                    - cell [ref=f3e412]:
+                      - generic [ref=f3e384]:
+                        - button "取消关注" [pressed] [ref=f3e413] [cursor=pointer]: ★
+                        - button "趋势" [ref=f3e386] [cursor=pointer]
+                        - button "详情" [ref=f3e387] [cursor=pointer]
+              - list [ref=f3e388]:
+                - listitem [ref=f3e389]: 共 1 条
+                - listitem "上一页" [ref=f3e390]:
+                  - button [disabled] [ref=f3e391]:
+                    - img "left" [ref=f3e392]
+                - listitem "1" [ref=f3e395] [cursor=pointer]
+                - listitem "下一页" [ref=f3e397]:
+                  - button [disabled] [ref=f3e398]:
+                    - img "right" [ref=f3e399]
+                - listitem [ref=f3e402]:
+                  - generic [ref=f3e404] [cursor=pointer]:
+                    - combobox [ref=f3e406]
+                    - generic [ref=f3e407]: 20 条/页
+            - generic [ref=f3e408]:
+              - generic [ref=f3e409]: 最近刷新：0 秒前
+              - generic [ref=f3e410]: ● 实时连接
+  - menu "程师" [active] [ref=f3e415]:
+    - generic [ref=f3e416]:
+      - generic [ref=f3e417]:
+        - generic [ref=f3e418]: 程师
+        - generic [ref=f3e422]:
+          - generic [ref=f3e423]: 仪控工程师
+          - generic [ref=f3e424]: ic_engineer@clpm.local
+      - separator [ref=f3e425]
+      - menuitem "个人中心" [ref=f3e426] [cursor=pointer]
+      - menuitem "引导教程重播" [ref=f3e431] [cursor=pointer]
+      - separator [ref=f3e436]
+      - menuitem "锁定屏幕 ⌥ L" [ref=f3e437] [cursor=pointer]:
+        - text: 锁定屏幕
+        - generic [ref=f3e442]: ⌥ L
+      - separator [ref=f3e443]
+      - menuitem "退出登录 ⌥ Q" [ref=f3e444] [cursor=pointer]:
+        - text: 退出登录
+        - generic [ref=f3e448]: ⌥ Q

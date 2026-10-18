@@ -1,0 +1,25 @@
+{
+  "argv": [
+    "gh",
+    "api",
+    "--method",
+    "GET",
+    "repos/hlszp/CLPM-MVP/actions/jobs/117422708786/logs"
+  ],
+  "startedAt": "2026-10-17T14:53:47.514051+00:00",
+  "finishedAt": "2026-10-17T14:53:51.227745+00:00",
+  "processReturncode": 0,
+  "deadlineSeconds": 60,
+  "deadlineExceeded": false,
+  "stdout": {
+    "path": "requests/20261017T145347514018Z-job-117422708786.zip",
+    "bytes": 901287,
+    "sha256": "0674dbec65f6a3f01eea0e748812de3add5689e3ccf9e08691247f124739e318"
+  },
+  "stderr": {
+    "path": "requests/20261017T145347514018Z-job-117422708786.stderr.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "operation": "GET_ONLY_NO_RERUN_OR_EXTERNAL_MESSAGE"
+}

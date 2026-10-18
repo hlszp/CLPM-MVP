@@ -1,0 +1,9 @@
+{
+  "database": "clpm_capacity_20261017_s01",
+  "readOnly": "off",
+  "isolation": "serializable",
+  "snapshot": "1051315:1051315:",
+  "txidIfAssigned": 1051315,
+  "observedAtUtc": "2026-10-17T15:09:10.839301+00:00",
+  "currentUser": "clpm"
+}

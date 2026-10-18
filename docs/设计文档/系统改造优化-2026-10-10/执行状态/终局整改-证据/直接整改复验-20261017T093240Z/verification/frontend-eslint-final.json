@@ -1,0 +1,19 @@
+{
+  "started_at": "2026-10-17T10:07:17.314710+00:00",
+  "elapsed_seconds": 2.1844832499918994,
+  "command": [
+    "pnpm",
+    "exec",
+    "eslint",
+    "apps/web-antd",
+    "--cache"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "exit_code": 0,
+  "source_identity_before": "f3218682d63f875de29850365004b752bb574c25461a2ea63ffe373e6422217c",
+  "source_identity_after": "f3218682d63f875de29850365004b752bb574c25461a2ea63ffe373e6422217c",
+  "source_stable": true,
+  "stdout_sha256": "924984d83153dbe8285ab4945e0a62cb75067d2641c57ba998d271dafe7c44e8",
+  "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment_boundary": "backend test mode; PG/Redis/TD unreachable ports; no real integration DSN"
+}

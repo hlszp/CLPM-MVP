@@ -1,0 +1,103 @@
+﻿2026-10-17T14:43:15.6446267Z ##[group]Run npm run test:gate-contract
+2026-10-17T14:43:15.6446627Z [36;1mnpm run test:gate-contract[0m
+2026-10-17T14:43:15.6511273Z shell: /usr/bin/bash -e {0}
+2026-10-17T14:43:15.6511712Z env:
+2026-10-17T14:43:15.6511957Z   CI: true
+2026-10-17T14:43:15.6512148Z   ENV: development
+2026-10-17T14:43:15.6512362Z   CLPM_TEST_MODE: 0
+2026-10-17T14:43:15.6512578Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T14:43:15.6512812Z   OMP_NUM_THREADS: 1
+2026-10-17T14:43:15.6513016Z   MKL_NUM_THREADS: 1
+2026-10-17T14:43:15.6513221Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T14:43:15.6513460Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T14:43:15.6513906Z   POSTGRES_HOST: localhost
+2026-10-17T14:43:15.6514140Z   POSTGRES_PORT: 5432
+2026-10-17T14:43:15.6514355Z   POSTGRES_USER: clpm
+2026-10-17T14:43:15.6514607Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T14:43:15.6514895Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T14:43:15.6515151Z   REDIS_HOST: localhost
+2026-10-17T14:43:15.6515366Z   REDIS_PORT: 6379
+2026-10-17T14:43:15.6515568Z   REDIS_PASSWORD: 
+2026-10-17T14:43:15.6515919Z   TDENGINE_HOST: localhost
+2026-10-17T14:43:15.6516149Z   TDENGINE_PORT: 6030
+2026-10-17T14:43:15.6516358Z   TDENGINE_USER: root
+2026-10-17T14:43:15.6516579Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T14:43:15.6516830Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T14:43:15.6517132Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T14:43:15.6517685Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T14:43:15.6518139Z   CLPM_BUILD_CODE_SHA: 645241e983856d3012f9ca2310af260ab988646f
+2026-10-17T14:43:15.6518588Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T14:43:15.6519036Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T14:43:15.6519478Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T14:43:15.6519920Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:43:15.6520335Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T14:43:15.6520764Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:43:15.6521152Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:43:15.6521529Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T14:43:15.6521910Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T14:43:15.6522278Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T14:43:15.6522631Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T14:43:15.6523041Z   GATE_CONTRACT_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/contract
+2026-10-17T14:43:15.6523419Z ##[endgroup]
+2026-10-17T14:43:15.7638404Z 
+2026-10-17T14:43:15.7639247Z > clpm-e2e@1.0.0 test:gate-contract
+2026-10-17T14:43:15.7640080Z > node --test scripts/test-critical-gate.mjs
+2026-10-17T14:43:15.7640514Z 
+2026-10-17T14:43:15.8230907Z TAP version 13
+2026-10-17T14:43:17.8159245Z # Subtest: real Playwright gate: passed -> rc=0
+2026-10-17T14:43:17.8160652Z ok 1 - real Playwright gate: passed -> rc=0
+2026-10-17T14:43:17.8161172Z   ---
+2026-10-17T14:43:17.8161524Z   duration_ms: 1930.547965
+2026-10-17T14:43:17.8161929Z   type: 'test'
+2026-10-17T14:43:17.8162270Z   ...
+2026-10-17T14:43:17.8308922Z # Subtest: real Playwright gate: unreachable -> rc=2
+2026-10-17T14:43:17.8313794Z ok 2 - real Playwright gate: unreachable -> rc=2
+2026-10-17T14:43:17.8314918Z   ---
+2026-10-17T14:43:17.8315823Z   duration_ms: 15.917765
+2026-10-17T14:43:17.8316703Z   type: 'test'
+2026-10-17T14:43:17.8317337Z   ...
+2026-10-17T14:43:20.2235088Z # Subtest: real Playwright gate: failed -> rc=1
+2026-10-17T14:43:20.2238485Z ok 3 - real Playwright gate: failed -> rc=1
+2026-10-17T14:43:20.2242389Z   ---
+2026-10-17T14:43:20.2243001Z   duration_ms: 2392.825546
+2026-10-17T14:43:20.2243482Z   type: 'test'
+2026-10-17T14:43:20.2243796Z   ...
+2026-10-17T14:43:22.1448619Z # Subtest: real Playwright gate: all-skipped -> rc=3
+2026-10-17T14:43:22.1453668Z ok 4 - real Playwright gate: all-skipped -> rc=3
+2026-10-17T14:43:22.1464204Z   ---
+2026-10-17T14:43:22.1464582Z   duration_ms: 1921.741043
+2026-10-17T14:43:22.1465164Z   type: 'test'
+2026-10-17T14:43:22.1465380Z   ...
+2026-10-17T14:43:24.2692314Z # Subtest: real Playwright gate: part-skipped -> rc=3
+2026-10-17T14:43:24.2693180Z ok 5 - real Playwright gate: part-skipped -> rc=3
+2026-10-17T14:43:24.2693709Z   ---
+2026-10-17T14:43:24.2694060Z   duration_ms: 2124.104241
+2026-10-17T14:43:24.2694465Z   type: 'test'
+2026-10-17T14:43:24.2694793Z   ...
+2026-10-17T14:43:24.9690283Z # Subtest: real Playwright gate: missing -> rc=3
+2026-10-17T14:43:24.9691498Z ok 6 - real Playwright gate: missing -> rc=3
+2026-10-17T14:43:24.9692010Z   ---
+2026-10-17T14:43:24.9692368Z   duration_ms: 699.717049
+2026-10-17T14:43:24.9692761Z   type: 'test'
+2026-10-17T14:43:24.9693094Z   ...
+2026-10-17T14:43:25.6727349Z # Subtest: real Playwright gate: wrong-id -> rc=3
+2026-10-17T14:43:25.6728413Z ok 7 - real Playwright gate: wrong-id -> rc=3
+2026-10-17T14:43:25.6728973Z   ---
+2026-10-17T14:43:25.6729309Z   duration_ms: 703.338522
+2026-10-17T14:43:25.6729707Z   type: 'test'
+2026-10-17T14:43:25.6730030Z   ...
+2026-10-17T14:43:27.3786247Z # Subtest: real Playwright flaky retry is rejected even when Playwright exits zero
+2026-10-17T14:43:27.3788058Z ok 8 - real Playwright flaky retry is rejected even when Playwright exits zero
+2026-10-17T14:43:27.3789064Z   ---
+2026-10-17T14:43:27.3789617Z   duration_ms: 1705.820431
+2026-10-17T14:43:27.3790249Z   type: 'test'
+2026-10-17T14:43:27.3790749Z   ...
+2026-10-17T14:43:27.3899241Z 1..8
+2026-10-17T14:43:27.3899960Z # tests 8
+2026-10-17T14:43:27.3900478Z # suites 0
+2026-10-17T14:43:27.3900977Z # pass 8
+2026-10-17T14:43:27.3901531Z # fail 0
+2026-10-17T14:43:27.3902172Z # cancelled 0
+2026-10-17T14:43:27.3902715Z # skipped 0
+2026-10-17T14:43:27.3903289Z # todo 0
+2026-10-17T14:43:27.3903917Z # duration_ms 11580.225273

@@ -1,0 +1,25 @@
+{
+  "frozenAt": "2026-10-17T11:52:33.021182+00:00",
+  "files": [
+    {
+      "file": "capture_closed_window_endpoints.py",
+      "sha256": "d518fccb36b4e0f841fc920632f173c81b5d9422dcf81aa9ce319d6dbec3bcfe",
+      "bytes": 24424
+    },
+    {
+      "file": "test_capture_closed_window_endpoints.py",
+      "sha256": "15d7173c53ac3cbbe906d78773405231b72a2bcc766a5b5a1bbb98a2d8cda871",
+      "bytes": 14466
+    },
+    {
+      "file": "endpoint_missing_columns_original_counterexample.py",
+      "sha256": "0bd0d0a14e109040ecee5ca666fe0f547888575db57aa0a2176d023d2ffab72d",
+      "bytes": 1156
+    }
+  ],
+  "dependencies": {
+    "audit_capacity_inputs.py": "8bd8cb604032d85948cc6bc1f429974b93424e3ab1f7648af62cebcc2e1a3b6d",
+    "freeze_capacity_configuration.py": "07ee03ebf0e4c0c5f1f7bdea7bd5a5d7c0b01ee134ab49cd8787c19f0138388e"
+  },
+  "scope": "Evidence-only v3; every actual data row must contain all nine SQL output keys; original COUNT/data column_meta uniqueness/exact projection/row widths validated before conversion. NULL/zero original values preserved. Original non-author counterexample v2 rc1 -> v3 rc0. No live endpoint network run by author."
+}

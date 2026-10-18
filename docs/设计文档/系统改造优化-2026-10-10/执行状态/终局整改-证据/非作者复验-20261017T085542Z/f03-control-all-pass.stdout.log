@@ -1,0 +1,41 @@
+=== Critical E2E Gate ===
+base_url=http://127.0.0.1:49964
+api_url=http://127.0.0.1:49964
+specs=tests/login.spec.ts tests/roles-smoke.spec.ts tests/confidence.spec.ts tests/loop.spec.ts
+
+--- Environment check ---
+Environment OK
+
+--- Collecting critical tests ---
+Collected: 20 tests
+
+--- Running critical tests ---
+
+Running 20 tests using 1 worker
+
+  ✓   1 [chromium] › tests/confidence.spec.ts:2:1 › controlled case 10 (2ms)
+  ✓   2 [chromium] › tests/confidence.spec.ts:3:1 › controlled case 11 (0ms)
+  ✓   3 [chromium] › tests/confidence.spec.ts:4:1 › controlled case 12 (0ms)
+  ✓   4 [chromium] › tests/confidence.spec.ts:5:1 › controlled case 13 (0ms)
+  ✓   5 [chromium] › tests/confidence.spec.ts:6:1 › controlled case 14 (0ms)
+  ✓   6 [chromium] › tests/login.spec.ts:2:1 › controlled case 0 (0ms)
+  ✓   7 [chromium] › tests/login.spec.ts:3:1 › controlled case 1 (0ms)
+  ✓   8 [chromium] › tests/login.spec.ts:4:1 › controlled case 2 (0ms)
+  ✓   9 [chromium] › tests/login.spec.ts:5:1 › controlled case 3 (0ms)
+  ✓  10 [chromium] › tests/login.spec.ts:6:1 › controlled case 4 (0ms)
+  ✓  11 [chromium] › tests/loop.spec.ts:2:1 › controlled case 15 (0ms)
+  ✓  12 [chromium] › tests/loop.spec.ts:3:1 › controlled case 16 (0ms)
+  ✓  13 [chromium] › tests/loop.spec.ts:4:1 › controlled case 17 (0ms)
+  ✓  14 [chromium] › tests/loop.spec.ts:5:1 › controlled case 18 (0ms)
+  ✓  15 [chromium] › tests/loop.spec.ts:6:1 › controlled case 19 (0ms)
+  ✓  16 [chromium] › tests/roles-smoke.spec.ts:2:1 › controlled case 5 (0ms)
+  ✓  17 [chromium] › tests/roles-smoke.spec.ts:3:1 › controlled case 6 (0ms)
+  ✓  18 [chromium] › tests/roles-smoke.spec.ts:4:1 › controlled case 7 (0ms)
+  ✓  19 [chromium] › tests/roles-smoke.spec.ts:5:1 › controlled case 8 (0ms)
+  ✓  20 [chromium] › tests/roles-smoke.spec.ts:6:1 › controlled case 9 (0ms)
+
+  20 passed (427ms)
+
+--- Result ---
+PYTEST_EXIT=0
+CRITICAL_E2E_GATE=PASS

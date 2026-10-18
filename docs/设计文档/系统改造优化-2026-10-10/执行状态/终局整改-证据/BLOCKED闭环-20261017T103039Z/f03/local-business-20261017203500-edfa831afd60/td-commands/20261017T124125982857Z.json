@@ -1,0 +1,19 @@
+{
+  "sql": "CREATE DATABASE clpm_critical_20261017_local_ts KEEP 365 DURATION 10 PRECISION 'ms'",
+  "response": {
+    "code": 0,
+    "column_meta": [
+      [
+        "affected_rows",
+        "INT",
+        4
+      ]
+    ],
+    "data": [
+      [
+        0
+      ]
+    ],
+    "rows": 1
+  }
+}

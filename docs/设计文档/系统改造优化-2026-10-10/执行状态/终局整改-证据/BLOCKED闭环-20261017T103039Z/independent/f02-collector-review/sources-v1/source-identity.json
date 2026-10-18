@@ -1,0 +1,32 @@
+[
+  {
+    "file": "audit_capacity_inputs.py",
+    "sha256": "437c96db4887e137dc4dd957e5abff4bb41f18e2391d32aafd633bdae9904357",
+    "matchesAuthorFreeze": true,
+    "saved": true
+  },
+  {
+    "file": "collect_capacity_evidence.py",
+    "sha256": "93c265edbf61e28618696790f365e52c57902ff0704c8e740d57a3e681df9402",
+    "matchesAuthorFreeze": false,
+    "saved": false
+  },
+  {
+    "file": "receive_capacity_events.py",
+    "sha256": "69cdadc682f58b184cb8ed0f2bc91afe8bcefd0b3fd36d74ba17ad31983d7943",
+    "matchesAuthorFreeze": true,
+    "saved": true
+  },
+  {
+    "file": "capture_capacity_cache.py",
+    "sha256": "fd75e9c55a2aa3e9ff088c7f1e926f12433f62fa3276ed81f6f6a6deee85f6b1",
+    "matchesAuthorFreeze": false,
+    "saved": false
+  },
+  {
+    "file": "test_evidence_tools.py",
+    "sha256": "1ac3f79063d3625f82ad0198439c63b41b6160a25a633104d304b6a9c808a8fb",
+    "matchesAuthorFreeze": true,
+    "saved": true
+  }
+]

@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T09:46:09.961380+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "find",
+    "仪控工程师"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.4922795830061659,
+  "stdout": "### Result\nFound 1 match for \"仪控工程师\":\n\n- generic [ref=f7e4]:\n  - generic [ref=f7e100]:\n    - generic [ref=f7e101]:\n      - banner [ref=f7e102]:\n        - generic [ref=f7e126]:\n          - button [ref=f7e169] [cursor=pointer]:\n            - button [ref=f7e171]\n          - generic [ref=f7e175]:\n            - generic [ref=f7e176]: 仪控工程师\n            - button \"程师\" [ref=f7e177] [cursor=pointer]\n      - generic [ref=f7e184]:\n        - generic [ref=f7e189]:\n",
+  "stderr": ""
+}

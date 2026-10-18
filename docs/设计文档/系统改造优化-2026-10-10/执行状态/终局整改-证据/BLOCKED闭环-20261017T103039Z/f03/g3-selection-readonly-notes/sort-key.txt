@@ -1,0 +1,12 @@
+5154: def _candidate_sort_key(c: CandidateModel) -> tuple:
+5155:     """排序键：可信度等级 > 拟合度 > 残差检验."""
+5156:     level_order = {
+5157:         AlgorithmConfidenceLevel.A: 5,
+5158:         AlgorithmConfidenceLevel.B: 4,
+5159:         AlgorithmConfidenceLevel.C: 3,
+5160:         AlgorithmConfidenceLevel.D: 2,
+5161:         AlgorithmConfidenceLevel.E: 1,
+5162:         AlgorithmConfidenceLevel.INCONCLUSIVE: 0,
+5163:     }
+5164:     return (level_order.get(c.confidence, 0), c.fitting_score, c.residual_test_passed)
+5165: 

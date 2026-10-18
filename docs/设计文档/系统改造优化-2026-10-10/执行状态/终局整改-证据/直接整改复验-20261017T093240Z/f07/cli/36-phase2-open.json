@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T09:55:57.236770+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "open",
+    "http://127.0.0.1:17266/auth/login"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 2.5262114999932237,
+  "stdout": "### Browser `clpm-final-remediation` opened with pid 58025.\n### Ran Playwright code\n```js\nawait page.goto('http://127.0.0.1:17266/auth/login');\n```\n### Page\n- Page URL: http://127.0.0.1:17266/auth/login\n- Page Title: 登录 - iCLPM 系统\n### Snapshot\n- [Snapshot](.playwright-cli/page-2026-10-17T09-55-57-226Z.yml)\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T09-55-55-943Z.log#L1\n",
+  "stderr": ""
+}

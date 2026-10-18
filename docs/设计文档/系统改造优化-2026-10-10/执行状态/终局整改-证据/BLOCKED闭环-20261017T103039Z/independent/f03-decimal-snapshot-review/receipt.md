@@ -1,0 +1,11 @@
+Decimal 快照落盘修复局部 PASS。源 `e64653a2bc83143378e3dbbcc73141d409b846e4a5f168d22f4c02e18cf7e8a9`、新测试 `00e05abf55f60c1a5efce3e996d78a8816daccba6eb07a959283d05a1751dacf`；只3个定义（新增规范化、canonical、save）及2个import改变，其余AST全等旧ed09。原快照测试 d6fe4f4a 全文不变。作者1880份原件/39,473,121字节全部SHA/size吻合，清单78e94608…未修改。
+
+非作者自写12例：新实现12passed/rc0/0.61s，同一脚本对封存旧源11failed/1passed/rc1/0.59s。旧源真实producer→Decimal→json.dumps的TypeError可重现；合法JSON-native兼容项旧新均通过。自写测试使用本轮原PG完整四类型配置和真实ORM/producer函数（仅内存DB假对象），核完整字典保存→实际文件加载→独立hash、负零与嵌套、调用方Decimal未被就地改变。5类非法Decimal（含overflow）、3类非有限float及未知对象均在DB调用前拒绝，snapshot目录/NPZ未创建。整个自写lane不调用产品计算器，socket/connect边界被显式禁止。
+
+原合法JSON-native包先复制至本复验人的输出目录再读取，2份文件大小/SHA不变；本复验人独立从完整manifest与NPZ字节重算旧inputHash `144024c8585c54b57ea7f8055ac419be9af563e6cf0e4d1e2da60c13b2e5cc7f`，完整replayContext/effectiveParams不变。另独立运行该合成旧包的产品加载/离线重放原probe rc0；此为兼容回归，不是本轮真实业务数值oracle或实际KPI对账。
+
+六个相关模块独立159passed/0failed/23.81s（1既有弃用告警），命令与原输出在 `related-regression.*`；12个新增作者用例包含其中。原5项数值线程为1，未启动服务或实际任务。首个元数据检查曾误用无NumPy的系统Python而rc1，随后改既有3.12运行时完成，见initial-tool-setup-note.json；不混为产品失败。
+
+Root已明确批准有限Decimal采用已有计算/result_ledger的float语义；这是历史无法落盘Decimal输入的hash从字符串规范→JSON数值规范的缺陷修正，不声称该类输入逐位等价或任意精度十进制无损。旧有效JSON-native canonical/hash、旧实际文件读取规则保持。未知对象并非被default=str吞掉：新写入严格JSON预校验，不产生孤立NPZ。
+
+真实9f失败与孤立NPZ仍封存，未补造manifest或改DB。新H完整四业务/实际manifest+NPZ+dataset行与非作者数值复算仍待运行，旧Numeric BLOCKED不升格；独立数值oracle公式/分母/容差不改，仍先封expected再读actual。G3新增诊断网络guard另有独立REWORK，不混入本项PASS。四用户豁免与F02完整20批条件保持。

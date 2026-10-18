@@ -1,0 +1,29 @@
+{
+  "name": "f01-reverse-symbol-removed",
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "tests/test_g5_d01_opt_batch.py::TestNodeAggregationCancelled",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-final-f01-recheck-iqza4srx/candidate/backend",
+  "environment": {
+    "CLPM_TEST_MODE": "1",
+    "CLPM_SKIP_EXIT_HOOKS": "1",
+    "PYTHONDONTWRITEBYTECODE": "1",
+    "PYTHONPATH": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-final-f01-recheck-iqza4srx/candidate/backend",
+    "POSTGRES_HOST": "127.0.0.1",
+    "POSTGRES_PORT": "1",
+    "REDIS_HOST": "127.0.0.1",
+    "REDIS_PORT": "1"
+  },
+  "started_at": "2026-10-17T10:05:40.046319+00:00",
+  "elapsed_seconds": 2.0391798749915324,
+  "exit_code": 4,
+  "stdout_sha256": "195bcc581707ef43ef3c987e4ec1001e46eee30ed404df758aebfbefdefd01b5",
+  "stderr_sha256": "f5bc0f4cdabe78ea6b65a62be7cf3f681821784ba6c8a76430b1e00ea598e901"
+}

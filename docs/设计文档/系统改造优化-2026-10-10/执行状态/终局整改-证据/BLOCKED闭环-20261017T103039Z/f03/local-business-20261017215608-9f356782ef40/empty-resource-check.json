@@ -1,0 +1,13 @@
+{
+  "at": "2026-10-17T13:56:09.284851+00:00",
+  "database": "clpm_critical_20261017_local",
+  "publicTables": 0,
+  "redisDbsize": {
+    "0": 0,
+    "1": 0,
+    "2": 0
+  },
+  "redisRole": "master",
+  "redisRunId": "7890f193c66a57e4d7899c535d8af147104d02f6",
+  "redisContainerId": "77939e08d878e969e33f46c9bdbf1210a15bfe7f584411bec3b5f795442b2649"
+}

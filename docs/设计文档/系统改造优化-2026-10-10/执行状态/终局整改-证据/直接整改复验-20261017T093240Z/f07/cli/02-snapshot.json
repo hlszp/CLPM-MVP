@@ -1,0 +1,17 @@
+{
+  "timestamp": "2026-10-17T09:39:45.763658+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "snapshot"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 0.5040384579915553,
+  "stdout": "### Page\n- Page URL: http://127.0.0.1:17266/auth/login\n- Page Title: 登录 - iCLPM 系统\n### Snapshot\n```yaml\n- generic [ref=e7]:\n  - generic [ref=e8]:\n    - generic [ref=e9]:\n      - generic [ref=e10]:\n        - generic:\n          - button [ref=e11] [cursor=pointer]\n          - button [ref=e15] [cursor=pointer]\n          - button [ref=e17] [cursor=pointer]\n          - button [ref=e19] [cursor=pointer]\n          - button [ref=e21] [cursor=pointer]\n          - button [ref=e23] [cursor=pointer]\n          - button [ref=e25] [cursor=pointer]\n        - button [ref=e27] [cursor=pointer]\n      - button [ref=e34] [cursor=pointer]\n    - button \"dark\" [ref=e38] [cursor=pointer]\n  - generic [ref=e50]:\n    - generic [ref=e51]:\n      - generic [aria-hidden]: iCLPM\n      - generic [ref=e52]: 工业控制 · 闭环治理 · 绩效优化\n      - heading \"致联化工 控制回路性能优化管理系统\" [level=2] [ref=e53]\n    - img \"控制回路性能优化管理系统\" [ref=e55]\n    - generic \"产品能力模块\" [ref=e57]:\n      - generic [ref=e58]: 回路监控\n      - generic [ref=e66]: 性能评估\n      - generic [ref=e73]: 故障诊断\n      - generic [ref=e80]: 参数整定\n      - generic [ref=e88]: 闭环处置\n      - generic [ref=e94]: 分析改进\n  - generic [ref=e103]:\n    - generic [ref=e104]:\n      - generic [ref=e105]:\n        - heading \"欢迎登录\" [level=2] [ref=e106]\n        - paragraph [ref=e107]: iCLPM控制回路性能优化管理系统\n      - generic [ref=e109]:\n        - textbox \"请输入用户名\" [ref=e115]\n        - generic [ref=e121]:\n          - textbox \"请输入密码\" [ref=e122]\n          - generic [ref=e123] [cursor=pointer]\n        - generic [ref=e134]:\n          - checkbox \"记住我（30天内免登录）\" [ref=e135] [cursor=pointer]:\n            - checkbox [ref=e136]\n          - generic [ref=e137] [cursor=pointer]: 记住我（30天内免登录）\n      - button \"login\" [ref=e138] [cursor=pointer]: 登录\n    - generic [ref=e140]:\n      - text: Copyright © 2026\n      - link \"ZHILIAN 致联信息\" [ref=e141] [cursor=pointer]:\n        - /url: javascript:void(0)\n```\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T09-39-34-092Z.log#L1\n",
+  "stderr": ""
+}

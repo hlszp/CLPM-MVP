@@ -1,0 +1,18 @@
+{
+  "hypothesisConfirmed": true,
+  "cases": 1536,
+  "successfulMatrixComparisons": 1024,
+  "allResultsAndErrorsExactlyEqual": true,
+  "matrixBytesAndLayoutExactlyEqual": true,
+  "microbench500CallsSeconds": {
+    "old": 0.3100334170158021,
+    "slice": 0.029897958011133596
+  },
+  "scope": "external prototype only; source not edited",
+  "full22IdentificationResultsExactlyEqual": true,
+  "full22AccuracyRowsExactlyEqual": true,
+  "profileSeconds": {
+    "original": 14.184327374998247,
+    "prototype": 6.48697933301446
+  }
+}

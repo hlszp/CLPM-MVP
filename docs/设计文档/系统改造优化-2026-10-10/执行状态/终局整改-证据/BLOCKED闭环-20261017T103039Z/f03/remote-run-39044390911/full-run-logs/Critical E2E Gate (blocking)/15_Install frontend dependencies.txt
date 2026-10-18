@@ -1,0 +1,194 @@
+﻿2026-10-17T15:18:40.9545651Z ##[group]Run pnpm install --frozen-lockfile
+2026-10-17T15:18:40.9545887Z [36;1mpnpm install --frozen-lockfile[0m
+2026-10-17T15:18:40.9604361Z shell: /usr/bin/bash -e {0}
+2026-10-17T15:18:40.9604519Z env:
+2026-10-17T15:18:40.9604632Z   CI: true
+2026-10-17T15:18:40.9604748Z   ENV: development
+2026-10-17T15:18:40.9604869Z   CLPM_TEST_MODE: 0
+2026-10-17T15:18:40.9605007Z   E2E_EXECUTION_ENV: disposable-github-ci
+2026-10-17T15:18:40.9605169Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:18:40.9605300Z   OMP_NUM_THREADS: 1
+2026-10-17T15:18:40.9605444Z   MKL_NUM_THREADS: 1
+2026-10-17T15:18:40.9605567Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:18:40.9605699Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:18:40.9605988Z   POSTGRES_HOST: localhost
+2026-10-17T15:18:40.9606127Z   POSTGRES_PORT: 5432
+2026-10-17T15:18:40.9606252Z   POSTGRES_USER: clpm
+2026-10-17T15:18:40.9606384Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T15:18:40.9606543Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T15:18:40.9606690Z   REDIS_HOST: localhost
+2026-10-17T15:18:40.9606837Z   REDIS_PORT: 6379
+2026-10-17T15:18:40.9606948Z   REDIS_DB: 0
+2026-10-17T15:18:40.9607058Z   REDIS_PASSWORD: 
+2026-10-17T15:18:40.9607177Z   TDENGINE_HOST: localhost
+2026-10-17T15:18:40.9607308Z   TDENGINE_PORT: 6030
+2026-10-17T15:18:40.9607428Z   TDENGINE_USER: root
+2026-10-17T15:18:40.9607552Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T15:18:40.9607693Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T15:18:40.9607863Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T15:18:40.9608154Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T15:18:40.9608402Z   CLPM_BUILD_CODE_SHA: bc48701efe90e2a27555a4f8794f0965e82b0902
+2026-10-17T15:18:40.9608652Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T15:18:40.9608895Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T15:18:40.9609137Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T15:18:40.9609382Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:40.9609619Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:18:40.9609852Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:40.9610063Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:40.9627376Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:40.9627616Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:18:40.9627829Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:18:40.9628031Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T15:18:40.9628216Z ##[endgroup]
+2026-10-17T15:18:42.6068503Z Scope: all 42 workspace projects
+2026-10-17T15:18:42.6799891Z Lockfile is up to date, resolution step is skipped
+2026-10-17T15:18:42.7501954Z Progress: resolved 1, reused 0, downloaded 0, added 0
+2026-10-17T15:18:42.8665008Z Packages: +1742
+2026-10-17T15:18:42.8674511Z ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+2026-10-17T15:18:43.7485062Z Progress: resolved 1742, reused 1741, downloaded 0, added 118
+2026-10-17T15:18:44.7491404Z Progress: resolved 1742, reused 1741, downloaded 0, added 408
+2026-10-17T15:18:45.7488183Z Progress: resolved 1742, reused 1741, downloaded 0, added 676
+2026-10-17T15:18:46.7488906Z Progress: resolved 1742, reused 1741, downloaded 0, added 1157
+2026-10-17T15:18:47.5560967Z Progress: resolved 1742, reused 1741, downloaded 0, added 1742, done
+2026-10-17T15:18:48.7190788Z 
+2026-10-17T15:18:48.7191460Z devDependencies:
+2026-10-17T15:18:48.7191805Z + @changesets/changelog-github 0.7.0
+2026-10-17T15:18:48.7193209Z + @changesets/cli 2.31.0
+2026-10-17T15:18:48.7193524Z + @tsdown/css 0.22.0
+2026-10-17T15:18:48.7193780Z + @types/node 25.9.1
+2026-10-17T15:18:48.7194230Z + @vben/commitlint-config 5.7.0 <- internal/lint-configs/commitlint-config
+2026-10-17T15:18:48.7194747Z + @vben/eslint-config 5.7.0 <- internal/lint-configs/eslint-config
+2026-10-17T15:18:48.7195637Z + @vben/oxfmt-config 5.7.0 <- internal/lint-configs/oxfmt-config
+2026-10-17T15:18:48.7196081Z + @vben/oxlint-config 5.7.0 <- internal/lint-configs/oxlint-config
+2026-10-17T15:18:48.7196519Z + @vben/stylelint-config 5.7.0 <- internal/lint-configs/stylelint-config
+2026-10-17T15:18:48.7197006Z + @vben/tailwind-config 5.7.0 <- internal/tailwind-config
+2026-10-17T15:18:48.7197360Z + @vben/tsconfig 5.7.0 <- internal/tsconfig
+2026-10-17T15:18:48.7197658Z + @vben/turbo-run 5.7.0 <- scripts/turbo-run
+2026-10-17T15:18:48.7197972Z + @vben/vite-config 5.7.0 <- internal/vite-config
+2026-10-17T15:18:48.7198214Z + @vben/vsh 5.7.0 <- scripts/vsh
+2026-10-17T15:18:48.7198554Z + @vitejs/plugin-vue 6.0.7
+2026-10-17T15:18:48.7198716Z + @vitejs/plugin-vue-jsx 5.1.5
+2026-10-17T15:18:48.7198864Z + cross-env 10.1.0
+2026-10-17T15:18:48.7198991Z + cspell 10.0.0
+2026-10-17T15:18:48.7199115Z + happy-dom 20.9.0
+2026-10-17T15:18:48.7199235Z + is-ci 4.1.0
+2026-10-17T15:18:48.7199353Z + lefthook 2.1.8
+2026-10-17T15:18:48.7199552Z + oxfmt 0.51.0
+2026-10-17T15:18:48.7199666Z + oxlint 1.66.0
+2026-10-17T15:18:48.7199796Z + oxlint-tsgolint 0.23.0
+2026-10-17T15:18:48.7199939Z + playwright 1.60.0
+2026-10-17T15:18:48.7200064Z + rimraf 6.1.3
+2026-10-17T15:18:48.7200184Z + tailwindcss 4.3.0
+2026-10-17T15:18:48.7200303Z + tsdown 0.22.0
+2026-10-17T15:18:48.7200415Z + turbo 2.9.14
+2026-10-17T15:18:48.7200810Z + typescript 6.0.3
+2026-10-17T15:18:48.7201028Z + vite 8.0.13
+2026-10-17T15:18:48.7201228Z + vitest 4.1.9
+2026-10-17T15:18:48.7201402Z + vue 3.5.34
+2026-10-17T15:18:48.7201583Z + vue-tsc 3.3.1
+2026-10-17T15:18:48.7201696Z 
+2026-10-17T15:18:48.7580041Z . postinstall$ pnpm -r run stub --if-present
+2026-10-17T15:18:49.0831758Z . postinstall: Scope: 41 of 42 workspace projects
+2026-10-17T15:18:49.0908107Z . postinstall: internal/node-utils stub$ node ./scripts/build.mjs --if-present
+2026-10-17T15:18:49.0918907Z . postinstall: packages/@core/base/shared stub$ pnpm run build --if-present
+2026-10-17T15:18:49.0929605Z . postinstall: internal/lint-configs/oxfmt-config stub$ pnpm exec tsdown --if-present
+2026-10-17T15:18:49.0930275Z . postinstall: internal/lint-configs/oxlint-config stub$ pnpm exec tsdown --if-present
+2026-10-17T15:18:49.5187141Z . postinstall: packages/@core/base/shared stub: > @vben-core/shared@5.7.0 build /home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/shared
+2026-10-17T15:18:49.5211649Z . postinstall: packages/@core/base/shared stub: > pnpm exec tsdown --if-present
+2026-10-17T15:18:49.7382760Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:49.7660125Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:49.8604013Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/internal/lint-configs/oxlint-config/tsdown.config.ts[24m 
+2026-10-17T15:18:49.8652482Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:49.8681922Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:49.8755319Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m Build start
+2026-10-17T15:18:49.9387108Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/internal/lint-configs/oxfmt-config/tsdown.config.ts[24m 
+2026-10-17T15:18:49.9652665Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:49.9672100Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:49.9711876Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m Build start
+2026-10-17T15:18:50.1002837Z . postinstall: internal/node-utils stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:50.2649277Z . postinstall: internal/node-utils stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/internal/node-utils/tsdown.config.ts[24m 
+2026-10-17T15:18:50.2681850Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:50.2736127Z . postinstall: internal/node-utils stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:50.2754102Z . postinstall: internal/node-utils stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:50.2823143Z . postinstall: internal/node-utils stub: [34mℹ[39m Build start
+2026-10-17T15:18:50.3322480Z . postinstall: internal/node-utils stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m  [2m6.64 kB[22m [2m│ gzip: 2.48 kB[22m
+2026-10-17T15:18:50.3371876Z . postinstall: internal/node-utils stub: [34mℹ[39m 1 files, total: 6.64 kB
+2026-10-17T15:18:50.3422234Z . postinstall: internal/node-utils stub: [32m✔[39m Build complete in [32m54ms[39m
+2026-10-17T15:18:50.4833082Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/packages/@core/base/shared/tsdown.config.ts[24m 
+2026-10-17T15:18:50.4921050Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m entry: [34msrc/cache/index.ts, src/color/index.ts, src/constants/index.ts, src/global-state.ts, src/store.ts, src/utils/index.ts[39m
+2026-10-17T15:18:50.4925909Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:50.4978329Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m Build start
+2026-10-17T15:18:52.0651496Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m0.60 kB[22m [2m│ gzip: 0.32 kB[22m
+2026-10-17T15:18:52.0732524Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m0.31 kB[22m [2m│ gzip: 0.18 kB[22m
+2026-10-17T15:18:52.0742981Z . postinstall: internal/lint-configs/oxfmt-config stub: [34mℹ[39m 2 files, total: 0.91 kB
+2026-10-17T15:18:52.0771938Z . postinstall: internal/lint-configs/oxfmt-config stub: [32m✔[39m Build complete in [32m2104ms[39m
+2026-10-17T15:18:52.3352391Z . postinstall: internal/lint-configs/oxfmt-config stub: Done
+2026-10-17T15:18:52.9283539Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m11.39 kB[22m [2m│ gzip: 3.12 kB[22m
+2026-10-17T15:18:52.9322235Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m 1.82 kB[22m [2m│ gzip: 0.41 kB[22m
+2026-10-17T15:18:52.9323218Z . postinstall: internal/lint-configs/oxlint-config stub: [34mℹ[39m 2 files, total: 13.21 kB
+2026-10-17T15:18:52.9324023Z . postinstall: internal/lint-configs/oxlint-config stub: [32m✔[39m Build complete in [32m3059ms[39m
+2026-10-17T15:18:53.3922119Z . postinstall: internal/lint-configs/oxlint-config stub: Done
+2026-10-17T15:18:53.4243451Z . postinstall: internal/node-utils stub: Done
+2026-10-17T15:18:53.5101881Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[1mutils/index.mjs[22m       [2m23.43 kB[22m [2m│ gzip: 7.65 kB[22m
+2026-10-17T15:18:53.5110435Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[1mcache/index.mjs[22m       [2m 8.06 kB[22m [2m│ gzip: 2.40 kB[22m
+2026-10-17T15:18:53.5111677Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[1mcolor/index.mjs[22m       [2m 2.90 kB[22m [2m│ gzip: 1.23 kB[22m
+2026-10-17T15:18:53.5112782Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[1mconstants/index.mjs[22m   [2m 1.71 kB[22m [2m│ gzip: 0.64 kB[22m
+2026-10-17T15:18:53.5114344Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[1mglobal-state.mjs[22m      [2m 0.49 kB[22m [2m│ gzip: 0.30 kB[22m
+2026-10-17T15:18:53.5116346Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[1mstore.mjs[22m             [2m 0.05 kB[22m [2m│ gzip: 0.06 kB[22m
+2026-10-17T15:18:53.5117349Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[32m[1mutils/index.d.ts[22m[39m      [2m 7.04 kB[22m [2m│ gzip: 2.05 kB[22m
+2026-10-17T15:18:53.5118375Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[32m[1mcache/index.d.ts[22m[39m      [2m 2.63 kB[22m [2m│ gzip: 0.61 kB[22m
+2026-10-17T15:18:53.5119578Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[32m[1mconstants/index.d.ts[22m[39m  [2m 1.49 kB[22m [2m│ gzip: 0.47 kB[22m
+2026-10-17T15:18:53.5132331Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[32m[1mcolor/index.d.ts[22m[39m      [2m 0.82 kB[22m [2m│ gzip: 0.31 kB[22m
+2026-10-17T15:18:53.5133436Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[32m[1mglobal-state.d.ts[22m[39m     [2m 0.61 kB[22m [2m│ gzip: 0.28 kB[22m
+2026-10-17T15:18:53.5134426Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m [2mdist/[22m[32m[1mstore.d.ts[22m[39m            [2m 0.04 kB[22m [2m│ gzip: 0.06 kB[22m
+2026-10-17T15:18:53.5135140Z . postinstall: packages/@core/base/shared stub: [34mℹ[39m 12 files, total: 49.27 kB
+2026-10-17T15:18:53.5135795Z . postinstall: packages/@core/base/shared stub: [32m✔[39m Build complete in [32m3015ms[39m
+2026-10-17T15:18:53.5750156Z . postinstall: packages/@core/base/shared stub: Done
+2026-10-17T15:18:53.5754761Z . postinstall: internal/lint-configs/eslint-config stub$ pnpm exec tsdown --if-present
+2026-10-17T15:18:53.5757290Z . postinstall: internal/vite-config stub$ pnpm exec tsdown --if-present
+2026-10-17T15:18:53.5757863Z . postinstall: scripts/turbo-run stub$ pnpm exec tsdown --if-present
+2026-10-17T15:18:53.5779986Z . postinstall: scripts/vsh stub$ pnpm exec tsdown --if-present
+2026-10-17T15:18:53.9385147Z . postinstall: scripts/vsh stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:53.9445800Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:53.9532141Z . postinstall: internal/vite-config stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:53.9566082Z . postinstall: scripts/turbo-run stub: [34mℹ[39m [34mtsdown v0.22.0[39m powered by [38;2;255;126;23mrolldown v1.0.1[39m
+2026-10-17T15:18:54.0189039Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/internal/lint-configs/eslint-config/tsdown.config.ts[24m 
+2026-10-17T15:18:54.0252160Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:54.0288304Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:54.0313688Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m Build start
+2026-10-17T15:18:54.0321690Z . postinstall: scripts/vsh stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/scripts/vsh/tsdown.config.ts[24m 
+2026-10-17T15:18:54.0341897Z . postinstall: scripts/vsh stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:54.0361402Z . postinstall: scripts/vsh stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:54.0404864Z . postinstall: scripts/vsh stub: [34mℹ[39m Build start
+2026-10-17T15:18:54.0447738Z . postinstall: scripts/turbo-run stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/scripts/turbo-run/tsdown.config.ts[24m 
+2026-10-17T15:18:54.0463984Z . postinstall: scripts/turbo-run stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:54.0483905Z . postinstall: scripts/turbo-run stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:54.0531937Z . postinstall: scripts/turbo-run stub: [34mℹ[39m Build start
+2026-10-17T15:18:54.0879467Z . postinstall: internal/vite-config stub: [34mℹ[39m config file: [4m/home/runner/work/CLPM-MVP/CLPM-MVP/frontend/internal/vite-config/tsdown.config.ts[24m 
+2026-10-17T15:18:54.0980390Z . postinstall: internal/vite-config stub: [34mℹ[39m entry: [34msrc/index.ts[39m
+2026-10-17T15:18:54.0981496Z . postinstall: internal/vite-config stub: [34mℹ[39m tsconfig: [34mtsconfig.json[39m
+2026-10-17T15:18:54.1011688Z . postinstall: internal/vite-config stub: [34mℹ[39m Build start
+2026-10-17T15:18:56.2755273Z . postinstall: scripts/vsh stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m14.02 kB[22m [2m│ gzip: 4.77 kB[22m
+2026-10-17T15:18:56.2769320Z . postinstall: scripts/vsh stub: [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m 0.01 kB[22m [2m│ gzip: 0.03 kB[22m
+2026-10-17T15:18:56.2770866Z . postinstall: scripts/vsh stub: [34mℹ[39m 2 files, total: 14.03 kB
+2026-10-17T15:18:56.2771710Z . postinstall: scripts/vsh stub: [32m✔[39m Build complete in [32m2246ms[39m
+2026-10-17T15:18:56.3328751Z . postinstall: scripts/turbo-run stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m1.45 kB[22m [2m│ gzip: 0.70 kB[22m
+2026-10-17T15:18:56.3362437Z . postinstall: scripts/turbo-run stub: [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m0.01 kB[22m [2m│ gzip: 0.03 kB[22m
+2026-10-17T15:18:56.3375318Z . postinstall: scripts/turbo-run stub: [34mℹ[39m 2 files, total: 1.46 kB
+2026-10-17T15:18:56.3400338Z . postinstall: scripts/turbo-run stub: [32m✔[39m Build complete in [32m2287ms[39m
+2026-10-17T15:18:56.3484770Z . postinstall: scripts/vsh stub: Done
+2026-10-17T15:18:56.3838134Z . postinstall: scripts/turbo-run stub: Done
+2026-10-17T15:18:56.5292924Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m25.68 kB[22m [2m│ gzip: 6.55 kB[22m
+2026-10-17T15:18:56.5294686Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m 0.21 kB[22m [2m│ gzip: 0.16 kB[22m
+2026-10-17T15:18:56.5295724Z . postinstall: internal/lint-configs/eslint-config stub: [34mℹ[39m 2 files, total: 25.88 kB
+2026-10-17T15:18:56.5296848Z . postinstall: internal/lint-configs/eslint-config stub: [32m✔[39m Build complete in [32m2506ms[39m
+2026-10-17T15:18:56.5701295Z . postinstall: internal/lint-configs/eslint-config stub: Done
+2026-10-17T15:18:57.1648890Z . postinstall: internal/vite-config stub: [34mℹ[39m [2mdist/[22m[1mindex.mjs[22m   [2m30.14 kB[22m [2m│ gzip: 9.65 kB[22m
+2026-10-17T15:18:57.1650657Z . postinstall: internal/vite-config stub: [34mℹ[39m [2mdist/[22m[32m[1mindex.d.ts[22m[39m  [2m 4.92 kB[22m [2m│ gzip: 1.32 kB[22m
+2026-10-17T15:18:57.1651611Z . postinstall: internal/vite-config stub: [34mℹ[39m 2 files, total: 35.06 kB
+2026-10-17T15:18:57.1652425Z . postinstall: internal/vite-config stub: [32m✔[39m Build complete in [32m3069ms[39m
+2026-10-17T15:18:57.2094073Z . postinstall: internal/vite-config stub: Done
+2026-10-17T15:18:57.2184183Z . postinstall: Done
+2026-10-17T15:18:57.2187372Z . prepare$ is-ci || pnpm exec lefthook install
+2026-10-17T15:18:57.2476632Z . prepare: Done
+2026-10-17T15:18:57.3044628Z Done in 14.9s using pnpm v10.33.4

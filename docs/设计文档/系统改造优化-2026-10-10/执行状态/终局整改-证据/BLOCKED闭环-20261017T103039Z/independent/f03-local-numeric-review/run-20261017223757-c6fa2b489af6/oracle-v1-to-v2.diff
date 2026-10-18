@@ -1,0 +1,13 @@
+--- frozen oracle v1
++++ new alias-only v2
+@@ -578,7 +578,9 @@
+     frames = {}
+     for code in (*FIELDS, "oscillation_rate"):
+         matches = [
+-            (i, meta) for i, meta in enumerate(metas) if meta.get("metricCode") == code
++            (i, meta) for i, meta in enumerate(metas)
++            if meta.get("metricCode") == code
++            or (code == "stability_rate" and meta.get("metricCode") == "steady_rate")
+         ]
+         if len(matches) != 1:
+             raise MissingEvidence(

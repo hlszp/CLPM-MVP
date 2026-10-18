@@ -1,0 +1,18 @@
+{
+  "frozenBeforeFormal": true,
+  "cold": {
+    "input": "Every cold batch controlled test TD restart under identical effective profile; actual startup and SHOW values kept; OS/VM page cache not claimed cold",
+    "precompute": "No prewarm; frozen target result tables remain zero before enqueue",
+    "redis": "Only verified pdb/pdb_l2/pdb_l3 keys for actual frozen1000 IDs in dedicated port17123 DB0 are UNLINKed; retain raw key/TTL/value hashes, all broker/backend/history keys unchanged",
+    "process": "API actual lifespan restarted; new API/worker master/4prefork/Beat PIDs and loaded source identity; no reload, no second Worker/Beat"
+  },
+  "hot": {
+    "input": "Existing real prewarm_cache reads same actual target past window for full1000, original policy/TTL unchanged",
+    "precompute": "Real DataPlanner input/preprocess bundles only; target ledger/latest/node/record all zero before formal parent",
+    "redis": "Full1000 per-loop key/TTL/body map captured after prewarm and actual formal INFO HIT/other documented bypass per loop. Warm task success does not imply HIT. Expiry/missing/error retained; do not pre-assume150 B loops bypass",
+    "process": "Reuse prior owned topology through real prewarm+formal; actual child/task PID reuse or pool recycling explicitly observed"
+  },
+  "formalSloSeconds": 600,
+  "required": "20 consecutive required batches A/B x cold/hot x5 across two past UTC dates. A failure closes this series unsuccessfully. No denominator shrink/expected rewrite/green stitching.",
+  "fourUserWaiversUnchanged": true
+}

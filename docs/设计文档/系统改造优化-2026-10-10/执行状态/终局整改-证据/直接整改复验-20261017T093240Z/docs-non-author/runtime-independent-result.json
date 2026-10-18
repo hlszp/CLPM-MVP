@@ -1,0 +1,635 @@
+{
+  "observedAt": "2026-10-17T10:00:28.997068+00:00",
+  "repositories": {
+    "main": {
+      "head": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+        "rc": 0,
+        "stdout": "b676ea59158aa4d1e106579017a85860add60293\n",
+        "stderr": ""
+      },
+      "branch": {
+        "argv": [
+          "git",
+          "branch",
+          "--show-current"
+        ],
+        "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+        "rc": 0,
+        "stdout": "main\n",
+        "stderr": ""
+      },
+      "trackedStatus": {
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=no"
+        ],
+        "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+        "rc": 0,
+        "stdout": " M docs/设计文档/系统改造优化-2026-10-10/执行状态/P6-任务状态/STATE.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/P7汇总与G7结论.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/任务看板.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-独立复验报告.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/evidence-manifest.json\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-运行来源台账.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-遗留索引.md\n M docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改台账.md\n",
+        "stderr": ""
+      }
+    },
+    "candidate": {
+      "head": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "rc": 0,
+        "stdout": "dbb1de314ae50e7373c6559ab746b690909bf1b0\n",
+        "stderr": ""
+      },
+      "branch": {
+        "argv": [
+          "git",
+          "branch",
+          "--show-current"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "rc": 0,
+        "stdout": "fix/final-audit-remediation\n",
+        "stderr": ""
+      },
+      "trackedStatus": {
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=no"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+        "rc": 0,
+        "stdout": " M .github/workflows/ci.yml\n M backend/app/api/v1/endpoints/loops.py\n M backend/app/schemas/loop_batch.py\n M backend/app/services/data_planner.py\n M backend/app/services/data_source/logical_wide_builder.py\n M backend/app/services/loop_batch.py\n M backend/app/tasks/kpi_calc.py\n M backend/tests/test_kpi_calc.py\n M backend/tests/test_p5_storm_rework.py\n M e2e/package.json\n M e2e/tsconfig.json\n M frontend/apps/web-antd/src/__tests__/loop-follow.test.ts\n M frontend/apps/web-antd/src/__tests__/p6-eng-templates.test.ts\n M frontend/apps/web-antd/src/__tests__/store.test.ts\n M frontend/apps/web-antd/src/api/engineering-template.ts\n M frontend/apps/web-antd/src/composables/use-loop-follow.ts\n M frontend/apps/web-antd/src/store/auth.ts\n M frontend/apps/web-antd/src/views/config/engineering-templates/batch-apply-modal.vue\n M frontend/apps/web-antd/src/views/config/engineering-templates/index.vue\n M frontend/apps/web-antd/src/views/config/engineering-templates/template-utils.ts\n M scripts/run-critical-e2e.sh\n",
+        "stderr": ""
+      }
+    },
+    "runtime": {
+      "head": {
+        "argv": [
+          "git",
+          "rev-parse",
+          "HEAD"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "rc": 0,
+        "stdout": "c9e01f5d85294f5ad403fac7ae2e571ee472e9ad\n",
+        "stderr": ""
+      },
+      "branch": {
+        "argv": [
+          "git",
+          "branch",
+          "--show-current"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "rc": 0,
+        "stdout": "",
+        "stderr": ""
+      },
+      "trackedStatus": {
+        "argv": [
+          "git",
+          "status",
+          "--porcelain=v1",
+          "--untracked-files=no"
+        ],
+        "cwd": "/Users/zhangping/DEV/clpm-g5-runtime-20261015",
+        "rc": 0,
+        "stdout": "",
+        "stderr": ""
+      }
+    }
+  },
+  "processCommand": {
+    "argv": [
+      "ps",
+      "-p",
+      "7361,40677,52896,54701,57294,57324,57326,57651",
+      "-o",
+      "pid=,ppid=,pgid=,lstart=,command="
+    ],
+    "cwd": null,
+    "rc": 0,
+    "stdout": " 7361 57326 57326 Sat Oct 17 16:54:01 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h\n40677 57326 57326 Sat Oct 17 17:40:00 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h\n52896 57326 57326 Sat Oct 17 17:50:00 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h\n54701 57326 57326 Sat Oct 17 17:52:00 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h\n57294 57292 57233 Sat Oct 17 10:50:42 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 17101\n57324 57294 57324 Sat Oct 17 10:50:44 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule\n57326 57294 57326 Sat Oct 17 10:50:44 2026     /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h\n57651 57631 57233 Sat Oct 17 10:51:01 2026     node /Users/zhangping/DEV/CLPM-MVP/frontend/node_modules/.bin/../vite/bin/vite.js --mode development\n",
+    "stderr": ""
+  },
+  "processRows": [
+    {
+      "pid": 7361,
+      "ppid": 57326,
+      "pgid": 57326,
+      "startedAt": "Sat Oct 17 16:54:01 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+    },
+    {
+      "pid": 40677,
+      "ppid": 57326,
+      "pgid": 57326,
+      "startedAt": "Sat Oct 17 17:40:00 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+    },
+    {
+      "pid": 52896,
+      "ppid": 57326,
+      "pgid": 57326,
+      "startedAt": "Sat Oct 17 17:50:00 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+    },
+    {
+      "pid": 54701,
+      "ppid": 57326,
+      "pgid": 57326,
+      "startedAt": "Sat Oct 17 17:52:00 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+    },
+    {
+      "pid": 57294,
+      "ppid": 57292,
+      "pgid": 57233,
+      "startedAt": "Sat Oct 17 10:50:42 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 17101"
+    },
+    {
+      "pid": 57324,
+      "ppid": 57294,
+      "pgid": 57324,
+      "startedAt": "Sat Oct 17 10:50:44 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule"
+    },
+    {
+      "pid": 57326,
+      "ppid": 57294,
+      "pgid": 57326,
+      "startedAt": "Sat Oct 17 10:50:44 2026",
+      "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+    },
+    {
+      "pid": 57651,
+      "ppid": 57631,
+      "pgid": 57233,
+      "startedAt": "Sat Oct 17 10:51:01 2026",
+      "command": "node /Users/zhangping/DEV/CLPM-MVP/frontend/node_modules/.bin/../vite/bin/vite.js --mode development"
+    }
+  ],
+  "cwdCommands": {
+    "7361": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "7361",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p7361\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "40677": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "40677",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p40677\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "52896": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "52896",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p52896\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "54701": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "54701",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p54701\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "57294": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "57294",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p57294\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "57324": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "57324",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p57324\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "57326": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "57326",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p57326\nfcwd\nn/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend\n",
+      "stderr": ""
+    },
+    "57651": {
+      "argv": [
+        "lsof",
+        "-a",
+        "-p",
+        "57651",
+        "-d",
+        "cwd",
+        "-Fn"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "p57651\nfcwd\nn/Users/zhangping/DEV/CLPM-MVP/frontend/apps/web-antd\n",
+      "stderr": ""
+    }
+  },
+  "ports": {
+    "17101": {
+      "argv": [
+        "lsof",
+        "-nP",
+        "-iTCP:17101",
+        "-sTCP:LISTEN"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "COMMAND     PID      USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\npython3.1 57294 zhangping   12u  IPv4 0x66dbdff69aa5c870      0t0  TCP *:17101 (LISTEN)\n",
+      "stderr": ""
+    },
+    "15666": {
+      "argv": [
+        "lsof",
+        "-nP",
+        "-iTCP:15666",
+        "-sTCP:LISTEN"
+      ],
+      "cwd": null,
+      "rc": 0,
+      "stdout": "COMMAND   PID      USER   FD   TYPE             DEVICE SIZE/OFF NODE NAME\nnode    57651 zhangping   17u  IPv6 0x783d83c107fe04d1      0t0  TCP *:15666 (LISTEN)\n",
+      "stderr": ""
+    }
+  },
+  "workerStructure": {
+    "masters": [
+      {
+        "pid": 57326,
+        "ppid": 57294,
+        "pgid": 57326,
+        "startedAt": "Sat Oct 17 10:50:44 2026",
+        "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      }
+    ],
+    "pools": [
+      {
+        "pid": 7361,
+        "ppid": 57326,
+        "pgid": 57326,
+        "startedAt": "Sat Oct 17 16:54:01 2026",
+        "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 40677,
+        "ppid": 57326,
+        "pgid": 57326,
+        "startedAt": "Sat Oct 17 17:40:00 2026",
+        "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 52896,
+        "ppid": 57326,
+        "pgid": 57326,
+        "startedAt": "Sat Oct 17 17:50:00 2026",
+        "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      },
+      {
+        "pid": 54701,
+        "ppid": 57326,
+        "pgid": 57326,
+        "startedAt": "Sat Oct 17 17:52:00 2026",
+        "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app worker -l info --concurrency 4 -Q default,dead_letter --hostname clpm-g5-runtime-20261015@%h"
+      }
+    ],
+    "beats": [
+      {
+        "pid": 57324,
+        "ppid": 57294,
+        "pgid": 57324,
+        "startedAt": "Sat Oct 17 10:50:44 2026",
+        "command": "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python -m celery -A app.tasks.celery_app beat -l info --pidfile /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat.pid --schedule /Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celerybeat-schedule"
+      }
+    ],
+    "masterCount": 1,
+    "poolCount": 4,
+    "beatCount": 1
+  },
+  "databaseCommand": {
+    "argv": [
+      "docker",
+      "exec",
+      "clpm-mvp-postgres",
+      "psql",
+      "-U",
+      "clpm",
+      "-d",
+      "clpm",
+      "-X",
+      "-qAt",
+      "-v",
+      "ON_ERROR_STOP=1",
+      "-c",
+      "BEGIN TRANSACTION READ ONLY;\nSELECT json_build_object(\n 'revision', (SELECT version_num FROM alembic_version LIMIT 1),\n 'config', (SELECT json_agg(json_build_object(\n   'key',key,'valueSha256',encode(sha256(convert_to(COALESCE(value,'NULL'),'UTF8')),'hex'),\n   'updatedAt',updated_at,'updatedBy',updated_by) ORDER BY key) FROM sys_config),\n 'policy', (SELECT json_agg(row_to_json(p)) FROM policy_publication_guard p));\nCOMMIT;"
+    ],
+    "cwd": null,
+    "rc": 0,
+    "stdout": "{\"revision\" : \"p702perm01\", \"config\" : [{\"key\" : \"aas.endpoint\", \"valueSha256\" : \"019bc89bf595dde17229de1e35753bdaa2fcabbd4635a626595ff63de415f072\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"aas.security_mode\", \"valueSha256\" : \"dc937b59892604f5a86ac96936cd7ff09e25f18ae6b758e8014a24c7fa039e91\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"aas.sync_enabled\", \"valueSha256\" : \"b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"aas.sync_interval_seconds\", \"valueSha256\" : \"983bd614bb5afece5ab3b6023f71147cd7b6bc2314f9d27af7422541c6558389\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"capacity.perf_dataset.declaration\", \"valueSha256\" : \"69d00b75556f61712a162156f5d32f0387e2e46af3bdeef52b08af875a948b68\", \"updatedAt\" : \"2026-10-12T22:53:27.081366\", \"updatedBy\" : null}, {\"key\" : \"datasource.gap_backfill_enabled\", \"valueSha256\" : \"fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa\", \"updatedAt\" : \"2026-09-28T10:39:43.021753\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.gap_backfill_min_gap_seconds\", \"valueSha256\" : \"284b7e6d788f363f910f7beb1910473e23ce9d6c871f1ce0f31f22a982d48ad4\", \"updatedAt\" : \"2026-09-26T06:18:17.370394\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.history_api_timeout\", \"valueSha256\" : \"26c9a96ce053a14dd88a71a4830c9cbed7e1fed7e3f3f8a0b0b6a58f3f0f02e6\", \"updatedAt\" : \"2026-09-26T06:18:19.639686\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.history_api_token\", \"valueSha256\" : \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"datasource.history_api_url\", \"valueSha256\" : \"8eb05a4e1d2af09de2d0ce4ad5ded3ba982a5b4eaca3c3a2a1075e018585517b\", \"updatedAt\" : \"2026-09-26T06:18:19.639686\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.import_chunk_concurrency\", \"valueSha256\" : \"6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b\", \"updatedAt\" : \"2026-10-07T22:16:12.968489\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.import_loop_concurrency\", \"valueSha256\" : \"4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a\", \"updatedAt\" : \"2026-10-07T22:16:12.968489\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.import_remote_concurrency\", \"valueSha256\" : \"4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a\", \"updatedAt\" : \"2026-10-07T22:16:12.968489\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.network_mode\", \"valueSha256\" : \"094a367b026246fb64649c4f868a45d8187821d16a973141436fd9cd2acfdb4a\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"datasource.realtime_writeback_enabled\", \"valueSha256\" : \"b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b\", \"updatedAt\" : \"2026-09-26T06:18:17.370394\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.signalr_enabled\", \"valueSha256\" : \"b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b\", \"updatedAt\" : \"2026-09-26T06:18:17.370394\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.signalr_hub_url\", \"valueSha256\" : \"0d3ef5cb79f71099044a2dcba858763fa593dc43f3f397678d5317df722848ab\", \"updatedAt\" : \"2026-09-26T06:18:17.370394\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.signalr_reconnect_interval\", \"valueSha256\" : \"ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d\", \"updatedAt\" : \"2026-09-26T06:18:17.370394\", \"updatedBy\" : \"admin\"}, {\"key\" : \"datasource.type\", \"valueSha256\" : \"2c1ca78d5fcd8d572ab4c86531cd5f3e11f4211b0a071f314c4f16dddf3db1f3\", \"updatedAt\" : \"2026-10-07T22:16:12.968489\", \"updatedBy\" : \"admin\"}, {\"key\" : \"history.storage_mode\", \"valueSha256\" : \"251fecd592e56e6c4a95121752f4a73bb802dffc1cc4bce6100206ee2b7cb650\", \"updatedAt\" : \"2026-10-11T14:52:00.43394\", \"updatedBy\" : \"system\"}, {\"key\" : \"llm.api_key\", \"valueSha256\" : \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"llm.enabled\", \"valueSha256\" : \"fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"llm.endpoint\", \"valueSha256\" : \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"llm.max_tokens\", \"valueSha256\" : \"8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"llm.model\", \"valueSha256\" : \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"llm.timeout\", \"valueSha256\" : \"624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4\", \"updatedAt\" : \"2026-09-11T11:58:43.169584\", \"updatedBy\" : \"system\"}, {\"key\" : \"metric_definition.current\", \"valueSha256\" : \"240fa1d94236c8ffdda3877b2474bd8a2de79259e72544b70e5e0b7b02a681c1\", \"updatedAt\" : \"2026-09-23T19:32:23.648588\", \"updatedBy\" : \"system\"}], \"policy\" : [{\"id\":1,\"revision\":26,\"updated_at\":\"2026-10-16T19:46:38.454605\"}]}\n",
+    "stderr": ""
+  },
+  "databasePayload": {
+    "revision": "p702perm01",
+    "config": [
+      {
+        "key": "aas.endpoint",
+        "valueSha256": "019bc89bf595dde17229de1e35753bdaa2fcabbd4635a626595ff63de415f072",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "aas.security_mode",
+        "valueSha256": "dc937b59892604f5a86ac96936cd7ff09e25f18ae6b758e8014a24c7fa039e91",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "aas.sync_enabled",
+        "valueSha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "aas.sync_interval_seconds",
+        "valueSha256": "983bd614bb5afece5ab3b6023f71147cd7b6bc2314f9d27af7422541c6558389",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "capacity.perf_dataset.declaration",
+        "valueSha256": "69d00b75556f61712a162156f5d32f0387e2e46af3bdeef52b08af875a948b68",
+        "updatedAt": "2026-10-12T22:53:27.081366",
+        "updatedBy": null
+      },
+      {
+        "key": "datasource.gap_backfill_enabled",
+        "valueSha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+        "updatedAt": "2026-09-28T10:39:43.021753",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.gap_backfill_min_gap_seconds",
+        "valueSha256": "284b7e6d788f363f910f7beb1910473e23ce9d6c871f1ce0f31f22a982d48ad4",
+        "updatedAt": "2026-09-26T06:18:17.370394",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.history_api_timeout",
+        "valueSha256": "26c9a96ce053a14dd88a71a4830c9cbed7e1fed7e3f3f8a0b0b6a58f3f0f02e6",
+        "updatedAt": "2026-09-26T06:18:19.639686",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.history_api_token",
+        "valueSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "datasource.history_api_url",
+        "valueSha256": "8eb05a4e1d2af09de2d0ce4ad5ded3ba982a5b4eaca3c3a2a1075e018585517b",
+        "updatedAt": "2026-09-26T06:18:19.639686",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.import_chunk_concurrency",
+        "valueSha256": "6b86b273ff34fce19d6b804eff5a3f5747ada4eaa22f1d49c01e52ddb7875b4b",
+        "updatedAt": "2026-10-07T22:16:12.968489",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.import_loop_concurrency",
+        "valueSha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+        "updatedAt": "2026-10-07T22:16:12.968489",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.import_remote_concurrency",
+        "valueSha256": "4b227777d4dd1fc61c6f884f48641d02b4d121d3fd328cb08b5531fcacdabf8a",
+        "updatedAt": "2026-10-07T22:16:12.968489",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.network_mode",
+        "valueSha256": "094a367b026246fb64649c4f868a45d8187821d16a973141436fd9cd2acfdb4a",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "datasource.realtime_writeback_enabled",
+        "valueSha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+        "updatedAt": "2026-09-26T06:18:17.370394",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.signalr_enabled",
+        "valueSha256": "b5bea41b6c623f7c09f1bf24dcae58ebab3c0cdd90ad966bc43a45b44867e12b",
+        "updatedAt": "2026-09-26T06:18:17.370394",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.signalr_hub_url",
+        "valueSha256": "0d3ef5cb79f71099044a2dcba858763fa593dc43f3f397678d5317df722848ab",
+        "updatedAt": "2026-09-26T06:18:17.370394",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.signalr_reconnect_interval",
+        "valueSha256": "ef2d127de37b942baad06145e54b0c619a1f22327b2ebbcfbec78f5564afe39d",
+        "updatedAt": "2026-09-26T06:18:17.370394",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "datasource.type",
+        "valueSha256": "2c1ca78d5fcd8d572ab4c86531cd5f3e11f4211b0a071f314c4f16dddf3db1f3",
+        "updatedAt": "2026-10-07T22:16:12.968489",
+        "updatedBy": "admin"
+      },
+      {
+        "key": "history.storage_mode",
+        "valueSha256": "251fecd592e56e6c4a95121752f4a73bb802dffc1cc4bce6100206ee2b7cb650",
+        "updatedAt": "2026-10-11T14:52:00.43394",
+        "updatedBy": "system"
+      },
+      {
+        "key": "llm.api_key",
+        "valueSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "llm.enabled",
+        "valueSha256": "fcbcf165908dd18a9e49f7ff27810176db8e9f63b4352213741664245224f8aa",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "llm.endpoint",
+        "valueSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "llm.max_tokens",
+        "valueSha256": "8b926d75599a618e21f1341318e66517be26e18cc7496783d2b59758c1333be8",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "llm.model",
+        "valueSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "llm.timeout",
+        "valueSha256": "624b60c58c9d8bfb6ff1886c2fd605d2adeb6ea4da576068201b6c6958ce93f4",
+        "updatedAt": "2026-09-11T11:58:43.169584",
+        "updatedBy": "system"
+      },
+      {
+        "key": "metric_definition.current",
+        "valueSha256": "240fa1d94236c8ffdda3877b2474bd8a2de79259e72544b70e5e0b7b02a681c1",
+        "updatedAt": "2026-09-23T19:32:23.648588",
+        "updatedBy": "system"
+      }
+    ],
+    "policy": [
+      {
+        "id": 1,
+        "revision": 26,
+        "updated_at": "2026-10-16T19:46:38.454605"
+      }
+    ]
+  },
+  "configurationComparison": {
+    "rowCount": 27,
+    "sha256": "f49ad24a8cb3d479e6f154b86bf33f1a3dc5c015be47a799c52c1f28a96dd130",
+    "parentRowCount": 27,
+    "parentSha256": "f49ad24a8cb3d479e6f154b86bf33f1a3dc5c015be47a799c52c1f28a96dd130",
+    "matchesParentSnapshot": true,
+    "kind": "sorted key/value-sha256/updatedAt/updatedBy content snapshot; not one global revision"
+  },
+  "health": {
+    "argv": [
+      "curl",
+      "--fail",
+      "--silent",
+      "--show-error",
+      "--max-time",
+      "5",
+      "http://127.0.0.1:17101/health"
+    ],
+    "cwd": null,
+    "rc": 0,
+    "stdout": "{\"status\":\"ok\",\"version\":\"7.1.0\"}",
+    "stderr": ""
+  },
+  "backendDiskEquivalence": {
+    "argv": [
+      "git",
+      "diff",
+      "c9e01f5d",
+      "b676ea59",
+      "--",
+      "backend"
+    ],
+    "cwd": "/Users/zhangping/DEV/CLPM-MVP",
+    "rc": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  "protectedDocuments": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局对标检查报告.md",
+      "expectedSha256": "517e91b57f2e2ff3c182be30d32ffb329d9c7b9397e2d3395188f190fe167016",
+      "actualSha256": "517e91b57f2e2ff3c182be30d32ffb329d9c7b9397e2d3395188f190fe167016",
+      "matches": true
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-非作者复验回执.md",
+      "expectedSha256": "54cc82ca97e64fb7fd5314b14b41d5444ccaaf719b8478651d919e7a50f853e6",
+      "actualSha256": "54cc82ca97e64fb7fd5314b14b41d5444ccaaf719b8478651d919e7a50f853e6",
+      "matches": true
+    }
+  ],
+  "protectedExpectedShaProvenance": "main coordinator current delegation supplied pre-work hashes; this run independently rehashes current files",
+  "parentCaptureSha256": "98affd5fd5fc6d3af65fe17ca880ddbf8fccb70a952be3fa3c6f1b9a300acad5",
+  "scope": "current cwd/disk/process/readonly DB only; no process memory SHA, remote tracking, historic PID health inference, service start/stop, or deployment"
+}

@@ -1,0 +1,49 @@
+{
+  "allPass": true,
+  "checks": {
+    "threeIndependentJobs": true,
+    "allJobsBlocking": true,
+    "criticalAndFrontendStepsBlocking": true,
+    "existingMypyExceptionUnchanged": true,
+    "bothNumericProfilesOne": true,
+    "timeout30Unchanged": true,
+    "coverage60Unchanged": true,
+    "fourBusinessCasesUnchanged": true,
+    "unchanged:playwright.config.ts": true,
+    "unchanged:__tests__/e2e/smoke.spec.ts": true,
+    "numericSourcesUnchanged": true,
+    "same22NumericalRows": true,
+    "rc0:default": true,
+    "rc0:one-thread": true,
+    "rc0:diagnostic-backend-ci": true,
+    "rc0:diagnostic-critical-e2e": true,
+    "rc0:actionlint-after": true,
+    "directCatalogDependencyAdded": true,
+    "noOtherPackageChange": true,
+    "reuseLocked160": true,
+    "noOtherLockChange": true,
+    "catalogUnchanged": true,
+    "offlineFrozenInstallRC0": true,
+    "frozenInstallDidNotRewriteDeclarations": true,
+    "realBeforeMissingDependencyRC1": true,
+    "installed160": true,
+    "originalTwoSmokeCasesCollected": true,
+    "rc0:frontend-unit": true,
+    "rc0:frontend-type": true,
+    "full1021UnitPass": true,
+    "applicationSourceUnchanged": true
+  },
+  "timingSeconds": {
+    "default": 28.75,
+    "oneThread": 28.47
+  },
+  "scope": "Local macOS Apple Accelerate gives no meaningful speedup; Linux CI remains required. --list collected two cases without executing either smoke or any critical business case.",
+  "existingNonblockingException": [
+    "Mypy type check"
+  ],
+  "sourceSha256": {
+    ".github/workflows/ci.yml": "3e9feb08402a778051ce620d6c49f6da3aa7814f753f0346f35a5ac851134c11",
+    "frontend/apps/web-antd/package.json": "3c5784d56db5bef5f73cf771ab4bffb573a92c7ff4783ab098f942f283157ed8",
+    "frontend/pnpm-lock.yaml": "8120024803c1fccf6aeb1bf04d4bab7c33cbcfb3f9d72fbc3dbcf952a202d4c7"
+  }
+}

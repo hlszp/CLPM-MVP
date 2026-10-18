@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/frontend/node_modules/.bin/vitest",
+    "run",
+    "--dom",
+    "--no-cache",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u975e\u4f5c\u8005\u590d\u9a8c-20261017T085542Z/f07-matching-tree-full.results.json"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/frontend",
+  "frontend_tree_hash": "94899b961deca1d9ef257c0c32bbc38c51331eb5",
+  "started_at": "2026-10-17T09:01:50.156460+00:00",
+  "elapsed_seconds": 79.5533897500136,
+  "exit_code": 0,
+  "stdout_sha256": "906d3df852220ca9002cdba230b876d2fd8a545aad83c8561c2a5732d8bdc9b4",
+  "stderr_sha256": "0a32de2cd9f435c431cfdd26de69358155fbc1a57de3877425a357eb5cd98b2b"
+}

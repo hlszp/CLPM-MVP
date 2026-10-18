@@ -1,0 +1,125 @@
+I001 [*] Import block is un-sorted or un-formatted
+  --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:6:1
+   |
+ 4 |   """
+ 5 |
+ 6 | / from __future__ import annotations
+ 7 | |
+ 8 | | import argparse
+ 9 | | import asyncio
+10 | | from copy import deepcopy
+11 | | from datetime import datetime, timedelta, timezone
+12 | | import hashlib
+13 | | import json
+14 | | import os
+15 | | from pathlib import Path
+16 | | import re
+17 | | import subprocess
+18 | | from urllib.parse import urlsplit
+   | |_________________________________^
+19 |
+20 |   DATABASE = "clpm_capacity_20261017_s01"
+   |
+help: Organize imports
+
+UP017 [*] Use `datetime.UTC` alias
+  --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:62:31
+   |
+60 |     result = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+61 |     return (
+62 |         result.replace(tzinfo=timezone.utc)
+   |                               ^^^^^^^^^^^^
+63 |         if result.tzinfo is None
+64 |         else result.astimezone(timezone.utc)
+   |
+help: Convert to `datetime.UTC` alias
+
+UP017 [*] Use `datetime.UTC` alias
+  --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:64:32
+   |
+62 |         result.replace(tzinfo=timezone.utc)
+63 |         if result.tzinfo is None
+64 |         else result.astimezone(timezone.utc)
+   |                                ^^^^^^^^^^^^
+65 |     )
+   |
+help: Convert to `datetime.UTC` alias
+
+E501 Line too long (101 > 100)
+   --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:242:101
+    |
+240 |             "originalPreserved": True,
+241 |             "oldConfigDigest": original["configDigest"],
+242 |             "reason": "7000 MVP_INIT intervals do not cover normal20/extra4 synthetic input windows",
+    |                                                                                                     ^
+243 |             "state": "INVALID_FOR_FORMAL_EXECUTION",
+244 |             "replacement": "new immutable freeze/digest required after actual INPUT preparation and independent readback",
+    |
+
+E501 Line too long (122 > 100)
+   --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:244:101
+    |
+242 |             "reason": "7000 MVP_INIT intervals do not cover normal20/extra4 synthetic input windows",
+243 |             "state": "INVALID_FOR_FORMAL_EXECUTION",
+244 |             "replacement": "new immutable freeze/digest required after actual INPUT preparation and independent readback",
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^^^^^
+245 |         },
+246 |     )
+    |
+
+E501 Line too long (103 > 100)
+   --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:257:101
+    |
+255 |             + DATABASE
+256 |             + " --format=custom --no-owner --file=<own-out>/before.dump",
+257 |             "credentialSource": "explicit native env file; password only in child process environment",
+    |                                                                                                     ^^^
+258 |         },
+259 |     )
+    |
+
+E501 Line too long (118 > 100)
+   --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/prepare_bindings.py:290:101
+    |
+288 |     rows = {}
+289 |     for table in p["tableNames"]:
+290 |         query = f"SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text),'[]'::jsonb)::text FROM {table} t"
+    |                                                                                                     ^^^^^^^^^^^^^^^^^^
+291 |         args = ()
+292 |         if table == "sys_config":
+    |
+
+I001 [*] Import block is un-sorted or un-formatted
+  --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/test_prepare_bindings.py:3:1
+   |
+ 1 |   """Pure controls only: no sockets, subprocesses, signals or product imports."""
+ 2 |
+ 3 | / from copy import deepcopy
+ 4 | | import importlib.util
+ 5 | | import json
+ 6 | | from pathlib import Path
+ 7 | | import re
+ 8 | | import socket
+ 9 | | import subprocess
+10 | |
+11 | | import pytest
+   | |_____________^
+12 |
+13 |   ROOT = Path(__file__).parent
+   |
+help: Organize imports
+
+C401 Unnecessary generator (rewrite as a set comprehension)
+   --> /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/test_prepare_bindings.py:115:20
+    |
+113 |         if query == tool.UPDATE_SQL:
+114 |             assert not self.readonly and self.isolation == "serializable"
+115 |             assert set(str(v) for v in args[1]) == {
+    |                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+116 |                 r["id"] for r in s.tables["loop_tag_binding_history"]
+117 |             }
+    |
+help: Rewrite as a set comprehension
+
+Found 9 errors.
+[*] 4 fixable with the `--fix` option (1 hidden fix can be enabled with the `--unsafe-fixes` option).

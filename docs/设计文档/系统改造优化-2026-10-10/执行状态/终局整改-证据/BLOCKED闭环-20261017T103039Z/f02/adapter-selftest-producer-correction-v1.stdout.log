@@ -1,0 +1,347 @@
+.......FFFFFFF..FF                                                       [100%]
+=================================== FAILURES ===================================
+_ test_node_scope_is_explicitly_derived_and_original_request_has_no_fabricated_ids _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_node_scope_is_explicitly_0')
+
+    def test_node_scope_is_explicitly_derived_and_original_request_has_no_fabricated_ids(
+        tmp_path,
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:350: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+_ test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[missing-pool-event] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_task_scope_or_runtime_mis0')
+defect = 'missing-pool-event'
+
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            "missing-pool-event",
+            "node-count19",
+            "late-terminal",
+            "duplicate-node-request",
+            "wrong-parent",
+            "nonterminal-backend",
+        ],
+    )
+    def test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth(
+        tmp_path, defect
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+_ test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[node-count19] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_task_scope_or_runtime_mis1')
+defect = 'node-count19'
+
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            "missing-pool-event",
+            "node-count19",
+            "late-terminal",
+            "duplicate-node-request",
+            "wrong-parent",
+            "nonterminal-backend",
+        ],
+    )
+    def test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth(
+        tmp_path, defect
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+_ test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[late-terminal] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_task_scope_or_runtime_mis2')
+defect = 'late-terminal'
+
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            "missing-pool-event",
+            "node-count19",
+            "late-terminal",
+            "duplicate-node-request",
+            "wrong-parent",
+            "nonterminal-backend",
+        ],
+    )
+    def test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth(
+        tmp_path, defect
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+_ test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[duplicate-node-request] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_task_scope_or_runtime_mis3')
+defect = 'duplicate-node-request'
+
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            "missing-pool-event",
+            "node-count19",
+            "late-terminal",
+            "duplicate-node-request",
+            "wrong-parent",
+            "nonterminal-backend",
+        ],
+    )
+    def test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth(
+        tmp_path, defect
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+_ test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[wrong-parent] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_task_scope_or_runtime_mis4')
+defect = 'wrong-parent'
+
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            "missing-pool-event",
+            "node-count19",
+            "late-terminal",
+            "duplicate-node-request",
+            "wrong-parent",
+            "nonterminal-backend",
+        ],
+    )
+    def test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth(
+        tmp_path, defect
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+_ test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[nonterminal-backend] _
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_task_scope_or_runtime_mis5')
+defect = 'nonterminal-backend'
+
+    @pytest.mark.parametrize(
+        "defect",
+        [
+            "missing-pool-event",
+            "node-count19",
+            "late-terminal",
+            "duplicate-node-request",
+            "wrong-parent",
+            "nonterminal-backend",
+        ],
+    )
+    def test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth(
+        tmp_path, defect
+    ):
+        subject = adapter(tmp_path)
+>       events, redis, runtime, scope = task_fixture()
+                                        ^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:387: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py:341: in task_fixture
+    "_poolProof": closed_worker_pool(runtime, samples),
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+______ test_full1000_twenty_node_shape_maps_raw_without_product_gates[a] _______
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_full1000_twenty_node_shap0')
+scenario = 'a'
+
+    @pytest.mark.parametrize("scenario", ["a", "b"])
+    def test_full1000_twenty_node_shape_maps_raw_without_product_gates(tmp_path, scenario):
+        subject, item, scope, plan, planned, profile = fixture(tmp_path, scenario)
+        before = {
+            p: digest(p.read_bytes())
+            for p in (tmp_path / "original").rglob("*")
+            if p.is_file()
+        }
+>       result = subject.batch(item, planned, plan, scope, profile)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_full_shape.py:473: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:1067: in batch
+    pool_proof = closed_worker_pool(runtime, self.jsonl(indexed["resources.jsonl"]))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+______ test_full1000_twenty_node_shape_maps_raw_without_product_gates[b] _______
+
+tmp_path = PosixPath('/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/pytest-of-zhangping/pytest-84/test_full1000_twenty_node_shap1')
+scenario = 'b'
+
+    @pytest.mark.parametrize("scenario", ["a", "b"])
+    def test_full1000_twenty_node_shape_maps_raw_without_product_gates(tmp_path, scenario):
+        subject, item, scope, plan, planned, profile = fixture(tmp_path, scenario)
+        before = {
+            p: digest(p.read_bytes())
+            for p in (tmp_path / "original").rglob("*")
+            if p.is_file()
+        }
+>       result = subject.batch(item, planned, plan, scope, profile)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_full_shape.py:473: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:1067: in batch
+    pool_proof = closed_worker_pool(runtime, self.jsonl(indexed["resources.jsonl"]))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:277: in closed_worker_pool
+    require(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+value = False, message = 'Actual application PID set is missing/extra/recycled'
+
+    def require(value, message):
+        if not value:
+>           raise MissingEvidence(message)
+E           independent_support.MissingEvidence: Actual application PID set is missing/extra/recycled
+
+docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/adapt_capacity_artifacts.py:80: MissingEvidence
+=========================== short test summary info ============================
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_node_scope_is_explicitly_derived_and_original_request_has_no_fabricated_ids
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[missing-pool-event]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[node-count19]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[late-terminal]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[duplicate-node-request]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[wrong-parent]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_artifacts.py::test_task_scope_or_runtime_missing_evidence_cannot_be_filled_with_report_truth[nonterminal-backend]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_full_shape.py::test_full1000_twenty_node_shape_maps_raw_without_product_gates[a]
+FAILED docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_adapt_capacity_full_shape.py::test_full1000_twenty_node_shape_maps_raw_without_product_gates[b]
+9 failed, 9 passed in 0.37s

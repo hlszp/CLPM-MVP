@@ -1,0 +1,34 @@
+
+Running 4 tests using 1 worker
+··F°
+
+  1) [chromium] › tests/critical-business.spec.ts:230:1 › CRITICAL-CALC-001: real task produces one successful synthetic-input result 
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+      262 |   expect(state!.status).toBe('SUCCESS');
+      263 |   expect(state!.loopsTotal).toBe(1);
+    > 264 |   expect(state!.loopsDone).toBe(1);
+          |                            ^
+      265 |   const results = await read(
+      266 |     request,
+      267 |     `/performance/loops/snapshots?latestOnly=false&taskId=${taskId}&loopId=${fixture.loopId}`,
+        at /home/runner/work/CLPM-MVP/CLPM-MVP/e2e/tests/critical-business.spec.ts:264:28
+
+    Error Context: ../../../_temp/critical-e2e/gate/test-results/critical-business-CRITICAL-6d8da-sful-synthetic-input-result-chromium/error-context.md
+
+    attachment #3: trace (application/zip) ─────────────────────────────────────────────────────────
+    ../../../_temp/critical-e2e/gate/test-results/critical-business-CRITICAL-6d8da-sful-synthetic-input-result-chromium/trace.zip
+    Usage:
+
+        npx playwright show-trace ../../../_temp/critical-e2e/gate/test-results/critical-business-CRITICAL-6d8da-sful-synthetic-input-result-chromium/trace.zip
+
+    ────────────────────────────────────────────────────────────────────────────────────────────────
+
+  1 failed
+    [chromium] › tests/critical-business.spec.ts:230:1 › CRITICAL-CALC-001: real task produces one successful synthetic-input result 
+  1 did not run
+  2 passed (25.5s)

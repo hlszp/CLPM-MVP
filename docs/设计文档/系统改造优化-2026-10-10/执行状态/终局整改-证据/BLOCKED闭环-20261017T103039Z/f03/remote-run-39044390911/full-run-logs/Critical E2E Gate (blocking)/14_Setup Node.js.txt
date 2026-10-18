@@ -1,0 +1,66 @@
+﻿2026-10-17T15:18:33.6872998Z ##[group]Run actions/setup-node@v4
+2026-10-17T15:18:33.6873268Z with:
+2026-10-17T15:18:33.6873437Z   node-version: 22
+2026-10-17T15:18:33.6873620Z   cache: pnpm
+2026-10-17T15:18:33.6873840Z   cache-dependency-path: frontend/pnpm-lock.yaml
+2026-10-17T15:18:33.6874107Z   always-auth: false
+2026-10-17T15:18:33.6874294Z   check-latest: false
+2026-10-17T15:18:33.6876804Z   token: ***
+2026-10-17T15:18:33.6877015Z env:
+2026-10-17T15:18:33.6877178Z   CI: true
+2026-10-17T15:18:33.6877344Z   ENV: development
+2026-10-17T15:18:33.6877530Z   CLPM_TEST_MODE: 0
+2026-10-17T15:18:33.6877738Z   E2E_EXECUTION_ENV: disposable-github-ci
+2026-10-17T15:18:33.6877985Z   OPENBLAS_NUM_THREADS: 1
+2026-10-17T15:18:33.6878185Z   OMP_NUM_THREADS: 1
+2026-10-17T15:18:33.6878369Z   MKL_NUM_THREADS: 1
+2026-10-17T15:18:33.6878557Z   NUMEXPR_NUM_THREADS: 1
+2026-10-17T15:18:33.6878779Z   VECLIB_MAXIMUM_THREADS: 1
+2026-10-17T15:18:33.6879012Z   POSTGRES_HOST: localhost
+2026-10-17T15:18:33.6879220Z   POSTGRES_PORT: 5432
+2026-10-17T15:18:33.6879461Z   POSTGRES_USER: clpm
+2026-10-17T15:18:33.6879669Z   POSTGRES_PASSWORD: clpm_ci_only_2026
+2026-10-17T15:18:33.6879917Z   POSTGRES_DB: clpm_critical_e2e
+2026-10-17T15:18:33.6880141Z   REDIS_HOST: localhost
+2026-10-17T15:18:33.6880335Z   REDIS_PORT: 6379
+2026-10-17T15:18:33.6880673Z   REDIS_DB: 0
+2026-10-17T15:18:33.6880845Z   REDIS_PASSWORD: 
+2026-10-17T15:18:33.6881025Z   TDENGINE_HOST: localhost
+2026-10-17T15:18:33.6881464Z   TDENGINE_PORT: 6030
+2026-10-17T15:18:33.6881647Z   TDENGINE_USER: root
+2026-10-17T15:18:33.6881838Z   TDENGINE_PASSWORD: taosdata
+2026-10-17T15:18:33.6882063Z   TDENGINE_DB: clpm_critical_e2e_ts
+2026-10-17T15:18:33.6882317Z   CORS_ORIGINS: ["http://localhost:15666"]
+2026-10-17T15:18:33.6882660Z   JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+2026-10-17T15:18:33.6883040Z   CLPM_BUILD_CODE_SHA: bc48701efe90e2a27555a4f8794f0965e82b0902
+2026-10-17T15:18:33.6883420Z   E2E_CRITICAL_FIXTURE: /home/runner/work/_temp/critical-e2e/fixture.json
+2026-10-17T15:18:33.6883799Z   E2E_ARTIFACT_DIR: /home/runner/work/_temp/critical-e2e/gate
+2026-10-17T15:18:33.6884458Z   CLPM_CALC_SNAPSHOT_DIR: /home/runner/work/_temp/critical-e2e/calc-snapshots
+2026-10-17T15:18:33.6884845Z   pythonLocation: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:33.6885216Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib/pkgconfig
+2026-10-17T15:18:33.6885581Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:33.6885927Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:33.6886253Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.12.15/x64
+2026-10-17T15:18:33.6886592Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.12.15/x64/lib
+2026-10-17T15:18:33.6886913Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-10-17T15:18:33.6887228Z   PNPM_HOME: /home/runner/setup-pnpm/node_modules/.bin
+2026-10-17T15:18:33.6887493Z ##[endgroup]
+2026-10-17T15:18:33.8083664Z (node:3744) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-10-17T15:18:33.8093566Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-10-17T15:18:33.8094620Z Found in cache @ /opt/hostedtoolcache/node/22.23.3/x64
+2026-10-17T15:18:33.8095653Z ##[group]Environment details
+2026-10-17T15:18:34.2634944Z node: v22.23.3
+2026-10-17T15:18:34.2635662Z npm: 10.9.9
+2026-10-17T15:18:34.2636167Z yarn: 1.22.22
+2026-10-17T15:18:34.2636832Z ##[endgroup]
+2026-10-17T15:18:34.2658524Z [command]/home/runner/setup-pnpm/node_modules/.bin/pnpm store path --silent
+2026-10-17T15:18:34.6775717Z /home/runner/setup-pnpm/node_modules/.bin/store/v10
+2026-10-17T15:18:34.8255890Z Cache hit for: node-cache-Linux-x64-pnpm-35e2abb8959fad0582aa137ae3a82fbc97e1e0ca3e3d8a8fcc85edf04a15ff2d
+2026-10-17T15:18:34.8321800Z (node:3744) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-10-17T15:18:35.9671479Z Received 117440512 of 351002865 (33.5%), 112.0 MBs/sec
+2026-10-17T15:18:36.9666856Z Received 335544320 of 351002865 (95.6%), 160.0 MBs/sec
+2026-10-17T15:18:37.1677540Z Received 351002865 of 351002865 (100.0%), 152.1 MBs/sec
+2026-10-17T15:18:37.1678385Z Cache Size: ~335 MB (351002865 B)
+2026-10-17T15:18:37.1771038Z [command]/usr/bin/tar -xf /home/runner/work/_temp/8b7f69cd-5a80-4d42-b54a-a6711ec6b439/cache.tzst -P -C /home/runner/work/CLPM-MVP/CLPM-MVP --use-compress-program unzstd
+2026-10-17T15:18:40.9172880Z Cache restored successfully
+2026-10-17T15:18:40.9327540Z Cache restored from key: node-cache-Linux-x64-pnpm-35e2abb8959fad0582aa137ae3a82fbc97e1e0ca3e3d8a8fcc85edf04a15ff2d

@@ -1,0 +1,11 @@
+{
+  "role": "AUTHOR_DOCUMENT_GENERATION_SETUP_ERROR_NOT_TARGET_FAILURE",
+  "firstAttemptError": "NameError: name 'file' is not defined. Did you mean: 'filter'?",
+  "cause": "Unescaped literal braces in Python f-string for handoff text",
+  "beforeFailureFilesWritten": [
+    "offline-raw-run-index.json"
+  ],
+  "handoffWrittenBeforeFailure": false,
+  "sourceOrProductModified": false,
+  "resolution": "Plain template with explicit literal replacements; target tool and tests unchanged"
+}

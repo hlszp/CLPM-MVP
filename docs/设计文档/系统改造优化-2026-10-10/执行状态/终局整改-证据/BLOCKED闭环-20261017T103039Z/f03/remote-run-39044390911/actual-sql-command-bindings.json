@@ -1,0 +1,31 @@
+{
+  "observedAtUtc": "2026-10-17T15:31:56.600306+00:00",
+  "checkedQueryCommands": 4,
+  "allBindingsMatch": true,
+  "facts": [
+    {
+      "command": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery/command.json",
+      "actualExecutedSql": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-discovery.sql",
+      "sha256": "509fe715a9e3faea66267d0ec5a9edf21542345d7813017c914a8a4dfb734e91",
+      "rc": 0
+    },
+    {
+      "command": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row/command.json",
+      "actualExecutedSql": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/dataset-row.sql",
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff",
+      "rc": 0
+    },
+    {
+      "command": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy/command.json",
+      "actualExecutedSql": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/after/policy.sql",
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294",
+      "rc": 0
+    },
+    {
+      "command": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy/command.json",
+      "actualExecutedSql": "artifacts/12105297313/home/runner/work/_temp/critical-e2e/input-evidence/before/policy.sql",
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294",
+      "rc": 0
+    }
+  ]
+}

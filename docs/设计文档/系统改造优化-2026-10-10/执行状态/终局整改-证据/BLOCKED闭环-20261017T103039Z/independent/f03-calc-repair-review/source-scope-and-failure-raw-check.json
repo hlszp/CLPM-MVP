@@ -1,0 +1,47 @@
+{
+  "sourceScopes": [
+    {
+      "file": "backend/app/api/v1/endpoints/tasks.py",
+      "allowedChangedFunctions": [
+        "trigger_custom_evaluation"
+      ],
+      "allOutsideBytesIdentical": true
+    },
+    {
+      "file": "backend/app/tasks/kpi_calc.py",
+      "allowedChangedFunctions": [
+        "_do_calculate_custom_batch"
+      ],
+      "allOutsideBytesIdentical": true
+    },
+    {
+      "file": "backend/app/services/calc_snapshot.py",
+      "allowedChangedFunctions": [
+        "deserialize_data_blocks",
+        "serialize_data_blocks"
+      ],
+      "allOutsideBytesIdentical": true
+    }
+  ],
+  "rawFailures": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/remote-run-39034662761/artifacts/12102025780/home/runner/work/CLPM-MVP/CLPM-MVP/backend/logs/celery-worker.log",
+      "bytesAtObservation": 915161,
+      "originalPrefixSha256": "40b850176c4e20b92415b0e539038386a26e5730b552f5c23d15d650c0b00122",
+      "selectedLines": 49,
+      "allOffsetsLengthsRawBytesShaAndLineNumbersVerified": true,
+      "actualRawHasLoopFieldValueError": true,
+      "currentFileAppendedBytes": 0
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/runtime/clpm-remediation-20261017/backend/logs/celery-worker.log",
+      "bytesAtObservation": 32492,
+      "originalPrefixSha256": "aed076d468722d2273ac3cf739b1e05fbf2b5e1d51b90c9d52da3b211ca5df4d",
+      "selectedLines": 49,
+      "allOffsetsLengthsRawBytesShaAndLineNumbersVerified": true,
+      "actualRawHasLoopFieldValueError": true,
+      "currentFileAppendedBytes": 0
+    }
+  ],
+  "actualMetricOutputsRead": false
+}

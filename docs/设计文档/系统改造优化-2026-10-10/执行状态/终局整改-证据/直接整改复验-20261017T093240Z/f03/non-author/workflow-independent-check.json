@@ -1,0 +1,15 @@
+{
+  "checks": {
+    "blocking_job": true,
+    "blocking_steps": true,
+    "e2e_own_install": true,
+    "td_private_service": true,
+    "pg_private_service": true,
+    "artifact_always": true,
+    "critical_gate_present": true,
+    "no_implicit_webserver": true,
+    "e2e_lock_tracked": true
+  },
+  "passed": true,
+  "evidenceLevel": "static-only-not-remote-ci"
+}

@@ -1,0 +1,11 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u76f4\u63a5\u6574\u6539\u590d\u9a8c-20261017T093240Z/f02/capture_td_readonly.py"
+  ],
+  "rc": 1,
+  "elapsed": 0.6911351680755615,
+  "scriptSha256": "e81a1f3c44bed22a65ca78a595095c71920b18607946a228ff367c8a8bdcbe8d",
+  "stdoutSha256": "024c549b9ce3f61f069a050751d1d4bb5c2e9b0bbd7039efc299a7cea6b818f1",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

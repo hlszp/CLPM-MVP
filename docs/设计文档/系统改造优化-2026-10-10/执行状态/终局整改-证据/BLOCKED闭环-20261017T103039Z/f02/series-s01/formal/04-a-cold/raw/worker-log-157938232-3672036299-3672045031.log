@@ -1,0 +1,44 @@
+2026-10-18 04:22:15,818 | INFO     | app.services.task_tracker | 任务状态更新: task_id=01c5ecaf-9169-4302-88a2-fbed6bb8ac95, RUNNING→RUNNING
+2026-10-18 04:22:15,819 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:85698da7-73f2-4ec6-8089-dd391ce29ffc:BASE:1792047600:1792051200:5s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:15,819 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=85698da7-73f2-4ec6-8089-dd391ce29ffc, tagGroup=BASE, tags=['pv', 'sp'], interval=5s
+2026-10-18 04:22:15,840 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:85698da7-73f2-4ec6-8089-dd391ce29ffc:MODE_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:15,840 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=85698da7-73f2-4ec6-8089-dd391ce29ffc, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 04:22:15,846 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:85698da7-73f2-4ec6-8089-dd391ce29ffc:OP_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:15,847 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=85698da7-73f2-4ec6-8089-dd391ce29ffc, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 04:22:15,848 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:85698da7-73f2-4ec6-8089-dd391ce29ffc:PVOP_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:15,848 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=85698da7-73f2-4ec6-8089-dd391ce29ffc, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 04:22:15,906 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:85698da7-73f2-4ec6-8089-dd391ce29ffc:QUALITY_HF:1792047600:1792051200:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:15,907 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=85698da7-73f2-4ec6-8089-dd391ce29ffc, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 04:22:15,989 | INFO     | app.services.task_tracker | 任务状态更新: task_id=01c5ecaf-9169-4302-88a2-fbed6bb8ac95, RUNNING→RUNNING
+2026-10-18 04:22:16,029 | INFO     | app.services.task_tracker | 任务状态更新: task_id=01c5ecaf-9169-4302-88a2-fbed6bb8ac95, RUNNING→RUNNING
+2026-10-18 04:22:16,031 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:BASE:1792047600:1792051200:2s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,031 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=BASE, tags=['pv', 'sp'], interval=2s
+2026-10-18 04:22:16,044 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:MODE_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,044 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 04:22:16,049 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:OP_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,049 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 04:22:16,082 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:PVOP_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,089 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 04:22:16,121 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:ee137dc9-be19-403e-a96d-99e2d4c15fa0:QUALITY_HF:1792047600:1792051200:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,121 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=ee137dc9-be19-403e-a96d-99e2d4c15fa0, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 04:22:16,166 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:BASE:1792047600:1792051200:5s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,166 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=BASE, tags=['pv', 'sp'], interval=5s
+2026-10-18 04:22:16,195 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:MODE_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,195 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=MODE_HF, tags=['mode', 'op', 'pv', 'sp'], interval=1s
+2026-10-18 04:22:16,308 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:OP_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,308 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=OP_HF, tags=['op'], interval=1s
+2026-10-18 04:22:16,321 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:PVOP_HF:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,321 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=PVOP_HF, tags=['op', 'pv'], interval=1s
+2026-10-18 04:22:16,345 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:49fbcd02-fc18-4f42-8d9d-1f28b55e701b:QUALITY_HF:1792047600:1792051200:1s:KEEP_ALL:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,345 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=49fbcd02-fc18-4f42-8d9d-1f28b55e701b, tagGroup=QUALITY_HF, tags=['pv_quality'], interval=1s
+2026-10-18 04:22:16,348 | INFO     | app.services.task_tracker | 任务状态更新: task_id=01c5ecaf-9169-4302-88a2-fbed6bb8ac95, RUNNING→RUNNING
+2026-10-18 04:22:16,376 | DEBUG    | app.services.cache.l1_datablock | L1 cache MISS: key=pdb:408365bc-2d57-443d-b6d0-19bd00667104:BASE:1792047600:1792051200:1s:KEEP_ALL_WITH_VALIDITY:pre_v2:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3
+2026-10-18 04:22:16,376 | INFO     | app.services.data_planner | DataPlanner 回源查询: loop=408365bc-2d57-443d-b6d0-19bd00667104, tagGroup=BASE, tags=['mode', 'op', 'pv', 'pv_quality', 'sp'], interval=1s
+2026-10-18 04:22:17,530 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=7ca5b8de-28b1-456e-8037-fa4fedda342a, tagGroup=BASE, points=721, controlType=TC
+2026-10-18 04:22:17,533 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=721, anomalous=0, reasons={}
+2026-10-18 04:22:17,534 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=721, anomalous=0, reasons={}
+2026-10-18 04:22:17,535 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=721, valid=721, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:22:17,536 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:22:17,536 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_7ca5b8de-28b1-456e-8037-fa4fedda342a_BASE_5s, block_valid_rate=1.0000, loop_valid_rate=1.0000, loop_confidence=A, segments=1
+2026-10-18 04:22:17,598 | INFO     | app.services.data_planner | DataPlanner 取数+预处理: loop=7ca5b8de-28b1-456e-8037-fa4fedda342a, tagGroup=BASE, points=721, query=2.147s, preprocess=0.068s
+2026-10-18 04:22:17,599 | DEBUG    | app.services.data_planner | 预处理完成: loop=7ca5b8de-28b1-456e-8037-fa4fedda342a, tagGroup=BASE, points=721, valid_rate=1.0000

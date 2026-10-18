@@ -1,0 +1,35 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "pytest",
+    "-q",
+    "-s",
+    "tests/test_annotated_loops_evaluation.py::test_core_loops_identification_accuracy",
+    "--cov=app",
+    "--cov-report=",
+    "-p",
+    "no:cacheprovider"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/backend",
+  "rc": 0,
+  "startedAt": "2026-10-17T11:08:05.030984+00:00",
+  "elapsedSeconds": 29.703292541002156,
+  "threadEnvironment": {
+    "OPENBLAS_NUM_THREADS": "1",
+    "OMP_NUM_THREADS": "1",
+    "MKL_NUM_THREADS": "1",
+    "NUMEXPR_NUM_THREADS": "1",
+    "VECLIB_MAXIMUM_THREADS": "1"
+  },
+  "timeoutSecondsUnchanged": 30,
+  "coverageThreshold": "single-case timing probe only; full CI coverage>=60 unchanged",
+  "vendorBoundary": "macOS Accelerate; not remote Linux OpenBLAS causal proof",
+  "sourceSha256": {
+    "backend/tests/test_annotated_loops_evaluation.py": "bc6c2fe5d7d6e5591383347648fee046a1941712fe02dbe13cff3d8479b01cee",
+    "backend/tests/golden/annotated_loops_dataset.json": "dafac0d8e320bbe0d5845e60b8eca638764a8ad9952f827c3a058885c2f49814",
+    "backend/app/services/tuning_identification/pipeline.py": "9c82b6966d6efab6808bb40e8d0d9b72a2410fa7b99e82dfaeda83ee71ab3e41",
+    "backend/app/services/tuning_identification/arx.py": "89c757376c37c827239ff3d12f092c9b9bcb036b5307db55f09d7b6d6f00eba0"
+  }
+}

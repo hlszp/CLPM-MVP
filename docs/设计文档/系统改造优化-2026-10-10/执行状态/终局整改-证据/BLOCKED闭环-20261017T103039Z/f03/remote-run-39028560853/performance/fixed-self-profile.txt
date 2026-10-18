@@ -1,0 +1,48 @@
+         2971441 function calls (2789442 primitive calls) in 6.515 seconds
+
+   Ordered by: internal time
+   List reduced from 664 to 40 due to restriction <40>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+       27    3.486    0.129    3.671    0.136 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/armax.py:35(identify_armax)
+     2459    0.877    0.000    0.877    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4532(_residual_var_on_common_window)
+    24018    0.539    0.000    0.707    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:2417(lstsq)
+    18967    0.241    0.000    1.162    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/arx.py:58(identify_arx)
+      142    0.131    0.001    0.137    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:228(_simulate_disturbance_free)
+    19558    0.117    0.000    0.190    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:148(_var)
+       38    0.098    0.003    0.268    0.007 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:136(identify_clivc4)
+   110459    0.083    0.000    0.083    0.000 {method 'reduce' of 'numpy.ufunc' objects}
+    43060    0.037    0.000    0.042    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:73(_count_reduce_items)
+    23502    0.034    0.000    0.082    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_methods.py:115(_mean)
+       49    0.031    0.001    0.052    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:2706(_compute_parameter_uncertainty)
+    53350    0.031    0.000    0.031    0.000 {built-in method numpy.zeros}
+       22    0.029    0.001    6.432    0.292 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:1405(identify_from_history)
+    40185    0.028    0.000    0.057    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:66(_wrapreduction)
+       21    0.027    0.001    1.099    0.052 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:3974(_reselect_uncertainty)
+       38    0.026    0.001    0.029    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/iv.py:50(identify_clivc)
+    25548    0.026    0.000    0.052    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:201(_commonType)
+      136    0.025    0.000    0.027    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4565(_free_run_simulation)
+103525/22    0.024    0.000    0.043    0.002 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/dataclasses.py:1332(_asdict_inner)
+    39706    0.023    0.000    0.083    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:2342(sum)
+    75848    0.021    0.000    0.021    0.000 {method 'astype' of 'numpy.ndarray' objects}
+   132817    0.019    0.000    0.022    0.000 {built-in method builtins.max}
+    19450    0.019    0.000    0.208    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:4075(var)
+   218709    0.017    0.000    0.017    0.000 {built-in method builtins.issubclass}
+    14263    0.017    0.000    0.880    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:4017(_bic_at)
+    49746    0.015    0.000    0.024    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:163(_makearray)
+       44    0.015    0.000    0.015    0.000 {built-in method numpy._core._multiarray_umath.correlate2}
+       44    0.015    0.000    0.019    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/excitation.py:31(check_excitation)
+       22    0.015    0.001    0.058    0.003 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/json/encoder.py:205(iterencode)
+    41160    0.014    0.000    0.021    0.000 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:509(_mean)
+    23392    0.014    0.000    0.095    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/fromnumeric.py:3737(mean)
+   132249    0.013    0.000    0.013    0.000 {built-in method builtins.isinstance}
+    75039    0.012    0.000    0.019    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/linalg/_linalg.py:182(_realType)
+    50581    0.012    0.000    0.012    0.000 {built-in method builtins.round}
+       13    0.011    0.001    0.012    0.001 /Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_annotated_loops_evaluation.py:91(_sim_fopdt_closed)
+    25667    0.011    0.000    0.022    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/_core/_ufunc_config.py:472(__enter__)
+94325/20923    0.011    0.000    0.037    0.000 /opt/homebrew/Cellar/python@3.12/3.12.13_2/Frameworks/Python.framework/Versions/3.12/lib/python3.12/dataclasses.py:1373(<genexpr>)
+     1174    0.010    0.000    0.049    0.000 /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/numpy/lib/_polynomial_impl.py:168(roots)
+       22    0.010    0.000    0.033    0.002 /Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/tuning_identification/pipeline.py:470(_detect_natural_events)
+   104967    0.010    0.000    0.010    0.000 {method 'get' of 'dict' objects}
+
+

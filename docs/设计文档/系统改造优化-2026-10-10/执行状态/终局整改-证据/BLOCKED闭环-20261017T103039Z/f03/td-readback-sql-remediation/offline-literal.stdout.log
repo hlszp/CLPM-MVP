@@ -1,0 +1,32 @@
+{
+  "roles": {
+    "PV": {
+      "samples": 3600,
+      "mismatchCount": 0
+    },
+    "SP": {
+      "samples": 3,
+      "mismatchCount": 0
+    },
+    "OP": {
+      "samples": 3600,
+      "mismatchCount": 0
+    },
+    "MODE": {
+      "samples": 1,
+      "mismatchCount": 0
+    },
+    "PID_P": {
+      "samples": 1,
+      "mismatchCount": 0
+    },
+    "PID_I": {
+      "samples": 1,
+      "mismatchCount": 0
+    },
+    "PID_D": {
+      "samples": 1,
+      "mismatchCount": 0
+    }
+  }
+}

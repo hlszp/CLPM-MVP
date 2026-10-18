@@ -1,0 +1,11 @@
+{
+  "command": [
+    "pnpm",
+    "exec",
+    "eslint",
+    "apps/web-antd/src/views/config/engineering-templates/batch-restore-modal.vue",
+    "apps/web-antd/src/__tests__/p6-eng-templates.test.ts"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 2.057636625
+}

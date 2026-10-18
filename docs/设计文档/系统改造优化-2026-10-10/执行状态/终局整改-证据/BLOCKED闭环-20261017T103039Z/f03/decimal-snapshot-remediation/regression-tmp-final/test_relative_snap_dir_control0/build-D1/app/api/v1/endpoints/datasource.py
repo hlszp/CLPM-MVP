@@ -1,0 +1,234 @@
+"""数据源配置 endpoints — 对接外部历史数据 API + 实时 SignalR Hub.
+
+- GET   /api/v1/datasource/config              — 获取数据源配置（ADMIN）
+- PUT   /api/v1/datasource/config              — 更新数据源配置（ADMIN）
+- GET   /api/v1/datasource/health              — 数据链路健康状态（登录用户）
+- POST  /api/v1/datasource/test-history-api    — 测试历史数据 API 连通性（ADMIN）
+- POST  /api/v1/datasource/test-signalr        — 测试 SignalR Hub 连通性（ADMIN）
+- POST  /api/v1/datasource/refresh-subscription — 手工刷新实时订阅（ADMIN）
+- GET   /api/v1/datasource/storage-mode         — 写入布局 + 读写一致性自检（登录用户）
+- PUT   /api/v1/datasource/storage-mode         — 修改写入布局（ADMIN，2026-09-25 新增）
+
+对接文档：docs/设计文档/05-IDS/HisDATA_API.md、RealDATA_API.md
+"""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.api.deps import get_current_user, require_perms
+from app.core.db import get_db
+from app.core.exceptions import BizError
+from app.models.sys_user import SysUser
+from app.schemas.common import ApiResponse, success
+from app.schemas.datasource import (
+    DataSourceConfigInfo,
+    DataSourceConfigUpdate,
+    DataSourceHealthInfo,
+    DataSourceTestResult,
+    StorageModeInfo,
+    StorageModeUpdate,
+    SubscriptionRefreshResult,
+)
+from app.services.data_source.realtime_subscriber import request_subscription_refresh
+from app.services.datasource_config import (
+    get_datasource_config,
+    get_datasource_health,
+    get_storage_mode_info,
+    test_history_api_connection,
+    test_signalr_hub_connection,
+    update_datasource_config,
+    update_storage_mode,
+)
+
+router = APIRouter(prefix="/datasource", tags=["datasource"])
+
+
+@router.get("/config", response_model=ApiResponse[DataSourceConfigInfo])
+async def get_datasource_config_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("data:manage")),
+) -> dict:
+    """获取数据源配置（仅 ADMIN）。"""
+    data = await get_datasource_config(db)
+    return success(data=data)
+
+
+@router.get("/health", response_model=ApiResponse[DataSourceHealthInfo])
+async def get_datasource_health_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """数据链路健康状态（P1-05：登录用户可查看，工作台常驻卡片）。
+
+    返回链路连通性、订阅器运行状态、最近同步时间，不含敏感字段。
+    """
+    data = await get_datasource_health(db)
+    return success(data=data)
+
+
+@router.put("/config", response_model=ApiResponse[DataSourceConfigInfo])
+async def update_datasource_config_endpoint(
+    body: DataSourceConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("data:manage")),
+) -> dict:
+    """更新数据源配置（仅 ADMIN）。
+
+    即时生效：networkMode（触发 Tailscale 切换）/ historyApiUrl / historyApiToken
+    / historyApiTimeout / signalrHubUrl / signalrReconnectInterval
+    热生效：signalrEnabled（订阅器停止/启动）/ realtimeWritebackEnabled
+    / gapBackfillEnabled / gapBackfillMinGapSeconds
+    / importLoopConcurrency / importChunkConcurrency / importRemoteConcurrency
+    （历史导入并发：任务发起时直读 sys_config，跑中任务不受影响）
+    重启生效：dataSourceType（Provider 单例）
+
+    注意：dataSourceType 固定为 remote_api（UI 已删除选择），忽略前端传入值。
+    """
+    data = await update_datasource_config(
+        db=db,
+        operator=user.username,
+        # 固定 dataSourceType=remote_api，忽略前端传入值（兼容旧前端）
+        dataSourceType="remote_api",
+        networkMode=body.networkMode,
+        historyApiUrl=body.historyApiUrl,
+        historyApiToken=body.historyApiToken,
+        historyApiTimeout=body.historyApiTimeout,
+        signalrHubUrl=body.signalrHubUrl,
+        signalrEnabled=body.signalrEnabled,
+        signalrReconnectInterval=body.signalrReconnectInterval,
+        realtimeWritebackEnabled=body.realtimeWritebackEnabled,
+        gapBackfillEnabled=body.gapBackfillEnabled,
+        gapBackfillMinGapSeconds=body.gapBackfillMinGapSeconds,
+        importLoopConcurrency=body.importLoopConcurrency,
+        importChunkConcurrency=body.importChunkConcurrency,
+        importRemoteConcurrency=body.importRemoteConcurrency,
+    )
+
+    # 根据 tailscale 切换结果构造响应消息
+    msg = "配置更新成功"
+    tailscale_switch = data.get("tailscaleSwitch")
+    if tailscale_switch:
+        status = tailscale_switch["status"]
+        if status == "success":
+            msg = f"配置更新成功；{tailscale_switch['message']}"
+        elif status == "skipped":
+            msg = f"配置更新成功；Tailscale 跳过：{tailscale_switch['message']}"
+        else:
+            msg = f"配置已保存，但 Tailscale 切换失败：{tailscale_switch['message']}"
+
+    # 实时订阅热启停结果附加到消息（started/stopped 成功；failed 提示重启对齐）
+    subscriber_action = data.get("subscriberAction")
+    if subscriber_action == "started":
+        msg += "；实时订阅已启动"
+    elif subscriber_action == "stopped":
+        msg += "；实时订阅已停止"
+    elif subscriber_action == "failed":
+        msg += "；实时订阅启停失败，请重启后端对齐"
+
+    return success(data=data, message=msg)
+
+
+@router.post("/test-history-api", response_model=ApiResponse[DataSourceTestResult])
+async def test_history_api_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("data:manage")),
+) -> dict:
+    """测试历史数据 API 连通性（仅 ADMIN，使用当前已保存配置，不写入数据库）。
+
+    使用已关联的真实 Tag 位号验证数据查询链路，而非仅测 HTTP 连通性。
+    """
+    from sqlalchemy import select
+
+    from app.models.tag import TagRegistry
+
+    # 连通性测试需要原始 Token（mask_token=False），GET 响应中的打码值不可用
+    config = await get_datasource_config(db, mask_token=False)
+
+    # 查询第一个已关联的 Tag 位号，用于真实数据查询测试
+    tag_result = await db.execute(
+        select(TagRegistry.tag_name).where(TagRegistry.is_linked.is_(True)).limit(1)
+    )
+    real_tag = tag_result.scalar_one_or_none()
+
+    result = await test_history_api_connection(
+        url=config["historyApiUrl"],
+        token=config["historyApiToken"],
+        timeout=config["historyApiTimeout"],
+        tag_code=real_tag,
+    )
+    return success(data=result)
+
+
+@router.post("/test-signalr", response_model=ApiResponse[DataSourceTestResult])
+async def test_signalr_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("data:manage")),
+) -> dict:
+    """测试 SignalR Hub 连通性（仅 ADMIN）。
+
+    使用当前内存中生效的配置（settings），而非数据库配置。
+    数据库配置需重启后端才生效，内存配置才是当前实际运行的配置。
+    """
+    from app.core.config import settings
+
+    result = await test_signalr_hub_connection(hub_url=settings.SIGNALR_HUB_URL)
+    return success(data=result)
+
+
+@router.post("/refresh-subscription", response_model=ApiResponse[SubscriptionRefreshResult])
+async def refresh_subscription_endpoint(
+    _: SysUser = Depends(require_perms("data:manage")),
+) -> dict:
+    """手工刷新实时订阅（仅 ADMIN）。
+
+    新建/修改回路、测点、绑定关系后，通知订阅 Leader 重新查询活跃 Tag 并在
+    现有 WebSocket 连接上重发 SubscribeAsync，新测点免重启即时生效。
+    发布刷新指令后轮询等待执行结果（最长 15s）；超时/订阅未启用返回明确错误。
+    Leader 侧执行失败（非 Leader/WS 未连接等）时仍返回 200，error 字段携带原因。
+    """
+    result = await request_subscription_refresh()
+    if result.get("error"):
+        return success(data=result, message=f"订阅刷新未完成：{result['error']}")
+    added = len(result.get("added") or [])
+    removed = len(result.get("removed") or [])
+    msg = f"订阅刷新成功：共 {result.get('total', 0)} 个测点（新增 {added} / 移除 {removed}）"
+    return success(data=result, message=msg)
+
+
+@router.get("/storage-mode", response_model=ApiResponse[StorageModeInfo])
+async def get_storage_mode_endpoint(
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(get_current_user),
+) -> dict:
+    """历史写入布局与读写一致性自检（2026-09-25）。
+
+    排查背景：写入侧布局（sys_config: history.storage_mode）与读取路由
+    （history_layout_manifest）是两套独立开关，二者不一致时表现为"实时数据在采、
+    库里却没有 / 趋势图全空"，而此前该状态在任何界面都看不到。
+    """
+    data = await get_storage_mode_info(db)
+    return success(data=data)
+
+
+@router.put("/storage-mode", response_model=ApiResponse[StorageModeInfo])
+async def update_storage_mode_endpoint(
+    body: StorageModeUpdate,
+    db: AsyncSession = Depends(get_db),
+    user: SysUser = Depends(require_perms("data:manage")),
+) -> dict:
+    """修改历史写入布局（仅 ADMIN，2026-09-25 收敛为单态）。
+
+    宽表超级表（已退役）：写入与读取的唯一形态都是测点点表
+    st_point_data_v1，因此仅接受 point；legacy / shadow 返回 ERR_PARAM。
+    sys_config 键继续写入（保留供展示/审计）。
+    """
+    try:
+        data = await update_storage_mode(db, mode=body.mode, operator=user.username)
+    except ValueError as exc:
+        raise BizError(code="ERR_PARAM", message=str(exc), status_code=400) from exc
+    return success(data=data)
+
+
+__all__ = ["router"]

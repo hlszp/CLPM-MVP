@@ -1,0 +1,11 @@
+{
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39026319367/run-page.html",
+  "sourceBytes": 187894,
+  "sourceSha256": "ac6f58e88e6b686396df8c2338135415b374f66544cec7cbbcc35265e49cf5d3",
+  "annotations": [
+    {
+      "line": 761,
+      "text": "(Line: 204, Col: 29): Unrecognized named-value: 'runner'. Located at position 1 within expression: runner.temp, (Line: 205, Col: 25): Unrecognized named-value: 'runner'. Located at position 1 within expression: runner.temp, (Line: 206, Col: 31): Unrecognized named-value: 'runner'. Located at position 1 within expression: runner.temp"
+    }
+  ]
+}

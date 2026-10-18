@@ -1,0 +1,17 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/python",
+    "-B",
+    "-m",
+    "unittest",
+    "-v",
+    "test_proxy_independent"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-td-proxy-review",
+  "startedAt": "2026-10-17T11:21:22.909218+00:00",
+  "endedAt": "2026-10-17T11:21:23.244687+00:00",
+  "rc": 0,
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-td-proxy-review/sources/controlled_td_rest_proxy.py",
+  "sourceSha256": "b36666a90663499339625f01d0179d32340d5dfcf03a82eb6b80b834cec042d0",
+  "scope": "Own temporary 127.0.0.1:0 proxy/stub only; no actual product port/services/data"
+}

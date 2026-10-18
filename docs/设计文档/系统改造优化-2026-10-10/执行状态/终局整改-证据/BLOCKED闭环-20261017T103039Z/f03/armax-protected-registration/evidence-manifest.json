@@ -1,0 +1,60 @@
+{
+  "frozenAt": "2026-10-17T13:29:34.287852+00:00",
+  "files": [
+    {
+      "file": "after-default-guard.command.json",
+      "bytes": 557,
+      "sha256": "917bbed58008259c0673483e1145773491367ff88d11fd9161b3cd1674305ca7"
+    },
+    {
+      "file": "after-default-guard.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "after-default-guard.stdout.log",
+      "bytes": 627,
+      "sha256": "1bf63ab18cdbef0c33f4f6e1b31bcfbb2cfee89bb2b67d5c03953874c26253fa"
+    },
+    {
+      "file": "after.json",
+      "bytes": 4925,
+      "sha256": "c3df20baaab9473745f1a1abce2844a6f3883b5f5e35804e6daf70d558b8c8c1"
+    },
+    {
+      "file": "before-default-guard.command.json",
+      "bytes": 557,
+      "sha256": "8417b169af25ec66e1dad6fb4d652ca015dd72f322e3da1525e011572026cdb5"
+    },
+    {
+      "file": "before-default-guard.stderr.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "file": "before-default-guard.stdout.log",
+      "bytes": 2701,
+      "sha256": "5433cf97038dd45560513a74ab09b7cd3bd356e34c970092a66f6745e77ee21a"
+    },
+    {
+      "file": "before.json",
+      "bytes": 4925,
+      "sha256": "3f26f6b31860fc8d4b69c6b0fcab7e2dd4b4d8bb8b1f247dab2c6a92fb0a34a9"
+    },
+    {
+      "file": "handoff.md",
+      "bytes": 837,
+      "sha256": "952d7672a5a33915831f77ee3c1f09b4c4a1c3a4becdde74e2cd39a2dd527e9a"
+    },
+    {
+      "file": "registration-readback.json",
+      "bytes": 11507,
+      "sha256": "63f06a82999fdd46a3482f1c0ca32f2afbe4632fcda6dd407c5f771af9d6c985"
+    },
+    {
+      "file": "single-entry.patch",
+      "bytes": 993,
+      "sha256": "43c664de4d272f272e272222c825dd76dce2e6cf2a7f6d6f5393583c1b5a1a95"
+    }
+  ]
+}

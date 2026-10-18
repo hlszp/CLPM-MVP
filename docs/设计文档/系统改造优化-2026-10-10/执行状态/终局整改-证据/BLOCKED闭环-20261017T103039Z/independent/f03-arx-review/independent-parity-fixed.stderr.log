@@ -1,0 +1,12 @@
+/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-arx-review/independent_arx_parity.py:106: RuntimeWarning: invalid value encountered in cast
+  raw_u = (rng.normal(size=240) * 4).astype(dtype)
+/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-arx-review/independent_arx_parity.py:107: RuntimeWarning: invalid value encountered in cast
+  raw_y = (rng.normal(size=240) * 4).astype(dtype)
+/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-arx-review/independent_arx_parity.py:106: RuntimeWarning: invalid value encountered in cast
+  raw_u = (rng.normal(size=240) * 4).astype(dtype)
+/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-arx-review/independent_arx_parity.py:107: RuntimeWarning: invalid value encountered in cast
+  raw_y = (rng.normal(size=240) * 4).astype(dtype)
+/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-arx-review/independent_arx_parity.py:106: RuntimeWarning: invalid value encountered in cast
+  raw_u = (rng.normal(size=240) * 4).astype(dtype)
+/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-arx-review/independent_arx_parity.py:107: RuntimeWarning: invalid value encountered in cast
+  raw_y = (rng.normal(size=240) * 4).astype(dtype)

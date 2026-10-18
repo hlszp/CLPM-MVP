@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "docker",
+    "stop",
+    "-t",
+    "30",
+    "77939e08d878e969e33f46c9bdbf1210a15bfe7f584411bec3b5f795442b2649"
+  ],
+  "startedAt": "2026-10-17T14:18:32.171158+00:00",
+  "finishedAt": "2026-10-17T14:18:32.393349+00:00",
+  "rc": 0,
+  "stdoutSha256": "04307baaa7ee2a7cbabc695d0c90a03c15512f28a641eadf117134e32976ff52",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

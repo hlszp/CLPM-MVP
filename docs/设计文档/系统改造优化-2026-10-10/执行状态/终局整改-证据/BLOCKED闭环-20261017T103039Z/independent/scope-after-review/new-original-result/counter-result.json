@@ -1,0 +1,12 @@
+{
+  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/capture_capacity_scope_after.py",
+  "fixture": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/scope-after-review/original-counter-fixture",
+  "rejectedModifiedCanonical": true,
+  "fakeConnectCalls": 0,
+  "error": {
+    "type": "AssertionError",
+    "message": "pg-canonical/plant_node.json.gz"
+  },
+  "expectedOriginalManifestSha256": "c51945901716f426d4e6df66de8e595f589bcf93ebb8e3b0ca38a875983b81a7",
+  "noActualPgOrServices": true
+}

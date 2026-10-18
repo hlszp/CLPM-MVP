@@ -1,0 +1,12 @@
+{
+  "name": "frontend-build",
+  "command": [
+    "pnpm",
+    "run",
+    "build:antd"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/frontend",
+  "startedAt": "2026-10-17T09:46:32.808505+00:00",
+  "elapsedSeconds": 7.92,
+  "exitCode": 0
+}

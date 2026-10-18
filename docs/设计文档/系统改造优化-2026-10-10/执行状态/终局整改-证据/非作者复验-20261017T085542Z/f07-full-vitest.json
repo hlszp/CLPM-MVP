@@ -1,0 +1,18 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/CLPM-MVP/frontend/node_modules/.bin/vitest",
+    "run",
+    "--config",
+    "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/candidate/frontend/vitest.config.ts",
+    "--no-cache",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/\u975e\u4f5c\u8005\u590d\u9a8c-20261017T085542Z/f07-full-vitest.results.json"
+  ],
+  "cwd": "/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-independent-20261017T085542Z-_jgi2ts5/candidate/frontend",
+  "started_at": "2026-10-17T09:00:34.995236+00:00",
+  "elapsed_seconds": 9.93605991700315,
+  "exit_code": 1,
+  "stdout_sha256": "26fe87652edf378258f041104944526330ec2eafdb5821a4134cd56d7dd1a2ea",
+  "stderr_sha256": "490e12b25dcd3b6f2504faec2d7d25f68e9e6d0abcc3b394096a04c3bbb0a460"
+}

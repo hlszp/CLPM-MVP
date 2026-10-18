@@ -1,0 +1,15 @@
+{
+  "argv": [
+    "/Users/zhangping/DEV/CLPM-MVP/backend/.venv/bin/ruff",
+    "check",
+    "independent_support.py",
+    "verify_capacity_series.py",
+    "independent_kpi_oracle.py",
+    "test_independent_tools.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent",
+  "startedAt": "2026-10-17T10:51:06.636792+00:00",
+  "endedAt": "2026-10-17T10:51:06.650072+00:00",
+  "rc": 0,
+  "scope": "Independent artifact tools only; no actual capacity/business requests"
+}

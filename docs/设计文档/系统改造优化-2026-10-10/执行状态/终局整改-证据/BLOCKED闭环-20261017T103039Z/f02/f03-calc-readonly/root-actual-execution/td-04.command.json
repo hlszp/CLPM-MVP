@@ -1,0 +1,10 @@
+{
+  "sql": "SELECT point_id, ts, `value`, quality_class, quality_raw, quality_schema, source_kind, payload_hash FROM clpm_critical_20261017_local_ts.st_point_data_v1 WHERE point_id IN ('30da49c1-2d33-4da5-9487-23027bc9e155','4431bb12-1530-423c-a3bc-1a01a8c8f27c','e9ad0a29-9428-4651-8ae3-cd9ce9f11b29','82f3ed25-172b-4c0e-8708-3b8741e757a0','7da14413-761e-4246-a460-8ac5c60ef9ac','3da633fc-e678-495c-839c-e33a9a1ac978','ce950fe9-e70a-4fcd-9739-1cffaa43f8ad') AND ts >= '2026-10-17 11:00:00' AND ts <= '2026-10-17 12:00:00' AND ts < '2026-10-17 11:00:03' ORDER BY ts,point_id;",
+  "startedAt": "2026-10-17T13:13:53.265393+00:00",
+  "finishedAt": "2026-10-17T13:13:53.272273+00:00",
+  "httpStatus": 200,
+  "serverCode": 0,
+  "rows": 0,
+  "bodyBytes": 256,
+  "bodySha256": "68b6fd9c11688b9532ec39570b16ee5d8cb8aacee430a7a2b3c1af9f58a2d3e0"
+}

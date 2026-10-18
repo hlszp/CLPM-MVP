@@ -1,0 +1,13 @@
+F401 [*] `pathlib.Path` imported but unused
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_collector_terminal_payloads.py:10:21
+   |
+ 8 | import json
+ 9 | import os
+10 | from pathlib import Path
+   |                     ^^^^
+11 | from types import SimpleNamespace
+   |
+help: Remove unused import: `pathlib.Path`
+
+Found 1 error.
+[*] 1 fixable with the `--fix` option.

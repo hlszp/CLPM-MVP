@@ -1,0 +1,14 @@
+{
+  "argv": [
+    "node",
+    "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/node_modules/typescript/bin/tsc",
+    "--noEmit"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e",
+  "startedAt": "2026-10-17T13:38:48.522509+00:00",
+  "finishedAt": "2026-10-17T13:38:49.094828+00:00",
+  "rc": 0,
+  "expectedRc": 0,
+  "stdoutSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "stderrSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+}

@@ -1,0 +1,17 @@
+{
+  "rc": 0,
+  "sha256": "f9355eb8150b553420cfe0142cd8639e6c92067e4ad161407264216b8e068032",
+  "bytes": 6467,
+  "writtenFiles": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/prepare-critical-fixture.py",
+      "sha256": "0e1fc40d5e79a85992c4c99f1c60e09ed38dceb00f57ab366c2b2ab8de00edb7",
+      "bytes": 28013
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/e2e/scripts/test_critical_fixture.py",
+      "sha256": "55f507d8dd6bff5b48b45d8770dd5815c8f24a25bf92e80d0b87526356890110",
+      "bytes": 19159
+    }
+  ]
+}

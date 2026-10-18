@@ -1,0 +1,32 @@
+[
+  {
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f03/f03-evidence-manifest.json",
+    "pass": 289,
+    "bad": []
+  },
+  {
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f02/f02-evidence-manifest.json",
+    "pass": 182,
+    "bad": []
+  },
+  {
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/docs-non-author/evidence-manifest.json",
+    "pass": 20,
+    "bad": []
+  },
+  {
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f07/implementation/f07-evidence-manifest.json",
+    "pass": 34,
+    "bad": []
+  },
+  {
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f07/implementation/409-real-shape/evidence-manifest.json",
+    "pass": 39,
+    "bad": []
+  },
+  {
+    "manifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/f04/non-author/evidence-manifest.json",
+    "pass": 42,
+    "bad": []
+  }
+]

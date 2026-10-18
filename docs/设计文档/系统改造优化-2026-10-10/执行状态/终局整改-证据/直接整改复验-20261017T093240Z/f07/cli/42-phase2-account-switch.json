@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T09:59:44.610597+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-remediation",
+    "run-code",
+    "async (page) => { await page.getByRole('menuitem',{name:'退出登录 ⌥ Q'}).click(); await page.getByRole('button',{name:'确 认',exact:true}).click(); await page.waitForURL('**/auth/login'); await page.getByPlaceholder('请输入用户名').fill('audit_peer'); await page.getByPlaceholder('请输入密码').fill('Audit-test-20261017!'); await page.getByRole('button',{name:'login',exact:true}).click(); await page.waitForURL('**/my-work'); await page.getByRole('tab',{name:'我的关注',exact:true}).click(); await page.getByTestId('follow-goto-monitor').click(); await page.getByPlaceholder('搜索位号、描述、装置').fill('AUDIT-F07'); await page.getByRole('button',{name:'查 询',exact:true}).click(); const s=page.getByTestId('follow-star-a0d17000-0000-4000-8000-000000000001'); await s.waitFor(); if ((await s.getAttribute('aria-label')) !== '关注该回路') throw new Error('peer inherited another account follow'); return {peerStar:await s.getAttribute('aria-label'),navigation:'SPA logout/login then soft navigation'}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 7.176452292012982,
+  "stdout": "### Result\n{\"peerStar\":\"关注该回路\",\"navigation\":\"SPA logout/login then soft navigation\"}\n### Ran Playwright code\n```js\nawait (async (page) => { await page.getByRole('menuitem',{name:'退出登录 ⌥ Q'}).click(); await page.getByRole('button',{name:'确 认',exact:true}).click(); await page.waitForURL('**/auth/login'); await page.getByPlaceholder('请输入用户名').fill('audit_peer'); await page.getByPlaceholder('请输入密码').fill('Audit-test-20261017!'); await page.getByRole('button',{name:'login',exact:true}).click(); await page.waitForURL('**/my-work'); await page.getByRole('tab',{name:'我的关注',exact:true}).click(); await page.getByTestId('follow-goto-monitor').click(); await page.getByPlaceholder('搜索位号、描述、装置').fill('AUDIT-F07'); await page.getByRole('button',{name:'查 询',exact:true}).click(); const s=page.getByTestId('follow-star-a0d17000-0000-4000-8000-000000000001'); await s.waitFor(); if ((await s.getAttribute('aria-label')) !== '关注该回路') throw new Error('peer inherited another account follow'); return {peerStar:await s.getAttribute('aria-label'),navigation:'SPA logout/login then soft navigation'}; })(page);\n```\n### Page\n- Page URL: http://127.0.0.1:17266/monitor/loops?view=workspace&keyword=AUDIT-F07&timeWindow=24h&fitnessLevels=\n- Page Title: 回路监视 - iCLPM 系统\n- Console: 0 errors, 2 warnings\n### Events\n- New console entries: .playwright-cli/console-2026-10-17T09-55-55-943Z.log#L5-L6\n",
+  "stderr": ""
+}

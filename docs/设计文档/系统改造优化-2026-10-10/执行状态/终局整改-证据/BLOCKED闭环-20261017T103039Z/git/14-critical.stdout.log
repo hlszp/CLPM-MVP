@@ -1,0 +1,3 @@
+[fix/final-audit-remediation 08038359] ci(e2e): run authenticated business chain
+ 2 files changed, 295 insertions(+), 8 deletions(-)
+ create mode 100644 e2e/tests/critical-business.spec.ts

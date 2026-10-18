@@ -1,0 +1,234 @@
+{
+  "synthetic": true,
+  "inputOnly": true,
+  "committed": true,
+  "persistedReadbackVerified": false,
+  "loopId": "00000000-0000-0000-0000-000000000099",
+  "loopTagName": "CRITICAL-E2E-12345-1-FLOW001",
+  "validFrom": "2026-10-17T11:20:00+00:00",
+  "validTo": null,
+  "basis": "SYNTHETIC_FIXTURE",
+  "statements": [
+    {
+      "sql": "UPDATE loop_tag_binding_history SET valid_from=$2,basis='SYNTHETIC_FIXTURE' WHERE loop_id=$1 AND id=ANY($3::uuid[]) AND mapping_version=1 AND basis='MVP_INIT' AND valid_to IS NULL",
+      "parameters": [
+        "00000000-0000-0000-0000-000000000099",
+        "2026-10-17 11:20:00+00:00",
+        [
+          "00000000-0000-0000-0001-000000000001",
+          "00000000-0000-0000-0001-000000000002",
+          "00000000-0000-0000-0001-000000000003",
+          "00000000-0000-0000-0001-000000000004",
+          "00000000-0000-0000-0001-000000000005",
+          "00000000-0000-0000-0001-000000000006",
+          "00000000-0000-0000-0001-000000000007"
+        ]
+      ],
+      "status": "UPDATE 7"
+    }
+  ],
+  "actualDatabase": "clpm_critical_e2e",
+  "before": {
+    "loop": {
+      "tag_name": "CRITICAL-E2E-12345-1-FLOW001",
+      "description": "synthetic CI INPUT: real algorithm, disposable runner only",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    "mappings": [
+      {
+        "tag_role": "MODE",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_MODE",
+        "point_id": "00000000-0000-0000-0000-000000000001",
+        "tag_description": "synthetic CI INPUT MODE"
+      },
+      {
+        "tag_role": "OP",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_OP",
+        "point_id": "00000000-0000-0000-0000-000000000002",
+        "tag_description": "synthetic CI INPUT OP"
+      },
+      {
+        "tag_role": "PID_D",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_PID_D",
+        "point_id": "00000000-0000-0000-0000-000000000003",
+        "tag_description": "synthetic CI INPUT PID_D"
+      },
+      {
+        "tag_role": "PID_I",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_PID_I",
+        "point_id": "00000000-0000-0000-0000-000000000004",
+        "tag_description": "synthetic CI INPUT PID_I"
+      },
+      {
+        "tag_role": "PID_P",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_PID_P",
+        "point_id": "00000000-0000-0000-0000-000000000005",
+        "tag_description": "synthetic CI INPUT PID_P"
+      },
+      {
+        "tag_role": "PV",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_PV",
+        "point_id": "00000000-0000-0000-0000-000000000006",
+        "tag_description": "synthetic CI INPUT PV"
+      },
+      {
+        "tag_role": "SP",
+        "tag_name": "CRITICAL-E2E-12345-1-FLOW001_SP",
+        "point_id": "00000000-0000-0000-0000-000000000007",
+        "tag_description": "synthetic CI INPUT SP"
+      }
+    ],
+    "histories": [
+      {
+        "id": "00000000-0000-0000-0001-000000000001",
+        "tag_role": "MODE",
+        "tag_id": "00000000-0000-0000-0000-000000000001",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      },
+      {
+        "id": "00000000-0000-0000-0001-000000000002",
+        "tag_role": "OP",
+        "tag_id": "00000000-0000-0000-0000-000000000002",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      },
+      {
+        "id": "00000000-0000-0000-0001-000000000003",
+        "tag_role": "PID_D",
+        "tag_id": "00000000-0000-0000-0000-000000000003",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      },
+      {
+        "id": "00000000-0000-0000-0001-000000000004",
+        "tag_role": "PID_I",
+        "tag_id": "00000000-0000-0000-0000-000000000004",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      },
+      {
+        "id": "00000000-0000-0000-0001-000000000005",
+        "tag_role": "PID_P",
+        "tag_id": "00000000-0000-0000-0000-000000000005",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      },
+      {
+        "id": "00000000-0000-0000-0001-000000000006",
+        "tag_role": "PV",
+        "tag_id": "00000000-0000-0000-0000-000000000006",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      },
+      {
+        "id": "00000000-0000-0000-0001-000000000007",
+        "tag_role": "SP",
+        "tag_id": "00000000-0000-0000-0000-000000000007",
+        "valid_from": "2026-10-17 13:20:00+00:00",
+        "valid_to": null,
+        "mapping_version": 1,
+        "basis": "MVP_INIT",
+        "created_at": "2026-10-17 13:20:00+00:00"
+      }
+    ],
+    "foreignMappings": [],
+    "foreignHistory": []
+  },
+  "readQueries": [
+    "SELECT id::text,tag_name,description,created_at,row_to_json(l)::text AS raw_row FROM loop_ledger l WHERE id=$1 FOR UPDATE",
+    "SELECT m.tag_role,t.id::text AS point_id,t.tag_name,t.tag_description,row_to_json(m)::text AS mapping_raw,row_to_json(t)::text AS point_raw FROM loop_tag_mapping m JOIN tag_registry t ON t.id=m.tag_id WHERE m.loop_id=$1 ORDER BY m.tag_role FOR UPDATE OF m,t",
+    "SELECT id::text,tag_role,tag_id::text,valid_from,valid_to,mapping_version,basis,created_at,row_to_json(h)::text AS raw_row FROM loop_tag_binding_history h WHERE loop_id=$1 ORDER BY tag_role"
+  ],
+  "errors": [],
+  "afterInTransaction": [
+    {
+      "id": "00000000-0000-0000-0001-000000000001",
+      "tag_role": "MODE",
+      "tag_id": "00000000-0000-0000-0000-000000000001",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    {
+      "id": "00000000-0000-0000-0001-000000000002",
+      "tag_role": "OP",
+      "tag_id": "00000000-0000-0000-0000-000000000002",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    {
+      "id": "00000000-0000-0000-0001-000000000003",
+      "tag_role": "PID_D",
+      "tag_id": "00000000-0000-0000-0000-000000000003",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    {
+      "id": "00000000-0000-0000-0001-000000000004",
+      "tag_role": "PID_I",
+      "tag_id": "00000000-0000-0000-0000-000000000004",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    {
+      "id": "00000000-0000-0000-0001-000000000005",
+      "tag_role": "PID_P",
+      "tag_id": "00000000-0000-0000-0000-000000000005",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    {
+      "id": "00000000-0000-0000-0001-000000000006",
+      "tag_role": "PV",
+      "tag_id": "00000000-0000-0000-0000-000000000006",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    },
+    {
+      "id": "00000000-0000-0000-0001-000000000007",
+      "tag_role": "SP",
+      "tag_id": "00000000-0000-0000-0000-000000000007",
+      "valid_from": "2026-10-17 11:20:00+00:00",
+      "valid_to": null,
+      "mapping_version": 1,
+      "basis": "SYNTHETIC_FIXTURE",
+      "created_at": "2026-10-17 13:20:00+00:00"
+    }
+  ]
+}

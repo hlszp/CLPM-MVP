@@ -1,0 +1,18 @@
+{
+  "timestamp": "2026-10-17T10:03:59.068362+00:00",
+  "command": [
+    "npx",
+    "--offline",
+    "--package",
+    "@playwright/cli",
+    "playwright-cli",
+    "--session=clpm-final-f04",
+    "run-code",
+    "async (page) => { const row=page.getByRole('row').filter({hasText:'AUDIT-F04-UI-1017'}); await row.getByTestId('btn-open-detail').click(); await page.getByTestId('btn-publish-version').click(); await page.getByTestId('profile-input').fill('{}'); await page.getByTestId('reason-input').fill('Independent isolated browser test input; no field calibration'); await page.getByTestId('btn-preview').click(); return {preview:await page.getByTestId('preview-affected').innerText()}; }"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 2.4149161669774912,
+  "stdout": "### Result\n{\"preview\":\"影响回路：0 条\"}\n### Ran Playwright code\n```js\nawait (async (page) => { const row=page.getByRole('row').filter({hasText:'AUDIT-F04-UI-1017'}); await row.getByTestId('btn-open-detail').click(); await page.getByTestId('btn-publish-version').click(); await page.getByTestId('profile-input').fill('{}'); await page.getByTestId('reason-input').fill('Independent isolated browser test input; no field calibration'); await page.getByTestId('btn-preview').click(); return {preview:await page.getByTestId('preview-affected').innerText()}; })(page);\n```\n",
+  "stderr": ""
+}

@@ -1,0 +1,1 @@
+var e={SYMPTOM_DETECTED:`检出症状`,VALID_NEGATIVE:`有效阴性（范围内正常）`,INCONCLUSIVE:`不可判定（证据不足）`,NOT_ASSESSED:`未评估`,LEGACY_UNVERIFIABLE:`历史覆盖未验证`};function t(t,r){return t||e[n(r)]}function n(e){var t;return(t=e==null?void 0:e.judgementStatus)==null?`LEGACY_UNVERIFIABLE`:t}export{t as n,n as r,e as t};

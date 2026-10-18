@@ -1,0 +1,22 @@
+{
+  "observedAt": "2026-10-17T11:57:31.535151+00:00",
+  "testsComplete": true,
+  "full22IdentificationResultsExactlyEqual": true,
+  "full22AccuracyRowsExactlyEqual": true,
+  "oldEvidenceManifestSha256": "30dd2f59435031f4f556e9f89a3851e49421ab15282cdfa1427a444d7162aecc",
+  "oldEvidenceAll242Unchanged": true,
+  "commandRCs": {
+    "final-format.command.json": 0,
+    "ruff.command.json": 0,
+    "fixed-boundary.command.json": 0,
+    "fixed-single.command.json": 0,
+    "fixed-full-results.command.json": 0,
+    "first-vectorized-boundary-v2.command.json": 1,
+    "format.command.json": 0,
+    "final-ruff.command.json": 0,
+    "legacy-boundary-v2.command.json": 0,
+    "legacy-boundary.command.json": 0,
+    "first-vectorized-boundary.command.json": 1,
+    "related-tests.command.json": 0
+  }
+}

@@ -1,0 +1,666 @@
+"""症状→原因分类映射层（纯函数）。
+
+设计文档：docs/MVP设计/07-诊断模块设计方案.md §3.1 / §7.2 / §7.3 / §7.4
+输入：症状级融合结果（按 symptom_tag 分组族内融合）+ KPI 只读上下文 + 门禁结论
+输出：主分类（唯一）+ 次分类（≤2）+ 待复核（污染链降级）+ 判定依据 + 处置建议 + 严重度
+
+证据污染链（分类粒度声明，MVP 简化）：
+    通信链路 ──污染──> 仪表 / 阀门 / 工艺外扰 / 参数（断流 → 波形与质量结论全部失真）
+    仪表 ──污染──> 阀门 / 工艺外扰 / 参数   （PV 失真 → 下游判定失真）
+    阀门 ──污染──> 参数                    （粘滞限幅振荡 → 超调/衰减比失真）
+    工艺外扰 ──污染──> 参数                （扰动污染阶跃响应特征）
+    投用 = 独立维度（MODE 统计），不参与污染
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from app.services.diagnosis_operators.base import OperatorResult
+from app.services.diagnosis_operators.fusion import FamilyFusion
+from app.services.diagnosis_operators.gate import GateResult
+
+# ---------------------------------------------------------------------------
+# 分类常量（8 类，见设计 §3.1）
+# ---------------------------------------------------------------------------
+
+TUNING = "TUNING"
+VALVE = "VALVE"
+INSTRUMENT = "INSTRUMENT"
+COMMUNICATION = "COMMUNICATION"
+PROCESS = "PROCESS"
+UTILIZATION = "UTILIZATION"
+DESIGN = "DESIGN"
+DATA_INSUFFICIENT = "DATA_INSUFFICIENT"
+#: 内部哨兵（2026-09-25 D3）：数据门禁已通过但全部症状未命中。
+#: 不落库——ck_diagnosis_run_category 仅允许上面 8 类（或 NULL），
+#: orchestrator 在持久化边界把它映射为 NULL，避免把"未发现异常"谎报成"数据不足"。
+NO_SYMPTOM = "NO_SYMPTOM"
+
+CATEGORY_LABELS: dict[str, str] = {
+    TUNING: "参数问题（PID 整定）",
+    VALVE: "阀门/执行机构问题",
+    INSTRUMENT: "仪表/测量问题",
+    COMMUNICATION: "通信链路问题",
+    PROCESS: "工艺/外扰问题",
+    UTILIZATION: "投用/操作问题",
+    DESIGN: "组态/设计问题",
+    DATA_INSUFFICIENT: "数据不足/无法判定",
+    NO_SYMPTOM: "未发现异常症状",
+}
+
+CATEGORY_DIRECTIONS: dict[str, str] = {
+    TUNING: "重新整定参数",
+    VALVE: "检修/更换配件",
+    INSTRUMENT: "校验/维护",
+    COMMUNICATION: "检查通信链路",
+    PROCESS: "工艺分析/前馈/解耦",
+    UTILIZATION: "恢复自动投用",
+    DESIGN: "重新组态/改造",
+    DATA_INSUFFICIENT: "先补齐数据",
+    NO_SYMPTOM: "保持运行，继续观察",
+}
+
+#: 证据污染链：主因 → 其证据所污染的下游分类
+CONTAMINATION_MAP: dict[str, tuple[str, ...]] = {
+    COMMUNICATION: (INSTRUMENT, VALVE, PROCESS, TUNING),
+    INSTRUMENT: (VALVE, PROCESS, TUNING),
+    VALVE: (TUNING,),
+    PROCESS: (TUNING,),
+}
+
+#: 次分类纳入置信度门槛
+SECONDARY_MIN_CONFIDENCE = 0.6
+#: 投用前置建议阈值（自动投用率低于此值时"恢复自动投用"升至第 2 位）
+UTILIZATION_PRIORITY_RATE = 0.3
+#: 投用问题判定阈值（决策表级 6）
+UTILIZATION_DETECT_RATE = 0.5
+
+
+# ---------------------------------------------------------------------------
+# 结果结构
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class CategoryJudgement:
+    category: str
+    confidence: float
+    basis: list[str] = field(default_factory=list)
+    status: str = "primary"  # primary | secondary | pending_review
+    contamination_note: str | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "category": self.category,
+            "categoryLabel": CATEGORY_LABELS.get(self.category, self.category),
+            "confidence": round(self.confidence, 4),
+            "basis": self.basis,
+            "status": self.status,
+            "contaminationNote": self.contamination_note,
+        }
+
+
+@dataclass
+class Recommendation:
+    content: str
+    basis: str
+    direction: str
+    priority: int  # 1 最高
+    #: D5（08§4.4/任务书【一】2）：建议与证据链绑定——引用算子/支持度/
+    #: 症状标签/分类，读端与 SYSTEM 建议生成侧可溯（支持度=RULE_SUPPORT
+    #: 规则支持度，不冒称概率）。核查型/兜底建议（无正面原因证据）为 None。
+    evidence: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict:
+        return {
+            "content": self.content,
+            "basis": self.basis,
+            "direction": self.direction,
+            "priority": self.priority,
+            "evidence": self.evidence,
+        }
+
+
+@dataclass
+class ClassificationResult:
+    primary: CategoryJudgement | None
+    secondary: list[CategoryJudgement] = field(default_factory=list)
+    pending_review: list[CategoryJudgement] = field(default_factory=list)
+    rationale: list[str] = field(default_factory=list)
+    recommendations: list[Recommendation] = field(default_factory=list)
+    severity: str | None = None  # HIGH | MEDIUM | LOW | None
+
+    def to_dict(self) -> dict:
+        return {
+            "primary": self.primary.to_dict() if self.primary else None,
+            "secondary": [j.to_dict() for j in self.secondary],
+            "pendingReview": [j.to_dict() for j in self.pending_review],
+            "rationale": self.rationale,
+            "recommendations": [r.to_dict() for r in self.recommendations],
+            "severity": self.severity,
+        }
+
+
+# ---------------------------------------------------------------------------
+# 判定辅助
+# ---------------------------------------------------------------------------
+
+
+def _feature(op_results: dict[str, OperatorResult], name: str, key: str, default: Any = 0.0) -> Any:
+    res = op_results.get(name)
+    if res is None or not res.executed:
+        return default
+    return res.features.get(key, default)
+
+
+def _sensor_basis(op_results: dict[str, OperatorResult]) -> list[str]:
+    """仪表（传感器波形侧）判定依据；质量码部分已拆至 link 族。"""
+    basis: list[str] = []
+    sub = _feature(op_results, "sensor_fault", "sensor_subtype", None)
+    if sub:
+        basis.append(f"传感器故障子类型 {sub}")
+    frozen = _feature(op_results, "sensor_fault", "frozen_segment_ratio", 0.0)
+    if frozen:
+        basis.append(f"冻结段占比 {float(frozen):.1%}")
+    return basis or ["传感器波形检测命中"]
+
+
+def _link_basis(op_results: dict[str, OperatorResult], gate: GateResult) -> list[str]:
+    """通信链路判定依据：连续 Bad 断流段 + 落库缺口。"""
+    basis: list[str] = []
+    pattern = _feature(op_results, "quality_code_rules", "quality_pattern", None)
+    if pattern and pattern != "NORMAL":
+        basis.append(f"质量码模式 {pattern}（连续 Bad 断流）")
+    max_bad = _feature(op_results, "quality_code_rules", "max_consecutive_bad", 0)
+    if max_bad:
+        basis.append(f"最长连续 Bad {int(max_bad)} 点")
+    bad_rate = _feature(op_results, "quality_code_rules", "bad_rate", 0.0)
+    if bad_rate:
+        basis.append(f"Bad 质量码占比 {bad_rate:.1%}")
+    if gate.gap_ratio > 0.1:
+        basis.append(f"落库缺口率 {gate.gap_ratio:.1%}（佐证）")
+    return basis or ["链路族检测命中"]
+
+
+def _stiction_basis(fusion: FamilyFusion, op_results: dict[str, OperatorResult]) -> list[str]:
+    names = "、".join(c["operator"] for c in fusion.contributors)
+    idx = _feature(op_results, "stiction_ellipse", "stiction_index", None)
+    # D5（08§4.4.7）："两种粘滞方法命中且达到门槛"最多形成**阀门排查候选**，
+    # 不解释为两份独立确诊——同依赖组（stiction_pv_op）支持度取最大，
+    # 独立证据数按依赖组去重计数。
+    basis = [
+        f"粘滞算子命中：{names}（支持度 {fusion.confidence:.2f}，"
+        f"独立证据 {fusion.independent_evidence_count} 组——阀门排查候选，"
+        "非独立确诊）"
+    ]
+    if idx is not None:
+        basis.append(f"椭圆拟合粘滞指数 {float(idx):.3f}")
+    return basis
+
+
+# ---------------------------------------------------------------------------
+# 主入口
+# ---------------------------------------------------------------------------
+
+
+def classify(
+    fusions: dict[str, FamilyFusion],
+    op_results: dict[str, OperatorResult],
+    kpi_context: dict[str, Any],
+    gate: GateResult,
+) -> ClassificationResult:
+    """按决策表（优先级自上而下，命中即定主因）执行原因分类。
+
+    fusions 键为症状标签（OSCILLATION/VALVE_STICTION/QUALITY_ABNORMAL/
+    OVERAGGRESSIVE/OVERCONSERVATIVE/EXTERNAL_DISTURBANCE/OUTPUT_SATURATION）。
+    """
+
+    result = ClassificationResult(primary=None)
+    # D1（DIA-06，C15-D03）：auto_rate **None 透传**——窗口无 KPI 快照时
+    # auto_rate_avg=None（缺失不当 0，不触发 UTILIZATION）；0.0 是真实值
+    # （长期手动）应触发 UTILIZATION。原实现 `float(x or 0.0)` 把 None 与
+    # 0.0 混同且 `0.0 < auto_rate` 排除 0%，导致"0% 自动投用=长期手动"
+    # 反而漏判、缺失被当 0% 误判。
+    raw_auto_rate = kpi_context.get("auto_rate_avg")
+    auto_rate: float | None = (
+        float(raw_auto_rate) if isinstance(raw_auto_rate, int | float) else None
+    )
+    score_avg = kpi_context.get("score_avg")
+
+    # D5：OSCILLATION 融合不再作为排除式归因输入（级 4 改正面证据）；
+    # 症状保留在"未决分支"经 fusions.items() 统一处理
+    stiction = fusions.get("VALVE_STICTION")
+    sensor = fusions.get("QUALITY_ABNORMAL")
+    link = fusions.get("LINK_ABNORMAL")
+    over = fusions.get("OVERAGGRESSIVE")
+    under = fusions.get("OVERCONSERVATIVE")
+    dist = fusions.get("EXTERNAL_DISTURBANCE")
+
+    # 候选池：命中项按决策表优先级排序（level, category, confidence, basis, rec_content）
+    candidates: list[dict[str, Any]] = []
+
+    # 级 0：数据门禁不过 → 数据不足（不执行算子，直接短路）
+    if not gate.passed:
+        result.primary = CategoryJudgement(
+            category=DATA_INSUFFICIENT,
+            confidence=0.0,
+            basis=[gate.reason or "数据质量不足以支撑诊断"],
+        )
+        result.rationale.append(f"数据门禁未通过：{gate.reason}")
+        result.recommendations = [
+            Recommendation(
+                content="先通过数据管理→历史数据导入补齐该时间窗数据，再重新发起诊断",
+                basis=gate.reason or "数据质量不足",
+                direction=CATEGORY_DIRECTIONS[DATA_INSUFFICIENT],
+                priority=1,
+            )
+        ]
+        result.severity = None
+        return result
+
+    # 级 0.5：链路族命中（连续 Bad 断流 Q001）→ COMMUNICATION
+    # 排查惯例"先通信后仪表"：链路断流时仪表/阀门/工艺/参数波形结论全部失真，
+    # 故 COMMUNICATION 优先于 INSTRUMENT 且污染下游全部波形类分类
+    if link is not None and link.detected:
+        candidates.append(
+            {
+                "category": COMMUNICATION,
+                "confidence": link.confidence,
+                "basis": _link_basis(op_results, gate),
+                "rec": "检查通信链路：OPC 服务器/网络/采集卡（修复断流后复诊确认下游结论）",
+                "evidence": {
+                    "category": COMMUNICATION,
+                    "operators": ["quality_code_rules"],
+                    "support": round(float(link.confidence), 4),
+                    "symptomTag": "LINK_ABNORMAL",
+                },
+            }
+        )
+
+    # 级 1：仪表族命中（传感器波形侧）→ INSTRUMENT
+    if sensor is not None and sensor.detected:
+        candidates.append(
+            {
+                "category": INSTRUMENT,
+                "confidence": sensor.confidence,
+                "basis": _sensor_basis(op_results),
+                "rec": "检查校验变送器/仪表（修复后复诊确认下游结论）",
+                "evidence": {
+                    "category": INSTRUMENT,
+                    "operators": ["sensor_fault"],
+                    "support": round(float(sensor.confidence), 4),
+                    "symptomTag": "QUALITY_ABNORMAL",
+                },
+            }
+        )
+
+    # 级 2：粘滞族融合置信 ≥0.7 且 ≥2 算子命中 → VALVE
+    #
+    # S3 修复（G22 相邻）：原实现为 confidence >= 0.7 OR len(contributors) >= 2，
+    # 与设计文档 §7.2 级 2「粘滞族融合置信 ≥0.7（≥2 算子命中）」不符——
+    # 文档把"≥2 算子命中"写成**必要条件**（§7.1 理由：D-S 的价值在于多算子
+    # 交叉验证"是否粘滞"）；本文件 _confidence_basis 亦自述
+    # "VALVE 粘滞方向：族内 ≥2 算子命中经 D-S 交叉验证融合"。
+    # OR 的两个后果（实测）：
+    #   ① 单个算子命中（如 conf=0.8）即判 VALVE —— 无任何交叉验证；
+    #   ② 两个低置信命中（0.3+0.3 → 融合 0.1552）亦判 VALVE ——
+    #      15.5% 置信的"阀门问题"结论，且架空了级 7"各算子置信均 <0.5
+    #      → DATA_INSUFFICIENT"的兜底，可能把检修引向阀门。
+    # 改为 AND 后，仅"多算子交叉验证且融合置信达阈"才判级 2。
+    if stiction is not None and stiction.detected:
+        if stiction.confidence >= 0.7 and len(stiction.contributors) >= 2:
+            candidates.append(
+                {
+                    "category": VALVE,
+                    "confidence": stiction.confidence,
+                    "basis": _stiction_basis(stiction, op_results),
+                    "rec": "检查阀门执行机构，清洁或更换阀门填料",
+                    "evidence": {
+                        "category": VALVE,
+                        "operators": [c["operator"] for c in stiction.contributors],
+                        "support": round(float(stiction.confidence), 4),
+                        "symptomTag": "VALVE_STICTION",
+                        "independentEvidenceCount": stiction.independent_evidence_count,
+                    },
+                }
+            )
+
+    # 级 3：OP 长期贴限（>80% 时间）→ VALVE（阀容量方向）
+    sat_rate = float(_feature(op_results, "output_saturation", "saturation_rate", 0.0))
+    if sat_rate > 0.8:
+        candidates.append(
+            {
+                "category": VALVE,
+                "confidence": min(1.0, sat_rate),
+                "basis": [f"OP {sat_rate:.0%} 时间贴工程限位，疑阀容量不足或积分饱和"],
+                "rec": "检查阀门容量/选型，排查积分饱和",
+                "evidence": {
+                    "category": VALVE,
+                    "operators": ["output_saturation"],
+                    "support": round(min(1.0, sat_rate), 4),
+                    "symptomTag": "OUTPUT_SATURATION",
+                },
+            }
+        )
+
+    # 级 4：外扰算子命中（CUSUM 偏差突变阳性证据）→ PROCESS 候选
+    #
+    # D5（08§4.4.2/C15-D06，2026-10-11 A 裁决）：删除"振荡且无粘滞且无
+    # 过激 → PROCESS"的**排除式自动归因**——原因候选需要正面证据；未执行
+    # 和不适用不能成为反对证据（振荡阳性而粘滞/过激未执行时不得自动确认
+    # PROCESS，应保留症状、原因未决）。振荡症状不再单独推断外扰原因。
+    over_detected = over is not None and over.detected
+    if dist is not None and dist.detected:
+        freq = _feature(op_results, "disturbance_burst", "shift_frequency", 0.0)
+        basis = [f"偏差确认突变 {freq:.1f} 次/h 且与 SP 变更无关（候选：需结合工艺事件确认）"]
+        candidates.append(
+            {
+                "category": PROCESS,
+                "confidence": dist.confidence,
+                "basis": basis,
+                "rec": "排查上游工艺扰动与相邻回路耦合，考虑前馈控制/解耦",
+                "evidence": {
+                    "category": PROCESS,
+                    "operators": ["disturbance_burst"],
+                    "support": round(float(dist.confidence), 4),
+                    "symptomTag": "EXTERNAL_DISTURBANCE",
+                },
+            }
+        )
+
+    # 级 5：过激/过保守命中 → TUNING
+    if over_detected or (under is not None and under.detected):
+        basis = []
+        tuning_ops: list[str] = []
+        tuning_tag = "OVERAGGRESSIVE" if over_detected else "OVERCONSERVATIVE"
+        if over_detected:
+            ov = float(_feature(op_results, "step_response_overshoot", "overshoot", 0.0))
+            dr = float(_feature(op_results, "step_response_overshoot", "decay_ratio", 0.0))
+            basis.append(f"阶跃响应过激：超调 {ov:.0%}、衰减比 {dr:.2f}")
+            tuning_ops.append("step_response_overshoot")
+        if under is not None and under.detected:
+            ratio = float(_feature(op_results, "slow_response", "ratio", 0.0))
+            basis.append(f"响应迟缓：实际/期望时间常数比 {ratio:.1f}")
+            tuning_ops.append("slow_response")
+        candidates.append(
+            {
+                "category": TUNING,
+                "confidence": max(
+                    over.confidence if over is not None else 0.0,
+                    under.confidence if under is not None else 0.0,
+                ),
+                "basis": basis,
+                "rec": "按证据方向重新整定：过激减小 Kp/增大 Ti，保守增大 Kp/减小 Ti（参考 IMC）",
+                "evidence": {
+                    "category": TUNING,
+                    "operators": tuning_ops,
+                    "support": round(
+                        float(
+                            max(
+                                over.confidence if over is not None else 0.0,
+                                under.confidence if under is not None else 0.0,
+                            )
+                        ),
+                        4,
+                    ),
+                    "symptomTag": tuning_tag,
+                },
+            }
+        )
+
+    # 级 6：自动投用率 <50% → UTILIZATION（独立维度）
+    # D1（DIA-06）：0% 是真实长期手动（触发）；None=无 KPI 快照（不触发，
+    # 缺失不当 0——C15-D03）；≥50% 不触发
+    utilization_hit = auto_rate is not None and auto_rate < UTILIZATION_DETECT_RATE
+    if utilization_hit:
+        candidates.append(
+            {
+                "category": UTILIZATION,
+                "confidence": min(0.95, 1.0 - auto_rate),
+                "basis": [f"时间窗内自动投用率 {auto_rate:.0%}，长期手动"],
+                "rec": "排查长期手动原因，恢复自动投用后再复诊（其余诊断结论在手动模式下意义有限）",
+                "evidence": {
+                    "category": UTILIZATION,
+                    "operators": [],
+                    "support": round(float(min(0.95, 1.0 - auto_rate)), 4),
+                    "source": "kpi_context",
+                    "autoRate": round(float(auto_rate), 4),
+                },
+            }
+        )
+
+    # 级 7：兜底（2026-09-25 D3 拆两态；D5 再拆三态）
+    #   门禁不过 → DATA_INSUFFICIENT（数据不足，如实报）；
+    #   门禁通过、有症状命中但无正面原因证据 → 症状保留+原因未决
+    #     （D5/08§4.4.1：不得落"未发现异常"——单个粘滞阳性而交叉检查
+    #     不足应为 SYMPTOM_DETECTED + UNRESOLVED）；
+    #   门禁通过且无症状命中 → NO_SYMPTOM（未发现异常，不得推荐"先补齐数据"）。
+    if not candidates:
+        detected_tags = [tag for tag, f in fusions.items() if f.detected]
+        if detected_tags:
+            # D5：多算子部分支持但未达原因门槛 → 未决保留，非强行归类
+            # （08-A 保守融合；主分类 NULL，科学结论 SYMPTOM_DETECTED +
+            # causeStatus=UNRESOLVED 由 assessment_meta 表达）
+            result.primary = None
+            tag_text = "、".join(detected_tags)
+            result.rationale.append(
+                f"症状已检出（{tag_text}）但各原因候选证据不足：原因未决，"
+                "不强行归类（保守融合规则，支持度未达原因判定门槛）"
+            )
+            for tag in detected_tags:
+                f = fusions[tag]
+                result.rationale.append(
+                    f"症状 {tag}：支持度 {f.confidence:.2f}"
+                    f"（独立证据 {f.independent_evidence_count} 组，"
+                    f"命中算子 {'、'.join(c['operator'] for c in f.contributors) or '无'}）"
+                )
+                if f.conflicts:
+                    result.rationale.append(
+                        f"症状 {tag} 存在矛盾证据标记：{','.join(f.conflicts)}（建议人工复核）"
+                    )
+            result.recommendations = [
+                Recommendation(
+                    content=(
+                        f"症状已检出（{tag_text}）但原因未定：建议先人工复核证据链，"
+                        "或以 full 算子组/更换时间窗重跑扩大检查范围后再定处置方向；"
+                        "不建议在原因未定前直接调整 PID 参数"
+                    ),
+                    basis="症状命中但原因候选证据不足（支持度未达原因判定门槛）",
+                    direction="复核证据链后再定处置方向",
+                    priority=1,
+                    evidence=None,
+                )
+            ]
+            # 08§4.4.4：未知工艺影响时不根据支持度自动定级——原因未决
+            # 时严重度不评（None），待原因确认或人工复核后定级
+            result.severity = None
+            return result
+        result.primary = CategoryJudgement(
+            category=NO_SYMPTOM,
+            confidence=0.0,
+            basis=["数据门禁通过、各算子置信度均低于判定门槛：未发现异常症状"],
+        )
+        result.rationale.append("数据充足（数据门禁通过）但全部症状未命中：未发现异常症状")
+        result.recommendations = [
+            Recommendation(
+                content="未发现异常症状：建议保持当前运行并继续观察；如需复核可更换时间窗后重跑",
+                basis="数据门禁通过，各算子置信度均低于判定门槛",
+                direction=CATEGORY_DIRECTIONS[NO_SYMPTOM],
+                priority=1,
+            )
+        ]
+        return result
+
+    # ---- 主分类 = 最高优先级候选（candidates 已按决策表顺序 append） ----
+    primary_cand = candidates[0]
+    primary_category = primary_cand["category"]
+    result.primary = CategoryJudgement(
+        category=primary_category,
+        confidence=float(primary_cand["confidence"]),
+        basis=list(primary_cand["basis"]),
+        status="primary",
+    )
+    primary_label = CATEGORY_LABELS[primary_category]
+    primary_conf = float(primary_cand["confidence"])
+    # D5（08§4.4.8）：展示口径统一称"支持度"（规则支持度，不冒称概率）
+    result.rationale.append(
+        f"主分类 {primary_label}（支持度 {primary_conf:.2f}）："
+        + "；".join(str(b) for b in primary_cand["basis"])
+    )
+
+    # ---- 其余命中：污染链降级 / 次分类 ----
+    contaminated = CONTAMINATION_MAP.get(primary_category, ())
+    secondary_pool: list[dict[str, Any]] = []
+    for cand in candidates[1:]:
+        cat = cand["category"]
+        if cat in contaminated:
+            note = (
+                f"主因{CATEGORY_LABELS[primary_category]}的证据链污染了{CATEGORY_LABELS[cat]}判定，"
+                f"修复主因后复诊确认"
+            )
+            result.pending_review.append(
+                CategoryJudgement(
+                    category=cat,
+                    confidence=float(cand["confidence"]),
+                    basis=list(cand["basis"]),
+                    status="pending_review",
+                    contamination_note=note,
+                )
+            )
+            result.rationale.append(f"疑似{CATEGORY_LABELS[cat]}——被主因证据污染，转待复核")
+        elif float(cand["confidence"]) >= SECONDARY_MIN_CONFIDENCE:
+            secondary_pool.append(cand)
+        else:
+            result.rationale.append(
+                f"{CATEGORY_LABELS[cat]}命中但支持度 {float(cand['confidence']):.2f} "
+                f"< {SECONDARY_MIN_CONFIDENCE}，不纳入次分类"
+            )
+
+    # 同分类去重（如阀门两级同时命中），保留置信最高
+    seen: dict[str, dict[str, Any]] = {}
+    for cand in secondary_pool:
+        if (
+            cand["category"] not in seen
+            or cand["confidence"] > seen[cand["category"]]["confidence"]
+        ):
+            seen[cand["category"]] = cand
+    result.secondary = [
+        CategoryJudgement(
+            category=c["category"],
+            confidence=float(c["confidence"]),
+            basis=list(c["basis"]),
+            status="secondary",
+        )
+        for c in list(seen.values())[:2]
+    ]
+
+    # ---- 处置建议排序（设计 §7.4 R1-R5；D5 附证据链绑定） ----
+    result.recommendations.append(
+        Recommendation(
+            content=str(primary_cand["rec"]),
+            basis="；".join(str(b) for b in primary_cand["basis"]),
+            direction=CATEGORY_DIRECTIONS[primary_category],
+            priority=1,
+            evidence=primary_cand.get("evidence"),
+        )
+    )
+    next_priority = 2
+    if (
+        utilization_hit
+        and auto_rate < UTILIZATION_PRIORITY_RATE
+        and primary_category != UTILIZATION
+    ):
+        util_ev = next(
+            (c.get("evidence") for c in candidates if c["category"] == UTILIZATION), None
+        )
+        result.recommendations.append(
+            Recommendation(
+                content="优先恢复自动投用（当前自动率过低，其他处置与复诊在手动模式下意义有限）",
+                basis=f"自动投用率 {auto_rate:.0%}",
+                direction=CATEGORY_DIRECTIONS[UTILIZATION],
+                priority=2,
+                evidence=util_ev,
+            )
+        )
+        next_priority = 3
+    for c in seen.values():
+        if c["category"] == primary_category:
+            continue
+        result.recommendations.append(
+            Recommendation(
+                content=str(c["rec"]),
+                basis="；".join(str(b) for b in c["basis"]),
+                direction=CATEGORY_DIRECTIONS[c["category"]],
+                priority=next_priority,
+                evidence=c.get("evidence"),
+            )
+        )
+        next_priority += 1
+    # R4：待复核项不生成处置建议，只保留复诊指引（pending_review 的 contamination_note 即指引）
+
+    # ---- 严重度（设计 §7.4） ----
+    result.severity = _severity(score_avg, result.primary.confidence, primary_category)
+
+    return result
+
+
+def _severity(score_avg: float | None, primary_conf: float, category: str) -> str:
+    if category in (DATA_INSUFFICIENT, NO_SYMPTOM):
+        return "LOW"
+    score = float(score_avg) if score_avg is not None else None
+    if score is not None and score < 40 and primary_conf >= 0.8:
+        return "HIGH"
+    if (score is not None and score < 60) or primary_conf >= 0.6:
+        return "MEDIUM"
+    return "LOW"
+
+
+# ---------------------------------------------------------------------------
+# 置信度显式定义（API 详情附加展示，不入库）
+# ---------------------------------------------------------------------------
+
+#: 分类级置信度口径（主分类支持度如何得出；D5 起统一称"支持度"——
+#: 规则支持度，未校准，不冒称概率，08§4.4.8）
+CATEGORY_CONFIDENCE_BASIS: dict[str, str] = {
+    COMMUNICATION: (
+        "质量码算子 Q001 档位：按最长连续断流段时长分级"
+        "（≤60s→0.60 / ≤600s→0.75 / >600s→0.90）；落库缺口率仅作佐证不计分"
+    ),
+    INSTRUMENT: "传感器波形特征定档取最高：卡死 0.85 / 噪声突增 0.70 / 漂移 0.65",
+    TUNING: (
+        "过激 = min(0.95, 满足指标数/3)；迟缓 = min(0.9, τ比/10)"
+        "（响应窗到达率 <63.2% 时 τ 外推不可靠记 0）；同族取最大"
+    ),
+    VALVE: (
+        "粘滞方向：族内 ≥2 算子命中且支持度 ≥0.7（保守融合取最大，"
+        "同依赖组不增强——阀门排查候选，非独立确诊）；"
+        "饱和方向 = min(1.0, OP 贴限时长占比)"
+    ),
+    PROCESS: "外扰算子 min(0.95, 突变频率/20 次/h)——候选语义，需结合工艺事件确认",
+    UTILIZATION: "min(0.95, 1 − 时间窗自动投用率)，来自 KPI 快照统计",
+    DESIGN: "Phase 2 启用前不参与置信度评估",
+    DATA_INSUFFICIENT: "门禁短路输出，不参与置信度评估（记 0）",
+    NO_SYMPTOM: "门禁通过但全部症状未命中：无归因结论（记 0）",
+}
+
+
+def get_confidence_definitions() -> dict[str, Any]:
+    """分类级 + 算子级 + 融合规则置信度口径（诊断详情 API 附加返回）。"""
+    from app.services.diagnosis_operators import OPERATOR_REGISTRY
+
+    return {
+        "categories": dict(CATEGORY_CONFIDENCE_BASIS),
+        "operators": {
+            name: meta.confidence_basis for name, (meta, _fn) in OPERATOR_REGISTRY.items()
+        },
+        "fusion": (
+            "保守融合（conservative-max/1，2026-10-11 A 裁决）：同依赖组取最大"
+            "有效阳性支持度，跨组未校准阶段仍取最大值——不因叠加方法数量提高"
+            "总支持度；方法数不等于独立证据数（依赖组归并计数）。数值为规则"
+            "支持度（未校准），不冒充概率；历史 D-S 融合值属旧 profile，"
+            "不与本规则无标识混用"
+        ),
+        "secondaryGate": SECONDARY_MIN_CONFIDENCE,
+    }

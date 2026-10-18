@@ -1,0 +1,249 @@
+{
+  "config": {
+    "argv": [
+      "/Users/zhangping/.hermes/node/bin/node",
+      "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/node_modules/.bin/playwright",
+      "test",
+      "--config=playwright.critical.config.ts",
+      "--reporter=json",
+      "--retries=0",
+      "--forbid-only",
+      "--output=/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/permission-local-remediation/gate-contract-artifacts/failed/test-results"
+    ],
+    "configFile": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/playwright.critical.config.ts",
+    "rootDir": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests",
+    "failOnFlakyTests": false,
+    "forbidOnly": true,
+    "fullyParallel": false,
+    "globalSetup": null,
+    "globalTeardown": null,
+    "globalTimeout": 0,
+    "grep": {},
+    "grepInvert": null,
+    "maxFailures": 0,
+    "metadata": {
+      "actualWorkers": 1
+    },
+    "preserveOutput": "always",
+    "projects": [
+      {
+        "outputDir": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/permission-local-remediation/gate-contract-artifacts/failed/test-results",
+        "repeatEach": 1,
+        "retries": 0,
+        "metadata": {
+          "actualWorkers": 1
+        },
+        "id": "chromium",
+        "name": "chromium",
+        "testDir": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests",
+        "testIgnore": [],
+        "testMatch": [
+          "critical-business.spec.ts"
+        ],
+        "timeout": 30000
+      }
+    ],
+    "quiet": false,
+    "reporter": [
+      [
+        "json"
+      ]
+    ],
+    "reportSlowTests": {
+      "max": 5,
+      "threshold": 300000
+    },
+    "shard": null,
+    "tags": [],
+    "updateSnapshots": "missing",
+    "updateSourceMethod": "patch",
+    "version": "1.61.0",
+    "workers": 1,
+    "webServer": null
+  },
+  "suites": [
+    {
+      "title": "critical-business.spec.ts",
+      "file": "critical-business.spec.ts",
+      "column": 0,
+      "line": 0,
+      "specs": [
+        {
+          "title": "CRITICAL-AUTH-001: gate-contract fixture",
+          "ok": false,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 0,
+                  "parallelIndex": 0,
+                  "status": "failed",
+                  "duration": 3,
+                  "error": {
+                    "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m",
+                    "stack": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n    at /private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests/critical-business.spec.ts:5:21",
+                    "location": {
+                      "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests/critical-business.spec.ts",
+                      "column": 21,
+                      "line": 5
+                    },
+                    "snippet": "  3 |     test('CRITICAL-AUTH-001: gate-contract fixture', async ({}, testInfo) => {\n  4 |       \n> 5 |       expect(false).toBe(true);\n    |                     ^\n  6 |     });\n  7 |   \n  8 |"
+                  },
+                  "errors": [
+                    {
+                      "location": {
+                        "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests/critical-business.spec.ts",
+                        "column": 21,
+                        "line": 5
+                      },
+                      "message": "Error: \u001b[2mexpect(\u001b[22m\u001b[31mreceived\u001b[39m\u001b[2m).\u001b[22mtoBe\u001b[2m(\u001b[22m\u001b[32mexpected\u001b[39m\u001b[2m) // Object.is equality\u001b[22m\n\nExpected: \u001b[32mtrue\u001b[39m\nReceived: \u001b[31mfalse\u001b[39m\n\n  3 |     test('CRITICAL-AUTH-001: gate-contract fixture', async ({}, testInfo) => {\n  4 |       \n> 5 |       expect(false).toBe(true);\n    |                     ^\n  6 |     });\n  7 |   \n  8 |\n    at /private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests/critical-business.spec.ts:5:21"
+                    }
+                  ],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T12:20:25.149Z",
+                  "annotations": [],
+                  "attachments": [
+                    {
+                      "name": "error-context",
+                      "contentType": "text/markdown",
+                      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/permission-local-remediation/gate-contract-artifacts/failed/test-results/critical-business-CRITICAL-AUTH-001-gate-contract-fixture-chromium/error-context.md"
+                    }
+                  ],
+                  "errorLocation": {
+                    "file": "/private/var/folders/fj/6rslvftn1nl7k2fzq1nxrhq80000gn/T/clpm-gate-contract-0VHcWy/fixture/e2e/tests/critical-business.spec.ts",
+                    "column": 21,
+                    "line": 5
+                  }
+                }
+              ],
+              "status": "unexpected"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-4ece87a5c406323ba30e",
+          "file": "critical-business.spec.ts",
+          "line": 3,
+          "column": 5
+        },
+        {
+          "title": "CRITICAL-PERM-001: gate-contract fixture",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 3,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T12:20:25.386Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-5680d52a1a629d2f2da2",
+          "file": "critical-business.spec.ts",
+          "line": 9,
+          "column": 5
+        },
+        {
+          "title": "CRITICAL-CALC-001: gate-contract fixture",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 1,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T12:20:25.404Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-aa34bd7b88e79804744c",
+          "file": "critical-business.spec.ts",
+          "line": 15,
+          "column": 5
+        },
+        {
+          "title": "CRITICAL-EVIDENCE-001: gate-contract fixture",
+          "ok": true,
+          "tags": [],
+          "tests": [
+            {
+              "timeout": 30000,
+              "annotations": [],
+              "expectedStatus": "passed",
+              "projectId": "chromium",
+              "projectName": "chromium",
+              "results": [
+                {
+                  "workerIndex": 1,
+                  "parallelIndex": 0,
+                  "status": "passed",
+                  "duration": 0,
+                  "errors": [],
+                  "stdout": [],
+                  "stderr": [],
+                  "retry": 0,
+                  "startTime": "2026-10-17T12:20:25.411Z",
+                  "annotations": [],
+                  "attachments": []
+                }
+              ],
+              "status": "expected"
+            }
+          ],
+          "id": "c76cc3e783108c4fcaec-5d8283fbc6983b8a69de",
+          "file": "critical-business.spec.ts",
+          "line": 21,
+          "column": 5
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "stats": {
+    "startTime": "2026-10-17T12:20:24.943Z",
+    "duration": 481.313,
+    "expected": 3,
+    "skipped": 0,
+    "unexpected": 1,
+    "flaky": 0
+  }
+}

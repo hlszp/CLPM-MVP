@@ -1,0 +1,11 @@
+{
+  "errors": [],
+  "watchdogBarrierObserved": true,
+  "beatReleasedAfterBarrier": true,
+  "actualApiExit": {
+    "pid": 50699,
+    "rc": -15,
+    "at": "2026-10-17T14:50:58.161743+00:00"
+  },
+  "at": "2026-10-17T14:50:59.492659+00:00"
+}

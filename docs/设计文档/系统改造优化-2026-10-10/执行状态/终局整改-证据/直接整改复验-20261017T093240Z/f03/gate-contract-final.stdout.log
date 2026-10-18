@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: real Playwright gate: passed -> rc=0
+ok 1 - real Playwright gate: passed -> rc=0
+  ---
+  duration_ms: 1003.405167
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: unreachable -> rc=2
+ok 2 - real Playwright gate: unreachable -> rc=2
+  ---
+  duration_ms: 21.986291
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: failed -> rc=1
+ok 3 - real Playwright gate: failed -> rc=1
+  ---
+  duration_ms: 1205.715542
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: all-skipped -> rc=3
+ok 4 - real Playwright gate: all-skipped -> rc=3
+  ---
+  duration_ms: 966.341875
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: part-skipped -> rc=3
+ok 5 - real Playwright gate: part-skipped -> rc=3
+  ---
+  duration_ms: 973.03175
+  type: 'test'
+  ...
+# Subtest: real Playwright gate: missing -> rc=3
+ok 6 - real Playwright gate: missing -> rc=3
+  ---
+  duration_ms: 381.8615
+  type: 'test'
+  ...
+# Subtest: real Playwright flaky retry is rejected even when Playwright exits zero
+ok 7 - real Playwright flaky retry is rejected even when Playwright exits zero
+  ---
+  duration_ms: 815.493958
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5431.465667

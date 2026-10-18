@@ -1,0 +1,401 @@
+{"shadowOnly": true, "module": "app.services.calc_snapshot", "source": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/services/calc_snapshot.py", "sha256": "39e67b9af522ccf694513bac11307d7002f6acb7d0092d34b3016e4dbe2a9850", "functions": ["serialize_data_blocks", "deserialize_data_blocks"]}
+{"shadowOnly": true, "module": "app.tasks.kpi_calc", "source": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/tasks/kpi_calc.py", "sha256": "a222a53c9e2ae40581461ba63a22e0ce81edacaa7324aa82916c1dc3f9e66bc8", "functions": ["_do_calculate_custom_batch"]}
+{"shadowOnly": true, "module": "app.api.v1.endpoints.tasks", "source": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/f02/f03-calc-readonly/original-source-edfa/backend/app/api/v1/endpoints/tasks.py", "sha256": "391610b03b4b6c503a611acc451984b179424f13038f2e922eb62a8eaeddf32a", "functions": ["trigger_custom_evaluation"]}
+FFFF..FFFFFFF                                                            [100%]
+=================================== FAILURES ===================================
+_________ test_npz_roundtrip_keeps_limit_provenance[LOOP_FIELD-ACTUAL] _________
+
+source = 'LOOP_FIELD', provenance = 'ACTUAL'
+
+    @pytest.mark.parametrize(
+        ("source", "provenance"),
+        [("LOOP_FIELD", "ACTUAL"), ("TAG_RANGE", "ACTUAL"), ("DEFAULT_0_100", "DEFAULT")],
+    )
+    def test_npz_roundtrip_keeps_limit_provenance(source, provenance):
+        bundles = _make_kpi_bundles(n_points=4)[:1]
+        signals = bundles[0].data_block.signals
+        signals["op_limits_source"] = [source]
+        signals["op_limits_provenance"] = [provenance, None]
+        signals["pv"][1] = None
+>       arrays, metadata = cs.serialize_data_blocks(bundles)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+original-source-edfa/backend/app/services/calc_snapshot.py:829: in serialize_data_blocks
+    serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = ['LOOP_FIELD'], key = 'blk0__sig_op_limits_source'
+arrays = {'blk0__ts': array([1791792000000000000, 1791792001000000000, 1791792002000000000,
+       1791792003000000000]), 'blk0...16198454]), 'blk0__null_pv': array([False,  True, False, False]), 'blk0__sig_sp': array([50. , 49.9, 49.8, 49.7]), ...}
+
+    def serialize_signal(values: list[Any], key: str, arrays: dict[str, np.ndarray]) -> None:
+        """信号列 → float64 + nullmask（None→NaN；显式 null 位置单独 mask）."""
+        n = len(values)
+        nullmask = np.zeros(n, dtype=bool)
+        arr = np.full(n, np.nan, dtype=np.float64)
+        for i, v in enumerate(values):
+            if v is None:
+                nullmask[i] = True
+            else:
+>               arr[i] = float(v)
+                         ^^^^^^^^
+E               ValueError: could not convert string to float: 'LOOP_FIELD'
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py:807: ValueError
+_________ test_npz_roundtrip_keeps_limit_provenance[TAG_RANGE-ACTUAL] __________
+
+source = 'TAG_RANGE', provenance = 'ACTUAL'
+
+    @pytest.mark.parametrize(
+        ("source", "provenance"),
+        [("LOOP_FIELD", "ACTUAL"), ("TAG_RANGE", "ACTUAL"), ("DEFAULT_0_100", "DEFAULT")],
+    )
+    def test_npz_roundtrip_keeps_limit_provenance(source, provenance):
+        bundles = _make_kpi_bundles(n_points=4)[:1]
+        signals = bundles[0].data_block.signals
+        signals["op_limits_source"] = [source]
+        signals["op_limits_provenance"] = [provenance, None]
+        signals["pv"][1] = None
+>       arrays, metadata = cs.serialize_data_blocks(bundles)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+original-source-edfa/backend/app/services/calc_snapshot.py:829: in serialize_data_blocks
+    serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = ['TAG_RANGE'], key = 'blk0__sig_op_limits_source'
+arrays = {'blk0__ts': array([1791792000000000000, 1791792001000000000, 1791792002000000000,
+       1791792003000000000]), 'blk0...16198454]), 'blk0__null_pv': array([False,  True, False, False]), 'blk0__sig_sp': array([50. , 49.9, 49.8, 49.7]), ...}
+
+    def serialize_signal(values: list[Any], key: str, arrays: dict[str, np.ndarray]) -> None:
+        """信号列 → float64 + nullmask（None→NaN；显式 null 位置单独 mask）."""
+        n = len(values)
+        nullmask = np.zeros(n, dtype=bool)
+        arr = np.full(n, np.nan, dtype=np.float64)
+        for i, v in enumerate(values):
+            if v is None:
+                nullmask[i] = True
+            else:
+>               arr[i] = float(v)
+                         ^^^^^^^^
+E               ValueError: could not convert string to float: 'TAG_RANGE'
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py:807: ValueError
+_______ test_npz_roundtrip_keeps_limit_provenance[DEFAULT_0_100-DEFAULT] _______
+
+source = 'DEFAULT_0_100', provenance = 'DEFAULT'
+
+    @pytest.mark.parametrize(
+        ("source", "provenance"),
+        [("LOOP_FIELD", "ACTUAL"), ("TAG_RANGE", "ACTUAL"), ("DEFAULT_0_100", "DEFAULT")],
+    )
+    def test_npz_roundtrip_keeps_limit_provenance(source, provenance):
+        bundles = _make_kpi_bundles(n_points=4)[:1]
+        signals = bundles[0].data_block.signals
+        signals["op_limits_source"] = [source]
+        signals["op_limits_provenance"] = [provenance, None]
+        signals["pv"][1] = None
+>       arrays, metadata = cs.serialize_data_blocks(bundles)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:45: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+original-source-edfa/backend/app/services/calc_snapshot.py:829: in serialize_data_blocks
+    serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = ['DEFAULT_0_100'], key = 'blk0__sig_op_limits_source'
+arrays = {'blk0__ts': array([1791792000000000000, 1791792001000000000, 1791792002000000000,
+       1791792003000000000]), 'blk0...16198454]), 'blk0__null_pv': array([False,  True, False, False]), 'blk0__sig_sp': array([50. , 49.9, 49.8, 49.7]), ...}
+
+    def serialize_signal(values: list[Any], key: str, arrays: dict[str, np.ndarray]) -> None:
+        """信号列 → float64 + nullmask（None→NaN；显式 null 位置单独 mask）."""
+        n = len(values)
+        nullmask = np.zeros(n, dtype=bool)
+        arr = np.full(n, np.nan, dtype=np.float64)
+        for i, v in enumerate(values):
+            if v is None:
+                nullmask[i] = True
+            else:
+>               arr[i] = float(v)
+                         ^^^^^^^^
+E               ValueError: could not convert string to float: 'DEFAULT_0_100'
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py:807: ValueError
+_____ test_metadata_changes_input_identity_without_changing_numeric_arrays _____
+
+    def test_metadata_changes_input_identity_without_changing_numeric_arrays():
+        bundles = _make_kpi_bundles(n_points=4)[:1]
+        signals = bundles[0].data_block.signals
+        signals["op_limits_source"] = ["LOOP_FIELD"]
+        signals["op_limits_provenance"] = ["ACTUAL"]
+>       arrays1, meta1 = cs.serialize_data_blocks(bundles)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:64: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+original-source-edfa/backend/app/services/calc_snapshot.py:829: in serialize_data_blocks
+    serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+values = ['LOOP_FIELD'], key = 'blk0__sig_op_limits_source'
+arrays = {'blk0__ts': array([1791792000000000000, 1791792001000000000, 1791792002000000000,
+       1791792003000000000]), 'blk0...16198454]), 'blk0__null_pv': array([False, False, False, False]), 'blk0__sig_sp': array([50. , 49.9, 49.8, 49.7]), ...}
+
+    def serialize_signal(values: list[Any], key: str, arrays: dict[str, np.ndarray]) -> None:
+        """信号列 → float64 + nullmask（None→NaN；显式 null 位置单独 mask）."""
+        n = len(values)
+        nullmask = np.zeros(n, dtype=bool)
+        arr = np.full(n, np.nan, dtype=np.float64)
+        for i, v in enumerate(values):
+            if v is None:
+                nullmask[i] = True
+            else:
+>               arr[i] = float(v)
+                         ^^^^^^^^
+E               ValueError: could not convert string to float: 'LOOP_FIELD'
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/app/services/calc_snapshot.py:807: ValueError
+__________ test_non_text_provenance_is_rejected_during_serialization ___________
+
+    def test_non_text_provenance_is_rejected_during_serialization():
+        bundles = _make_kpi_bundles(n_points=4)[:1]
+        bundles[0].data_block.signals["op_limits_source"] = [12]
+>       with pytest.raises(ValueError, match="信号元数据"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:91: Failed
+_______ test_invalid_or_colliding_replay_metadata_is_rejected[metadata0] _______
+
+metadata = {'op_limits_source': [12]}
+
+    @pytest.mark.parametrize("metadata", [{"op_limits_source": [12]}, {"pv": ["LOOP_FIELD"]}])
+    def test_invalid_or_colliding_replay_metadata_is_rejected(metadata):
+        arrays, blocks = cs.serialize_data_blocks(_make_kpi_bundles(n_points=4)[:1])
+        blocks[0]["signalMetadata"] = metadata
+>       with pytest.raises(ValueError, match="无效信号元数据"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:99: Failed
+_______ test_invalid_or_colliding_replay_metadata_is_rejected[metadata1] _______
+
+metadata = {'pv': ['LOOP_FIELD']}
+
+    @pytest.mark.parametrize("metadata", [{"op_limits_source": [12]}, {"pv": ["LOOP_FIELD"]}])
+    def test_invalid_or_colliding_replay_metadata_is_rejected(metadata):
+        arrays, blocks = cs.serialize_data_blocks(_make_kpi_bundles(n_points=4)[:1])
+        blocks[0]["signalMetadata"] = metadata
+>       with pytest.raises(ValueError, match="无效信号元数据"):
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       Failed: DID NOT RAISE ValueError
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:99: Failed
+___ test_custom_processed_counts_include_inconclusive_and_survive_lazy_sync ____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112bcaab0>
+task_store = <tests.test_api_tasks.FakeTaskRedis object at 0x112bcabd0>
+
+    async def test_custom_processed_counts_include_inconclusive_and_survive_lazy_sync(
+        monkeypatch, task_store
+    ):
+        task_id, loops, db = _prepare_batch(monkeypatch, task_store, ["SUCCESS", "INCONCLUSIVE"])
+        summary = await kpi_calc._do_calculate_custom_batch(
+            task_id, [loop.id for loop in loops], "2026-10-17T11:00:00", "2026-10-17T12:00:00"
+        )
+        assert (summary["total"], summary["success"], summary["inconclusive"], summary["failed"]) == (
+            2,
+            1,
+            1,
+            0,
+        )
+        assert db.commit.await_count == 2
+        observed = await task_tracker.get_task(task_id)
+>       assert observed["loops_done"] == "2"
+E       AssertionError: assert '0' == '2'
+E         
+E         - 2
+E         + 0
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:171: AssertionError
+_____ test_retried_custom_attempt_resets_prior_progress_before_actual_work _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112b7f380>
+task_store = <tests.test_api_tasks.FakeTaskRedis object at 0x112b7f680>
+
+    async def test_retried_custom_attempt_resets_prior_progress_before_actual_work(
+        monkeypatch, task_store
+    ):
+        task_id, loops, _ = _prepare_batch(monkeypatch, task_store, ["INCONCLUSIVE"])
+        task_store._hashes[f"task:{task_id}"].update(progress="1.0", loops_done="9")
+    
+        async def attempt(run, **kwargs):
+            current = await task_tracker.get_task(task_id)
+            assert current["loops_done"] == "0"
+            assert current["progress"] == "0"
+            return await run()
+    
+        monkeypatch.setattr(kpi_calc, "_attempt_log_wrap", attempt)
+>       result = await kpi_calc._do_calculate_custom_batch(
+            task_id, [loops[0].id], "2026-10-17T11:00:00", "2026-10-17T12:00:00", attempt_no=2
+        )
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:196: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+original-source-edfa/backend/app/tasks/kpi_calc.py:1877: in _do_calculate_custom_batch
+    results = await _attempt_log_wrap(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+run = <function _do_calculate_custom_batch.<locals>._run_batch at 0x113169b20>
+kwargs = {'logical_run_id': '1e1cb16a-465e-5c8e-9207-d7ca74bd3f18', 'attempt_no': 2}
+
+    async def attempt(run, **kwargs):
+        current = await task_tracker.get_task(task_id)
+>       assert current["loops_done"] == "0"
+E       AssertionError: assert '9' == '0'
+E         
+E         - 0
+E         + 9
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:191: AssertionError
+____ test_custom_record_exists_before_fast_consumer_and_is_not_overwritten _____
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112d06690>
+task_store = <tests.test_api_tasks.FakeTaskRedis object at 0x112d06780>
+
+    async def test_custom_record_exists_before_fast_consumer_and_is_not_overwritten(
+        monkeypatch, task_store
+    ):
+        def publish(*, args, task_id, priority):
+            stored = task_store._hashes[f"task:{args[0]}"]
+            assert stored["celery_task_id"] == task_id
+            assert task_store._zsets["task:index"][args[0]] > 0
+            stored.update(status="SUCCESS", progress="1.0", loops_done="1", current_stage="完成")
+            return SimpleNamespace(id=task_id)
+    
+        monkeypatch.setattr(kpi_calc.calculate_custom_batch_kpi, "apply_async", publish)
+>       response = await tasks.trigger_custom_evaluation(
+            CustomTaskCreate(**_CUSTOM_BODY), _custom_db(), TEST_USERS["ic_engineer"]
+        )
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:222: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+body = CustomTaskCreate(loopIds=['00000000-0000-0000-0000-000000000201'], metrics=['accuracy_rate'], tsStart='2026-06-22T08:00:00Z', tsEnd='2026-06-22T09:00:00Z')
+db = <AsyncMock id='4616675520'>, user = <MagicMock id='4494061792'>
+
+    async def trigger_custom_evaluation(
+        body: CustomTaskCreate,
+        db: AsyncSession = Depends(get_db),
+        user: SysUser = Depends(require_perms("metric:task-run")),
+    ) -> dict:
+        """触发自定义评估任务（按需触发）.
+    
+        对每个目标回路调用 Celery 任务 ``calculate_loop_kpi``。
+        自定义任务结果写入自定义快照表，不参与聚合统计。
+        并发限制：单用户 ≤3，全系统 ≤20（PRD §4.3.7.B）。
+    
+        设计依据：IDS §2.7.6.2, PRD §4.3.7.B
+        """
+        # 参数校验
+        if not body.loopIds:
+            raise BizError(
+                code="ERR_INVALID_REQUEST",
+                message="目标回路列表不能为空",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+        if not body.metrics:
+            raise BizError(
+                code="ERR_INVALID_REQUEST",
+                message="目标指标列表不能为空",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+    
+        # 停用回路显式拒绝（2026-10-10 裁决：停用=不参与任何计算；替代此前
+        # Celery 侧的静默跳过，让发起人第一时间知道目标不可用）
+        _disabled_rows = (
+            await db.execute(
+                select(
+                    LoopLedger.id,
+                    LoopLedger.tag_name,
+                ).where(
+                    LoopLedger.id.in_(body.loopIds),
+                    LoopLedger.is_active.is_(False),
+                )
+            )
+        ).all()
+        if _disabled_rows:
+            _names = sorted(str(r[1]) for r in _disabled_rows)
+            raise BizError(
+                code="ERR_LOOP_INACTIVE",
+                message=f"目标含已停用回路，不可发起评估: {_names[:5]}",
+                status_code=status.HTTP_400_BAD_REQUEST,
+            )
+    
+        # 并发限制：Lua 原子占用槽位（INCR+TTL），防 check-then-act TOCTOU
+        acquire_error = await _try_acquire_concurrency_slot(str(user.id))
+        if acquire_error is not None:
+            raise BizError(
+                code="ERR_TASK_CONCURRENCY_LIMIT",
+                message=acquire_error,
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            )
+    
+        from app.tasks.celery_app import PRIORITY_MANUAL
+        from app.tasks.kpi_calc import calculate_custom_batch_kpi
+    
+        task_id = str(uuid4())
+        now = _now_iso()
+    
+        try:
+            # P5-02：人工自定义批量走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+>           celery_result = calculate_custom_batch_kpi.apply_async(
+                args=[task_id, body.loopIds, body.tsStart, body.tsEnd], priority=PRIORITY_MANUAL
+            )
+E           TypeError: test_custom_record_exists_before_fast_consumer_and_is_not_overwritten.<locals>.publish() missing 1 required keyword-only argument: 'task_id'
+
+original-source-edfa/backend/app/api/v1/endpoints/tasks.py:877: TypeError
+_________ test_custom_publish_failure_is_failed_and_releases_slot_once _________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x112cc95e0>
+task_store = <tests.test_api_tasks.FakeTaskRedis object at 0x112cc96d0>
+
+    async def test_custom_publish_failure_is_failed_and_releases_slot_once(monkeypatch, task_store):
+        monkeypatch.setattr(
+            kpi_calc.calculate_custom_batch_kpi,
+            "apply_async",
+            MagicMock(side_effect=RuntimeError("broker down")),
+        )
+        with pytest.raises(RuntimeError, match="broker down"):
+            await tasks.trigger_custom_evaluation(
+                CustomTaskCreate(**_CUSTOM_BODY), _custom_db(), TEST_USERS["ic_engineer"]
+            )
+>       task_id = next(iter(task_store._zsets["task:index"]))
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'task:index'
+
+/Users/zhangping/DEV/clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py:240: KeyError
+=============================== warnings summary ===============================
+../../../../../../../../backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /Users/zhangping/DEV/CLPM-MVP/backend/.venv/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ============================
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_npz_roundtrip_keeps_limit_provenance[LOOP_FIELD-ACTUAL]
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_npz_roundtrip_keeps_limit_provenance[TAG_RANGE-ACTUAL]
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_npz_roundtrip_keeps_limit_provenance[DEFAULT_0_100-DEFAULT]
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_metadata_changes_input_identity_without_changing_numeric_arrays
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_non_text_provenance_is_rejected_during_serialization
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_invalid_or_colliding_replay_metadata_is_rejected[metadata0]
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_invalid_or_colliding_replay_metadata_is_rejected[metadata1]
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_custom_processed_counts_include_inconclusive_and_survive_lazy_sync
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_retried_custom_attempt_resets_prior_progress_before_actual_work
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_custom_record_exists_before_fast_consumer_and_is_not_overwritten
+FAILED ../../../../../../../../../clpm-remediation-20261017/backend/tests/test_custom_evaluation_completion.py::test_custom_publish_failure_is_failed_and_releases_slot_once
+11 failed, 2 passed, 1 warning in 0.36s

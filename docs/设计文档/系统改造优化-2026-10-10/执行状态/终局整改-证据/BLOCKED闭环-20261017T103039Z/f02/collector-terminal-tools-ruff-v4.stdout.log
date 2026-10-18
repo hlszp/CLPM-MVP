@@ -1,0 +1,905 @@
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:37:74
+   |
+35 |     found=set()
+36 |     def visit(value):
+37 |         if isinstance(value,str) and re.fullmatch(r'[0-9a-f-]{36}',value):found.add(value)
+   |                                                                          ^
+38 |         elif isinstance(value,(list,tuple)):
+39 |             for child in value:visit(child)
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:39:31
+   |
+37 |         if isinstance(value,str) and re.fullmatch(r'[0-9a-f-]{36}',value):found.add(value)
+38 |         elif isinstance(value,(list,tuple)):
+39 |             for child in value:visit(child)
+   |                               ^
+40 |     visit((payload or {}).get('children',[]))
+41 |     return found
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:45:34
+   |
+44 | def append(path,value):
+45 |     with path.open('a') as stream:stream.write(encode(value).decode()+'\n')
+   |                                  ^
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:49:22
+   |
+48 | def store(out,kind,value):
+49 |     raw=encode(value);digest=hashlib.sha256(raw).hexdigest();relative=f'objects/{kind}-{digest}.json.gz';path=out/relative
+   |                      ^
+50 |     if not path.exists():path.write_bytes(gzip.compress(raw,mtime=0))
+51 |     return {'file':relative,'rawSha256':digest,'gzipSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'rows':len(value) if isinsta…
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:49:61
+   |
+48 | def store(out,kind,value):
+49 |     raw=encode(value);digest=hashlib.sha256(raw).hexdigest();relative=f'objects/{kind}-{digest}.json.gz';path=out/relative
+   |                                                             ^
+50 |     if not path.exists():path.write_bytes(gzip.compress(raw,mtime=0))
+51 |     return {'file':relative,'rawSha256':digest,'gzipSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'rows':len(value) if isinsta…
+   |
+
+E702 Multiple statements on one line (semicolon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:49:105
+   |
+48 | def store(out,kind,value):
+49 |     raw=encode(value);digest=hashlib.sha256(raw).hexdigest();relative=f'objects/{kind}-{digest}.json.gz';path=out/relative
+   |                                                                                                         ^
+50 |     if not path.exists():path.write_bytes(gzip.compress(raw,mtime=0))
+51 |     return {'file':relative,'rawSha256':digest,'gzipSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'rows':len(value) if isinsta…
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:50:25
+   |
+48 | def store(out,kind,value):
+49 |     raw=encode(value);digest=hashlib.sha256(raw).hexdigest();relative=f'objects/{kind}-{digest}.json.gz';path=out/relative
+50 |     if not path.exists():path.write_bytes(gzip.compress(raw,mtime=0))
+   |                         ^
+51 |     return {'file':relative,'rawSha256':digest,'gzipSha256':hashlib.sha256(path.read_bytes()).hexdigest(),'rows':len(value) if isinsta…
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:55:8
+   |
+54 | def report_read(path):
+55 |     try:return json.loads(path.read_text())
+   |        ^
+56 |     except (FileNotFoundError,json.JSONDecodeError):return None
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:56:52
+   |
+54 | def report_read(path):
+55 |     try:return json.loads(path.read_text())
+56 |     except (FileNotFoundError,json.JSONDecodeError):return None
+   |                                                    ^
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:68:29
+   |
+66 |         try:
+67 |             parsed=datetime.fromisoformat(str(value).replace('Z','+00:00'))
+68 |             if parsed.tzinfo:parsed=parsed.astimezone(timezone.utc).replace(tzinfo=None)
+   |                             ^
+69 |             return parsed==start
+70 |         except (TypeError,ValueError):return False
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:70:38
+   |
+68 |             if parsed.tzinfo:parsed=parsed.astimezone(timezone.utc).replace(tzinfo=None)
+69 |             return parsed==start
+70 |         except (TypeError,ValueError):return False
+   |                                      ^
+71 |     for rows,key,expected,window in (
+72 |         (ledger,'loop_id',set(ids),'ts_start'),
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:76:85
+   |
+74 |         (nodes,'plant_node_id',set(node_ids),'ts_start'),
+75 |     ):
+76 |         if len(rows)!=len(expected) or {str(row.get(key)) for row in rows}!=expected:return False
+   |                                                                                     ^
+77 |         if any(not same_window(row.get(window)) or not row.get('result_record_id') for row in rows):return False
+78 |     refs={str(row['result_record_id']) for row in ledger+latest+nodes}
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:77:100
+   |
+75 |     ):
+76 |         if len(rows)!=len(expected) or {str(row.get(key)) for row in rows}!=expected:return False
+77 |         if any(not same_window(row.get(window)) or not row.get('result_record_id') for row in rows):return False
+   |                                                                                                    ^
+78 |     refs={str(row['result_record_id']) for row in ledger+latest+nodes}
+79 |     return refs<={str(row.get('id')) for row in records}
+   |
+
+E701 Multiple statements on one line (colon)
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:95:35
+   |
+93 |     snapshot={'poll':poll,'parentTaskId':parent,'productReportObservedAt':checkpoint.get('observedAt') if checkpoint else None,'comple…
+94 |     path=out/(label+'-payloads.json')
+95 |     with path.open('xb') as stream:stream.write(encode(snapshot))
+   |                                   ^
+96 |     return snapshot
+   |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:108:37
+    |
+107 | def capture_log(path,out,position,parent,children):
+108 |     if not path or not path.exists():return position,{'path':str(path),'available':False}
+    |                                     ^
+109 |     stat=path.stat();rotated=position.get('inode') not in (None,stat.st_ino) or stat.st_size<position.get('offset',0)
+110 |     start=0 if rotated else position.get('offset',stat.st_size)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:109:21
+    |
+107 | def capture_log(path,out,position,parent,children):
+108 |     if not path or not path.exists():return position,{'path':str(path),'available':False}
+109 |     stat=path.stat();rotated=position.get('inode') not in (None,stat.st_ino) or stat.st_size<position.get('offset',0)
+    |                     ^
+110 |     start=0 if rotated else position.get('offset',stat.st_size)
+111 |     with path.open('rb') as stream:stream.seek(start);raw=stream.read(32*1024*1024)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:111:35
+    |
+109 |     stat=path.stat();rotated=position.get('inode') not in (None,stat.st_ino) or stat.st_size<position.get('offset',0)
+110 |     start=0 if rotated else position.get('offset',stat.st_size)
+111 |     with path.open('rb') as stream:stream.seek(start);raw=stream.read(32*1024*1024)
+    |                                   ^
+112 |     end=start+len(raw);name=f'worker-log-{stat.st_ino}-{start}-{end}.log'
+113 |     if raw:(out/name).write_bytes(raw)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:111:54
+    |
+109 |     stat=path.stat();rotated=position.get('inode') not in (None,stat.st_ino) or stat.st_size<position.get('offset',0)
+110 |     start=0 if rotated else position.get('offset',stat.st_size)
+111 |     with path.open('rb') as stream:stream.seek(start);raw=stream.read(32*1024*1024)
+    |                                                      ^
+112 |     end=start+len(raw);name=f'worker-log-{stat.st_ino}-{start}-{end}.log'
+113 |     if raw:(out/name).write_bytes(raw)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:112:23
+    |
+110 |     start=0 if rotated else position.get('offset',stat.st_size)
+111 |     with path.open('rb') as stream:stream.seek(start);raw=stream.read(32*1024*1024)
+112 |     end=start+len(raw);name=f'worker-log-{stat.st_ino}-{start}-{end}.log'
+    |                       ^
+113 |     if raw:(out/name).write_bytes(raw)
+114 |     requests=[]
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:113:11
+    |
+111 |     with path.open('rb') as stream:stream.seek(start);raw=stream.read(32*1024*1024)
+112 |     end=start+len(raw);name=f'worker-log-{stat.st_ino}-{start}-{end}.log'
+113 |     if raw:(out/name).write_bytes(raw)
+    |           ^
+114 |     requests=[]
+115 |     for line in raw.decode('utf-8','replace').splitlines():
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:116:51
+    |
+114 |     requests=[]
+115 |     for line in raw.decode('utf-8','replace').splitlines():
+116 |         if 'calculate_node_kpi_hourly' not in line:continue
+    |                                                   ^
+117 |         fields={key:match.group(1) if (match:=re.search(r"['\"]"+key+r"['\"]\s*:\s*['\"]([^'\"]+)['\"]",line)) else None for key in (…
+118 |         if parent and (fields['root_id']==parent or fields['parent_id']==parent) and fields['id']:
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:119:39
+    |
+117 |         fields={key:match.group(1) if (match:=re.search(r"['\"]"+key+r"['\"]\s*:\s*['\"]([^'\"]+)['\"]",line)) else None for key in (…
+118 |         if parent and (fields['root_id']==parent or fields['parent_id']==parent) and fields['id']:
+119 |             children.add(fields['id']);requests.append({'kind':'node-request','taskId':fields['id'],'rootId':fields['root_id'],'paren…
+    |                                       ^
+120 |     if requests:append(out/'task-evidence.jsonl',{'capturedAt':now(),'requests':requests})
+121 |     return {'inode':stat.st_ino,'offset':end},{'source':str(path),'inode':stat.st_ino,'offsetStart':start,'offsetEnd':end,'rotated':r…
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:120:16
+    |
+118 |         if parent and (fields['root_id']==parent or fields['parent_id']==parent) and fields['id']:
+119 |             children.add(fields['id']);requests.append({'kind':'node-request','taskId':fields['id'],'rootId':fields['root_id'],'paren…
+120 |     if requests:append(out/'task-evidence.jsonl',{'capturedAt':now(),'requests':requests})
+    |                ^
+121 |     return {'inode':stat.st_ino,'offset':end},{'source':str(path),'inode':stat.st_ino,'offsetStart':start,'offsetEnd':end,'rotated':r…
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:130:14
+    |
+128 |         raw=backend.get('celery-task-meta-'+task_id)
+129 |         tasks[task_id]=json.loads(raw) if raw else None
+130 |     if parent:children.update(task_children(tasks.get(parent)))
+    |              ^
+131 |     headers=[]
+132 |     for delivery,raw in broker.hgetall('unacked').items():
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:133:49
+    |
+131 |     headers=[]
+132 |     for delivery,raw in broker.hgetall('unacked').items():
+133 |         message,exchange,routing=json.loads(raw);header=message.get('headers',{});task_id=header.get('id')
+    |                                                 ^
+134 |         if parent and (header.get('root_id')==parent or header.get('parent_id')==parent):children.add(task_id)
+135 |         payload=json.loads(base64.b64decode(message['body']))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:133:82
+    |
+131 |     headers=[]
+132 |     for delivery,raw in broker.hgetall('unacked').items():
+133 |         message,exchange,routing=json.loads(raw);header=message.get('headers',{});task_id=header.get('id')
+    |                                                                                  ^
+134 |         if parent and (header.get('root_id')==parent or header.get('parent_id')==parent):children.add(task_id)
+135 |         payload=json.loads(base64.b64decode(message['body']))
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:134:89
+    |
+132 |     for delivery,raw in broker.hgetall('unacked').items():
+133 |         message,exchange,routing=json.loads(raw);header=message.get('headers',{});task_id=header.get('id')
+134 |         if parent and (header.get('root_id')==parent or header.get('parent_id')==parent):children.add(task_id)
+    |                                                                                         ^
+135 |         payload=json.loads(base64.b64decode(message['body']))
+136 |         headers.append({'deliveryTag':delivery,'score':broker.zscore('unacked_index',delivery),'headers':header,'exchange':exchange,'…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:143:37
+    |
+142 | async def main(args):
+143 |     cfg=dotenv_values(args.env_file);private_config(cfg)
+    |                                     ^
+144 |     out=Path(args.out);out.mkdir(parents=True,exist_ok=False);(out/'objects').mkdir()
+145 |     start=datetime.fromisoformat(args.ts_start.replace('Z','+00:00'))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:144:23
+    |
+142 | async def main(args):
+143 |     cfg=dotenv_values(args.env_file);private_config(cfg)
+144 |     out=Path(args.out);out.mkdir(parents=True,exist_ok=False);(out/'objects').mkdir()
+    |                       ^
+145 |     start=datetime.fromisoformat(args.ts_start.replace('Z','+00:00'))
+146 |     if start.tzinfo:start=start.astimezone(timezone.utc).replace(tzinfo=None)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:144:62
+    |
+142 | async def main(args):
+143 |     cfg=dotenv_values(args.env_file);private_config(cfg)
+144 |     out=Path(args.out);out.mkdir(parents=True,exist_ok=False);(out/'objects').mkdir()
+    |                                                              ^
+145 |     start=datetime.fromisoformat(args.ts_start.replace('Z','+00:00'))
+146 |     if start.tzinfo:start=start.astimezone(timezone.utc).replace(tzinfo=None)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:146:20
+    |
+144 |     out=Path(args.out);out.mkdir(parents=True,exist_ok=False);(out/'objects').mkdir()
+145 |     start=datetime.fromisoformat(args.ts_start.replace('Z','+00:00'))
+146 |     if start.tzinfo:start=start.astimezone(timezone.utc).replace(tzinfo=None)
+    |                    ^
+147 |     end=start+timedelta(hours=1)
+148 |     if end>datetime.now(timezone.utc).replace(tzinfo=None):raise ValueError('past complete window required')
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:148:59
+    |
+146 |     if start.tzinfo:start=start.astimezone(timezone.utc).replace(tzinfo=None)
+147 |     end=start+timedelta(hours=1)
+148 |     if end>datetime.now(timezone.utc).replace(tzinfo=None):raise ValueError('past complete window required')
+    |                                                           ^
+149 |     common=dict(host=cfg.get('REDIS_HOST','localhost'),port=int(cfg.get('REDIS_PORT',17103)),password=cfg.get('REDIS_PASSWORD') or No…
+150 |     clients=[redis.Redis(**common,db=i) for i in (0,1,2)]
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:154:34
+    |
+152 |     td=httpx.Client(auth=(cfg.get('TDENGINE_USER','root'),cfg.get('TDENGINE_PASSWORD','')),timeout=5,trust_env=False)
+153 |     endpoint=f"http://{cfg.get('TDENGINE_HOST','localhost')}:{int(cfg.get('TDENGINE_PORT',17104))+11}/rest/sql"
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+    |                                  ^
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:31
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                               ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:46
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                                              ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:63
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                                                               ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:88
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                                                                                        ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:107
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                                                                                                           ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:114
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                                                                                                                  ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:124
+    |
+154 |     report_path=Path(args.report);log_path=Path(args.worker_log) if args.worker_log else None
+155 |     position={'inode':log_path.stat().st_ino,'offset':log_path.stat().st_size} if log_path and log_path.exists() else {}
+156 |     parent=args.parent_task_id;children=set();source_ids=set();started=time.monotonic();terminal_seen=None;poll=0;errors=[];final_pay…
+    |                                                                                                                            ^
+157 |     try:
+158 |         async with db.transaction(isolation='repeatable_read',readonly=True):
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:144
+    |
+154 | …r_log else None
+155 | … if log_path and log_path.exists() else {}
+156 | …notonic();terminal_seen=None;poll=0;errors=[];final_payloads=None;first_terminal_payloads=None;first_complete_payloads=None
+    |                                                                   ^
+157 | …
+158 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:156:173
+    |
+154 | …
+155 | …sts() else {}
+156 | …poll=0;errors=[];final_payloads=None;first_terminal_payloads=None;first_complete_payloads=None
+    |                                                                   ^
+157 | …
+158 | …
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:164:71
+    |
+162 | …         identity=serial(await db.fetchrow("SELECT current_database() AS database,current_setting('transaction_read_only') AS readon…
+163 | …         columns=await db.fetch("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table…
+164 | …     if not args.smoke and (len(loops)!=1000 or global_count!=1000):raise ValueError('private capacity denominator must be exactly 1…
+    |                                                                     ^
+165 | …     ids=[row['id'] for row in loops];by_node={node['id']:node for node in tree};node_ids=set();descendants={}
+166 | …     for loop in loops:
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:165:41
+    |
+163 | …         columns=await db.fetch("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table…
+164 | …     if not args.smoke and (len(loops)!=1000 or global_count!=1000):raise ValueError('private capacity denominator must be exactly 1…
+165 | …     ids=[row['id'] for row in loops];by_node={node['id']:node for node in tree};node_ids=set();descendants={}
+    |                                       ^
+166 | …     for loop in loops:
+167 | …         nid=loop['unit_id'];seen=set()
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:165:84
+    |
+163 | …         columns=await db.fetch("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table…
+164 | …     if not args.smoke and (len(loops)!=1000 or global_count!=1000):raise ValueError('private capacity denominator must be exactly 1…
+165 | …     ids=[row['id'] for row in loops];by_node={node['id']:node for node in tree};node_ids=set();descendants={}
+    |                                                                                  ^
+166 | …     for loop in loops:
+167 | …         nid=loop['unit_id'];seen=set()
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:165:99
+    |
+163 | …         columns=await db.fetch("SELECT table_name,column_name FROM information_schema.columns WHERE table_schema='public' AND table…
+164 | …     if not args.smoke and (len(loops)!=1000 or global_count!=1000):raise ValueError('private capacity denominator must be exactly 1…
+165 | …     ids=[row['id'] for row in loops];by_node={node['id']:node for node in tree};node_ids=set();descendants={}
+    |                                                                                                 ^
+166 | …     for loop in loops:
+167 | …         nid=loop['unit_id'];seen=set()
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:167:32
+    |
+165 |         ids=[row['id'] for row in loops];by_node={node['id']:node for node in tree};node_ids=set();descendants={}
+166 |         for loop in loops:
+167 |             nid=loop['unit_id'];seen=set()
+    |                                ^
+168 |             while nid:
+169 |                 if nid in seen:raise ValueError('cycle in plant tree')
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:169:31
+    |
+167 |             nid=loop['unit_id'];seen=set()
+168 |             while nid:
+169 |                 if nid in seen:raise ValueError('cycle in plant tree')
+    |                               ^
+170 |                 seen.add(nid);node=by_node[nid]
+171 |                 if node['is_kpi_enabled']:node_ids.add(nid);descendants.setdefault(nid,[]).append(loop['id'])
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:170:30
+    |
+168 |             while nid:
+169 |                 if nid in seen:raise ValueError('cycle in plant tree')
+170 |                 seen.add(nid);node=by_node[nid]
+    |                              ^
+171 |                 if node['is_kpi_enabled']:node_ids.add(nid);descendants.setdefault(nid,[]).append(loop['id'])
+172 |                 nid=node['parent_id']
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:171:42
+    |
+169 | …             if nid in seen:raise ValueError('cycle in plant tree')
+170 | …             seen.add(nid);node=by_node[nid]
+171 | …             if node['is_kpi_enabled']:node_ids.add(nid);descendants.setdefault(nid,[]).append(loop['id'])
+    |                                        ^
+172 | …             nid=node['parent_id']
+173 | …     wanted={'id','loop_id','plant_node_id','ts_start','ts_end','data_ts_start','data_ts_end','result_record_id','source','source_ta…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:171:60
+    |
+169 | …             if nid in seen:raise ValueError('cycle in plant tree')
+170 | …             seen.add(nid);node=by_node[nid]
+171 | …             if node['is_kpi_enabled']:node_ids.add(nid);descendants.setdefault(nid,[]).append(loop['id'])
+    |                                                          ^
+172 | …             nid=node['parent_id']
+173 | …     wanted={'id','loop_id','plant_node_id','ts_start','ts_end','data_ts_start','data_ts_end','result_record_id','source','source_ta…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:190:20
+    |
+188 | …     (out/'bootstrap.json').write_bytes(encode({'capturedAt':now(),'argv':sys.argv,'envFileSha256':hashlib.sha256(Path(args.env_file…
+189 | …     while time.monotonic()-started<args.max_seconds:
+190 | …         poll+=1;cycle=time.monotonic();observed_start=now();checkpoint=report_read(report_path)
+    |                  ^
+191 | …         if checkpoint:
+192 | …             parent=checkpoint.get('parentTaskId') or parent
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:190:43
+    |
+188 | …     (out/'bootstrap.json').write_bytes(encode({'capturedAt':now(),'argv':sys.argv,'envFileSha256':hashlib.sha256(Path(args.env_file…
+189 | …     while time.monotonic()-started<args.max_seconds:
+190 | …         poll+=1;cycle=time.monotonic();observed_start=now();checkpoint=report_read(report_path)
+    |                                         ^
+191 | …         if checkpoint:
+192 | …             parent=checkpoint.get('parentTaskId') or parent
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:190:64
+    |
+188 | …     (out/'bootstrap.json').write_bytes(encode({'capturedAt':now(),'argv':sys.argv,'envFileSha256':hashlib.sha256(Path(args.env_file…
+189 | …     while time.monotonic()-started<args.max_seconds:
+190 | …         poll+=1;cycle=time.monotonic();observed_start=now();checkpoint=report_read(report_path)
+    |                                                              ^
+191 | …         if checkpoint:
+192 | …             parent=checkpoint.get('parentTaskId') or parent
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:195:29
+    |
+193 | …         (out/'product-report-last.json').write_bytes(encode(checkpoint))
+194 | …     position,log_ref=capture_log(log_path,out,position,parent,children)
+195 | …     pg_started=now();full_values=None;capture_terminal=False;capture_complete=False
+    |                       ^
+196 | …     async with db.transaction(isolation='repeatable_read',readonly=True):
+197 | …         tx=serial(await db.fetchrow("SELECT current_setting('transaction_read_only') AS readonly,current_setting('transaction_isola…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:195:46
+    |
+193 | …         (out/'product-report-last.json').write_bytes(encode(checkpoint))
+194 | …     position,log_ref=capture_log(log_path,out,position,parent,children)
+195 | …     pg_started=now();full_values=None;capture_terminal=False;capture_complete=False
+    |                                        ^
+196 | …     async with db.transaction(isolation='repeatable_read',readonly=True):
+197 | …         tx=serial(await db.fetchrow("SELECT current_setting('transaction_read_only') AS readonly,current_setting('transaction_isola…
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:195:69
+    |
+193 | …         (out/'product-report-last.json').write_bytes(encode(checkpoint))
+194 | …     position,log_ref=capture_log(log_path,out,position,parent,children)
+195 | …     pg_started=now();full_values=None;capture_terminal=False;capture_complete=False
+    |                                                               ^
+196 | …     async with db.transaction(isolation='repeatable_read',readonly=True):
+197 | …         tx=serial(await db.fetchrow("SELECT current_setting('transaction_read_only') AS readonly,current_setting('transaction_isola…
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:207:56
+    |
+205 | …         capture_terminal=terminal_checkpoint(checkpoint) and first_terminal_payloads is None
+206 | …         capture_complete=(terminal_checkpoint(checkpoint) or first_terminal_payloads is not None) and first_complete_payloads is No…
+207 | …         if capture_terminal or capture_complete:full_values=await read_full_payloads(db,start,ids,node_ids,parent)
+    |                                                  ^
+208 | …         pg_read_completed=now()
+209 | …     tx_end=now()
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:215:188
+    |
+213 | …
+214 | …
+215 | …d,pg_read_completed,tx_end,redis_state['observedAt'],full_values);full_refs['firstTerminalFullPayloads']=first_terminal_payloads
+    |                                                                   ^
+216 | …
+217 | …d,pg_read_completed,tx_end,redis_state['observedAt'],full_values);full_refs['firstCompleteFullPayloads']=first_complete_payloads
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:217:188
+    |
+215 | …d,pg_read_completed,tx_end,redis_state['observedAt'],full_values);full_refs['firstTerminalFullPayloads']=first_terminal_payloads
+216 | …
+217 | …d,pg_read_completed,tx_end,redis_state['observedAt'],full_values);full_refs['firstCompleteFullPayloads']=first_complete_payloads
+    |                                                                   ^
+218 | …tedAt':pg_read_completed,'pgEndedAt':tx_end,'pgTransaction':tx,'taskObservedAt':redis_state['observedAt'],'parentTaskId':parent,'ass…
+219 | …':references['redis-tasks']})
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:226:60
+    |
+224 | …     for container in args.containers:
+225 | …         raw=cmd(['docker','exec',container,'cat','/sys/fs/cgroup/memory.current','/sys/fs/cgroup/memory.stat','/sys/fs/cgroup/memor…
+226 | …         lines=raw.get('stdout','').splitlines();fields={}
+    |                                                  ^
+227 | …         for line in lines[1:]:
+228 | …             pieces=line.split()
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:229:66
+    |
+227 | …             for line in lines[1:]:
+228 | …                 pieces=line.split()
+229 | …                 if len(pieces)==2 and pieces[1].isdigit():fields[pieces[0]]=int(pieces[1])
+    |                                                            ^
+230 | …             resource['containerCgroups'][container]={'raw':raw,'memoryCurrentBytes':int(lines[0]) if lines and lines[0].isdigit() e…
+231 | …     if args.td_container:
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:238:67
+    |
+236 | …     resource['ownedProcesses']=[line for line in ps.get('stdout','').splitlines() if runtime_marker and runtime_marker in line and …
+237 | …     try:
+238 | …         response=td.post(endpoint,content=b'SHOW QUERIES');resource['tdActiveQueries']={'httpStatus':response.status_code,'response…
+    |                                                             ^
+239 | …     except Exception as exc:resource['tdActiveQueries']={'error':type(exc).__name__+': '+str(exc)}
+240 | …     resource['completedAt']=now();append(out/'resources.jsonl',resource)
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:239:36
+    |
+237 | …     try:
+238 | …         response=td.post(endpoint,content=b'SHOW QUERIES');resource['tdActiveQueries']={'httpStatus':response.status_code,'response…
+239 | …     except Exception as exc:resource['tdActiveQueries']={'error':type(exc).__name__+': '+str(exc)}
+    |                              ^
+240 | …     resource['completedAt']=now();append(out/'resources.jsonl',resource)
+241 | …     if args.smoke:break
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:240:42
+    |
+238 | …         response=td.post(endpoint,content=b'SHOW QUERIES');resource['tdActiveQueries']={'httpStatus':response.status_code,'response…
+239 | …     except Exception as exc:resource['tdActiveQueries']={'error':type(exc).__name__+': '+str(exc)}
+240 | …     resource['completedAt']=now();append(out/'resources.jsonl',resource)
+    |                                    ^
+241 | …     if args.smoke:break
+242 | …     if terminal_checkpoint(checkpoint):
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:241:26
+    |
+239 |             except Exception as exc:resource['tdActiveQueries']={'error':type(exc).__name__+': '+str(exc)}
+240 |             resource['completedAt']=now();append(out/'resources.jsonl',resource)
+241 |             if args.smoke:break
+    |                          ^
+242 |             if terminal_checkpoint(checkpoint):
+243 |                 if terminal_seen is None:terminal_seen=time.monotonic()
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:243:41
+    |
+241 |             if args.smoke:break
+242 |             if terminal_checkpoint(checkpoint):
+243 |                 if terminal_seen is None:terminal_seen=time.monotonic()
+    |                                         ^
+244 |                 if time.monotonic()-terminal_seen>=args.post_seconds:break
+245 |             await asyncio.sleep(max(0,args.interval-(time.monotonic()-cycle)))
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:244:69
+    |
+242 |             if terminal_checkpoint(checkpoint):
+243 |                 if terminal_seen is None:terminal_seen=time.monotonic()
+244 |                 if time.monotonic()-terminal_seen>=args.post_seconds:break
+    |                                                                     ^
+245 |             await asyncio.sleep(max(0,args.interval-(time.monotonic()-cycle)))
+246 |         position,log_ref=capture_log(log_path,out,position,parent,children)
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:255:35
+    |
+253 |         status='SMOKE_ONLY' if args.smoke else 'COLLECTED' if terminal_seen is not None else 'COLLECTION_TIMEOUT'
+254 |     except BaseException as exc:
+255 |         status='COLLECTION_FAILED';errors.append({'type':type(exc).__name__,'message':str(exc)})
+    |                                   ^
+256 |     finally:
+257 |         await db.close();td.close()
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:257:25
+    |
+255 |         status='COLLECTION_FAILED';errors.append({'type':type(exc).__name__,'message':str(exc)})
+256 |     finally:
+257 |         await db.close();td.close()
+    |                         ^
+258 |         for client in clients:client.close()
+259 |     summary={'status':status,'polls':poll,'parentTaskId':parent,'associatedChildren':sorted(children),'finishedAt':now(),'errors':err…
+    |
+
+E701 Multiple statements on one line (colon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:258:30
+    |
+256 |     finally:
+257 |         await db.close();td.close()
+258 |         for client in clients:client.close()
+    |                              ^
+259 |     summary={'status':status,'polls':poll,'parentTaskId':parent,'associatedChildren':sorted(children),'finishedAt':now(),'errors':err…
+260 |     (out/'collector-summary.json').write_bytes(encode(summary))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:263:31
+    |
+261 |     manifest=[{'file':str(path.relative_to(out)),'bytes':path.stat().st_size,'sha256':hashlib.sha256(path.read_bytes()).hexdigest()} …
+262 |     (out/'sha256-manifest.json').write_bytes(encode({'files':manifest}))
+263 |     print(json.dumps(summary));return 0 if status in ('COLLECTED','SMOKE_ONLY') else 1
+    |                               ^
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:32
+    |
+266 | if __name__=='__main__':
+267 |     p=argparse.ArgumentParser();p.add_argument('--env-file',required=True);p.add_argument('--ts-start',required=True);p.add_argument(…
+    |                                ^
+268 |     raise SystemExit(asyncio.run(main(p.parse_args())))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:75
+    |
+266 | if __name__=='__main__':
+267 |     p=argparse.ArgumentParser();p.add_argument('--env-file',required=True);p.add_argument('--ts-start',required=True);p.add_argument(…
+    |                                                                           ^
+268 |     raise SystemExit(asyncio.run(main(p.parse_args())))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:118
+    |
+266 | if __name__=='__main__':
+267 |     p=argparse.ArgumentParser();p.add_argument('--env-file',required=True);p.add_argument('--ts-start',required=True);p.add_argument(…
+    |                                                                                                                      ^
+268 |     raise SystemExit(asyncio.run(main(p.parse_args())))
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:159
+    |
+266 | …
+267 | …ts-start',required=True);p.add_argument('--report',required=True);p.add_argument('--out',required=True);p.add_argument('--parent-tas…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:197
+    |
+266 | …
+267 | …t('--report',required=True);p.add_argument('--out',required=True);p.add_argument('--parent-task-id');p.add_argument('--worker-log');…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:232
+    |
+266 | …
+267 | …rgument('--out',required=True);p.add_argument('--parent-task-id');p.add_argument('--worker-log');p.add_argument('--runtime-marker',d…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:263
+    |
+266 | …
+267 | …p.add_argument('--parent-task-id');p.add_argument('--worker-log');p.add_argument('--runtime-marker',default='clpm-g5-runtime-2026101…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:333
+    |
+266 | …
+267 | …d_argument('--runtime-marker',default='clpm-g5-runtime-20261015');p.add_argument('--interval',type=float,default=5);p.add_argument('…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:383
+    |
+266 | …
+267 | …time-20261015');p.add_argument('--interval',type=float,default=5);p.add_argument('--post-seconds',type=float,default=300);p.add_argu…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:439
+    |
+266 | …
+267 | …efault=5);p.add_argument('--post-seconds',type=float,default=300);p.add_argument('--max-seconds',type=float,default=2700);p.add_argu…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:495
+    |
+266 | …
+267 | …ault=300);p.add_argument('--max-seconds',type=float,default=2700);p.add_argument('--containers',nargs='*');p.add_argument('--td-cont…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:536
+    |
+266 | …
+267 | …type=float,default=2700);p.add_argument('--containers',nargs='*');p.add_argument('--td-container',default='clpm-mvp-tdengine');p.add…
+    |                                                                   ^
+268 | …
+    |
+
+E702 Multiple statements on one line (semicolon)
+   --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py:267:597
+    |
+266 | …
+267 | …'*');p.add_argument('--td-container',default='clpm-mvp-tdengine');p.add_argument('--smoke',action='store_true',help='One read-only q…
+    |                                                                   ^
+268 | …
+    |
+
+F401 [*] `pathlib.Path` imported but unused
+  --> docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/test_collector_terminal_payloads.py:10:21
+   |
+ 8 | import json
+ 9 | import os
+10 | from pathlib import Path
+   |                     ^^^^
+11 | from types import SimpleNamespace
+   |
+help: Remove unused import: `pathlib.Path`
+
+Found 86 errors.
+[*] 1 fixable with the `--fix` option.

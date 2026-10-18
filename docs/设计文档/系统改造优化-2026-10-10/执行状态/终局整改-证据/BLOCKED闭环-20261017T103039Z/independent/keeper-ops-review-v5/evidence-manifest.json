@@ -1,0 +1,641 @@
+{
+  "at": "2026-10-17T11:44:06.393926+00:00",
+  "files": [
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/independent-observed-result.json",
+      "size": 36941,
+      "sha256": "c71d80c20803840d6de1f6288cebe0e9e1dc4aa047c9eea03ac0420ee52acf1b"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "183e9547957733674d1867392f60d6b81b7d127781fc28fedabfec594e6fa049"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "77a1a72926926f6d3683917bfd29eea453dcd2008ba24a3370c0eaf44873a36b"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/raw/worker.log",
+      "size": 49,
+      "sha256": "cbe1d2840ffe7caa3328a6583327020ac86b1c4464c56168f75c0c5a6d78d5e7"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_backwards_timestamp_cannot_satisfy_sample_interval/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/independent-observed-result.json",
+      "size": 36941,
+      "sha256": "07503afe53d969eb7a8eb05cecfbe016336c54575b6448a3a8f5afd3f806ad95"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "183e9547957733674d1867392f60d6b81b7d127781fc28fedabfec594e6fa049"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "ba8b845a29a898797544fb3ef26fa1c0ad4f87c18668f9b10189f1140c08b904"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/raw/worker.log",
+      "size": 49,
+      "sha256": "cbe1d2840ffe7caa3328a6583327020ac86b1c4464c56168f75c0c5a6d78d5e7"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_duplicate_timestamp_cannot_satisfy_sample_interval/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/independent-observed-result.json",
+      "size": 37013,
+      "sha256": "c9c951d7d62a287f5116a2d743cedcf91099424b05ebcb86156d9134384ccbff"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "183e9547957733674d1867392f60d6b81b7d127781fc28fedabfec594e6fa049"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/raw/resources.jsonl",
+      "size": 137692,
+      "sha256": "c854341f68e01db8d09b5db7a7f9ed63037224f15f71d70666b2c36fda0edb68"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/raw/worker.log",
+      "size": 49,
+      "sha256": "cbe1d2840ffe7caa3328a6583327020ac86b1c4464c56168f75c0c5a6d78d5e7"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_memory_summary_cannot_override_overbudget_raw_current/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/independent-observed-result.json",
+      "size": 37010,
+      "sha256": "69ddc5f38da6bb625ba6273b3be35abc2eb4503b9ffccdf42b3dde7fb4305b97"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/raw/observations.jsonl",
+      "size": 76,
+      "sha256": "aca821e54819487023f26c0dd63680dc00a48df8911e70f9128f416527d2d389"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/raw/worker.log",
+      "size": 49,
+      "sha256": "cbe1d2840ffe7caa3328a6583327020ac86b1c4464c56168f75c0c5a6d78d5e7"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_entire_worker_log_cannot_be_no_error/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/independent-observed-result.json",
+      "size": 48075,
+      "sha256": "71fbf802daa4d8336bc6e0b48fd38be02ce00df850adeb19c09520198f7090be"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "183e9547957733674d1867392f60d6b81b7d127781fc28fedabfec594e6fa049"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/raw/resources.jsonl",
+      "size": 124992,
+      "sha256": "523acf6f17c44469dceb86d42e55d0c42cf0bd86eac3990c798163532d12f264"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/raw/worker.log",
+      "size": 49,
+      "sha256": "cbe1d2840ffe7caa3328a6583327020ac86b1c4464c56168f75c0c5a6d78d5e7"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_missing_oom_evidence_cannot_be_zero/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/independent-observed-result.json",
+      "size": 37014,
+      "sha256": "1e22cb9ff2e5142475c66c27b22355b036304fd89233fbcc9286fe73d9c20d87"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "70017e084a475de263ad975cdf21ff39c53cc1fcbee882320ff613c6a947f01d"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/raw/worker.log",
+      "size": 74,
+      "sha256": "ac48a6225aa1b302fcac6e34e4338d403969d6f9f9e75fd40d8dc917d48eb075"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_oom_command_is_resource_failure/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/independent-observed-result.json",
+      "size": 37030,
+      "sha256": "978612197e112941721d8d25b34ca361a071ea9e971af2fdf4433c12c33a1713"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "2f42a590e7ab35c26aacc9b0f6daa5aaee4749c8be4c5d5e9a0ce7d376fe846c"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/worker.log",
+      "size": 90,
+      "sha256": "2c0ab96fb73865157c654295833279053b503b06b2dcd3d93e684dc9da33a77d"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/independent-observed-result.json",
+      "size": 36895,
+      "sha256": "034a966f6ea5986bf0c15ef3b66c4d3e20c69827e64b24665bdc2b2594073a1d"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "183e9547957733674d1867392f60d6b81b7d127781fc28fedabfec594e6fa049"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/raw/worker.log",
+      "size": 49,
+      "sha256": "cbe1d2840ffe7caa3328a6583327020ac86b1c4464c56168f75c0c5a6d78d5e7"
+    },
+    {
+      "path": "forward-final-eight-artifacts/test_valid_complete_control/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "forward-final-eight.command.json",
+      "size": 717,
+      "sha256": "99a5bb7f090d80f2fbe1cc71471773440d5aa9ed2da4c4a30b3c84111e1bea7a"
+    },
+    {
+      "path": "forward-final-eight.stderr.log",
+      "size": 1404,
+      "sha256": "94aee917f942bc9283b340b2df6541bd3b2619d9186cef3b07e0fbd3e9a8e86c"
+    },
+    {
+      "path": "forward-final-eight.stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "ops-source-freeze-final.json",
+      "size": 1481,
+      "sha256": "1a8848cc4af1480e2cb8c17382e1b312e1b2a4c6bdc8160e7271d77401c64342"
+    },
+    {
+      "path": "ops-source-freeze.json",
+      "size": 1350,
+      "sha256": "559ac40a696cd2c4c095344e86cb37e5bc2db6c8a4706745b4fa0496b87519c1"
+    },
+    {
+      "path": "receipt.md",
+      "size": 2483,
+      "sha256": "15e996c13fc57f60c680f3b8a0286321a24a6dd8ce8e9868129937e0e42008ac"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/independent-observed-result.json",
+      "size": 36895,
+      "sha256": "284c638e55a609b07f468c2556a48d1fa2f21aff9e14fa3dd487c893f5da2f58"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "70017e084a475de263ad975cdf21ff39c53cc1fcbee882320ff613c6a947f01d"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/raw/worker.log",
+      "size": 74,
+      "sha256": "ac48a6225aa1b302fcac6e34e4338d403969d6f9f9e75fd40d8dc917d48eb075"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_oom_command_is_resource_failure/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/independent-observed-result.json",
+      "size": 36895,
+      "sha256": "c9e8791831152b2ce5e0f154b97b50d8138227ff935897a7aed796dcc7699eba"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "2f42a590e7ab35c26aacc9b0f6daa5aaee4749c8be4c5d5e9a0ce7d376fe846c"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/worker.log",
+      "size": 90,
+      "sha256": "2c0ab96fb73865157c654295833279053b503b06b2dcd3d93e684dc9da33a77d"
+    },
+    {
+      "path": "reverse-redis-old37-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "reverse-redis-old37.command.json",
+      "size": 844,
+      "sha256": "2191ce80b6a9e87b1545bc12be132cb350e895ee94b97970902e6a636da40ec2"
+    },
+    {
+      "path": "reverse-redis-old37.stderr.log",
+      "size": 1926,
+      "sha256": "af7999454b01a7b4e61a53d6b8ca8a21989e0ce539add8646d12e9df77a1579e"
+    },
+    {
+      "path": "reverse-redis-old37.stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/independent-observed-result.json",
+      "size": 37014,
+      "sha256": "97670e985fc55dcf3123b89ed8f5cb4946a62710955682f59de283e960b199ea"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "70017e084a475de263ad975cdf21ff39c53cc1fcbee882320ff613c6a947f01d"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/raw/worker.log",
+      "size": 74,
+      "sha256": "ac48a6225aa1b302fcac6e34e4338d403969d6f9f9e75fd40d8dc917d48eb075"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_oom_command_is_resource_failure/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/benchmark-timestamped.jsonl",
+      "size": 113,
+      "sha256": "704e3efbb916442246f6719a9e01a8950329461574cd00d892d83cbb10f5f127"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/cache-before/cache-state.json",
+      "size": 37,
+      "sha256": "d760d96249d47ec9ee63876cc226d4f494bdf439758ea333fe2f9562922b1ed0"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/freeze/freeze_synthetic.json",
+      "size": 16,
+      "sha256": "ca888f95ef88b605ac263fc6c82fe374f4eb296e35947e7cbd948a829230bc46"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/independent-observed-result.json",
+      "size": 37030,
+      "sha256": "d3911f77eee367318b36d1e4464156dae14ffde103df66d9adc08faa69fb66c9"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/product-report.json",
+      "size": 79,
+      "sha256": "59d7a1b2987e712a3b9bd4f61c93d0472ded7325d0091072e89e614f431fbb46"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/observations.jsonl",
+      "size": 255,
+      "sha256": "2f42a590e7ab35c26aacc9b0f6daa5aaee4749c8be4c5d5e9a0ce7d376fe846c"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/resources.jsonl",
+      "size": 137691,
+      "sha256": "a1a0e9b8ffce71f69aded1a0788893b90f65afba09fc0f4c177a1357913f31e1"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/raw/worker.log",
+      "size": 90,
+      "sha256": "2c0ab96fb73865157c654295833279053b503b06b2dcd3d93e684dc9da33a77d"
+    },
+    {
+      "path": "reverse-redis-shapes-artifacts/test_redis_outofmemoryerror_is_resource_failure/input/runtime-profile/runtime-profile.json",
+      "size": 406,
+      "sha256": "b93030616dd69232271b0d085aa78d967a5905b94e58a24d06c4728957beef2f"
+    },
+    {
+      "path": "reverse-redis-shapes.command.json",
+      "size": 902,
+      "sha256": "a78e03ebf208b315ad885dccf5efe76f4b513759948216be5f7ada362affbd70"
+    },
+    {
+      "path": "reverse-redis-shapes.stderr.log",
+      "size": 416,
+      "sha256": "a54c91da6ccf8f9401efefb5dbc1372af2d644ec766821bec58bdba4fca01008"
+    },
+    {
+      "path": "reverse-redis-shapes.stdout.log",
+      "size": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "sources/capacity_keeper_guards.py",
+      "size": 1423,
+      "sha256": "d244e23dff5d364a50793ffad25a25336be58670cafa8521accdda2cd481afde"
+    },
+    {
+      "path": "sources/capacity_lifecycle.py",
+      "size": 8100,
+      "sha256": "fa304d3afb7fdba2ea4ba378de35301a5b7e4a6f18a726732150bbf30f42b395"
+    },
+    {
+      "path": "sources/capture_capacity_runtime_profile.py",
+      "size": 5924,
+      "sha256": "43c4abe622d6526e00b405a41749c12435589a44dbf4fdbadc6c75241cdd229e"
+    },
+    {
+      "path": "sources/run_capacity_series.py",
+      "size": 13018,
+      "sha256": "2eb03f4306c30da671f18f367b7bdfe4d683eb21001c0c60265c67eeb75a8dae"
+    },
+    {
+      "path": "sources/start_capacity_api_formal.py",
+      "size": 4648,
+      "sha256": "50662e8a4b1a9025f4f96d15081aa43902481cc363f56d98b5c70b60261f7e23"
+    },
+    {
+      "path": "sources/validate_capacity_batch.py",
+      "size": 10208,
+      "sha256": "55ff1c4b811fc1bbd55d2b0a810e02fbf1ca69cf88b7154f8504482f99817c00"
+    },
+    {
+      "path": "test_resource_gate_independent.py",
+      "size": 7780,
+      "sha256": "2ad91e01f4f581cc71f532917cb3358b8e22b1825c8d4633125469641085881d"
+    }
+  ],
+  "scope": "Only synthetic files/static review, no runtime execution"
+}

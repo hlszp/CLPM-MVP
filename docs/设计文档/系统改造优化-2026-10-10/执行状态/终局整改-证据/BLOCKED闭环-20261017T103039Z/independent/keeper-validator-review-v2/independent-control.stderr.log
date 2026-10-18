@@ -1,0 +1,21 @@
+test_backwards_timestamp_cannot_satisfy_sample_interval (test_resource_gate_independent.ResourceGateCounterexamples.test_backwards_timestamp_cannot_satisfy_sample_interval) ... ok
+test_duplicate_timestamp_cannot_satisfy_sample_interval (test_resource_gate_independent.ResourceGateCounterexamples.test_duplicate_timestamp_cannot_satisfy_sample_interval) ... ok
+test_missing_entire_worker_log_cannot_be_no_error (test_resource_gate_independent.ResourceGateCounterexamples.test_missing_entire_worker_log_cannot_be_no_error) ... ok
+test_missing_oom_evidence_cannot_be_zero (test_resource_gate_independent.ResourceGateCounterexamples.test_missing_oom_evidence_cannot_be_zero) ... ok
+test_valid_complete_control (test_resource_gate_independent.ResourceGateCounterexamples.test_valid_complete_control) ... FAIL
+
+======================================================================
+FAIL: test_valid_complete_control (test_resource_gate_independent.ResourceGateCounterexamples.test_valid_complete_control)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/keeper-validator-review-v2/test_resource_gate_independent.py", line 102, in test_valid_complete_control
+    self.assertEqual(self.validate()["status"], "LOCAL_CHECKS_PASS")
+AssertionError: 'REWORK' != 'LOCAL_CHECKS_PASS'
+- REWORK
++ LOCAL_CHECKS_PASS
+
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.040s
+
+FAILED (failures=1)

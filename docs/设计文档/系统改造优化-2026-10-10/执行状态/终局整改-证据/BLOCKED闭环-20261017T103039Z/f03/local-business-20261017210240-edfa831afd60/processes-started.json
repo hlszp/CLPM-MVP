@@ -1,0 +1,67 @@
+{
+  "at": "2026-10-17T13:06:10.461602+00:00",
+  "rows": [
+    {
+      "pid": 39579,
+      "ppid": 39576,
+      "created": 1792242367.67201,
+      "status": "running",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-B",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "127.0.0.1",
+        "--port",
+        "17261",
+        "--timeout-graceful-shutdown",
+        "15",
+        "--no-access-log"
+      ]
+    },
+    {
+      "pid": 39609,
+      "ppid": 39579,
+      "created": 1792242369.611317,
+      "status": "stopped",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "beat",
+        "-l",
+        "info",
+        "--pidfile",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/runtime/clpm-remediation-20261017/backend/logs/celerybeat.pid",
+        "--schedule",
+        "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017210240-edfa831afd60/runtime/clpm-remediation-20261017/backend/logs/celerybeat-schedule"
+      ]
+    },
+    {
+      "pid": 39611,
+      "ppid": 39579,
+      "created": 1792242369.647061,
+      "status": "sleeping",
+      "argv": [
+        "/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python",
+        "-m",
+        "celery",
+        "-A",
+        "app.tasks.celery_app",
+        "worker",
+        "-l",
+        "info",
+        "--concurrency",
+        "4",
+        "-Q",
+        "default,dead_letter",
+        "--hostname",
+        "clpm-remediation-20261017@%h"
+      ]
+    }
+  ]
+}

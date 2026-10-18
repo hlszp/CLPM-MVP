@@ -1,0 +1,61 @@
+{
+  "at": "2026-10-17T12:19:38.814940+00:00",
+  "scope": "Pure original-file check only; not new capacity results",
+  "historyRef": {
+    "path": "终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/history-input-refs.json",
+    "sha256": "9e9f60287f56f27f19e49064b2db6ade7a64907ac7489b06e962bc6b151f1d0a",
+    "size": 1914
+  },
+  "selectedOriginalReports": [
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch1-report.json",
+      "sha256": "6fa1a0ce4c51b8a870a6651ad8fdd1fd36d32faf79cf96c046e92d29352f5dd0",
+      "size": 2706
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch2-report.json",
+      "sha256": "d068ecc35cf324446b5f8020835d95f52fff0303e3870091a7b1cec5db1322a3",
+      "size": 2216
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch3-report.json",
+      "sha256": "577a53cdd8128b817608048f5e70a6209877d9e6a0de019fc06b26a3ceb1b45d",
+      "size": 2217
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch4-report.json",
+      "sha256": "4f0c9be8971b9fa8b8308e7471aeb898bd4ed603cec2d5542ee8d0d44e3d493b",
+      "size": 3457
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch5-report.json",
+      "sha256": "bdbe302a69372390758ad2f380d2686f36056a9cef26cc484f399ad6498500e8",
+      "size": 12885
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch6-report.json",
+      "sha256": "11662361e40ce0ea3ed216090e84c9b2857f0d77f9636841a9fd133d610d281d",
+      "size": 2218
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch7-report.json",
+      "sha256": "97b0ec60e15864088db95b9d53be00692bbe92feaee17561bd86c8ff70d4853b",
+      "size": 2678
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch9pp-report.json",
+      "sha256": "3d0eaa1d470ef51b3bf6b2a6d6c94aef15f34d7075fafde3497c84049867039c",
+      "size": 2226
+    },
+    {
+      "path": "G5-D01-04-实证-20261015/D02-batches/batch10-report.json",
+      "sha256": "2018aaaa346c3c09eb990a316e9b6bff62433901e09cd79bd601d03b06cdef9c",
+      "size": 2475
+    }
+  ],
+  "actualCounts": {
+    "BARRIER_PASSED": 6,
+    "TERMINAL_MISMATCH": 3
+  },
+  "allDenominators1000": true
+}

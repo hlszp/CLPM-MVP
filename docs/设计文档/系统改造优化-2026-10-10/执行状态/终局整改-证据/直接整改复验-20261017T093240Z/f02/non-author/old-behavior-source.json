@@ -1,0 +1,10 @@
+{
+  "base": "dbb1de314ae50e7373c6559ab746b690909bf1b0",
+  "gitCommand": [
+    "git",
+    "show",
+    "dbb1de314ae50e7373c6559ab746b690909bf1b0:backend/app/tasks/kpi_calc.py"
+  ],
+  "fullSourceSha256": "2d974497301996a6e6c7ec61c8a3fa17c68c7ab1bbc2a2cf546b07ef03269833",
+  "functionSha256": "d290f89f612ab2ed46a7a1001f7bdbd6ddbf49aa39aef28e1731a901c96d78e2"
+}

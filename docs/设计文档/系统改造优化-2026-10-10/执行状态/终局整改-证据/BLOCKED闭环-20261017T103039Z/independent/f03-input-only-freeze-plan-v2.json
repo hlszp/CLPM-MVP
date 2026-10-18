@@ -1,0 +1,38 @@
+{
+  "frozenAt": "2026-10-17T13:59:36.683891+00:00",
+  "intendedLocalHead": "9f356782ef4076dabb91a86f56e054e514e341ea",
+  "runId": "20261017215608",
+  "sourceHeadMustBeMeasuredNotCallerLabel": true,
+  "execution": "Root Keeper only; psql RR READ ONLY; loopId from this fixture",
+  "actualMetricsRead": false,
+  "databaseOperationsByReviewer": false,
+  "oracleSourceSha256": "3e7f74a511db0abac0b1c49dc8e1f9c9ee7b04011774f6dfc283fcba4ff4b42a",
+  "files": [
+    {
+      "path": "f03-input-only-pre-gate.sql",
+      "bytes": 2871,
+      "sha256": "d20262d5e0b4d9e47ed21f76e60ad998bd993e2b4b659e96f93f2a3945c1d294"
+    },
+    {
+      "path": "f03-input-only-dataset-row.sql",
+      "bytes": 760,
+      "sha256": "9adea1d352a35dbf1c44e25c9f07a06ce166dc5fe30c15e0247f15b09f42dcff"
+    },
+    {
+      "path": "F03-input-only-freeze-plan.md",
+      "bytes": 5171,
+      "sha256": "914bc901ba0d872fae09b18966f84a62ce19ee2b2a88808de713cc7b1b5209a5"
+    }
+  ],
+  "outputDirectory": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-business-20261017215608-9f356782ef40",
+  "previousPlan": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f03-input-only-freeze-plan.json",
+    "sha256": "b3b16f4c6afeeef155e6dfae40facd11e64f12a00a69fb8ddc41bb966db74108"
+  },
+  "continuation": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/F03-input-only-freeze-plan-v2.md",
+    "sha256": "704edb6ee66bf5516da31fa0e6ff7e112d35275ad6bde79cc423f7ff806859ca",
+    "bytes": 1478
+  },
+  "noOriginalPlanOrSqlChanged": true
+}

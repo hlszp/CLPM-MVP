@@ -1,0 +1,14 @@
+test_complete_before_after_reads_only_real_input_query_contract (__main__.EvidenceControls.test_complete_before_after_reads_only_real_input_query_contract) ... ok
+test_fixture_and_actual_transaction_identity_are_required (__main__.EvidenceControls.test_fixture_and_actual_transaction_identity_are_required) ... ok
+test_package_is_bound_to_real_npz_manifest_and_input_row (__main__.EvidenceControls.test_package_is_bound_to_real_npz_manifest_and_input_row) ... ok
+test_policy_comparison_preserves_pg_numeric_precision (__main__.EvidenceControls.test_policy_comparison_preserves_pg_numeric_precision) ... ok
+test_query_failure_is_not_a_complete_capture (__main__.EvidenceControls.test_query_failure_is_not_a_complete_capture) ... ok
+test_raw_command_failure_and_exit_are_preserved (__main__.EvidenceControls.test_raw_command_failure_and_exit_are_preserved) ... ok
+test_wrong_loop_or_window_refused (__main__.EvidenceControls.test_wrong_loop_or_window_refused) ... ok
+test_wrong_scope_refuses_before_psql (__main__.EvidenceControls.test_wrong_scope_refuses_before_psql) ... ok
+test_zero_and_multiple_rows_refused (__main__.EvidenceControls.test_zero_and_multiple_rows_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 9 tests in 0.419s
+
+OK

@@ -1,0 +1,56 @@
+{
+  "capturedAt": "2026-10-17T14:38:15.136786+00:00",
+  "evidenceRole": "CI_DIAGNOSTIC_IMPLEMENTATION_TOOL_ONLY_NOT_G3_ACCEPTANCE",
+  "source": [
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/backend/scripts/profile_identification_numerics.py",
+      "bytes": 17277,
+      "sha256": "c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858"
+    },
+    {
+      "path": "/Users/zhangping/DEV/clpm-remediation-20261017/.github/workflows/ci.yml",
+      "bytes": 17027,
+      "sha256": "575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622"
+    }
+  ],
+  "actualHeadAtCapture": "c6fa2b489af66da392ea72fa387629f1607ba613",
+  "scriptLines": 437,
+  "workflowAdded": 40,
+  "workflowDeleted": 1,
+  "totalOriginalScopeChangedLines": 478,
+  "guardDeltaAgainstE271": {
+    "added": 9,
+    "deleted": 1
+  },
+  "independentRawEvidenceRefs": [
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-g3-diagnostic-review/probe_network_guard.py",
+      "bytes": 2007,
+      "sha256": "6216987ff881779ce800fbd37595cb9d09c665fe6f4064cc4b4e9f47f26bceb1"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-g3-diagnostic-review/network-guard-original-red.command.json",
+      "bytes": 1362,
+      "sha256": "0b4b31eec813e67dac63a22b1793b26ef87870e8e972cef88d92e12912f09a69"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-g3-diagnostic-review/network-guard-fixed-green.command.json",
+      "bytes": 1452,
+      "sha256": "6aae141d68f42413ae42a683032dc7f7a89907f79021a4751da82decb3787215"
+    },
+    {
+      "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/f02-g3-diagnostic-review/static-and-serialization-independent.json",
+      "bytes": 886,
+      "sha256": "6aea64c1ded93efa888b6f2d18d841956b54da1c4d6d33353c2b0d01d331b8b6"
+    }
+  ],
+  "independentAlgorithmInvocations": 0,
+  "thisTaskActualAlgorithmRun": "NOT_RUN_PER_ROOT_LATEST_INSTRUCTION",
+  "candidateLanding": {
+    "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/g3-contract-ci-implementation/network-guard-v2/candidate-landing.json",
+    "bytes": 2281,
+    "sha256": "c8262e9a7bcd75d4ebec7367a8f08de5c42bb41156763b2c8c7ca76b0cd5da06"
+  },
+  "linuxActual": "NOT_OBSERVED_BY_THIS_AGENT",
+  "commitPush": "ROOT_ONLY_NOT_PERFORMED_BY_THIS_AGENT"
+}

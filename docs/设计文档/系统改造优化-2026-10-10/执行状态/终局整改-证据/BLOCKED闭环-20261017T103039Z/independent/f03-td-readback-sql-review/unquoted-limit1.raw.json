@@ -1,0 +1,1 @@
+{"code":9728,"desc":"syntax error near \"value,quality_class,quality_raw,point_id from clpm_critical_20261017_local_ts.p_020e5d339098450aa14f3763e3dfdc03 where ts\u003e=1792234800000 and ts\u003c1792238401000 order by ts limit 1\"","timing":136625}

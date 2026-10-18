@@ -1,0 +1,18 @@
+test_beat_identity_rejects_without_signal (__main__.Controls.test_beat_identity_rejects_without_signal) ... ok
+test_busy_queue_rejects_without_api_signal (__main__.Controls.test_busy_queue_rejects_without_api_signal) ... ok
+test_foreign_finished_pid_remains_failure (__main__.Controls.test_foreign_finished_pid_remains_failure) ... ok
+test_minus_nine_remains_failure (__main__.Controls.test_minus_nine_remains_failure) ... ok
+test_minus_two_is_failure_and_front_still_cleaned (__main__.Controls.test_minus_two_is_failure_and_front_still_cleaned) ... ok
+test_missing_barrier_keeps_beat_paused_and_cleans_front (__main__.Controls.test_missing_barrier_keeps_beat_paused_and_cleans_front) ... ok
+test_normal_order_barrier_and_true_exit (__main__.Controls.test_normal_order_barrier_and_true_exit) ... ok
+test_outside_three_functions_unchanged (__main__.Controls.test_outside_three_functions_unchanged) ... ok
+test_pending_three_is_failure (__main__.Controls.test_pending_three_is_failure) ... ok
+test_requested_term_minus15_with_clean_chain_is_success (__main__.Controls.test_requested_term_minus15_with_clean_chain_is_success) ... ok
+test_sigint_fallback_even_exit_zero_remains_failure (__main__.Controls.test_sigint_fallback_even_exit_zero_remains_failure) ... ok
+test_wrong_front_group_not_signalled (__main__.Controls.test_wrong_front_group_not_signalled) ... ok
+test_zero_without_shutdown_complete_remains_failure (__main__.Controls.test_zero_without_shutdown_complete_remains_failure) ... ok
+
+----------------------------------------------------------------------
+Ran 13 tests in 0.160s
+
+OK

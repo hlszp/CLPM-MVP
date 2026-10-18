@@ -1,0 +1,12 @@
+[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
+[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
+[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
+┃  ruff staged ❯ 
+All checks passed!
+
+[38;2;56;56;56m  ────────────────────────────────────[m
+summary: (done in 0.20 seconds)
+✓ ruff staged (0.17 seconds)
+[fix/final-audit-remediation fb8c5464] perf(tuning): vectorize ARX regression rows
+ 2 files changed, 149 insertions(+), 5 deletions(-)
+ create mode 100644 backend/tests/test_arx_vectorized_equivalence.py

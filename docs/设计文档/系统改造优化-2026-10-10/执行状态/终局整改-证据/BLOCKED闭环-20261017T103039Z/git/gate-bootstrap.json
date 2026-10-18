@@ -1,0 +1,15 @@
+{
+  "command": [
+    "/Users/zhangping/DEV/clpm-remediation-20261017/backend/.venv/bin/python",
+    "backend/scripts/apply_bootstrap_sql.py"
+  ],
+  "cwd": "/Users/zhangping/DEV/clpm-remediation-20261017",
+  "exit_code": 0,
+  "elapsed_seconds": 2.158,
+  "database": "clpm_audit_gate_20261017",
+  "postgres_container": "clpm-mvp-postgres",
+  "shared_business_database_touched": false,
+  "redis_and_tdengine": "disabled for isolated unit gates",
+  "log": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/git/gate-bootstrap.log",
+  "sha256": "d0eeca51af748e45bef97cd6d18cad49b5766d0a882c65a1252ba3b10ccad7b0"
+}

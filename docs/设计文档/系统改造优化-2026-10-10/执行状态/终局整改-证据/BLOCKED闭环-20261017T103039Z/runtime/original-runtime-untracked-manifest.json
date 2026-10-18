@@ -1,0 +1,181 @@
+{
+  "archive": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/runtime/original-runtime-untracked.tar.gz",
+  "sha256": "c570528bb6703569f04cd56b4651ce0eae85de01d168bfb4c3a65f8855936d4c",
+  "files": [
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101600.json",
+      "sha256": "377b42cc2a0eea06fc7216c8637d90b986a0cbe4a7cdb196951db342eeb5b991",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101601.json",
+      "sha256": "07a014e5b35bf1289ca4f52cf3cf5e735b65f05b69d8abea7e7f918de8b2aa78",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101602.json",
+      "sha256": "dd40fe30b4df660bf3921f6fa42ad3101e533910a537899fc5ea908ac7af4f93",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101603.json",
+      "sha256": "ac7a462534dba7d17bc04d4b88c06c8f02ca8a7cea36b437c6b75ad005217e2c",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101604.json",
+      "sha256": "a1f4ef26c7b05756eec784600b095bffaf4ffe251dfadc56fef34f90daaca1d8",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101605.json",
+      "sha256": "3647f0db584df16a215f7c46a4f837477c8a6ac9e80f0b78f0d5d7dd2799411f",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101606.json",
+      "sha256": "e79b74c89dc9231927a2b8a296df88a40edbc1a9f5da7091f5a4de1b7dc750aa",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101607.json",
+      "sha256": "bdc54f1b022d664d8f99181382f0f4310118105afbd45cddc87b82b8300d016d",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101608.json",
+      "sha256": "9c926a83be7a6747f1a14aec0212b5a0078ee770edc91b702f5d743514f80c04",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101609.json",
+      "sha256": "cfac17f35951075925b8244bf0411f72b87487d066732194f2df934a892a40c7",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101610.json",
+      "sha256": "ae5001f758040b352eee602c53237cd0c958fada4d1b847a44653ddbc62e9387",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_a_2026101611.json",
+      "sha256": "0e21e57657e46cccb3a47736aa4361450124b8d9585f43fab597e46091d51050",
+      "bytes": 663213
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_b_2026101405.json",
+      "sha256": "3efbe474c8ef18e6f50614b342157537d400e850151d4e1f194b12bea5dfb3aa",
+      "bytes": 671663
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_b_2026101514.json",
+      "sha256": "df1232581c7ad85a6400f8e78fbe336008c1a8fdb47aeb2f733a779b2c16a785",
+      "bytes": 671663
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_b_2026101515.json",
+      "sha256": "7285195d04bc95278ba389b15f69df2415d0f664061a987d55f51dc2565cd43a",
+      "bytes": 671663
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_b_2026101516.json",
+      "sha256": "efa75cf89bc3bcfa963ce1b763bc04e99bc802299fc6845ee9894ec2a6905101",
+      "bytes": 671663
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_b_2026101522.json",
+      "sha256": "821c36fc24bb177edb2c9744bb88286e37d24e7ff6048ad1b4388443d8e04a8e",
+      "bytes": 671663
+    },
+    {
+      "path": "backend/capacity_dataset/manifest_b_2026101523.json",
+      "sha256": "c405eb979953e57a3ef2595067c040a158357498099476bc4bc65200e1e8de37",
+      "bytes": 671663
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101600.json",
+      "sha256": "743d25f4d39a042c6ac72ede17846fbffb30ce29770bdb9ae42565e9964c796f",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101601.json",
+      "sha256": "7f15ec20c539366864d8cb97fdb924b8079e42c4e15d33143d0bca464109b50e",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101602.json",
+      "sha256": "30de7c1435feb0626fb4a41b0c502dda553c01dd0987ea0523817e5f68b07340",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101603.json",
+      "sha256": "0a65dbfe88f332f3f2fe719113801b5b955060036206787134edd52b6627d57b",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101604.json",
+      "sha256": "843cf4c029a33daab9376d2a11d4904ad58d18dd649132b4998f8354dbe77fe6",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101605.json",
+      "sha256": "90667de47875aace229f6e276b5b20cacd9e01856b5e0cdc9b9713ccb7a301fc",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101606.json",
+      "sha256": "04d1406b44dba379596731cdcd46c6128a28040ed2286332085d1f9b22b0a32c",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101607.json",
+      "sha256": "4135e3c5643064cc8b29d107a8d204cc3ddefabbdb05a7849db5b2e01202a882",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101608.json",
+      "sha256": "c320ef6ffb501cc983ab81346474b3b0ca945f0140231cc2bd965a8653b4ed0a",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101609.json",
+      "sha256": "2e81014480e1e92c4d72f87151af7d12f95cf8d1fbd9c0b44853d84659d8b4d7",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101610.json",
+      "sha256": "563992f7a1bbf954ec6331db1cbd8771e0cb83d1aa03984b97d3098a941e9067",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_a_2026101611.json",
+      "sha256": "78eb049d00da86da26259cb9ab16049efbda7018ef91fb2f839a9d4340372422",
+      "bytes": 211446
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_b_2026101514.json",
+      "sha256": "460e9d70a7f18ec7eea4f92af9712df8e59c1da72c34deff63e61f088996e7cb",
+      "bytes": 220949
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_b_2026101515.json",
+      "sha256": "4514b20f65a8215f4adaf5bd224bfc95a1ffda97a10db525cb1e8c14c4869b1e",
+      "bytes": 220949
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_b_2026101522.json",
+      "sha256": "87f1550211d973e3e47736ad48c93772d7fe40054b531fe987f28ce71cf7b60f",
+      "bytes": 220949
+    },
+    {
+      "path": "backend/capacity_dataset/run_freezes/freeze_b_2026101523.json",
+      "sha256": "0820078b69608e45e98c98ccc901e5fd0f2184ef3cf9a782f3b256b163b54088",
+      "bytes": 220949
+    },
+    {
+      "path": "backend/resource-a2p.jsonl",
+      "sha256": "189a9f0355659adeffa0bbf7c3eb8a118a380ce83a7db23366b99c287e5ffc3a",
+      "bytes": 80542
+    }
+  ]
+}

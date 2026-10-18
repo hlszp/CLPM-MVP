@@ -1,0 +1,17 @@
+{
+  "at": "2026-10-17T11:31:53.641542+00:00",
+  "scope": "Simulated alias progress referencing one genuine unchanged 1000-object input audit; no actual results or environment connections",
+  "identity": {
+    "auditDir": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/input-a1512-v2",
+    "reportSha256": "2d305e43f601e3aa85112ecb2465a490d133dac2cb9cfd7a338e4c60479e6657",
+    "manifestSha256": "8bf0968d5f863aae1ccc86e89804cda1d17718c75930cfc46ea3e6d731df15a4",
+    "manifestRows": 1000,
+    "uniqueLoopTags": 1000
+  },
+  "sourceSha256": "83217b072a84b27baebc575ab4d9bc34eae3be5069c9651b69802c3afe67436a",
+  "expectedReject": true,
+  "actualReturnedPassed": 20,
+  "actualOriginalAuditCount": 1,
+  "actualOriginalWindows": 1,
+  "beforeAfterRawUnchanged": true
+}

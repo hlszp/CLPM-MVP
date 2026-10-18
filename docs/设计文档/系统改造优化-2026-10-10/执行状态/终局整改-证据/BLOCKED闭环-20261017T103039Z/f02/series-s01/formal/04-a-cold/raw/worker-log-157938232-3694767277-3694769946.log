@@ -1,0 +1,14 @@
+2026-10-18 04:30:45,876 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=ab8f07aa-db9f-4cc4-8586-80f22a86e444, tagGroup=BASE, points=1801, controlType=PC
+2026-10-18 04:30:45,878 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=2e74b4dc-8edd-4560-a099-02d0e3e749bc, tagGroup=OP_HF, points=3601, controlType=TC
+2026-10-18 04:30:45,883 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process: loop=2e74b4dc-8edd-4560-a099-02d0e3e749bc, tagGroup=QUALITY_HF, points=3601, controlType=TC
+2026-10-18 04:30:45,943 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=op, points=3601, anomalous=17, reasons={28: ['JUMP'], 82: ['JUMP'], 163: ['JUMP'], 309: ['JUMP'], 659: ['JUMP']}
+2026-10-18 04:30:45,946 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3584, bad=17, missing=0, valid_rate=0.9953, good_value_rate=None
+2026-10-18 04:30:45,949 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.9953 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:45,950 | DEBUG    | app.services.preprocessing.pipeline | Pipeline.process done: db_2e74b4dc-8edd-4560-a099-02d0e3e749bc_OP_HF_1s, block_valid_rate=0.9953, loop_valid_rate=0.9953, loop_confidence=A, segments=16
+2026-10-18 04:30:45,952 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv, points=1801, anomalous=5, reasons={47: ['FROZEN'], 48: ['FROZEN'], 49: ['FROZEN'], 50: ['FROZEN'], 51: ['FROZEN']}
+2026-10-18 04:30:45,960 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=sp, points=1801, anomalous=0, reasons={}
+2026-10-18 04:30:45,960 | DEBUG    | app.services.preprocessing.outlier_detection | OutlierDetector: tag=pv_quality, points=3601, anomalous=3601, reasons={0: ['FROZEN'], 1: ['FROZEN'], 2: ['FROZEN'], 3: ['FROZEN'], 4: ['FROZEN']}
+2026-10-18 04:30:45,963 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=1801, valid=1801, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:45,965 | DEBUG    | app.services.preprocessing.quality_summary | QualitySummary: total=3601, valid=3601, bad=0, missing=0, valid_rate=1.0000, good_value_rate=1.0
+2026-10-18 04:30:45,974 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=1.0000 未落入告警区间 [0.2000, 0.3000)，不告警
+2026-10-18 04:30:46,002 | DEBUG    | app.services.confidence_evaluator | [confidence-sync pid=69870] evaluate: valid_rate=0.0000 未落入告警区间 [0.2000, 0.3000)，不告警

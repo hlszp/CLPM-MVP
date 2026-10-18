@@ -1,0 +1,176 @@
+{
+  "createdAt": "2026-10-17T14:07:49.427025+00:00",
+  "runId": 39037749058,
+  "url": "https://github.com/hlszp/CLPM-MVP/actions/runs/39037749058",
+  "event": "pull_request",
+  "runHeadSha": "8a438372d21395fdb5246e4d8f73a0a5b7bf9c97",
+  "actualCheckoutShaAllThreeJobs": "820aba1aecc204578b34d7892b543a21369d650c",
+  "runConclusion": "failure",
+  "jobs": [
+    {
+      "id": 117410887613,
+      "name": "Critical E2E Gate (blocking)",
+      "conclusion": "failure",
+      "actualCheckout": "820aba1aecc204578b34d7892b543a21369d650c",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/job-logs/117410887613.log",
+      "logSha256": "e51be6cce4049d649d65cc2fa3cb121d9fa2fc1d9177afb2ed8f3318141769af",
+      "failedSteps": [
+        "Prepare isolated synthetic inputs (no KPI result seeding)"
+      ]
+    },
+    {
+      "id": 117410887796,
+      "name": "Frontend CI",
+      "conclusion": "success",
+      "actualCheckout": "820aba1aecc204578b34d7892b543a21369d650c",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/job-logs/117410887796.log",
+      "logSha256": "6a3cbf89d5fc5a7e904de4f3288ee66b5272ff36349fb915d1ae7c5c1eb2c66c",
+      "failedSteps": []
+    },
+    {
+      "id": 117410887852,
+      "name": "Backend CI",
+      "conclusion": "failure",
+      "actualCheckout": "820aba1aecc204578b34d7892b543a21369d650c",
+      "log": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/remote-run-39037749058/job-logs/117410887852.log",
+      "logSha256": "0cfd2265ab1da20901d43528cfd67de92d38e03d2fd0dbb78bbe57f7d24f8dd8",
+      "failedSteps": [
+        "Pytest with coverage"
+      ]
+    }
+  ],
+  "backend": {
+    "collected": 7477,
+    "deselected": 166,
+    "selected": 7311,
+    "failed": 3,
+    "passed": 6956,
+    "skipped": 336,
+    "xfailed": 12,
+    "xpassed": 4,
+    "coveragePercent": 75.73,
+    "pytestSeconds": 802.06,
+    "originalPerTestTimeoutSeconds": 30,
+    "annotated22SampleTestFileAllSevenPassed": true,
+    "failures": [
+      {
+        "line": 5052,
+        "testId": "tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent",
+        "assertion": "AssertionError: 本构造应触发 joint 候选胜出",
+        "raw": "2026-10-17T13:58:28.5316511Z FAILED tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_winner_annotated_not_silent - AssertionError: 本构造应触发 joint 候选胜出"
+      },
+      {
+        "line": 5055,
+        "testId": "tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute",
+        "assertion": "AssertionError: 记录 -2.13 vs 独立重算 -3.15",
+        "raw": "2026-10-17T13:58:28.5322472Z FAILED tests/test_g3_app_applicability.py::TestJointWinnerLowSnrAnnotated::test_joint_annotation_snr_matches_independent_recompute - AssertionError: 记录 -2.13 vs 独立重算 -3.15"
+      },
+      {
+        "line": 5058,
+        "testId": "tests/test_g3_app_applicability.py::TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded",
+        "assertion": "AssertionError: assert (True and None is not None)",
+        "raw": "2026-10-17T13:58:28.5324848Z FAILED tests/test_g3_app_applicability.py::TestSnapshotRoundTrip::test_joint_low_snr_saved_and_reloaded - AssertionError: assert (True and None is not None)"
+      }
+    ],
+    "knownNonblockingMypyErrors": 2256,
+    "knownNonblockingMypyFiles": 235
+  },
+  "frontend": {
+    "unitFiles": 106,
+    "unitPassed": 1021,
+    "unitFailed": 0,
+    "originalSmokePassed": 2,
+    "smokeSeconds": 5.0
+  },
+  "critical": {
+    "failureStep": "Prepare isolated synthetic inputs (no KPI result seeding)",
+    "exitCode": 1,
+    "tdCode": 9728,
+    "failureLogLines": [
+      3015,
+      3016
+    ],
+    "actualBusinessCasesExecuted": 0,
+    "npzCount": 0
+  },
+  "artifact": {
+    "id": 12102244862,
+    "files": 78,
+    "archiveBytes": 107935,
+    "archiveSha256": "969c04163b8307ad23973d786d67eb14299dba801708d7e516980f063e5947ab",
+    "githubDigest": "sha256:969c04163b8307ad23973d786d67eb14299dba801708d7e516980f063e5947ab",
+    "allFileBytesAndHashesVerified": true,
+    "junitOrXmlAvailable": []
+  },
+  "actualFixtureSourceSha256": "0e1fc40d5e79a85992c4c99f1c60e09ed38dceb00f57ab366c2b2ab8de00edb7",
+  "backendIdenticalProof": "actual-merge-backend-identity.json",
+  "runtimeComparison": "numerical-profile-comparison.json",
+  "rootCause": "Not established. Same tracked backend tree; NumPy runtime detection differs in SIMD. No test, threshold, data or algorithm change authorized from this observation alone.",
+  "fullRunLogsZipSha256": "3d6812461e9d4ddefa2c897ac011428145e81af3ec3e3b22c1c51a6c3de05182",
+  "fullRunLogEntries": [
+    "0_Backend CI.txt",
+    "Backend CI/system.txt",
+    "Backend CI/1_Set up job.txt",
+    "Backend CI/2_Initialize containers.txt",
+    "Backend CI/3_Checkout code.txt",
+    "Backend CI/4_Setup Python.txt",
+    "Backend CI/5_Install uv.txt",
+    "Backend CI/6_Sync dependencies.txt",
+    "Backend CI/7_Record fixed numeric resource profile.txt",
+    "Backend CI/8_Ruff check.txt",
+    "Backend CI/9_Ruff format check.txt",
+    "Backend CI/10_API 契约对账（前端调用 vs 后端路由）.txt",
+    "Backend CI/11_Mypy type check.txt",
+    "Backend CI/12_引导 SQL + schema 漂移检查（真实 PG）.txt",
+    "Backend CI/13_Pytest with coverage.txt",
+    "Backend CI/25_Post Checkout code.txt",
+    "Backend CI/26_Stop containers.txt",
+    "Backend CI/27_Complete job.txt",
+    "1_Frontend CI.txt",
+    "Frontend CI/system.txt",
+    "Frontend CI/1_Set up job.txt",
+    "Frontend CI/2_Checkout code.txt",
+    "Frontend CI/3_Install pnpm.txt",
+    "Frontend CI/4_Setup Node.js.txt",
+    "Frontend CI/5_Install dependencies.txt",
+    "Frontend CI/6_Lint.txt",
+    "Frontend CI/7_Unit tests (vitest).txt",
+    "Frontend CI/8_Typecheck.txt",
+    "Frontend CI/9_Build.txt",
+    "Frontend CI/10_Install Playwright browsers.txt",
+    "Frontend CI/11_Run E2E smoke tests (blocking).txt",
+    "Frontend CI/20_Post Setup Node.js.txt",
+    "Frontend CI/21_Post Install pnpm.txt",
+    "Frontend CI/22_Post Checkout code.txt",
+    "Frontend CI/23_Complete job.txt",
+    "2_Critical E2E Gate (blocking).txt",
+    "Critical E2E Gate (blocking)/system.txt",
+    "Critical E2E Gate (blocking)/1_Set up job.txt",
+    "Critical E2E Gate (blocking)/2_Initialize containers.txt",
+    "Critical E2E Gate (blocking)/3_Checkout code.txt",
+    "Critical E2E Gate (blocking)/4_Set isolated artifact paths in runner context.txt",
+    "Critical E2E Gate (blocking)/5_Setup Python.txt",
+    "Critical E2E Gate (blocking)/6_Install uv.txt",
+    "Critical E2E Gate (blocking)/7_Sync backend dependencies.txt",
+    "Critical E2E Gate (blocking)/8_Record fixed numeric resource profile.txt",
+    "Critical E2E Gate (blocking)/9_Apply bootstrap SQL + stamp.txt",
+    "Critical E2E Gate (blocking)/10_Initialize disposable TDengine database.txt",
+    "Critical E2E Gate (blocking)/11_Isolate seeded external services before real application lifespan.txt",
+    "Critical E2E Gate (blocking)/12_Start backend.txt",
+    "Critical E2E Gate (blocking)/13_Install pnpm.txt",
+    "Critical E2E Gate (blocking)/14_Setup Node.js.txt",
+    "Critical E2E Gate (blocking)/15_Install frontend dependencies.txt",
+    "Critical E2E Gate (blocking)/16_Install E2E dependencies from its own lockfile.txt",
+    "Critical E2E Gate (blocking)/17_Validate fail-closed gate contract (no product DB writes).txt",
+    "Critical E2E Gate (blocking)/18_Build frontend.txt",
+    "Critical E2E Gate (blocking)/19_Start frontend preview.txt",
+    "Critical E2E Gate (blocking)/20_Prepare isolated synthetic inputs (no KPI result seeding).txt",
+    "Critical E2E Gate (blocking)/23_Preserve reports, raw exits, task_result attachments and input manifest.txt",
+    "Critical E2E Gate (blocking)/24_Cleanup.txt",
+    "Critical E2E Gate (blocking)/44_Post Install pnpm.txt",
+    "Critical E2E Gate (blocking)/47_Post Checkout code.txt",
+    "Critical E2E Gate (blocking)/48_Stop containers.txt",
+    "Critical E2E Gate (blocking)/49_Complete job.txt"
+  ],
+  "qualification": "REWORK: material G3 assertions and pre-business INPUT failure. Historical 8a run, not final9f or local business qualification."
+}

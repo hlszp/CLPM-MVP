@@ -1,0 +1,635 @@
+[
+  {
+    "batch": 4,
+    "reportObservedAt": "2026-10-15T23:04:45.082615+00:00",
+    "reportNodeMissing": 16,
+    "firstNodeRecords": 20,
+    "firstMin": "2026-10-15 23:04:44.890943",
+    "firstMax": "2026-10-15 23:04:45.304058",
+    "nodes": [
+      {
+        "nodeId": "9c7008cc-9919-4865-ac03-a30a7931ead7",
+        "name": "PERF-T-AREA1-U3",
+        "recordId": "71890ded-abf9-4f7e-88ef-b2c65fc8ff47",
+        "logicalRunId": "9a844192-8299-59e9-ab76-77bd445ed95f",
+        "firstRecordCreatedAt": "2026-10-15 23:04:44.890943",
+        "secondsAfterReport": -0.191672,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "afc4e3a3-8fb2-4bda-a231-f2eb277ba173",
+        "name": "PERF-T-AREA1-U2",
+        "recordId": "fe6c050a-9875-477d-bb5c-c4ebcd201288",
+        "logicalRunId": "3873e0f2-73d3-5ba6-a48e-e7149820aee5",
+        "firstRecordCreatedAt": "2026-10-15 23:04:44.921321",
+        "secondsAfterReport": -0.161294,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "1c6c1a74-15ff-4c35-b0df-8cfd8d5a5963",
+        "name": "PERF-T-AREA1-U4",
+        "recordId": "8744c048-c7b3-48fa-beae-51c579cbba74",
+        "logicalRunId": "4ae699ed-3234-5011-9b16-cf8e6c922690",
+        "firstRecordCreatedAt": "2026-10-15 23:04:44.921761",
+        "secondsAfterReport": -0.160854,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "0c8dab12-09fa-4d9c-99e2-0e33b3bcaf81",
+        "name": "PERF-T-AREA1-U1",
+        "recordId": "8133b633-f920-4c9f-b429-500fe0b42613",
+        "logicalRunId": "c45d7351-e0ea-5da7-a754-3b0894b803be",
+        "firstRecordCreatedAt": "2026-10-15 23:04:44.922557",
+        "secondsAfterReport": -0.160058,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "33908868-1824-4f1b-bf11-8b6d2b9d1fd7",
+        "name": "PERF-T-AREA2-U1",
+        "recordId": "3166bfe6-3d28-4e1f-ab63-7523bb6563eb",
+        "logicalRunId": "9b83b0e0-fa86-5e00-883b-a6ce543dd9f1",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.025695",
+        "secondsAfterReport": -0.05692,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "ada95482-72fe-446d-8af8-5e50507c17d9",
+        "name": "PERF-T-AREA2-U3",
+        "recordId": "a1040f03-6ea5-4fbd-9535-e91cf25e6932",
+        "logicalRunId": "580d1d33-5506-54c0-b7e4-c256cded67e5",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.055825",
+        "secondsAfterReport": -0.02679,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "0a9a64a6-00ff-4561-9386-5677d6fcd197",
+        "name": "PERF-T-AREA2-U2",
+        "recordId": "344d89fc-e329-4440-89c2-147e63c6f992",
+        "logicalRunId": "442cf926-371b-5eee-9152-3d3f6779be3b",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.055851",
+        "secondsAfterReport": -0.026764,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "b55c303f-70c4-46ca-a9e5-549b63b2f138",
+        "name": "PERF-T-AREA2-U4",
+        "recordId": "f7546f36-7224-4215-83dc-9bb0635d33f9",
+        "logicalRunId": "ef9b9159-534a-536c-806a-757c1c635b18",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.115067",
+        "secondsAfterReport": 0.032452,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "18cc1c14-a83a-4adb-b76a-abdafdce913f",
+        "name": "PERF-T-AREA3-U3",
+        "recordId": "cac28437-9267-4213-85bb-0c9e72fd41f8",
+        "logicalRunId": "0f5d0879-d6ca-52f7-9625-0f7a9f67ced8",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.117724",
+        "secondsAfterReport": 0.035109,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "a089b60f-18f3-4a67-bdf0-add087d6b5c1",
+        "name": "PERF-T-AREA3-U2",
+        "recordId": "57442b8b-3555-4358-91bf-e3c6b4f1cd0b",
+        "logicalRunId": "c5232646-4a67-5418-bfe3-100817390dcd",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.117933",
+        "secondsAfterReport": 0.035318,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "d547fd49-4481-4200-a9af-7264bc76faf8",
+        "name": "PERF-T-AREA3-U1",
+        "recordId": "55d9236f-fb62-4740-94ee-d91719e4fe24",
+        "logicalRunId": "73b32b6b-15c9-50ef-8303-ede3f7d1cb60",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.118332",
+        "secondsAfterReport": 0.035717,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "a341b5e0-9e7a-4a81-9ab6-809a2472fd68",
+        "name": "PERF-T-AREA4-U2",
+        "recordId": "d42d12a5-f8a4-40da-a7c6-8b9d6fc4b09b",
+        "logicalRunId": "acbda0ae-64b1-501c-bb54-cfb237740080",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.118444",
+        "secondsAfterReport": 0.035829,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "ac08bd78-6bdd-4789-9b58-064f642d0fc2",
+        "name": "PERF-T-AREA3-U4",
+        "recordId": "adae870e-2f3b-496d-98b2-9307404835f9",
+        "logicalRunId": "056edcb5-b3e9-5792-93d1-86d7ceb03b0a",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.118675",
+        "secondsAfterReport": 0.03606,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "8a179995-e1b1-4368-a512-4186e3a69515",
+        "name": "PERF-T-AREA4-U1",
+        "recordId": "1941ca3c-ef9e-4912-abdc-78dd1debb7a1",
+        "logicalRunId": "77ff0401-d17c-5178-8e20-ba3e431d68de",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.119249",
+        "secondsAfterReport": 0.036634,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "901a6e81-58b0-4e73-975f-39a1e783cdf6",
+        "name": "PERF-T-AREA4-U3",
+        "recordId": "6b1911d0-653b-4fff-8529-d7c497c3a890",
+        "logicalRunId": "154534e3-3fc1-5ca4-97d2-5a29211795b9",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.272184",
+        "secondsAfterReport": 0.189569,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "5218fbc8-6d27-4b46-8ec2-e7fd9a622966",
+        "name": "PERF-T-AREA5-U1",
+        "recordId": "259ab772-7382-48c8-bdd5-d3346f4451b6",
+        "logicalRunId": "b6993901-a29a-5380-ae78-cba08c0045ac",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.272666",
+        "secondsAfterReport": 0.190051,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "f12df131-e45d-4a59-9c53-67b0c1771e64",
+        "name": "PERF-T-AREA4-U4",
+        "recordId": "a59ea5cf-80b1-48f3-8d25-283d5784a7c5",
+        "logicalRunId": "b00b1c7a-1742-569c-a500-0203f1347df7",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.282847",
+        "secondsAfterReport": 0.200232,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "b0914c41-3f74-470d-bcbe-3b79a6a77891",
+        "name": "PERF-T-AREA5-U3",
+        "recordId": "807dda55-c4b6-428c-a18c-aefd93bf60a5",
+        "logicalRunId": "e7c80e34-29c4-5c94-8f8f-0482ab68a2d8",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.302944",
+        "secondsAfterReport": 0.220329,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "c9e698f5-b598-40a8-ad8d-8d21b174fbcd",
+        "name": "PERF-T-AREA5-U2",
+        "recordId": "2edfa6c2-2dac-4687-a0b7-63561d8b42a9",
+        "logicalRunId": "ba7d9539-3f8c-59a1-97a7-af9cc1d09d31",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.303611",
+        "secondsAfterReport": 0.220996,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "afc7bf18-b610-4741-a29e-f1df5dadbd5e",
+        "name": "PERF-T-AREA5-U4",
+        "recordId": "1ba9ab3b-5abe-47f5-ad19-6b0529d0555d",
+        "logicalRunId": "ff77d542-7226-53ce-92a0-a538fab20e05",
+        "firstRecordCreatedAt": "2026-10-15 23:04:45.304058",
+        "secondsAfterReport": 0.221443,
+        "reportedMissing": true,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      }
+    ],
+    "boundary": "Node records carry a node-derived logical run id; append-only creation timing establishes arrival after sampling, but no parent-bound child row links all nodes definitively to a unique parent if concurrent runs share the window."
+  },
+  {
+    "batch": 5,
+    "reportObservedAt": "2026-10-15T23:19:12.285372+00:00",
+    "reportNodeMissing": 0,
+    "firstNodeRecords": 20,
+    "firstMin": "2026-10-15 23:19:10.650995",
+    "firstMax": "2026-10-15 23:19:11.101355",
+    "nodes": [
+      {
+        "nodeId": "0c8dab12-09fa-4d9c-99e2-0e33b3bcaf81",
+        "name": "PERF-T-AREA1-U1",
+        "recordId": "de72b68b-e031-46ef-96d8-c825dea7c2bb",
+        "logicalRunId": "ce306025-ca95-562c-a1ac-b4835b36bba0",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.650995",
+        "secondsAfterReport": -1.634377,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "1c6c1a74-15ff-4c35-b0df-8cfd8d5a5963",
+        "name": "PERF-T-AREA1-U4",
+        "recordId": "1cfd53e8-a835-450c-a3ad-75e323cf99b3",
+        "logicalRunId": "f9c9129e-b3fe-5bf9-a97f-21d22497fc54",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.671606",
+        "secondsAfterReport": -1.613766,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "9c7008cc-9919-4865-ac03-a30a7931ead7",
+        "name": "PERF-T-AREA1-U3",
+        "recordId": "52e70bfe-3a33-4fa7-9063-7e2ce3510de0",
+        "logicalRunId": "9949fb06-8420-5c21-a789-1e0a69772b88",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.671670",
+        "secondsAfterReport": -1.613702,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "afc4e3a3-8fb2-4bda-a231-f2eb277ba173",
+        "name": "PERF-T-AREA1-U2",
+        "recordId": "fd5816fb-0415-4a0c-a431-4c3c2b28cae8",
+        "logicalRunId": "6801a7ca-812d-5e7c-810c-d6f8dbb703fe",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.672273",
+        "secondsAfterReport": -1.613099,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "33908868-1824-4f1b-bf11-8b6d2b9d1fd7",
+        "name": "PERF-T-AREA2-U1",
+        "recordId": "bb16e782-3e53-420f-a40a-cce498651db0",
+        "logicalRunId": "33589312-874e-5512-a0be-d45b6b987dd9",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.784906",
+        "secondsAfterReport": -1.500466,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "d547fd49-4481-4200-a9af-7264bc76faf8",
+        "name": "PERF-T-AREA3-U1",
+        "recordId": "43814b20-c098-4b52-8457-140b4ddcc375",
+        "logicalRunId": "ae873219-f7d0-51f3-8f05-c9d65e2b1e7a",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.814592",
+        "secondsAfterReport": -1.47078,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "ada95482-72fe-446d-8af8-5e50507c17d9",
+        "name": "PERF-T-AREA2-U3",
+        "recordId": "324111dc-01d5-4438-9b46-18fb152f46cb",
+        "logicalRunId": "e550ee4a-3947-515c-bd66-d16ec0298883",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.814808",
+        "secondsAfterReport": -1.470564,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "0a9a64a6-00ff-4561-9386-5677d6fcd197",
+        "name": "PERF-T-AREA2-U2",
+        "recordId": "5a52fce9-5519-486d-894c-aa6acbcd4436",
+        "logicalRunId": "7be910ec-51e5-5289-8942-7bd1e1038ad6",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.815043",
+        "secondsAfterReport": -1.470329,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "b55c303f-70c4-46ca-a9e5-549b63b2f138",
+        "name": "PERF-T-AREA2-U4",
+        "recordId": "b32e6735-4e27-49f1-84b9-4b772fe9bfb8",
+        "logicalRunId": "3f8dd1d5-398e-5154-998f-04bd5e77f72d",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.834605",
+        "secondsAfterReport": -1.450767,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "a089b60f-18f3-4a67-bdf0-add087d6b5c1",
+        "name": "PERF-T-AREA3-U2",
+        "recordId": "02c74d31-028e-46e3-97ec-371070894daa",
+        "logicalRunId": "de8a624c-6922-52af-9f05-7d5f6f8bb4b8",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.835029",
+        "secondsAfterReport": -1.450343,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "18cc1c14-a83a-4adb-b76a-abdafdce913f",
+        "name": "PERF-T-AREA3-U3",
+        "recordId": "8191c04f-abb9-474a-8874-92eb8d8be4fe",
+        "logicalRunId": "22230625-e167-5fe5-b39b-0273f455d64e",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.844884",
+        "secondsAfterReport": -1.440488,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "ac08bd78-6bdd-4789-9b58-064f642d0fc2",
+        "name": "PERF-T-AREA3-U4",
+        "recordId": "75149668-183d-4f0b-ac09-65f09908beec",
+        "logicalRunId": "2f35e4f8-02d5-5fa9-af69-79538219fde1",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.857757",
+        "secondsAfterReport": -1.427615,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "8a179995-e1b1-4368-a512-4186e3a69515",
+        "name": "PERF-T-AREA4-U1",
+        "recordId": "ac016803-a091-48b7-9820-bac2273d4ae1",
+        "logicalRunId": "a4067a2b-1f03-5e7b-9c84-4245c95c2f51",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.873731",
+        "secondsAfterReport": -1.411641,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "a341b5e0-9e7a-4a81-9ab6-809a2472fd68",
+        "name": "PERF-T-AREA4-U2",
+        "recordId": "e8067569-bfbb-43d8-ba97-7848cf94f964",
+        "logicalRunId": "7f8ccd3d-129d-58ce-8dde-06298ab72a3e",
+        "firstRecordCreatedAt": "2026-10-15 23:19:10.878291",
+        "secondsAfterReport": -1.407081,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "901a6e81-58b0-4e73-975f-39a1e783cdf6",
+        "name": "PERF-T-AREA4-U3",
+        "recordId": "4e0f59dd-3c47-4ec1-b38c-b948fba92701",
+        "logicalRunId": "28e3cc9a-a0d9-5ed2-b839-a7a68892fe02",
+        "firstRecordCreatedAt": "2026-10-15 23:19:11.050720",
+        "secondsAfterReport": -1.234652,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "f12df131-e45d-4a59-9c53-67b0c1771e64",
+        "name": "PERF-T-AREA4-U4",
+        "recordId": "17969157-1b48-4641-9789-834c7dbd5f35",
+        "logicalRunId": "43c1d56a-568b-50a6-b64f-633656f1dffa",
+        "firstRecordCreatedAt": "2026-10-15 23:19:11.069674",
+        "secondsAfterReport": -1.215698,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "5218fbc8-6d27-4b46-8ec2-e7fd9a622966",
+        "name": "PERF-T-AREA5-U1",
+        "recordId": "589d4d07-437f-4db3-996b-b3bcf1b2a0f0",
+        "logicalRunId": "4c635e3b-bee8-5901-bd7d-3bde326e7b8c",
+        "firstRecordCreatedAt": "2026-10-15 23:19:11.080300",
+        "secondsAfterReport": -1.205072,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "afc7bf18-b610-4741-a29e-f1df5dadbd5e",
+        "name": "PERF-T-AREA5-U4",
+        "recordId": "9e58597e-ac69-456d-a8ef-93e5678675c6",
+        "logicalRunId": "74e9b2ed-ab7b-5cf2-95b7-04c23a20b17f",
+        "firstRecordCreatedAt": "2026-10-15 23:19:11.100548",
+        "secondsAfterReport": -1.184824,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "c9e698f5-b598-40a8-ad8d-8d21b174fbcd",
+        "name": "PERF-T-AREA5-U2",
+        "recordId": "b282c1e1-e277-4141-a1fe-608da6ae96f2",
+        "logicalRunId": "99c7610d-b667-5dc0-8c02-e72737113637",
+        "firstRecordCreatedAt": "2026-10-15 23:19:11.101037",
+        "secondsAfterReport": -1.184335,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "b0914c41-3f74-470d-bcbe-3b79a6a77891",
+        "name": "PERF-T-AREA5-U3",
+        "recordId": "c9e70046-f7a4-46d4-b073-b4046a45f8b8",
+        "logicalRunId": "4e444723-3f21-59b1-a8de-5b4d8a25219e",
+        "firstRecordCreatedAt": "2026-10-15 23:19:11.101355",
+        "secondsAfterReport": -1.184017,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      }
+    ],
+    "boundary": "Node records carry a node-derived logical run id; append-only creation timing establishes arrival after sampling, but no parent-bound child row links all nodes definitively to a unique parent if concurrent runs share the window."
+  },
+  {
+    "batch": 7,
+    "reportObservedAt": "2026-10-16T02:46:24.715287+00:00",
+    "reportNodeMissing": 0,
+    "firstNodeRecords": 20,
+    "firstMin": "2026-10-16 02:46:23.114906",
+    "firstMax": "2026-10-16 02:46:23.543352",
+    "nodes": [
+      {
+        "nodeId": "afc4e3a3-8fb2-4bda-a231-f2eb277ba173",
+        "name": "PERF-T-AREA1-U2",
+        "recordId": "24715ea5-2a19-4e18-b37d-9bc0b1f9c1b7",
+        "logicalRunId": "8f5b6960-9e0f-5b91-a30c-0edb81fac830",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.114906",
+        "secondsAfterReport": -1.600381,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "1c6c1a74-15ff-4c35-b0df-8cfd8d5a5963",
+        "name": "PERF-T-AREA1-U4",
+        "recordId": "1211ad0f-8518-4f7c-8cb9-31cd916162de",
+        "logicalRunId": "f23768b4-bded-50ca-9100-b85778b0fbf1",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.115161",
+        "secondsAfterReport": -1.600126,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "0c8dab12-09fa-4d9c-99e2-0e33b3bcaf81",
+        "name": "PERF-T-AREA1-U1",
+        "recordId": "bf8e0d1a-327b-491e-a781-7d0d0f677b3c",
+        "logicalRunId": "30eb4731-543c-51d3-a5a4-9e7fdc36edd2",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.125372",
+        "secondsAfterReport": -1.589915,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "9c7008cc-9919-4865-ac03-a30a7931ead7",
+        "name": "PERF-T-AREA1-U3",
+        "recordId": "3f227006-d313-4ef3-b95e-a5e26258df08",
+        "logicalRunId": "27c246a4-c437-50d1-a98e-aace1e9660e9",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.126095",
+        "secondsAfterReport": -1.589192,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "33908868-1824-4f1b-bf11-8b6d2b9d1fd7",
+        "name": "PERF-T-AREA2-U1",
+        "recordId": "6528db70-8b43-413e-99ac-daba54303fc0",
+        "logicalRunId": "be5b0646-30aa-54fb-b241-e6f0fe4add12",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.283703",
+        "secondsAfterReport": -1.431584,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "0a9a64a6-00ff-4561-9386-5677d6fcd197",
+        "name": "PERF-T-AREA2-U2",
+        "recordId": "bcee03d7-c509-404b-a287-7d2e66231352",
+        "logicalRunId": "aa105557-909b-54cc-84e8-b524755b5f66",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.283975",
+        "secondsAfterReport": -1.431312,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "18cc1c14-a83a-4adb-b76a-abdafdce913f",
+        "name": "PERF-T-AREA3-U3",
+        "recordId": "dd06c6f3-7a2b-4e6a-97e8-35d0b77efded",
+        "logicalRunId": "bacb8368-2a36-54fc-9685-6b6600a70c8c",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.333647",
+        "secondsAfterReport": -1.38164,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "b55c303f-70c4-46ca-a9e5-549b63b2f138",
+        "name": "PERF-T-AREA2-U4",
+        "recordId": "97eed4a5-c008-40c3-bffe-e8e15b18e9c0",
+        "logicalRunId": "833e94e9-9a95-54b8-adda-827f5126854d",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.333906",
+        "secondsAfterReport": -1.381381,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "a089b60f-18f3-4a67-bdf0-add087d6b5c1",
+        "name": "PERF-T-AREA3-U2",
+        "recordId": "124506a5-aeed-4ddc-a0f7-50559372bd7f",
+        "logicalRunId": "b8f6efd1-88f3-5329-b3cf-d2d84b900593",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.334238",
+        "secondsAfterReport": -1.381049,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "ada95482-72fe-446d-8af8-5e50507c17d9",
+        "name": "PERF-T-AREA2-U3",
+        "recordId": "3eb96c72-4eb8-4866-afe8-5c452eb3272b",
+        "logicalRunId": "093b5890-98be-50be-b5e3-76413e24e97d",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.334434",
+        "secondsAfterReport": -1.380853,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "d547fd49-4481-4200-a9af-7264bc76faf8",
+        "name": "PERF-T-AREA3-U1",
+        "recordId": "9c8d3fef-dd52-499d-a673-60fc4a6cd21c",
+        "logicalRunId": "b3177ee2-d768-5a57-a9c6-5b39ece83d67",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.335274",
+        "secondsAfterReport": -1.380013,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "a341b5e0-9e7a-4a81-9ab6-809a2472fd68",
+        "name": "PERF-T-AREA4-U2",
+        "recordId": "3a69840d-4e28-46c9-a422-bc359f9b5167",
+        "logicalRunId": "6e773106-ff81-514a-8ab1-ed58bd6ae071",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.365445",
+        "secondsAfterReport": -1.349842,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "ac08bd78-6bdd-4789-9b58-064f642d0fc2",
+        "name": "PERF-T-AREA3-U4",
+        "recordId": "4196db3b-0fdf-4e2c-8e3e-f417d91126e0",
+        "logicalRunId": "82ef32fe-eb7d-5c20-8501-ee2903551a17",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.365848",
+        "secondsAfterReport": -1.349439,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "8a179995-e1b1-4368-a512-4186e3a69515",
+        "name": "PERF-T-AREA4-U1",
+        "recordId": "f78c2417-3cf7-42a5-9ac9-1900b68a686d",
+        "logicalRunId": "549ee19e-4348-5667-b9b4-4a63db12a1c9",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.370423",
+        "secondsAfterReport": -1.344864,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "901a6e81-58b0-4e73-975f-39a1e783cdf6",
+        "name": "PERF-T-AREA4-U3",
+        "recordId": "75e44f0f-2787-44f6-99d9-1ef761961f89",
+        "logicalRunId": "7d7bc3e7-2e3f-562b-8212-ecce5f0b4dbb",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.513237",
+        "secondsAfterReport": -1.20205,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "f12df131-e45d-4a59-9c53-67b0c1771e64",
+        "name": "PERF-T-AREA4-U4",
+        "recordId": "877829a1-9ccc-402c-92b9-4b9d8464693b",
+        "logicalRunId": "3992b6e9-12b6-593d-b5d0-fcf898906451",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.513479",
+        "secondsAfterReport": -1.201808,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "5218fbc8-6d27-4b46-8ec2-e7fd9a622966",
+        "name": "PERF-T-AREA5-U1",
+        "recordId": "fa23954c-d326-4194-b999-b529e531ae5a",
+        "logicalRunId": "d2de6748-d677-5bba-a6ce-468558731561",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.542497",
+        "secondsAfterReport": -1.17279,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "afc7bf18-b610-4741-a29e-f1df5dadbd5e",
+        "name": "PERF-T-AREA5-U4",
+        "recordId": "8fd7d38b-507b-447a-ab13-4d594f2ecbcc",
+        "logicalRunId": "0a898197-d061-529e-b07a-23154ffc7c63",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.542867",
+        "secondsAfterReport": -1.17242,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "b0914c41-3f74-470d-bcbe-3b79a6a77891",
+        "name": "PERF-T-AREA5-U3",
+        "recordId": "6e6bed16-4cc7-4499-ade5-ef212216b91c",
+        "logicalRunId": "9195fab0-cd20-5652-9511-0c7bbe810342",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.543068",
+        "secondsAfterReport": -1.172219,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      },
+      {
+        "nodeId": "c9e698f5-b598-40a8-ad8d-8d21b174fbcd",
+        "name": "PERF-T-AREA5-U2",
+        "recordId": "05e69973-7bfd-478e-8b2c-d9cfc229644d",
+        "logicalRunId": "cd267f17-3776-57b4-9a06-b4903d43ea41",
+        "firstRecordCreatedAt": "2026-10-16 02:46:23.543352",
+        "secondsAfterReport": -1.171935,
+        "reportedMissing": false,
+        "algorithmVersion": "KPI_CALC_v2.0"
+      }
+    ],
+    "boundary": "Node records carry a node-derived logical run id; append-only creation timing establishes arrival after sampling, but no parent-bound child row links all nodes definitively to a unique parent if concurrent runs share the window."
+  }
+]
