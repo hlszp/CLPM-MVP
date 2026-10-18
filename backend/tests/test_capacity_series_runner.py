@@ -870,3 +870,159 @@ def test_private_database_does_not_infer_new_scope_from_environment(mod):
                 "TDENGINE_DB": "clpm_capacity_20261018_s02",
             },
         )
+
+
+RUNNER_CLI_OFFLINE_SITE = """import importlib.util,json,os,sys
+from pathlib import Path
+from types import SimpleNamespace
+ROOT=Path(os.environ['CLPM_RUNNER_CLI_FIXTURE_ROOT']).resolve()
+SOURCE=Path(os.environ['CLPM_RUNNER_CLI_FIXTURE_SOURCE']).resolve()
+def audit(event,args):
+    if event in ('socket.connect','socket.bind','socket.getaddrinfo','socket.gethostbyname'):
+        raise RuntimeError('OFFLINE_NETWORK_BLOCKED')
+    if event=='open':
+        target,mode,flags=args
+        writing=(isinstance(mode,str) and any(c in mode for c in 'wax+')) or (
+            isinstance(flags,int) and bool(flags & 0x3))
+        if writing and isinstance(target,(str,bytes,os.PathLike)):
+            if not Path(target).resolve().is_relative_to(ROOT):
+                raise RuntimeError('OFFLINE_EXTERNAL_WRITE_BLOCKED')
+sys.addaudithook(audit)
+def trace(frame,event,arg):
+    if event=='line' and frame.f_code.co_filename==str(SOURCE) and 'main' in frame.f_globals:
+        spec=importlib.util.spec_from_file_location('runner_cli_offline_tests',
+            os.environ['CLPM_RUNNER_CLI_FIXTURE_TESTS'])
+        tests=importlib.util.module_from_spec(spec);spec.loader.exec_module(tests)
+        control=SimpleNamespace(**frame.f_globals)
+        def factory(ctx):
+            runtime=tests.OfflineRuntime(control);runtime.ctx=ctx
+            original=runtime.collect_batch
+            def collect(item,batch,remaining):
+                with (ROOT/'dispatch-attempts.jsonl').open('a') as stream:
+                    stream.write(json.dumps({'fixtureOnly':True,'batch':item['batch']})+'\\n')
+                if os.environ['CLPM_RUNNER_CLI_FIXTURE_TIMEOUT']=='1':
+                    control.run_command([sys.executable,'-c','import time;time.sleep(2)'],
+                        batch/'offline-timeout',cwd=batch,env=os.environ.copy(),timeout=.1)
+                exits=original(item,batch,remaining)
+                report=control.read(batch/'product-report.json')
+                seconds=float(os.environ['CLPM_RUNNER_CLI_FIXTURE_SECONDS'])
+                report.update(totalSeconds=seconds,sloPassed=seconds<=600)
+                tests.dump(batch/'product-report.json',report)
+                exits['benchmarkRc']=0 if seconds<=600 else 1
+                tests.dump(batch/'offline-executor-result.json',
+                    {'fixtureOnly':True,'simulatedBenchmarkRc':exits['benchmarkRc']})
+                return exits
+            runtime.collect_batch=collect
+            return runtime
+        frame.f_globals['main'].__kwdefaults__['runtime_factory']=factory
+        sys.settrace(None)
+    return trace
+sys.settrace(trace)
+"""
+
+
+def offline_runner_cli(contract, tmp_path, seconds, *, strict=True, timeout=False):
+    """Run the actual source CLI; substitute external IO only, never its control flow."""
+    if strict:
+        contract.protocol["execution"]["supervision"] = {"requireSloPass": True}
+    contract.seal()
+    injection = tmp_path / "offline-cli-injection"
+    injection.mkdir()
+    (injection / "sitecustomize.py").write_text(RUNNER_CLI_OFFLINE_SITE)
+    binary = tmp_path / "offline-cli-bin"
+    binary.mkdir()
+    git = binary / "git"
+    git.write_text(
+        '#!/bin/sh\nif [ "$1" = rev-parse ]; then\n'
+        f"  echo {'a' * 40}\n"
+        'elif [ "$1" = diff ] || [ "$1" = ls-files ]; then\n  exit 0\n'
+        "else\n  exit 9\nfi\n"
+    )
+    git.chmod(0o755)
+    env = {
+        **os.environ,
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONPATH": str(injection),
+        "PATH": str(binary) + os.pathsep + os.environ["PATH"],
+        "CLPM_RUNNER_CLI_FIXTURE_ROOT": str(tmp_path),
+        "CLPM_RUNNER_CLI_FIXTURE_SOURCE": str(SCRIPT),
+        "CLPM_RUNNER_CLI_FIXTURE_TESTS": str(Path(__file__)),
+        "CLPM_RUNNER_CLI_FIXTURE_SECONDS": str(seconds),
+        "CLPM_RUNNER_CLI_FIXTURE_TIMEOUT": "1" if timeout else "0",
+    }
+    argv = [
+        sys.executable,
+        "-B",
+        str(SCRIPT),
+        "--protocol",
+        str(contract.path),
+        "--output-dir",
+        str(contract.output),
+    ]
+    started = datetime.now(UTC).isoformat()
+    process = subprocess.run(
+        argv, cwd=contract.runtime / "backend", env=env, capture_output=True, text=True, timeout=20
+    )
+    (tmp_path / "cli.stdout.log").write_text(process.stdout)
+    (tmp_path / "cli.stderr.log").write_text(process.stderr)
+    dump(
+        tmp_path / "cli.command.json",
+        {
+            "argv": argv,
+            "cwd": str(contract.runtime / "backend"),
+            "startedAt": started,
+            "finishedAt": datetime.now(UTC).isoformat(),
+            "rc": process.returncode,
+            "evidenceLevel": "OFFLINE_FIXTURE",
+            "secondsInput": seconds,
+            "strict": strict,
+        },
+    )
+    attempts = [
+        json.loads(line)["batch"]
+        for line in (tmp_path / "dispatch-attempts.jsonl").read_text().splitlines()
+    ]
+    return process, attempts
+
+
+@pytest.mark.parametrize("seconds", [599.5, 600, 600.0001, 701])
+def test_strict_slo_real_runner_cli_stops_before_second_batch(contract, tmp_path, seconds):
+    process, attempts = offline_runner_cli(contract, tmp_path, seconds)
+    expected_pass = seconds <= 600
+    assert process.returncode == (0 if expected_pass else 1), process.stderr
+    outcomes = json.loads((contract.output / "outcomes.json").read_text())
+    assert len(outcomes) == (20 if expected_pass else 1)
+    assert outcomes[0]["seconds"] == seconds
+    assert outcomes[0]["sloPassed"] is expected_pass
+    assert outcomes[0]["benchmarkRc"] == (0 if expected_pass else 1)
+    assert (contract.output / "complete.json").exists() is expected_pass
+    journal = [
+        json.loads(line) for line in (contract.output / "journal.jsonl").read_text().splitlines()
+    ]
+    started = [row["batch"] for row in journal if row["state"] == "STARTED"]
+    assert attempts == started == (list(range(1, 21)) if expected_pass else [1])
+    if not expected_pass:
+        assert not list(contract.output.glob("02-*"))
+        failure = json.loads((contract.output / "series-failure.json").read_text())
+        assert failure["attemptedBatchIds"] == [1]
+        assert failure["businessReportsPassed"] == 1  # Correct business result, failed formal SLO.
+        assert "strict supervised 600s SLO failed" in failure["message"]
+        assert len(list(contract.output.glob("*/offline-executor-result.json"))) == 1
+
+
+def test_engineering_cli_without_supervision_preserves_slo_only_boundary(contract, tmp_path):
+    process, attempts = offline_runner_cli(contract, tmp_path, 701, strict=False)
+    assert process.returncode == 0, process.stderr
+    assert attempts == list(range(1, 21))
+    summary = json.loads((contract.output / "complete.json").read_text())
+    assert summary["sloPassed"] == 0 and summary["businessReportsPassed"] == 20
+    assert summary["evidenceLevel"] == "OFFLINE_FIXTURE"
+
+
+def test_strict_cli_timeout_preserves_failure_without_next_batch(contract, tmp_path):
+    process, attempts = offline_runner_cli(contract, tmp_path, 600, timeout=True)
+    assert process.returncode == 1 and attempts == [1]
+    assert not list(contract.output.glob("02-*"))
+    assert not (contract.output / "complete.json").exists()
+    record = json.loads(next(contract.output.glob("*/offline-timeout.command.json")).read_text())
+    assert record["rc"] is None and record["exception"] == "TimeoutExpired"

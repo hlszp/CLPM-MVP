@@ -981,6 +981,11 @@ def run_series(ctx, runtime, output):
                 output / "journal.jsonl", {"at": now(), "batch": item["batch"], "state": "VERIFIED"}
             )
             write(output / "outcomes.json", outcomes, replace=True)
+            if ctx.protocol["execution"].get("supervision", {}).get("requireSloPass") is True:
+                require(
+                    result["sloPassed"] is True and result["seconds"] <= ctx.protocol["sloSeconds"],
+                    "strict supervised 600s SLO failed; batch evidence preserved",
+                )
         require(
             len(outcomes) == len({o["batch"]["batch"] for o in outcomes}) == 20,
             "series lacks 20 unique verified batches",
