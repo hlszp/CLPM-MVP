@@ -5,7 +5,7 @@ import { devices } from '@playwright/test';
 /**
  * Playwright E2E 配置（S3-C6: CI 集成 E2E 测试）
  *
- * 仅包含基本冒烟测试，首次集成使用 continue-on-error: true 标记为非阻塞。
+ * 仅包含基本冒烟测试；CI 中执行失败会阻塞工作流。
  */
 const config: PlaywrightTestConfig = {
   expect: {

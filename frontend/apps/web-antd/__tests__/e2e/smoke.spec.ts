@@ -4,7 +4,7 @@ import { expect, test } from '@playwright/test';
  * S3-C6: 基本冒烟测试
  *
  * 首次集成 E2E 测试，仅验证应用能正常启动和访问登录页。
- * 使用 continue-on-error: true 标记为非阻塞。
+ * CI 中执行失败会阻塞工作流。
  */
 
 test.describe('冒烟测试', () => {
