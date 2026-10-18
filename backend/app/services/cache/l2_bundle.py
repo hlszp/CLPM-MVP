@@ -234,8 +234,16 @@ def _serialize(bundles: list[MetricDataBundle]) -> str:
 
     链路：list[MetricDataBundle] → dict → JSON(utf-8) → zstd → base64 → str
     """
+    # 同块可被多个指标共享；仅本次调用按对象身份复用纯转换，避免同 ID 异块碰撞。
+    data_blocks: dict[int, dict[str, Any]] = {}
+    bundle_records = []
+    for bundle in bundles:
+        block_identity = id(bundle.data_block)
+        if block_identity not in data_blocks:
+            data_blocks[block_identity] = _data_block_to_dict(bundle.data_block)
+        bundle_records.append(_bundle_to_dict(bundle, serialized_block=data_blocks[block_identity]))
     raw_json = json.dumps(
-        {"bundles": [_bundle_to_dict(b) for b in bundles]},
+        {"bundles": bundle_records},
         default=_json_default,
     )
     raw_bytes = raw_json.encode("utf-8")
@@ -289,11 +297,15 @@ def _json_default(obj: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _bundle_to_dict(bundle: MetricDataBundle) -> dict[str, Any]:
+def _bundle_to_dict(
+    bundle: MetricDataBundle, *, serialized_block: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """MetricDataBundle → 可 JSON 序列化的 dict."""
     return {
         "metric_code": bundle.metric_code,
-        "data_block": _data_block_to_dict(bundle.data_block),
+        "data_block": (
+            _data_block_to_dict(bundle.data_block) if serialized_block is None else serialized_block
+        ),
         "mask_expression": bundle.mask_expression,
         "masked_indices": list(bundle.masked_indices),
         "lineage": _lineage_to_dict(bundle.lineage),

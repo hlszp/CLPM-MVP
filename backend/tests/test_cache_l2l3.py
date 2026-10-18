@@ -19,7 +19,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+import base64
+import json
+from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -30,6 +32,7 @@ from app.contracts.data_types import (
     TagGroup,
     TimeWindow,
 )
+from app.services.cache import l2_bundle
 from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.cache.l2_bundle import L2BundleCache
 from app.services.cache.l3_feature import L3FeatureCache
@@ -175,6 +178,102 @@ class TestL2Serialization:
         assert len(restored[0].data_block.timestamps) == len(bundle.data_block.timestamps)
         assert restored[0].data_block.timestamps[0] == bundle.data_block.timestamps[0]
         assert restored[0].data_block.timestamps[-1] == bundle.data_block.timestamps[-1]
+
+
+class TestL2BlockEncodingReuse:
+    """单次序列化按对象身份复用转换，线格式与反序列化别名行为不变。"""
+
+    def test_same_block_converted_once_per_serialize(self, monkeypatch) -> None:
+        first = _make_bundle(n=4)
+        second = _make_bundle("overshoot", n=4)
+        second.data_block = first.data_block
+        second.masked_indices = [1, 3]
+        original = l2_bundle._data_block_to_dict
+        calls = []
+
+        def convert(block):
+            calls.append(block)
+            return original(block)
+
+        monkeypatch.setattr(l2_bundle, "_data_block_to_dict", convert)
+        restored = l2_bundle._deserialize(l2_bundle._serialize([first, second]))
+
+        assert len(calls) == 1
+        assert calls[0] is first.data_block
+        assert [b.metric_code for b in restored] == [first.metric_code, second.metric_code]
+        assert restored[1].masked_indices == [1, 3]
+        assert restored[0].data_block is not restored[1].data_block
+        assert restored[0].data_block.signals is not restored[1].data_block.signals
+
+    def test_same_block_id_on_distinct_objects_preserves_both(self) -> None:
+        first, second = _make_bundle(n=4), _make_bundle("overshoot", n=4)
+        assert first.data_block.data_block_id == second.data_block.data_block_id
+        assert first.data_block is not second.data_block
+        second.data_block.signals["pv"][0] = 123.0
+
+        restored = l2_bundle._deserialize(l2_bundle._serialize([first, second]))
+
+        assert restored[0].data_block.signals == first.data_block.signals
+        assert restored[1].data_block.signals == second.data_block.signals
+        assert restored[0].data_block.signals != restored[1].data_block.signals
+
+    def test_mutated_input_is_fresh_on_next_serialize(self) -> None:
+        bundle = _make_bundle(n=4)
+        first = l2_bundle._serialize([bundle, bundle])
+        original_time = bundle.data_block.timestamps[0]
+        bundle.data_block.timestamps[0] += timedelta(milliseconds=250)
+        bundle.data_block.signals["pv"][0] = 123.0
+        bundle.data_block.validity["pv_valid"][0] = False
+        second = l2_bundle._serialize([bundle, bundle])
+
+        assert first != second
+        assert l2_bundle._deserialize(first)[0].data_block.timestamps[0] == original_time
+        for restored in l2_bundle._deserialize(second):
+            assert restored.data_block.timestamps[0] == bundle.data_block.timestamps[0]
+            assert restored.data_block.signals["pv"][0] == 123.0
+            assert restored.data_block.validity["pv_valid"][0] is False
+
+    def test_payload_bytes_match_unmemoized_format(self) -> None:
+        first, second = _make_bundle(n=4), _make_bundle("overshoot", n=4)
+        second.data_block = first.data_block
+        bundles = [first, second]
+        raw = json.dumps(
+            {"bundles": [l2_bundle._bundle_to_dict(b) for b in bundles]},
+            default=l2_bundle._json_default,
+        ).encode("utf-8")
+        legacy = base64.b64encode(l2_bundle._compressor_singleton().compress(raw)).decode("ascii")
+
+        assert l2_bundle._serialize(bundles) == legacy
+
+    def test_bundle_to_dict_default_still_converts_each_call(self, monkeypatch) -> None:
+        bundle = _make_bundle(n=4)
+        original = l2_bundle._data_block_to_dict
+        calls = []
+
+        def convert(block):
+            calls.append(block)
+            return original(block)
+
+        monkeypatch.setattr(l2_bundle, "_data_block_to_dict", convert)
+        first = l2_bundle._bundle_to_dict(bundle)
+        second = l2_bundle._bundle_to_dict(bundle)
+        assert len(calls) == 2
+        assert first == second
+        assert first["data_block"] is not second["data_block"]
+
+    def test_old_list_payload_without_context_or_confidence_decodes(self) -> None:
+        bundle = _make_bundle(n=4)
+        record = l2_bundle._bundle_to_dict(bundle)
+        for field in ["control_type", "series_context", "loop_confidence_level", "loop_valid_rate"]:
+            record["data_block"].pop(field)
+        raw = json.dumps([record], default=l2_bundle._json_default).encode("utf-8")
+        payload = base64.b64encode(l2_bundle._compressor_singleton().compress(raw)).decode("ascii")
+
+        restored = l2_bundle._deserialize(payload)[0]
+        assert restored.data_block.signals == bundle.data_block.signals
+        assert restored.data_block.control_type is None
+        assert restored.data_block.series_context is None
+        assert restored.data_block.loop_valid_rate == 1.0
 
 
 # ---------------------------------------------------------------------------
