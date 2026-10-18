@@ -114,7 +114,7 @@ cd frontend && pnpm run format
 - **日常开发**：可直接在 main 上小步提交并 `git push github main`（双机并行期例外，见下条）；大改动（>500 行或 DB schema/架构变更）建议开 `<type>/<简述>` 分支
 - **双机分支策略**：macbook 机在 `macbook` 分支开发、zpdev 机在 `zpdev` 分支开发，各自 `git push -u github <分支>` 备份；**仅在用户显式要求时**才合并回 main（`--no-ff`）；允许并建议定期把 main 合入各自分支保鲜（main→分支方向不受限）；DB 迁移/种子数据变更尽量集中单机，避免 alembic 多 head 冲突；两机开发环境各自独立（工作区+容器+数据卷），互不干扰
 - **红线**：禁止 `git push --force` 共享分支；禁止 `git reset --hard` 后推送共享分支；**禁止对原项目（origin）做任何提交动作**；**提交/推送/CI 仅在用户显式要求时执行**——小改动完成后直接报告结果，不主动提交，不同步等待 CI（报告"已触发"即可）
-- **CI 现状**：GitHub Actions 已启用且通过（`.github/workflows/ci.yml`，push/PR 触发 main/develop）；Backend（ruff check + format + pytest --cov 60% 门槛，Redis service 容器）/ Frontend（eslint apps/web-antd + typecheck + build + E2E 非阻塞）；提交前本地检查（ruff + pytest + check:type）仍是第一道门禁
+- **CI 现状**：GitHub Actions 已启用且通过（`.github/workflows/ci.yml`，push/PR 触发 main/develop）；Backend（ruff check + format + pytest --cov 60% 门槛，Redis service 容器）/ Frontend（eslint apps/web-antd + vitest 全量 + typecheck + build + E2E 冒烟阻塞）/ 独立 Critical E2E Gate（真实隔离 PostgreSQL/Redis/TDengine 关键业务链，阻塞）；提交前本地检查（ruff + pytest + check:type）仍是第一道门禁
 
 ## Stale docs 防护
 
