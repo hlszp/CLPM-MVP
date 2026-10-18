@@ -242,7 +242,7 @@ export namespace PersonalWorkApi {
 /* ── 409 冲突提取（刷新重试协议） ── */
 
 /**
- * 版本/代际冲突载荷（从 axios 错误体提取）。
+ * 版本/代际冲突载荷（从请求错误体提取）。
  * 后端错误体统一为 {code, message, data}；409 时 code 为
  * ERR_REVISION_CONFLICT / ERR_GENERATION_STALE，data 携带当前有效版本。
  */
@@ -257,21 +257,28 @@ export interface RevisionConflict {
   isFollowed?: boolean | null;
 }
 
-/** 从请求错误提取 409 冲突载荷；非 409 或无载荷返回 null */
+/**
+ * RequestClient.request 已将 HTTP 错误解包为后端 body，按明确的冲突码识别。
+ * 同时兼容仍保留 Axios response 的调用方；该形状必须是 HTTP 409。
+ */
 export function extractRevisionConflict(
   error: unknown,
 ): null | RevisionConflict {
+  if (!error || typeof error !== 'object') return null;
   const response = (error as any)?.response;
-  if (!response || response.status !== 409) return null;
-  const body = response.data ?? {};
-  const code = String(body.code ?? '');
+  if (response && response.status !== 409) return null;
+  const body = response ? response.data : error;
+  if (!body || typeof body !== 'object') return null;
+  const code = (body as Record<string, any>).code;
   if (code !== 'ERR_REVISION_CONFLICT' && code !== 'ERR_GENERATION_STALE') {
     return null;
   }
-  const data = body.data ?? {};
+  const data = (body as Record<string, any>).data ?? {};
   return {
     code,
-    message: String(body.message ?? '版本冲突，请刷新后重试'),
+    message: String(
+      (body as Record<string, any>).message ?? '版本冲突，请刷新后重试',
+    ),
     currentRevision:
       typeof data.currentRevision === 'number' ? data.currentRevision : null,
     currentGeneration:

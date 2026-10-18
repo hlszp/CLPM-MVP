@@ -19,7 +19,9 @@
  * 409 按冲突载荷收敛——服务端已是目标状态视为幂等成功，否则以
  * currentRevision 重试一次，再冲突则以服务端真实状态回滚并如实提示。
  */
-import { computed, reactive, readonly, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
+
+import { useAccessStore, useUserStore } from '@vben/stores';
 
 import { message } from 'ant-design-vue';
 
@@ -39,8 +41,83 @@ const followed = reactive(new Map<string, number>());
 const loadState = ref<'error' | 'idle' | 'loading' | 'ready'>('idle');
 /** 单回路切换在途（防同回路重入；其他回路不受影响） */
 const busy = reactive(new Set<string>());
-/** 并发去重：读取在途时后续调用复用同一 Promise */
-let loadPromise: null | Promise<boolean> = null;
+/** 单例只归属于当前账户；同一 userId 退出重登也以 generation 隔开。 */
+const ownerId = ref<null | string>(null);
+let generation = 0;
+interface FollowContext {
+  generation: number;
+  ownerId: string;
+}
+interface FollowLoad {
+  context: FollowContext;
+  promise: Promise<boolean>;
+}
+/** 并发去重只在相同账户与会话代际内复用。 */
+let loadRequest: FollowLoad | null = null;
+let userStore: null | ReturnType<typeof useUserStore> = null;
+let accessStore: null | ReturnType<typeof useAccessStore> = null;
+let stopAccountSubscriptions: Array<() => void> = [];
+
+function currentOwner(): null | string {
+  if (!accessStore?.accessToken || accessStore.isLoggingOut) return null;
+  const id = userStore?.userInfo?.userId;
+  return id ? String(id) : null;
+}
+
+function invalidateForOwner(nextOwner: null | string): void {
+  generation += 1;
+  followed.clear();
+  busy.clear();
+  loadState.value = 'idle';
+  loadRequest = null;
+  ownerId.value = nextOwner;
+}
+
+function syncAccountOwner(): void {
+  const nextOwner = currentOwner();
+  if (ownerId.value !== nextOwner) invalidateForOwner(nextOwner);
+}
+
+function ensureAccount(): void {
+  try {
+    const nextUserStore = useUserStore();
+    const nextAccessStore = useAccessStore();
+    if (userStore !== nextUserStore || accessStore !== nextAccessStore) {
+      for (const stop of stopAccountSubscriptions) stop();
+      userStore = nextUserStore;
+      accessStore = nextAccessStore;
+      invalidateForOwner(null);
+      // detached：页面卸载后仍接收退出/换账户，不能让模块级状态失去清理入口。
+      // sync：新账户的第一帧和旧请求的下一微任务之前就已失效。
+      const options = { detached: true, flush: 'sync' as const };
+      stopAccountSubscriptions = [
+        userStore.$subscribe(syncAccountOwner, options),
+        accessStore.$subscribe(syncAccountOwner, options),
+      ];
+    }
+    syncAccountOwner();
+  } catch {
+    // 尚未安装 Pinia/未登录时没有可证明归属的关注集，禁止匿名请求。
+    invalidateForOwner(null);
+  }
+}
+
+function captureContext(): FollowContext | null {
+  ensureAccount();
+  return ownerId.value ? { generation, ownerId: ownerId.value } : null;
+}
+
+function isCurrent(context: FollowContext): boolean {
+  return (
+    context.generation === generation &&
+    context.ownerId === ownerId.value &&
+    context.ownerId === currentOwner()
+  );
+}
+
+function hasCurrentOwner(): boolean {
+  return ownerId.value !== null && ownerId.value === currentOwner();
+}
 
 const LIST_PAGE_SIZE = 100; // 后端上限（Query le=100）
 
@@ -52,10 +129,14 @@ export interface FollowToggleOutcome {
 
 /** 拉取关注集全量（分页循环）；force=false 且已就绪时零请求直接返回 */
 export function refreshFollows(force = false): Promise<boolean> {
+  const context = captureContext();
+  if (!context) return Promise.resolve(false);
   if (!force && loadState.value === 'ready') return Promise.resolve(true);
-  if (loadPromise) return loadPromise;
+  if (loadRequest && isCurrent(loadRequest.context)) return loadRequest.promise;
   loadState.value = 'loading';
-  loadPromise = (async () => {
+  const request: FollowLoad = { context, promise: Promise.resolve(false) };
+  loadRequest = request;
+  request.promise = (async () => {
     try {
       const next = new Map<string, number>();
       let page = 1;
@@ -64,6 +145,8 @@ export function refreshFollows(force = false): Promise<boolean> {
           page,
           pageSize: LIST_PAGE_SIZE,
         });
+        // 旧账户的分页不能继续用新令牌读取，也不能把旧清单回灌新账户。
+        if (!isCurrent(context)) return false;
         for (const it of data.items) next.set(it.loopId, it.revision);
         const size = data.pageSize || LIST_PAGE_SIZE;
         if (page >= Math.max(1, Math.ceil(data.total / size))) break;
@@ -74,13 +157,13 @@ export function refreshFollows(force = false): Promise<boolean> {
       loadState.value = 'ready';
       return true;
     } catch {
-      loadState.value = 'error';
+      if (isCurrent(context)) loadState.value = 'error';
       return false;
     } finally {
-      loadPromise = null;
+      if (loadRequest === request) loadRequest = null;
     }
   })();
-  return loadPromise;
+  return request.promise;
 }
 
 function applyLocal(loopId: string, isFollowed: boolean, revision: number) {
@@ -97,6 +180,8 @@ export async function toggleLoopFollow(
   loopId: string,
   label: null | string = '该回路',
 ): Promise<FollowToggleOutcome> {
+  const context = captureContext();
+  if (!context) return { ok: false };
   const name = label;
   if (busy.has(loopId)) return { ok: false };
   busy.add(loopId);
@@ -115,16 +200,22 @@ export async function toggleLoopFollow(
     });
 
   try {
+    if (!isCurrent(context)) return { ok: false };
     const result = await request(knownRevision ?? 0);
+    if (!isCurrent(context)) return { ok: false };
     applyLocal(loopId, result.isFollowed, result.revision);
     message.success(target ? `已关注 ${name}` : `已取消关注 ${name}`);
     return { ok: true };
   } catch (error) {
+    // 409 重试也要在账户屏障内：否则旧请求会携新账户 token 再次写入。
+    if (!isCurrent(context)) return { ok: false };
     const conflict = extractRevisionConflict(error);
     if (!conflict) {
       // 网络/5xx（setLoopFollowApi skipErrorMessage：全局不弹，由这里提示）
       applyLocal(loopId, wasFollowed, knownRevision ?? 0);
-      message.error(target ? `关注 ${name} 失败，请重试` : `取消关注 ${name} 失败，请重试`);
+      message.error(
+        target ? `关注 ${name} 失败，请重试` : `取消关注 ${name} 失败，请重试`,
+      );
       return { ok: false };
     }
     // 幂等收敛：服务端已是目标状态（他处已操作/同义重放）→ 按成功口径对齐
@@ -136,43 +227,54 @@ export async function toggleLoopFollow(
     // 版本失配（如本地 revision 过期/墓碑复活）：以服务端当前版本重试一次
     try {
       const retry = await request(conflict.currentRevision ?? 0);
+      if (!isCurrent(context)) return { ok: false };
       applyLocal(loopId, retry.isFollowed, retry.revision);
       message.success(target ? `已关注 ${name}` : `已取消关注 ${name}`);
       return { ok: true };
     } catch (retryError) {
+      if (!isCurrent(context)) return { ok: false };
       const c2 = extractRevisionConflict(retryError);
       // 以服务端真实状态回滚（不保留乐观假态），如实提示
       const serverFollowed = c2?.isFollowed ?? wasFollowed;
-      applyLocal(loopId, serverFollowed, c2?.currentRevision ?? knownRevision ?? 0);
-      message.warning(`关注状态已在其他页面变更，已按当前状态（${
-        serverFollowed ? '已关注' : '未关注'
-      }）刷新`);
+      applyLocal(
+        loopId,
+        serverFollowed,
+        c2?.currentRevision ?? knownRevision ?? 0,
+      );
+      message.warning(
+        `关注状态已在其他页面变更，已按当前状态（${
+          serverFollowed ? '已关注' : '未关注'
+        }）刷新`,
+      );
       return { conflict: { isFollowed: c2?.isFollowed ?? null }, ok: false };
     }
   } finally {
-    busy.delete(loopId);
+    // A 的 finally 不能解除 B 对同一回路刚取得的防重入锁。
+    if (isCurrent(context)) busy.delete(loopId);
   }
 }
 
-/** 重置模块级状态（测试隔离用） */
+/** 账户/登录会话边界清理；同时让所有旧读取、切换和重试结果失效。 */
 export function resetLoopFollowState(): void {
-  followed.clear();
-  busy.clear();
-  loadState.value = 'idle';
-  loadPromise = null;
+  invalidateForOwner(null);
 }
 
 /** 回路关注共享集访问器（三入口共用；状态本身为模块级单例） */
 export function useLoopFollow() {
+  ensureAccount();
   return {
     /** 关注集读取状态（error=初始态不可信，入口应如实提示） */
-    followLoadState: readonly(loadState),
+    followLoadState: computed(() =>
+      hasCurrentOwner() ? loadState.value : 'idle',
+    ),
     /** 当前关注回路 ID 集（快照；UI 响应式判定用 isFollowed） */
-    followedLoopIds: computed(() => new Set(followed.keys())),
+    followedLoopIds: computed(
+      () => new Set(hasCurrentOwner() ? followed.keys() : []),
+    ),
     /** ensureLoaded：未就绪时拉取一次（入口 onMounted 调用；失败返回 false） */
     ensureLoaded: () => refreshFollows(false),
-    isBusy: (loopId: string) => busy.has(loopId),
-    isFollowed: (loopId: string) => followed.has(loopId),
+    isBusy: (loopId: string) => hasCurrentOwner() && busy.has(loopId),
+    isFollowed: (loopId: string) => hasCurrentOwner() && followed.has(loopId),
     refresh: () => refreshFollows(true),
     toggle: toggleLoopFollow,
   };
