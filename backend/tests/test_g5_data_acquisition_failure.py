@@ -458,6 +458,7 @@ async def test_minority_resource_failure_propagates_to_parent_and_terminal_recor
     monkeypatch.setattr(kpi_calc, "_calculate_loop_kpi", calculate)
     tracker = AsyncMock()
     monkeypatch.setattr("app.services.task_tracker.update_status", tracker)
+    monkeypatch.setattr("app.services.task_tracker.reset_task_progress", AsyncMock())
     redis = MagicMock()
     redis.set = AsyncMock(return_value=True)
     redis.get = AsyncMock(return_value="f02-test-task")
