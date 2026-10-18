@@ -1,1 +1,0 @@
-function e(t,n=[]){for(let r of t)n.push(r),r.children&&r.children.length>0&&e(r.children,n);return n}export{e as t};

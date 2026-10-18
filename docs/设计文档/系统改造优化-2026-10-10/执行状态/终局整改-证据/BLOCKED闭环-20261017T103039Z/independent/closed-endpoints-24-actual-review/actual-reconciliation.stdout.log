@@ -1,1 +1,0 @@
-{"verdict": "PASS", "scope": "Actual closed endpoint capture integrity only; no capacity or KPI business acceptance", "normalBatches": 20, "extraBatches": 4, "queryResponses": 672, "captureManifestSha256": "9c964902e9f2239a88df28dd3a1bce5e331db17c1c2f7a85d1a4eb0d7ce726cd", "allManifestFilesVerified": 2739, "sourcesUnchanged": true}

@@ -1,1 +1,0 @@
-import{Kt as e,en as t,er as n,vn as r,wt as i}from"./vendor-antd-C7EWqXIS.js";import{t as a}from"./fallback-BIvyE_9F.js";var o=t(i(i({},{name:`FallbackOfflineDemo`}),{},{__name:`offline`,setup(t){return(t,i)=>(r(),e(n(a),{status:`offline`}))}}));export{o as default};

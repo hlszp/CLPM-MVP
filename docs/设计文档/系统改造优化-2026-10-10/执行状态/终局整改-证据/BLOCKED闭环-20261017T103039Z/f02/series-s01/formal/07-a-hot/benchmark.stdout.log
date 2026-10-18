@@ -1,7 +1,0 @@
-[preflight] 三条件参评回路数检查（DB 权威口径）
-  window: 2026-10-15T18:00:00 ~ 2026-10-15T19:00:00 (naive UTC)
-  barrier_loop_prefix: PERF-T
-  manifest: /Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/input-manifests/manifest_a_2026101518.json (scenario=a, totalLoops=1000)
-  eligible(is_active+READY+include_in_evaluation): 1000
-  excluded(不可参评，单列不缩分母): 0
-  独立 loopId 断言: 1000 unique = expect ✓（与 manifest 身份一致 ✓）

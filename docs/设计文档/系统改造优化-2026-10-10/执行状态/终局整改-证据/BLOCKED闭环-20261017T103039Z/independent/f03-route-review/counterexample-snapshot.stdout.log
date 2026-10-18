@@ -1,9 +1,0 @@
-### Page
-- Page URL: http://127.0.0.1:60134/auth/login#//foreign.invalid/cockpit
-- Page Title: Independent route fixture
-### Snapshot
-```yaml
-- generic [active] [ref=e1]:
-  - heading "Independent route fixture" [level=1] [ref=e2]
-  - generic [ref=e3]: "{ \"origin\": \"http://127.0.0.1:60134\", \"path\": \"/cockpit\", \"query\": {}, \"routeOrigin\": \"http://foreign.invalid\" }"
-```

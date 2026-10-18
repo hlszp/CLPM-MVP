@@ -1,8 +1,0 @@
-{"batch": {"batch": 1, "scenario": "a", "cache": "cold", "ts_start": "2026-10-15T12:00:00", "ts_end": "2026-10-15T13:00:00", "manifest_name": "manifest_a_2026101512.json", "required": true, "slo_seconds": 600, "expected_loops": 1000}, "finishedAt": "2026-10-17T19:37:59.653263+00:00", "rc": 1, "collectorRc": 0, "receiverRc": 0, "completionReason": "BARRIER_PASSED", "seconds": 715.9847529589897, "sloPassed": false, "reportSha256": "0599e63a975a84658a43eab04a26ca79158b69c5452a05d5b410cc39ea393c4b"}
-Traceback (most recent call last):
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 178, in <module>
-    main(parser.parse_args())
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/run_capacity_series.py", line 156, in main
-    assert rc == collector_rc == receiver_rc == 0
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError

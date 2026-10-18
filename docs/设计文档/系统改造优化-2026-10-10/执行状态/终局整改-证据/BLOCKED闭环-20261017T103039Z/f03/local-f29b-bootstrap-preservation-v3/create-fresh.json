@@ -1,6 +1,0 @@
-{
-  "sql": "CREATE DATABASE \"clpm_critical_20261017_local\" OWNER \"clpm\" TEMPLATE template0",
-  "startedAt": "2026-10-17T13:36:04.194603+00:00",
-  "finishedAt": "2026-10-17T13:36:04.216620+00:00",
-  "result": "CREATE DATABASE"
-}

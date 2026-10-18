@@ -1,4 +1,0 @@
-backend_unit_rc=0
-backend_integration_rc=0
-frontend_targeted_rc=0
-frontend_full_rc=0

@@ -1,9 +1,0 @@
-{
-  "evidenceRole": "PURE_FILESYSTEM_CONTROL_WITH_STUBBED_GIT_NOT_ACTUAL_CANDIDATE_ACCEPTANCE",
-  "sourceSha256": "0de792ae43818fb041915c5fc3a5cd8aa181230de230b1a71165460d085ff985",
-  "positiveRc": 0,
-  "all21FrozenReferencesSurviveLaterPhaseWrites": true,
-  "originalManifestBytesUnchanged": true,
-  "postGateFreezeExplicitlyRejected": "input freeze must precede actual gate",
-  "dbOrHttpOrProcessOperations": 0
-}

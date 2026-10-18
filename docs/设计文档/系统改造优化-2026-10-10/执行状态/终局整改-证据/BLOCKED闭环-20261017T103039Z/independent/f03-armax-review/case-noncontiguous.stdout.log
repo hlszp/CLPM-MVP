@@ -1,7 +1,0 @@
-START noncontiguous
-{
-  "oldSha256": "22cc3ddf0aee6339a91b4e54c02b2a9d907273dc585bfa31debc6227224dc11b",
-  "newSha256": "90e7982083505f83d1ba11b48f2d0d88574377c400ae4b380a24634f8cf3bb8d",
-  "passed": 1,
-  "failed": 0
-}

@@ -1,1 +1,0 @@
-{"armed":false,"at":"2026-10-17T11:18:25.224083+00:00","boundary":"Private test proxy only; no task enqueue or app/env changes.","epoch":"start-disarmed","policySha256":"b2087d15780b2f60eccefcaa32a767d75ff0ce9518e68844a9a626a0632ebee2","sourceSha256":"b36666a90663499339625f01d0179d32340d5dfcf03a82eb6b80b834cec042d0","upstream":"http://127.0.0.1:65338/rest/sql"}

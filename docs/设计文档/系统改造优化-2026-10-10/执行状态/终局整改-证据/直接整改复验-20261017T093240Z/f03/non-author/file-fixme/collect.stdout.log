@@ -1,6 +1,0 @@
-Listing tests:
-  [chromium] › critical-business.spec.ts:3:1 › CRITICAL-AUTH-001: independent marker negative
-  [chromium] › critical-business.spec.ts:4:1 › CRITICAL-PERM-001: independent marker negative
-  [chromium] › critical-business.spec.ts:5:1 › CRITICAL-CALC-001: independent marker negative
-  [chromium] › critical-business.spec.ts:6:1 › CRITICAL-EVIDENCE-001: independent marker negative
-Total: 4 tests in 1 file

@@ -1,9 +1,0 @@
-{
-  "state": {
-    "api_pid": 661,
-    "beat_pid": 1060,
-    "sha": "12e821a80861d452a4f5a2f3fcf4763afa5f8f9e",
-    "start_record": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/runtime/manual-start-record.json"
-  },
-  "recordSha256": "ec8af8b289c0d256f6d21b367a0af4d0a8fc3221c33bcc367cad852370130b5b"
-}

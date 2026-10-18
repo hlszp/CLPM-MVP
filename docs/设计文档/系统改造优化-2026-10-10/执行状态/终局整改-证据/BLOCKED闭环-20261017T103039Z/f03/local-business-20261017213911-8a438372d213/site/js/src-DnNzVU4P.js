@@ -1,1 +1,0 @@
-import{en as e,rn as t,wt as n}from"./vendor-antd-C7EWqXIS.js";import{t as r}from"./vendor-icons-BCZTPUK2.js";function i(i){return e({name:`Icon-${i}`,setup(e,{attrs:a}){return()=>t(r,n(n({icon:i},e),a))}})}export{i as t};

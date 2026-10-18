@@ -1,4 +1,0 @@
-[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0m../../packages/preferences/src/index.ts is dynamically imported by src/main.ts but also statically imported by src/api/request.ts, src/app.vue?vue&type=script&setup=true&lang.ts, src/bootstrap.ts, src/composables/use-authz-live.ts, src/composables/use-clpm-theme.ts, ..., dynamic import will not move module into another chunk.
-
-[33m[INEFFECTIVE_DYNAMIC_IMPORT] [0msrc/api/site.ts is dynamically imported by src/composables/use-site-branding.ts but also statically imported by src/composables/use-site-branding.ts, src/views/system/basic-info.vue?vue&type=script&setup=true&lang.ts, dynamic import will not move module into another chunk.
-

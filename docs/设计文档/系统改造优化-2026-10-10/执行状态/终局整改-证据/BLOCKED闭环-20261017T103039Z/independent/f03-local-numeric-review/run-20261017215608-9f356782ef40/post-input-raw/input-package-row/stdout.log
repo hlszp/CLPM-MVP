@@ -1,4 +1,0 @@
-BEGIN
-SET
-{"section": "input-package-transaction", "database": "clpm_critical_20261017_local", "readOnly": "on", "snapshot": "1051222:1051222:", "timezone": "UTC", "isolation": "repeatable read", "observedAtUtc": "2026-10-17T14:08:04.227839+00:00", "requestedLoopId": "9244a9dc-22ed-4e95-ac29-52d670659544", "requestedSnapshotId": "1f2f2a4e-0674-4667-8041-d9db96b1250d", "transactionIdIfAssigned": null, "transactionTimestampUtc": "2026-10-17T14:08:04.227255+00:00"}
-COMMIT

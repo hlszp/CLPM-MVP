@@ -1,5 +1,0 @@
-{
-  "v4Sha256": "83462d20d8fb8cbd0224722ae269eb3f87df5eb6a41b89c653edaff53c39f622",
-  "onlyChangedNestedFunction": "stop.read_barrier",
-  "allOtherBytesEqualV3": true
-}

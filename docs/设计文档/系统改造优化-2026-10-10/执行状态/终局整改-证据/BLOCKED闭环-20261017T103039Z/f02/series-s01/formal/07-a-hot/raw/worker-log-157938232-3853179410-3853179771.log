@@ -1,2 +1,0 @@
-2026-10-18 06:50:01,905 | INFO     | app.services.workbench_precalc | workbench_precalc: 写入 81 行（0 错误），清理 0 行
-2026-10-18 06:50:01,906 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_precalc[b798a3c6-8773-4cf4-8b56-5a27839592cf] succeeded in 1.8950397500011604s: {'status': 'ok', 'written': 81, 'errors': 0, 'pruned': 0}

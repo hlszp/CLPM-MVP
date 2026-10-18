@@ -1,9 +1,0 @@
-[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
-[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
-[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
-│  ruff staged (skip) no files for inspection
-[38;2;56;56;56m  ────────────────────────────────────[m
-summary: (done in 0.08 seconds)
-[fix/final-audit-remediation 8fc85080] test(e2e): 阻塞缺失输入原件的验收
- 2 files changed, 323 insertions(+)
- create mode 100644 e2e/scripts/test_critical_input_evidence.py

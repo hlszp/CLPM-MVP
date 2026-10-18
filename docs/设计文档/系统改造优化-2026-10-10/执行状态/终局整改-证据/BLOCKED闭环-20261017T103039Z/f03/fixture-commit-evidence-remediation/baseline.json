@@ -1,9 +1,0 @@
-{
-  "candidateHead": "f29b57338688ca9f9c0900f4c10338d3ad54cc2f",
-  "candidateStatus": "",
-  "scope": "External source copies only; no network, DB or product process changes",
-  "sources": {
-    "prepare-critical-fixture.py": "e39f0b972b9e636151c6389238420eee30145ab23155ba8736974269d1e0c326",
-    "test_critical_fixture.py": "220476e68d17114581b964657ddb02c1c144571dd19ae306112c845895c520c8"
-  }
-}

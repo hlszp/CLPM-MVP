@@ -1,7 +1,0 @@
-{
-  "at": "2026-10-17T11:48:02.855532+00:00",
-  "pid": 59590,
-  "observedCommand": "node prepare-page.cjs",
-  "signal": "SIGTERM",
-  "ownedTemporaryOnly": true
-}

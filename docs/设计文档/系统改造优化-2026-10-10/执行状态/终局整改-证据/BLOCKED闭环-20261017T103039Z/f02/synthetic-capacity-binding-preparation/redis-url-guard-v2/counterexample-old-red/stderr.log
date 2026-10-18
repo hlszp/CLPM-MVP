@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/probe_capacity_binding_redis_url.py", line 62, in <module>
-    run(args.source, args.out)
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/independent/probe_capacity_binding_redis_url.py", line 54, in run
-    assert refused, "db query overrides all 0/1/2 URL paths; private_config must refuse"
-           ^^^^^^^
-AssertionError: db query overrides all 0/1/2 URL paths; private_config must refuse

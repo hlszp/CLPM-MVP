@@ -1,5 +1,0 @@
-{
-  "sourceSha256": "ed09e17551c299c2c257c1e4bfaee780f1a185f07e2026f4a20f29a0fd6df028",
-  "canonical": "{\"a\":[null,true,false,0,0.0,-0.0,1e-100,9007199254740993,\"中文\"],\"b\":{\"empty\":{},\"x\":[1,2]}}",
-  "inputHash": "bea616322bfb04e14073acacc0cd30106fecb4b9f75a5e886d84df6e8a8676b1"
-}

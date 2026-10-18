@@ -1,1 +1,0 @@
-{"result": "PASS", "nativeEnvSha256": "27d6fc10cc68376b056d1c7803f1b6361e48c11bc3de46c4e8a46cc4b2abe04b", "postgresDatabase": "clpm_capacity_20261017_s01", "postgresHost": "localhost", "postgresPort": "17102", "redisUsesSeparateFields": true, "redisHost": "127.0.0.1", "redisPort": "17123", "redisDb": "0", "actualConnections": 0, "passwordsExported": false}

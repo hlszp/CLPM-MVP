@@ -1,2 +1,0 @@
-2026-10-18 06:54:01,281 | INFO     | app.services.workbench_loop_latest | workbench_loop_latest 刷新完成：1000 回路（未处置 0），快照 1000 / run 0
-2026-10-18 06:54:01,283 | INFO     | celery.app.trace | Task app.tasks.workbench.workbench_loop_latest_refresh[35fcc638-91c8-4561-a7df-d33471b5d023] succeeded in 1.276943166012643s: {'loops': 1000, 'open': 0}

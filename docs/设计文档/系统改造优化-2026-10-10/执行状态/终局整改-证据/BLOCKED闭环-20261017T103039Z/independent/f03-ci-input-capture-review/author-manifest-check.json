@@ -1,8 +1,0 @@
-{
-  "status": "PASS",
-  "manifestPath": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/ci-input-evidence-capture/evidence-manifest.json",
-  "manifestSha256": "8aa6a7b8b356b97be5b17daa3092dbdf13cc9a1e1b49f21c0681f55a69bdbd4e",
-  "files": 128,
-  "bytes": 165597,
-  "actualRemoteBusinessOrDatabaseSignoff": false
-}

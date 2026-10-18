@@ -1,1 +1,0 @@
-var e=[`ADMIN`,`IC_ENGINEER`,`PE_ENGINEER`,`SPONSOR`,`EXPERT`],t={ADMIN:`系统管理员`,EXPERT:`外部专家`,IC_ENGINEER:`仪控工程师`,PE_ENGINEER:`工艺/设备工程师`,SPONSOR:`生产技术/Sponsor`};export{t as n,e as t};

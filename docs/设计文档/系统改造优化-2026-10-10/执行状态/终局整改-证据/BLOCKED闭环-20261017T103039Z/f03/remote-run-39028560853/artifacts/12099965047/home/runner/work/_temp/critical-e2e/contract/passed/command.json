@@ -1,8 +1,0 @@
-{
-  "args": [
-    "bash",
-    "/tmp/clpm-gate-contract-OSPguC/fixture/scripts/run-critical-e2e.sh"
-  ],
-  "code": 0,
-  "signal": null
-}

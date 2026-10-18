@@ -1,5 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/直接整改复验-20261017T093240Z/docs-non-author/verify_documents.py", line 70, in <module>
-    assert 'CP80' in state_text and '历史' in state_text[:1500]
-           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AssertionError

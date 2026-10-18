@@ -1,9 +1,0 @@
-{
-  "at": "2026-10-17T12:13:39.500828+00:00",
-  "httpStatus": 200,
-  "username": "admin",
-  "privateRawTokenFile": "/Users/zhangping/DEV/CLPM-evidence-archive/2026-10-17-final-audit/runtime-env-backups/BLOCKED-20261017T103039Z/capacity-freeze-bearer-c452.token",
-  "modeOctal": "0o600",
-  "tokenExported": false,
-  "responseBodyExported": false
-}

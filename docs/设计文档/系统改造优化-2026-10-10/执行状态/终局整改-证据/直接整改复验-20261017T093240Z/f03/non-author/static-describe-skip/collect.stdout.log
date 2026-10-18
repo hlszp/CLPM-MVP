@@ -1,6 +1,0 @@
-Listing tests:
-  [chromium] › critical-business.spec.ts:3:1 › all static skipped › CRITICAL-AUTH-001: independent marker negative
-  [chromium] › critical-business.spec.ts:4:1 › all static skipped › CRITICAL-PERM-001: independent marker negative
-  [chromium] › critical-business.spec.ts:5:1 › all static skipped › CRITICAL-CALC-001: independent marker negative
-  [chromium] › critical-business.spec.ts:6:1 › all static skipped › CRITICAL-EVIDENCE-001: independent marker negative
-Total: 4 tests in 1 file

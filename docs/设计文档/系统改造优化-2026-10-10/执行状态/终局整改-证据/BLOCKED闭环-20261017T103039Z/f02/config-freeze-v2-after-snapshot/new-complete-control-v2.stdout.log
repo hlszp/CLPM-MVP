@@ -1,9 +1,0 @@
-{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
-.{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
-.{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
-.{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
-.{"status": "BLOCKED", "configRevision": null, "configDigest": null, "loopCount": null, "mappingCount": null, "predictedNodeCount": null, "errorType": "ValueError"}
-..{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
-{"status": "FROZEN", "configRevision": 1, "configDigest": "1251c2aec19dbbf775dc39ae6dd2f44ca4ff0f307e9fc22f7c9e77d45de3ebe4", "loopCount": 1000, "mappingCount": 7000, "predictedNodeCount": 20, "errorType": null}
-.........
-15 passed in 4.42s

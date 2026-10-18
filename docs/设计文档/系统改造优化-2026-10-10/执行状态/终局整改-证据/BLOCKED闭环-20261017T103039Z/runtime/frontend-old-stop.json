@@ -1,8 +1,0 @@
-{
-  "at": 1792234789.262421,
-  "pid": 57651,
-  "present": true,
-  "reason": "remove unplanned UI load during isolated capacity series",
-  "production": false,
-  "signal": "SIGTERM"
-}

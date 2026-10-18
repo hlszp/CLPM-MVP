@@ -1,1 +1,0 @@
-{"api_pid":100,"backend_tree":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","candidate_sha":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","command":["/synthetic/python","-m","uvicorn","app.main:app"],"cwd":"/synthetic/backend","env_sha256":"synthetic-env","ready_at":1792220402.0,"started_at":1792220399.9,"syntheticFixtureOnly":true}

@@ -1,6 +1,0 @@
-test_persistent_not_auto_green_after_nine (test_proxy_independent.IndependentProxyTests.test_persistent_not_auto_green_after_nine) ... ok
-
-----------------------------------------------------------------------
-Ran 1 test in 0.043s
-
-OK

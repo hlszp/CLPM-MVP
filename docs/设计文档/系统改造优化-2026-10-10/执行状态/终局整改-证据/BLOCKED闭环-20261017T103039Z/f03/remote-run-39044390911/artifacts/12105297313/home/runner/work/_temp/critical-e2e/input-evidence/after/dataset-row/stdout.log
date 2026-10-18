@@ -1,5 +1,0 @@
-BEGIN
-SET
-{"section": "input-package-transaction", "database": "clpm_critical_e2e", "readOnly": "on", "snapshot": "789:789:", "timezone": "UTC", "isolation": "repeatable read", "observedAtUtc": "2026-10-17T15:20:10.456265+00:00", "requestedLoopId": "f352b903-a2a0-4cb9-a57b-fb5a139294d8", "requestedSnapshotId": "416c9576-d929-4afb-a404-24d0d5b83474", "transactionIdIfAssigned": null, "transactionTimestampUtc": "2026-10-17T15:20:10.455571+00:00"}
-{"id": "416c9576-d929-4afb-a404-24d0d5b83474", "kind": "KPI_GRID", "ts_end": "2026-10-17T14:00:00", "loop_id": "f352b903-a2a0-4cb9-a57b-fb5a139294d8", "ts_start": "2026-10-17T13:00:00", "cleaned_at": null, "created_at": "2026-10-17T15:20:04.208998", "expires_at": "2027-01-15T15:20:03.080635", "input_hash": "b7627b87f2997fbb0c31756a7c42a89b16a4e7b7e33546d5eeec43c6b577f634", "size_bytes": 3533838, "dataset_ref": "40ea69c190317632", "frozen_reason": null, "schema_version": "1.3", "retention_class": "NORMAL", "created_by_record_id": null, "frozen_by_record_ids": []}
-COMMIT

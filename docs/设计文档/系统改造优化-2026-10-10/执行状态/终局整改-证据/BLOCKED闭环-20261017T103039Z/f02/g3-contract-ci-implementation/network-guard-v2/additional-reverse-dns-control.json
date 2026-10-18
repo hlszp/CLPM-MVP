@@ -1,9 +1,0 @@
-{
-  "event": "socket.getnameinfo",
-  "refused": true,
-  "attempts": [
-    "socket.getnameinfo"
-  ],
-  "actualSocketCalls": 0,
-  "algorithmsInvoked": 0
-}

@@ -1,9 +1,0 @@
-### Page
-- Page URL: http://127.0.0.1:57039/auth/login#/metric/loop-evaluation?loopId=loop-a%2Fb&view=history&taskId=task-%E4%B8%80&empty=
-- Page Title: Independent route fixture
-### Snapshot
-```yaml
-- generic [active] [ref=f5e1]:
-  - heading "Independent route fixture" [level=1] [ref=f5e2]
-  - generic [ref=f5e3]: "{ \"origin\": \"http://127.0.0.1:57039\", \"path\": \"/metric/loop-evaluation\", \"query\": { \"loopId\": \"loop-a/b\", \"view\": \"history\", \"taskId\": \"task-一\", \"empty\": \"\" }, \"routeOrigin\": \"http://127.0.0.1:57039\" }"
-```

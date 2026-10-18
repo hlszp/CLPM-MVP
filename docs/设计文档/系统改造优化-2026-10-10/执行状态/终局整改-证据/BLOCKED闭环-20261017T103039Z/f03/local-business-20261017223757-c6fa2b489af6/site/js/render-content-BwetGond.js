@@ -1,2 +1,0 @@
-import{en as e,ir as t,nr as n,rn as r,rr as i,wt as a}from"./vendor-antd-C7EWqXIS.js";var o=e({name:`RenderContent`,props:{content:{default:void 0,type:[Object,String,Function]},renderBr:{default:!1,type:Boolean}},setup(e,{attrs:o,slots:s}){return()=>{if(!e.content)return null;if(!((i(e.content)||n(e.content))&&e.content!==null))if(e.renderBr&&t(e.content)){let t=e.content.split(`
-`),n=[];for(let[e,i]of t.entries())n.push(r(`p`,{key:e},i));return n}else return e.content;return r(e.content,a(a({},o),{},{props:a(a({},e),o)}),s)}}});export{o as t};

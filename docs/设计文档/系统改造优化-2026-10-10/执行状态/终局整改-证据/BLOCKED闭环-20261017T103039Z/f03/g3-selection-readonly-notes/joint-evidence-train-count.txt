@@ -1,9 +1,0 @@
-3703:                     "budget": "B-09",
-3704:                 },
-3705:             }
-3706:             evidence = ModelEvidence(
-3707:                 n_train=n_train_sum,
-3708:                 n_val=n_val_sum,
-3709:                 n_test=n_test_sum,
-3710:                 r2_val=round(r2_val, 4),
-3711:                 r2_train=round(r2_train, 4),

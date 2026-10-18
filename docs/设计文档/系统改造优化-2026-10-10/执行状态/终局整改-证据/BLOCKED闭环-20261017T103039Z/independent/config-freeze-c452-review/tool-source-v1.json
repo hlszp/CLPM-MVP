@@ -1,5 +1,0 @@
-{
-  "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_configuration_freeze_raw.py",
-  "sha256": "b8e06438de6b076b222c8542502ed328b3a88954eca33e2688a30bb79fb1f9d4",
-  "note": "Initial independent real c452 reconstruction, before adding explicit missing-after BLOCKED classification and optional after raw support."
-}

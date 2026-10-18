@@ -1,7 +1,0 @@
-### Result
-{"results":[],"denominator":"完整快照 1 条 / 1 个恢复批次，每批 ≤200"}
-### Ran Playwright code
-```js
-await (async (page) => { const tasks=[];const h=r=>{if(r.url().includes('/snapshots/')&&r.request().method()==='GET')tasks.push(r.json().then(body=>({url:r.url(),status:r.status(),body})));};page.on('response',h);await page.getByTestId('btn-review-restore').click();await page.waitForFunction(()=>document.querySelector('[data-testid=restore-denominator]')?.textContent?.includes('1 条'));page.off('response',h);const results=await Promise.all(tasks);return {results,denominator:await page.getByTestId('restore-denominator').innerText()}; })(page);
-```
-

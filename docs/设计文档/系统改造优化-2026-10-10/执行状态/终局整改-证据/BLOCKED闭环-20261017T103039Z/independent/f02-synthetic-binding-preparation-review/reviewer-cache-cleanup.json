@@ -1,7 +1,0 @@
-{
-  "path": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/synthetic-capacity-binding-preparation/redis-url-guard-v2/__pycache__/prepare_bindings.cpython-314.pyc",
-  "bytes": 38090,
-  "sha256": "0732aa76626e8bc658b400d7747a69e41cfcb54ed9a54d918c8bbfc5be438b63",
-  "removedAt": "2026-10-17T15:02:48.421083+00:00",
-  "reason": "reviewer system Python metadata-only import accidentally wrote own bytecode cache; removed only exact new cpython-314 file; source/author cpython-312 caches untouched"
-}

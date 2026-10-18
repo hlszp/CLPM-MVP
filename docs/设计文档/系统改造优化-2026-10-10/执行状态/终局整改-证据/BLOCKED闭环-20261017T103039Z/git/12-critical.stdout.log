@@ -1,6 +1,0 @@
-[fix/final-audit-remediation 5e5bcf8f] test(e2e): enforce exact critical case results
- 7 files changed, 351 insertions(+), 76 deletions(-)
- create mode 100644 e2e/critical-cases.json
- create mode 100644 e2e/playwright.critical.config.ts
- create mode 100644 e2e/scripts/test-critical-gate.mjs
- create mode 100644 e2e/scripts/validate-critical-results.mjs

@@ -1,8 +1,0 @@
-Traceback (most recent call last):
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-term-v5/keeper-local-f03-v5b.py", line 1249, in <module>
-    main()
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-term-v5/keeper-local-f03-v5b.py", line 1244, in main
-    globals()[ARGS.phase]()
-  File "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f03/local-term-v5/keeper-local-f03-v5b.py", line 1127, in stop
-    raise RuntimeError("stop failed: " + json.dumps(errors, ensure_ascii=False))
-RuntimeError: stop failed: [{"phase": "api-stop", "error": "psutil.NoSuchProcess(pid=70527, msg='process PID not found')"}, {"phase": "process-check", "error": "owned process remains; no force kill"}]

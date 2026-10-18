@@ -1,5 +1,0 @@
-2026-10-18 06:48:34,378 | DEBUG    | app.services.cache.l2_bundle | L2 cache SET: key=pdb_l2:e678dad3-18e5-4bad-bdb1-dd07d2032d7c:8990decd:d336f692:LC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, ttl=600s, bundles=25, payload_bytes=86664
-2026-10-18 06:48:34,379 | DEBUG    | app.services.data_planner | DataPlanner L2 写入: key=pdb_l2:e678dad3-18e5-4bad-bdb1-dd07d2032d7c:8990decd:d336f692:LC:50075686:cfg_1792206129_opr0.0_100.0:point-v1:tqpv3, bundles=25
-2026-10-18 06:48:34,379 | INFO     | app.services.data_planner | DataPlanner 完成: loop=e678dad3-18e5-4bad-bdb1-dd07d2032d7c, bundles=25, cached_blocks=5
-2026-10-18 06:48:34,380 | INFO     | app.tasks.kpi_calc | 缓存预热完成: total=1000, succeeded=1000, failed=0, elapsed=511.327s
-2026-10-18 06:48:34,383 | INFO     | celery.app.trace | Task app.tasks.kpi_calc.prewarm_cache[c3f867df-63cf-4a2e-aa77-6749128e42d3] succeeded in 511.5854842919798s: {'total': 1000, 'succeeded': 1000, 'failed': 0, 'errors': [], 'elapsed': 511.3265919999976}

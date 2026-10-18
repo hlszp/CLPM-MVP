@@ -1,6 +1,0 @@
-{
-  "interpreter": "python3",
-  "rc": 1,
-  "stderr": "ModuleNotFoundError: No module named 'yaml'",
-  "stage": "before actionlint or path-step invocation; rerun with existing backend venv PyYAML"
-}

@@ -1,7 +1,0 @@
-{
-  "at": "2026-10-17T23:01:22.650225+00:00",
-  "type": "TimeoutExpired",
-  "message": "Command '['/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.venv/bin/python', '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/collect_capacity_evidence.py', '--env-file', '/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/.env', '--ts-start', '2026-10-15T18:00:00', '--report', '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/07-a-hot/product-report.json', '--out', '/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/终局整改-证据/BLOCKED闭环-20261017T103039Z/f02/series-s01/formal/07-a-hot/raw', '--worker-log', '/Users/zhangping/DEV/clpm-g5-runtime-20261015/backend/logs/celery-worker.log', '--interval', '2', '--post-seconds', '30', '--max-seconds', '3100', '--containers', 'clpm-mvp-postgres', 'clpm-mvp-tdengine', 'clpm-f02-redis-20261017-s01', '--td-container', 'clpm-mvp-tdengine']' timed out after 720 seconds",
-  "completedBatches": 0,
-  "status": "SERIES_FAILED_NOT_REUSED"
-}

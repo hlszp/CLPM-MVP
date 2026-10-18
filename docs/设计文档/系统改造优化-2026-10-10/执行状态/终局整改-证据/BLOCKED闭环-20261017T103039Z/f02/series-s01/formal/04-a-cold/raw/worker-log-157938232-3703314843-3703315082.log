@@ -1,1 +1,0 @@
-2026-10-18 04:33:55,558 | DEBUG    | kombu.pidbox | pidbox received method active(safe=None) [reply_to:{'exchange': 'reply.celery.pidbox', 'routing_key': '8ea70609-13e9-375c-b58b-2f35f46641ac'} ticket:16c15197-69a0-4dba-b673-03a09c84f57f]

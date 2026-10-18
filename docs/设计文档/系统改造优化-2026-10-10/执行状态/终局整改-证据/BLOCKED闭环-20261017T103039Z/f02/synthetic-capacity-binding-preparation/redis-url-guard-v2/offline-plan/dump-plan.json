@@ -1,8 +1,0 @@
-{
-  "database": "clpm_capacity_20261017_s01",
-  "endpoint": "loopback:17102",
-  "format": "PGDMP custom",
-  "before": "full independent RR READ ONLY 25-table + result-count export before pg_dump",
-  "command": "pg_dump --host=127.0.0.1 --port=17102 --username=clpm --dbname=clpm_capacity_20261017_s01 --format=custom --no-owner --file=<own-out>/before.dump",
-  "credentialSource": "explicit native env file; password only in child process environment"
-}

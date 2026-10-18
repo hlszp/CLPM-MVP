@@ -1,6 +1,0 @@
-{
-  "source": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/capture_capacity_scope_after.py",
-  "sha256": "461d509da2cdbae5b4663db5a65c39eb90bbba02be69befe77969b069c375e82",
-  "bytes": 5467,
-  "scope": "Pure tool fix to pin baseline originals to externally frozen manifest SHA before any PG connection; not run on actual PG yet"
-}

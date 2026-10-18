@@ -1,6 +1,0 @@
-Listing tests:
-  [chromium] › critical-business.spec.ts:132:1 › CRITICAL-AUTH-001: real login and authenticated identity
-  [chromium] › critical-business.spec.ts:144:1 › CRITICAL-PERM-001: sponsor cannot run calculation or open workbench
-  [chromium] › critical-business.spec.ts:163:1 › CRITICAL-CALC-001: real task produces one successful synthetic-input result
-  [chromium] › critical-business.spec.ts:222:1 › CRITICAL-EVIDENCE-001: task projection links immutable result and real history UI
-Total: 4 tests in 1 file

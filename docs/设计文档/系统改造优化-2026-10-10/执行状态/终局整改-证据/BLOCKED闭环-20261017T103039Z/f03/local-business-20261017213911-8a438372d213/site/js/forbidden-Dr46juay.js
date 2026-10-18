@@ -1,1 +1,0 @@
-import{Kt as e,en as t,er as n,vn as r,wt as i}from"./vendor-antd-C7EWqXIS.js";import{t as a}from"./fallback-b-AMym4r.js";var o=t(i(i({},{name:`Fallback403Demo`}),{},{__name:`forbidden`,setup(t){return(t,i)=>(r(),e(n(a),{status:`403`}))}}));export{o as default};

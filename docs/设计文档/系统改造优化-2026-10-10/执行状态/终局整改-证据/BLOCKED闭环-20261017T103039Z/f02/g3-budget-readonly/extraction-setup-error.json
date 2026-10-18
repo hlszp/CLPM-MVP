@@ -1,6 +1,0 @@
-{
-  "role": "DIAGNOSTIC_SETUP_ERROR_ONLY",
-  "error": "JSONDecodeError: Expecting value: line 1 column 14 (char 13)",
-  "cause": "First grep hit was echoed Python source, not executed JSON; now only actual parseable JSON accepted",
-  "sourceOrRuntimeMutation": false
-}

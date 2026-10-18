@@ -1,7 +1,0 @@
-{
-  "oldPort": 17266,
-  "newPort": 17267,
-  "originalSha256": "225372ed218fdb770ebeab0c3b6d18c0c99f4433fc4a337d37331b9f652c511a",
-  "executionSha256": "88cf783abfbe122129433cb1373a21b6e829f0b310432293adc51038059a815a",
-  "singleLiteralOnly": true
-}

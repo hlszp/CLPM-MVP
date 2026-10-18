@@ -1,6 +1,0 @@
-.                                        |  WARN  Unsupported engine: wanted: {"node":"^22.18.0 || ^24.0.0"} (current: {"node":"v25.9.0","pnpm":"10.33.4"})
-Progress: resolved 1, reused 0, downloaded 0, added 0
-/Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd:
- ERR_PNPM_NO_OFFLINE_META  Failed to resolve @playwright/test@>=1.60.0 <2.0.0-0 in package mirror /Users/zhangping/Library/Caches/pnpm/metadata-v1.3/registry.npmmirror.com/@playwright/test.json
-
-This error happened while installing a direct dependency of /Users/zhangping/DEV/clpm-remediation-20261017/frontend/apps/web-antd

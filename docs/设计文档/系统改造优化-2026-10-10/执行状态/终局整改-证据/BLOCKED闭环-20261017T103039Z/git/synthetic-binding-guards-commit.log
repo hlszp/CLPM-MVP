@@ -1,8 +1,0 @@
-[38;2;56;56;56m╭──────────────────[m[38;2;56;56;56m───────────────────╮[m
-[38;2;56;56;56m│[m lefthook  v2.1.8  hook:  [1mpre-commit[m [38;2;56;56;56m│[m
-[38;2;56;56;56m╰──────────────────[m[38;2;56;56;56m───────────────────╯[m
-│  ruff staged (skip) no files for inspection
-[38;2;56;56;56m  ────────────────────────────────────[m
-summary: (done in 0.05 seconds)
-[fix/final-audit-remediation f29b5733] test(e2e): 守护合成绑定写入边界
- 1 file changed, 261 insertions(+)

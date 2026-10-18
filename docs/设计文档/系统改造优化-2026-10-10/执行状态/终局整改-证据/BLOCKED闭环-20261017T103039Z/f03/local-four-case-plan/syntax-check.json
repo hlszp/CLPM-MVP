@@ -1,6 +1,0 @@
-{
-  "driverCompiles": true,
-  "actualQueueProgramCompiles": true,
-  "noServiceOrDatabasePhaseExecuted": true,
-  "newlinesInEmbeddedProgram": 16
-}

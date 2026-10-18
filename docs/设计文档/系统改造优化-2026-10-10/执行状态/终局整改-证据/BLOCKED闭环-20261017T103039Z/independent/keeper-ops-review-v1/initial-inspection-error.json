@@ -1,6 +1,0 @@
-{
-  "rc": 1,
-  "stderr": "StopIteration in inspector lookup: ast.unparse wraps generator expression with parentheses",
-  "productFailure": false,
-  "correctedInspectorOnly": true
-}

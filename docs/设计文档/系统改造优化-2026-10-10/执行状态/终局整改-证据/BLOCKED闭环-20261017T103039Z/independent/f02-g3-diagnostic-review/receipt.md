@@ -1,9 +1,0 @@
-G3 后置诊断工具与 CI 编排局部 PASS，签署源 `c2eba163d4af6881cf83726311015064ec017c931528ae804a72a29d29c3b858` 与 workflow `575d2d19d0a9ac59d987e0df6cbb1659d6a106b91c9f1edfa3a900570d9d6622`。这是只读源码/工具边界复核，不运行本机G3算法，不签真实Linux诊断、算法数值或业务验收。
-
-先前6d9ffd源的网禁不完整，独立固定原例 `probe_network_guard.py` SHA `6216987ff881779ce800fbd37595cb9d09c665fe6f4064cc4b4e9f47f26bceb1` 实际rc1：connect/普通DNS/app.main拒绝，但gethostbyaddr/sendto/sendmsg未拒绝且未记录。新c2副本同一原例实际rc0，并额外直接核getnameinfo拒绝；无真实socket、产品导入或算法调用。只将新guard membership还原后整个模块AST与旧6d完全相同。旧REWORK原件/原源完整保留，不将它标成通过。
-
-独立序列化边界：完整dataclass嵌套、NumPy1200数值与标量、系数数组完整保留，无截断；NaN/±Infinity按显式typed对象保留，unknown对象TypeError，不用default=str。仅导入脚本函数，未执行main或改变CPU/nice/信号/网络。源码保留原生成器3函数AST、固定700点/seed/noise、原唯一候选比较AST锚点与实际callable的filename/firstline/co_code校验；实际运行是否命中完整原件须等远端执行。
-
-将当前CI与9f原YAML结构独立对照，只移除新增两步、原pytest的id和恢复Backend timeout17→15后完全相等。新增诊断位于原pytest之后，原命令/环境/coverage60/个例30s/200迭代/tol1e-6及三个独立job不改；Backend整个作业预算明确从15增加为17分钟，不伪称作业总超时没变。诊断outer TERM60s、内部CPU45s/nice10/5线程固定1；不接受以诊断代原pytest。诊断原rc保存并exit，不设continue-on-error；原失败不会被成功诊断吞掉，失败artifact以always上传且缺件error。原已有Mypy非阻塞例外未被本增量改变。
-
-诊断只保全输入、完整候选/返回、收敛事实和环境/源码/原rc，不据result摘要或COLLECTED签G3 PASS。完整CI、F03四业务与独立数值、F02正式20批仍另验；原600s与完整分母、历史6+3及四用户豁免不变。候选采用新字节后的正常commit/push与实际运行SHA仍由Root另核。

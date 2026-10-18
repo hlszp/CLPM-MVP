@@ -1,6 +1,0 @@
-=== Critical E2E Gate ===
-base_url=http://127.0.0.1:1
-api_url=http://127.0.0.1:49964
-specs=tests/login.spec.ts tests/roles-smoke.spec.ts tests/confidence.spec.ts tests/loop.spec.ts
-
---- Environment check ---

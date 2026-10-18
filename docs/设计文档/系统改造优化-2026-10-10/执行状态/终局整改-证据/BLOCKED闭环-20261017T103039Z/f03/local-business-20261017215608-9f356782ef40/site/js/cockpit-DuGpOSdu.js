@@ -1,1 +1,0 @@
-import{t as e}from"./request-ktOI-m9r.js";function t(t){return e.get(`/cockpit/overview`,{params:{window:t}})}function n(){return e.get(`/cockpit/backend-access-roles`)}function r(){return e.get(`/cockpit/node-tree`)}export{r as n,t as r,n as t};

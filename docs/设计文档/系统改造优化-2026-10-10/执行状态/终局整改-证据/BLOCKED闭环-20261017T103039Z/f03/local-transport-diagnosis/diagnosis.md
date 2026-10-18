@@ -1,7 +1,0 @@
-# 本机管理员冷上下文超时定位
-
-实际 AUTH PASS；PERM 的 SPONSOR /me缺码、403 ERR_PERMISSION_DENIED、精确目标404/无adapter均已过。独立ADMIN认证和/me真实200且ADMIN/defaultHome=/cockpit，随后本地静态CSS连接在进入handler前RESET，Vite路由预加载异常中止，严格landing等待正确超时。不是证据允许放宽landing或增加超时的理由，candidate保持edfa原字节。
-
-trace-safe-index.json为原trace便读索引（不导出令牌/headers）；原件路径和SHA在内。失败CSS实际708字节/SHA8c30731fcf2d78091b6770ef364d34839cae3418074cbfc7bd77a8d104152dab，before/after站点清单和实际文件相同；SPONSOR同CSS HTTP1.0 200，ADMIN同URLstatus=-1/ERR_CONNECTION_RESET且无serverIP/headers。raw静态日志第三冷上下文无此GET进入handler，前两个上下文均200，没有服务端Python异常。
-
-静态server默认request_queue_size=5/HTTP1.0短连接是可复现性待核的具体负载假设；作者没有据此宣称已精确证明RESET唯一根因。Root授权仅本机transport工具v3适配真实冷并发，原真实RESET原件保留；旧/new纯静态并发和Chromium冷加载由Root实际执行，不要求臆造旧必红，不模拟CLPM业务响应。真实四业务/NPZ/数值仍未通过。

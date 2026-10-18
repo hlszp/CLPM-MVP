@@ -1,6 +1,0 @@
-{
-  "sql": "ALTER DATABASE \"clpm_critical_20261017_local\" RENAME TO \"clpm_critical_20261017_local_attempt2\"",
-  "result": "ALTER DATABASE",
-  "startedAt": "2026-10-17T13:29:17.504987+00:00",
-  "finishedAt": "2026-10-17T13:29:17.506700+00:00"
-}

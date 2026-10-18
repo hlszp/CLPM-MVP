@@ -1,8 +1,0 @@
-{
-  "at": "2026-10-17T21:40:17.473562+00:00",
-  "privatePort": 17123,
-  "db": 0,
-  "scope": "only all input-cache keys for frozen 1000 IDs; all task/result history remains",
-  "removed": [],
-  "leftovers": []
-}

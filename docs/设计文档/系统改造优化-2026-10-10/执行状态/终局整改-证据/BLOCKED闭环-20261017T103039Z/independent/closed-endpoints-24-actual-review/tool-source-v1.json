@@ -1,5 +1,0 @@
-{
-  "file": "/Users/zhangping/DEV/CLPM-MVP/docs/\u8bbe\u8ba1\u6587\u6863/\u7cfb\u7edf\u6539\u9020\u4f18\u5316-2026-10-10/\u6267\u884c\u72b6\u6001/\u7ec8\u5c40\u6574\u6539-\u8bc1\u636e/BLOCKED\u95ed\u73af-20261017T103039Z/independent/verify_closed_endpoints_raw.py",
-  "sha256": "ea7b8b423be1c3bf9f28933a760642ae2012f665fda1274783163b430ad8090f",
-  "note": "Initial actual reconciliation passed; lint E731 lambda is a reviewer tool issue, corrected in v2 without changing evidence."
-}

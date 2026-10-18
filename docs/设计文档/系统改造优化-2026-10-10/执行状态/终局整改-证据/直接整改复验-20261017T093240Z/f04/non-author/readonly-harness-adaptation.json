@@ -1,9 +1,0 @@
-{
-  "previousAttempt": {
-    "rc": 1,
-    "exception": "KeyError: operationId",
-    "cause": "preview-restore label also begins preview-; initial evidence selection mistakenly assumed each matching request has operationId",
-    "impact": "Read-only SQL transaction. No product implementation change; filter now restricts path to /loops/batch-config",
-    "evidenceLevel": "Harness adaptation; excluded from product PASS denominator"
-  }
-}

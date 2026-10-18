@@ -1,1 +1,0 @@
-{"assertion":"expect(body.code).toBe(0);","actualCode":"0","actualType":"string"}

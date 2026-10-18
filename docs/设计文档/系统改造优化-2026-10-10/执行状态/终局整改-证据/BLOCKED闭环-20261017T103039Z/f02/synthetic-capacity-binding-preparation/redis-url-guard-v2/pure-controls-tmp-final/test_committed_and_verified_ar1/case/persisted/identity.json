@@ -1,6 +1,0 @@
-{
-  "database": "clpm_capacity_20261017_s01",
-  "readOnly": "on",
-  "isolation": "repeatable read",
-  "snapshot": "3"
-}

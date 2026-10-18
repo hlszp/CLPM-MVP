@@ -1,1 +1,0 @@
-redis.exceptions.OutOfMemoryError: command not allowed when used memory exceeds maxmemory

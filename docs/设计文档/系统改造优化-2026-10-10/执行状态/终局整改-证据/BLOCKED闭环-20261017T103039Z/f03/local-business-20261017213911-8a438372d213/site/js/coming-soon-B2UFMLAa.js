@@ -1,1 +1,0 @@
-import{Kt as e,en as t,er as n,vn as r}from"./vendor-antd-C7EWqXIS.js";import{t as i}from"./fallback-b-AMym4r.js";var a=t({__name:`coming-soon`,setup(t){return(t,a)=>(r(),e(n(i),{status:`coming-soon`}))}});export{a as default};
