@@ -870,18 +870,8 @@ async def trigger_custom_evaluation(
     from app.tasks.kpi_calc import calculate_custom_batch_kpi
 
     task_id = str(uuid4())
+    celery_task_id = str(uuid4())
     now = _now_iso()
-
-    try:
-        # P5-02：人工自定义批量走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
-        celery_result = calculate_custom_batch_kpi.apply_async(
-            args=[task_id, body.loopIds, body.tsStart, body.tsEnd], priority=PRIORITY_MANUAL
-        )
-    except Exception:
-        # 投递失败：回滚已占用的槽位（任务记录尚未创建）
-        await _release_slot_counters(str(user.id))
-        raise
-    celery_task_id = celery_result.id
 
     task_data: dict[str, str] = {
         "task_id": task_id,
@@ -904,7 +894,30 @@ async def trigger_custom_evaluation(
         "ts_end": body.tsEnd,
         "slot_acquired": "1",
     }
-    await _save_task(task_data)
+    try:
+        # 先落记录再投递：快 consumer 的进度不能被 API 初始 0 覆盖。
+        await _save_task(task_data)
+        calculate_custom_batch_kpi.apply_async(
+            args=[task_id, body.loopIds, body.tsStart, body.tsEnd],
+            task_id=celery_task_id,
+            priority=PRIORITY_MANUAL,
+        )
+    except Exception as exc:
+        from app.services import task_tracker
+
+        try:
+            await task_tracker.update_status(
+                task_id,
+                TaskStatus.FAILED,
+                error_message=f"任务投递失败: {exc}",
+                current_stage="投递失败",
+                finished_at=_now_iso(),
+            )
+        except Exception:  # noqa: BLE001 — 状态记录失败不覆盖原始投递异常
+            logger.warning("记录自定义任务投递失败状态失败: %s", task_id, exc_info=True)
+        finally:
+            await _release_concurrency_slot(task_id, task_data)
+        raise
 
     logger.info(
         "自定义评估任务已触发: task_id=%s, loops=%d, celery_id=%s, user=%s",

@@ -36,6 +36,7 @@ from app.contracts.data_types import (
     MetricDataBundle,
     QualitySummary,
 )
+from app.core import g5_trace
 
 logger = logging.getLogger(__name__)
 
@@ -171,10 +172,13 @@ class L2BundleCache:
         if ttl is None:
             ttl = DEFAULT_TTL
         # 序列化（JSON + zstd 压缩）移至线程池，避免 CPU 密集型操作阻塞事件循环
-        payload = await asyncio.to_thread(_serialize, bundles)
+        # O1 探针（H2 余段细拆，默认 off）：encode 段（zstd 序列化，含线程池等待）
+        with g5_trace.span("l2.set.encode"):
+            payload = await asyncio.to_thread(_serialize, bundles)
         # 整改 G17：写失败只降级不抛出，本次计算照常返回
         try:
-            await self._redis.setex(cache_key, ttl, payload)
+            # O1 探针（默认 off）：Redis await 段（SETEX 网络往返）
+            await g5_trace.awaited("l2.set.redis_await", self._redis.setex(cache_key, ttl, payload))
         except Exception:  # noqa: BLE001
             logger.warning("L2 cache 写入失败，忽略本次缓存: key=%s", cache_key, exc_info=True)
             return
@@ -230,8 +234,16 @@ def _serialize(bundles: list[MetricDataBundle]) -> str:
 
     链路：list[MetricDataBundle] → dict → JSON(utf-8) → zstd → base64 → str
     """
+    # 同块可被多个指标共享；仅本次调用按对象身份复用纯转换，避免同 ID 异块碰撞。
+    data_blocks: dict[int, dict[str, Any]] = {}
+    bundle_records = []
+    for bundle in bundles:
+        block_identity = id(bundle.data_block)
+        if block_identity not in data_blocks:
+            data_blocks[block_identity] = _data_block_to_dict(bundle.data_block)
+        bundle_records.append(_bundle_to_dict(bundle, serialized_block=data_blocks[block_identity]))
     raw_json = json.dumps(
-        {"bundles": [_bundle_to_dict(b) for b in bundles]},
+        {"bundles": bundle_records},
         default=_json_default,
     )
     raw_bytes = raw_json.encode("utf-8")
@@ -285,11 +297,15 @@ def _json_default(obj: Any) -> Any:
 # ---------------------------------------------------------------------------
 
 
-def _bundle_to_dict(bundle: MetricDataBundle) -> dict[str, Any]:
+def _bundle_to_dict(
+    bundle: MetricDataBundle, *, serialized_block: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """MetricDataBundle → 可 JSON 序列化的 dict."""
     return {
         "metric_code": bundle.metric_code,
-        "data_block": _data_block_to_dict(bundle.data_block),
+        "data_block": (
+            _data_block_to_dict(bundle.data_block) if serialized_block is None else serialized_block
+        ),
         "mask_expression": bundle.mask_expression,
         "masked_indices": list(bundle.masked_indices),
         "lineage": _lineage_to_dict(bundle.lineage),

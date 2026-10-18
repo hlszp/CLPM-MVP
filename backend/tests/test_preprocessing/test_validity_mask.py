@@ -9,6 +9,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from itertools import product
+
+import pytest
 
 from app.contracts.data_types import DataBlock
 from app.services.preprocessing.validity_mask import apply_mask
@@ -304,3 +307,85 @@ class TestMaskEdgeCases:
         # 语法错误：末尾缺少操作数
         indices = apply_mask(db, "pv_valid &&")
         assert indices == []
+
+
+@pytest.mark.parametrize("a,b,c", list(product([False, True], repeat=3)))
+@pytest.mark.parametrize(
+    "expression,oracle",
+    [
+        ("pv_valid && sp_valid || op_valid", lambda a, b, c: a and b or c),
+        ("pv_valid || sp_valid && op_valid", lambda a, b, c: a or b and c),
+        ("!(pv_valid || sp_valid) && op_valid", lambda a, b, c: not (a or b) and c),
+        ("!!pv_valid && (sp_valid || !op_valid)", lambda a, b, c: a and (b or not c)),
+    ],
+)
+def test_compiled_truth_table_preserves_precedence(a, b, c, expression, oracle):
+    block = _make_data_block({"pv_valid": [a], "sp_valid": [b], "op_valid": [c]})
+    assert apply_mask(block, expression) == ([0] if oracle(a, b, c) else [])
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        "pv_valid &&",
+        "pv_valid || )",
+        "pv_valid missing",
+        "(pv_valid",
+        "pv_valid)",
+        "pv_valid || (unknown &&)",
+        "pv_valid || unknown $",
+        "1",
+        "pv_valid & sp_valid",
+    ],
+)
+def test_invalid_tail_is_checked_even_when_left_side_true(expression):
+    block = _make_data_block({"pv_valid": [True, True]})
+    assert apply_mask(block, expression) == []
+
+
+def test_unicode_unknown_and_short_arrays_keep_point_semantics():
+    block = _make_data_block({"传感器_valid": [True, False], "_备用": [False]}, point_count=4)
+    assert apply_mask(block, "传感器_valid && !_备用") == [0]
+    assert apply_mask(block, "!传感器_valid || missing") == [1, 2, 3]
+    assert apply_mask(block, "true || False") == []  # Names remain variables, not literals.
+
+
+def test_repeated_calls_read_changed_validity_and_consecutive_segments():
+    block = _make_data_block({"pv_valid": [True, False, True]}, [(0, 1)])
+    expression = "pv_valid && consecutive_valid"
+    assert apply_mask(block, expression) == [0]
+    block.validity["pv_valid"][:] = [False, True, True]
+    block.consecutive_segments[:] = [(1, 2)]
+    assert apply_mask(block, expression) == [1, 2]
+    other = _make_data_block({"pv_valid": [True, False, False]}, [(0, 2)])
+    assert other.data_block_id == block.data_block_id
+    assert apply_mask(other, expression) == [0]
+
+
+def test_long_flat_expression_keeps_iterative_binary_evaluation():
+    block = _make_data_block({"pv_valid": [True, False]})
+    assert apply_mask(block, " || ".join(["pv_valid"] * 1200)) == [0]
+
+
+def test_expression_is_tokenized_and_parsed_once_for_whole_block(monkeypatch):
+    from app.services.preprocessing import validity_mask as module
+
+    compile_expr = getattr(module, "_compile_expr", None)
+    if compile_expr is not None:
+        compile_expr.cache_clear()
+    calls = {"tokenize": 0, "parse": 0}
+    tokenize, parse = module._tokenize, module._BoolParser.parse_or
+
+    def counted_tokenize(expression):
+        calls["tokenize"] += 1
+        return tokenize(expression)
+
+    def counted_parse(parser):
+        calls["parse"] += 1
+        return parse(parser)
+
+    monkeypatch.setattr(module, "_tokenize", counted_tokenize)
+    monkeypatch.setattr(module._BoolParser, "parse_or", counted_parse)
+    block = _make_data_block({"pv_valid": [True] * 3601, "sp_valid": [True] * 3601})
+    assert apply_mask(block, "pv_valid && sp_valid") == list(range(3601))
+    assert calls == {"tokenize": 1, "parse": 1}

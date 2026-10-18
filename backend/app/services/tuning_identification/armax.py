@@ -93,24 +93,45 @@ def identify_armax(
         # 估 C（MA 形，与 e = C·ε 消费语义一致）：e(t) = Σ c_j·ε̂(t−j) + ε
         if nc > 0:
             E_phi = np.zeros((rows, nc))
-            for i in range(rows):
-                for j in range(nc):
-                    E_phi[i, j] = eps_hat[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
+            if type(u) is np.ndarray and type(y) is np.ndarray and u.ndim == y.ndim == 1:
+                for j in range(min(nc, rows - 1)):
+                    E_phi[j + 1 :, j] = eps_hat[: rows - 1 - j]
+            else:
+                for i in range(rows):
+                    for j in range(nc):
+                        E_phi[i, j] = eps_hat[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
             c_theta, _, _, _ = np.linalg.lstsq(E_phi, e, rcond=None)
             c_coeffs = [float(t) for t in c_theta]
 
         # 重估 A/B：y + a1*y(t-1) = b1*u(t-d) + c1*ε̂(t-1) + eps
         Phi = np.zeros((rows, na + nc + nb))
         y_reg = np.zeros(rows)
-        for i in range(rows):
-            idx = max_lag + i
+        if (
+            type(u) is np.ndarray
+            and type(y) is np.ndarray
+            and u.ndim == y.ndim == 1
+            and na >= 0
+            and nb >= 0
+            and nc >= 0
+            and (nb == 0 or len(u) >= n - d)
+        ):
             for j in range(na):
-                Phi[i, j] = -y[idx - 1 - j]
-            for j in range(nc):
-                Phi[i, na + j] = eps_hat[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
+                Phi[:, j] = -y[max_lag - 1 - j : n - 1 - j]
+            for j in range(min(nc, rows - 1)):
+                Phi[j + 1 :, na + j] = eps_hat[: rows - 1 - j]
             for j in range(nb):
-                Phi[i, na + nc + j] = u[idx - d - j]
-            y_reg[i] = y[idx]
+                Phi[:, na + nc + j] = u[max_lag - d - j : n - d - j]
+            y_reg[:] = y[max_lag:]
+        else:
+            for i in range(rows):
+                idx = max_lag + i
+                for j in range(na):
+                    Phi[i, j] = -y[idx - 1 - j]
+                for j in range(nc):
+                    Phi[i, na + j] = eps_hat[i - 1 - j] if (i - 1 - j) >= 0 else 0.0
+                for j in range(nb):
+                    Phi[i, na + nc + j] = u[idx - d - j]
+                y_reg[i] = y[idx]
         theta_new, _, _, _ = np.linalg.lstsq(Phi, y_reg, rcond=None)
         a_new = [float(t) for t in theta_new[:na]]
         b_new = [float(t) for t in theta_new[na + nc :]]

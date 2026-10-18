@@ -41,7 +41,6 @@ DataPlanner 负责指标驱动的数据获取与编排：
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -59,6 +58,7 @@ from app.contracts.data_types import (
     TimeWindow,
 )
 from app.core import g5_trace
+from app.core.async_tasks import gather_settled
 from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.cache.l2_bundle import L2BundleCache
 from app.services.metric_data_bundle import MetricDataBundleAssembler
@@ -114,6 +114,38 @@ TDengineQueryFn = Callable[
     [str, list[str], datetime, datetime, int],
     Awaitable[RawTimeSeries],
 ]
+
+
+async def resolve_data_version() -> str:
+    """解析当前布局/manifest 的数据版本（独立短会话；失败=legacy-v1）.
+
+    O2（H2a，2026-10-16）：原 ``DataPlanner._resolve_data_version`` 逻辑原样
+    上移为模块级单一事实源——逐回路回落路径与批级预载
+    （kpi_calc ``_run_batch_loop_calculations``/``_prewarm_cache_for_loops``
+    入口一次解析后注入 ``_preloaded_data_version``）共用同一函数，
+    保证两路径值同源。
+
+    版本口径：活跃 manifest 行（布局+时段+scope）摘要——manifest 任何
+    变更（切换/回退）都产生新键；无 manifest 恒 "legacy-v1"（与旧缓存
+    键逐字节一致，legacy 路径零失效）。
+
+    P3-08b：追加时间/质量契约策略版本分量（time_axis.TIME_QUALITY_
+    POLICY_VERSION）——半开窗口/未知语义/无拼接段切割的策略演进必须
+    换缓存键（10§3.2"缓存身份纳入数据策略版本"），否则旧缓存块以旧
+    语义混入新策略消费。
+    """
+    from app.services.metric_calculator.time_axis import TIME_QUALITY_POLICY_VERSION
+
+    try:
+        from app.services.data_source.history_layout_router import (
+            current_layout_version,
+        )
+
+        layout_version = await current_layout_version()
+    except Exception:  # noqa: BLE001 — 版本解析失败按 legacy（键保守回退）
+        layout_version = "legacy-v1"
+    return f"{layout_version}:{TIME_QUALITY_POLICY_VERSION}"
+
 
 # 回路预处理配置加载器签名：返回 LoopPreprocessConfig（含 range_min/range_max/config_version）
 ConfigLoader = Callable[[str, ControlType], Awaitable[LoopPreprocessConfig]]
@@ -201,32 +233,15 @@ class DataPlanner:
         self._pending_l2_key: str | None = None
         # 预加载的 OP 限位 {loop_id: (lower, upper)}，批量计算时注入避免逐回路查 DB
         self._preloaded_op_limits: dict[str, tuple[float | None, float | None]] | None = None
+        # O2（H2a，2026-10-16）：批级预载 data_version（批量计算入口一次解析
+        # 注入）；None=未注入，逐回路独立解析回落（口径与既有行为一致）
+        self._preloaded_data_version: str | None = None
         # AD02：本请求数据版本（缓存键分量；request-bundles 入口解析一次）
         self._data_version: str = "legacy-v1"
 
     async def _resolve_data_version(self) -> str:
-        """解析当前布局/manifest 的数据版本（独立短会话；失败=legacy-v1）.
-
-        版本口径：活跃 manifest 行（布局+时段+scope）摘要——manifest 任何
-        变更（切换/回退）都产生新键；无 manifest 恒 "legacy-v1"（与旧缓存
-        键逐字节一致，legacy 路径零失效）。
-
-        P3-08b：追加时间/质量契约策略版本分量（time_axis.TIME_QUALITY_
-        POLICY_VERSION）——半开窗口/未知语义/无拼接段切割的策略演进必须
-        换缓存键（10§3.2"缓存身份纳入数据策略版本"），否则旧缓存块以旧
-        语义混入新策略消费。
-        """
-        from app.services.metric_calculator.time_axis import TIME_QUALITY_POLICY_VERSION
-
-        try:
-            from app.services.data_source.history_layout_router import (
-                current_layout_version,
-            )
-
-            layout_version = await current_layout_version()
-        except Exception:  # noqa: BLE001 — 版本解析失败按 legacy（键保守回退）
-            layout_version = "legacy-v1"
-        return f"{layout_version}:{TIME_QUALITY_POLICY_VERSION}"
+        """逐回路数据版本解析（回落路径；逻辑单一事实源在模块级 resolve_data_version）."""
+        return await resolve_data_version()
 
     # ------------------------------------------------------------------
     # 核心入口
@@ -275,7 +290,9 @@ class DataPlanner:
         # 加载回路预处理配置（含 range_min/range_max/config_version）
         # 提前到 Phase 1 之前：L2 缓存 Key 需纳入 cfg_version，
         # 量程变更/tag 重关联/契约变更（updated_at 变化）后旧 bundle 不再命中。
-        preprocess_config = await self._config_loader(loop_id, control_type)
+        # O1 探针（H2 余段细拆，默认 off）：config 加载段
+        with g5_trace.span("data_planner.h2.config", loopId=loop_id):
+            preprocess_config = await self._config_loader(loop_id, control_type)
 
         # Phase 1: L2 Bundle 缓存查询（若启用，命中则直接返回，跳过查询与组装）
         # v6.1：缓存 key 包含 OP 限位，修改限位后自动失效
@@ -307,21 +324,31 @@ class DataPlanner:
 
         # AD02/I06：数据版本在缓存命中前解析（布局/manifest 变更 → 新键，
         # 旧布局缓存不再命中；legacy 无 manifest → "legacy-v1" 与旧键一致）
-        self._data_version = await self._resolve_data_version()
+        # O2（H2a，2026-10-16）：批级预载值优先（批量计算入口一次解析注入，
+        # 1030 回路 → 1 次解析）；未注入时逐回路独立解析（回落口径与既有
+        # 行为一致）。O1 探针（默认 off）：版本解析段（H2a 量值观测点）。
+        if self._preloaded_data_version is not None:
+            self._data_version = self._preloaded_data_version
+        else:
+            self._data_version = await g5_trace.awaited(
+                "data_planner.h2.version", self._resolve_data_version(), loopId=loop_id
+            )
 
         if self._bundle_cache is not None and metrics:
-            l2_key = L2BundleCache.build_key(
-                loop_id=loop_id,
-                metrics=metrics,
-                time_window_start=time_window.start,
-                time_window_end=time_window.end,
-                control_type=control_type.value,
-                op_output_lower_limit=op_lower,
-                op_output_upper_limit=op_upper,
-                cfg_version=preprocess_config.config_version,
-                data_version=self._data_version,
-            )
-            cached_bundles = await self._bundle_cache.get(l2_key)
+            # O1 探针（默认 off）：L2 缓存读段（key 构建 + Redis get + 反序列化）
+            with g5_trace.span("data_planner.h2.l2_read", loopId=loop_id):
+                l2_key = L2BundleCache.build_key(
+                    loop_id=loop_id,
+                    metrics=metrics,
+                    time_window_start=time_window.start,
+                    time_window_end=time_window.end,
+                    control_type=control_type.value,
+                    op_output_lower_limit=op_lower,
+                    op_output_upper_limit=op_upper,
+                    cfg_version=preprocess_config.config_version,
+                    data_version=self._data_version,
+                )
+                cached_bundles = await self._bundle_cache.get(l2_key)
             if cached_bundles is not None:
                 logger.info(
                     "DataPlanner L2 命中，跳过查询+组装: loop=%s, bundles=%d",
@@ -335,7 +362,9 @@ class DataPlanner:
             self._pending_l2_key = None
 
         # Phase 2: 读取指标数据需求契约
-        requirements = await self._load_requirements(metrics)
+        # O1 探针（默认 off）：契约读取段（进程内缓存命中路径亦计入）
+        with g5_trace.span("data_planner.h2.requirements", loopId=loop_id):
+            requirements = await self._load_requirements(metrics)
         if not requirements:
             logger.warning("DataPlanner: 未找到任何指标契约: metrics=%s", metrics)
             return []
@@ -360,7 +389,9 @@ class DataPlanner:
         )
 
         # Phase 8: 按指标组装 MetricDataBundle
-        bundles = self._assemble_bundles(requirements, data_blocks)
+        # O1 探针（默认 off）：Bundle 组装段（纯 CPU；L2 写入在 _maybe_write_l2_cache 内拆分）
+        with g5_trace.span("data_planner.h2.assemble", loopId=loop_id):
+            bundles = self._assemble_bundles(requirements, data_blocks)
 
         # v6.1 填充 OP 输出限位到每个 bundle 的 signals 字典
         # 设计依据：loop-range-and-output-limits-design-v1.0.md §4.3
@@ -586,18 +617,22 @@ class DataPlanner:
             task: QueryTask,
         ) -> tuple[TagGroup, DataBlock, tuple[str, DataBlock] | None]:
             """处理单个非复用 task：查缓存 → 未命中查 TDengine + 预处理."""
-            cache_key = L1DataBlockCache.build_key(
-                loop_id=loop_id,
-                tag_group=task.tag_group.value,
-                time_window_start=time_window.start,
-                time_window_end=time_window.end,
-                sampling_freq=f"{task.interval_s}s",
-                quality_policy=self._quality_policy_for(task.tag_group),
-                pre_version=PREPROCESS_VERSION,
-                cfg_version=preprocess_config.config_version,
-                data_version=getattr(self, "_data_version", "legacy-v1"),
-            )
-            cached = await self._cache.get(cache_key) if self._cache else None
+            # O1 探针（默认 off）：L1 缓存读段（key 构建 + Redis get + 反序列化）
+            with g5_trace.span(
+                "data_planner.h2.l1_read", loopId=loop_id, tagGroup=task.tag_group.value
+            ):
+                cache_key = L1DataBlockCache.build_key(
+                    loop_id=loop_id,
+                    tag_group=task.tag_group.value,
+                    time_window_start=time_window.start,
+                    time_window_end=time_window.end,
+                    sampling_freq=f"{task.interval_s}s",
+                    quality_policy=self._quality_policy_for(task.tag_group),
+                    pre_version=PREPROCESS_VERSION,
+                    cfg_version=preprocess_config.config_version,
+                    data_version=getattr(self, "_data_version", "legacy-v1"),
+                )
+                cached = await self._cache.get(cache_key) if self._cache else None
             if cached is not None:
                 return task.tag_group, cached, None
             data_block = await self._query_and_preprocess(
@@ -621,7 +656,8 @@ class DataPlanner:
 
         # Phase 4-6: 并行执行所有非复用 task（asyncio.gather 释放事件循环）
         if non_reuse_tasks:
-            results = await asyncio.gather(*[_process_non_reuse(t) for t in non_reuse_tasks])
+            # F02：取数失败后先收束兄弟组，避免外层资源重试与旧查询叠加。
+            results = await gather_settled(*[_process_non_reuse(t) for t in non_reuse_tasks])
             for tag_group, block, write_pair in results:
                 data_blocks[tag_group] = block
                 if write_pair is not None:
@@ -1120,4 +1156,4 @@ class DataPlanner:
         )
 
 
-__all__ = ["DataPlanner", "QueryTask"]
+__all__ = ["DataPlanner", "QueryTask", "resolve_data_version"]

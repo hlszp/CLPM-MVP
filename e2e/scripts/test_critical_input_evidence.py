@@ -1,0 +1,299 @@
+"""Offline evidence collector controls; fake psql responses, no service connections."""
+
+import importlib.util
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+
+import numpy as np
+
+spec = importlib.util.spec_from_file_location(
+    "critical_input_capture", Path(__file__).with_name("capture-critical-input-evidence.py")
+)
+tool = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(tool)
+
+
+class EvidenceControls(unittest.TestCase):
+    def test_policy_comparison_preserves_pg_numeric_precision(self):
+        left = tool.objects('{"value":0.12345678901234567890}')
+        right = tool.objects('{"value":0.12345678901234567891}')
+        self.assertNotEqual(left, right)
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.base = Path(self.tmp.name) / "critical-e2e"
+        self.base.mkdir()
+        self.fixture = {
+            "synthetic": True,
+            "inputOnly": True,
+            "environment": "disposable-github-ci",
+            "candidateSha": "a" * 40,
+            "githubEventSha": "a" * 40,
+            "loopId": "10000000-0000-0000-0000-000000000001",
+            "loopTagName": "CRITICAL-E2E-12-1-FLOW001",
+            "windowStart": "2026-10-15T12:00:00",
+            "windowEnd": "2026-10-15T13:00:00",
+        }
+        tool.write(self.base / "fixture.json", self.fixture)
+        self.env = {
+            "PATH": "/usr/bin",
+            "RUNNER_TEMP": self.tmp.name,
+            "E2E_CRITICAL_FIXTURE": str(self.base / "fixture.json"),
+            "CLPM_CALC_SNAPSHOT_DIR": str(self.base / "calc-snapshots"),
+            "CI": "true",
+            "GITHUB_ACTIONS": "true",
+            "E2E_EXECUTION_ENV": "disposable-github-ci",
+            "GITHUB_SHA": "a" * 40,
+            "CLPM_BUILD_CODE_SHA": "a" * 40,
+            "GITHUB_RUN_ID": "12",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "POSTGRES_HOST": "localhost",
+            "POSTGRES_PORT": "5432",
+            "POSTGRES_USER": "clpm",
+            "POSTGRES_DB": "clpm_critical_e2e",
+            "REDIS_HOST": "localhost",
+            "REDIS_PORT": "6379",
+            "REDIS_DB": "0",
+            "TDENGINE_HOST": "localhost",
+            "TDENGINE_PORT": "6030",
+            "TDENGINE_DB": "clpm_critical_e2e_ts",
+        }
+        self.row = {
+            "id": "20000000-0000-0000-0000-000000000001",
+            "kind": "KPI_GRID",
+            "loop_id": self.fixture["loopId"],
+            "ts_start": self.fixture["windowStart"],
+            "ts_end": self.fixture["windowEnd"],
+        }
+        self.candidates = [self.row]
+        self.calls = []
+        self.fail_query = False
+        self.wrong_identity = False
+
+    def identity(self, section):
+        return {
+            "section": section,
+            "database": "production" if self.wrong_identity else "clpm_critical_e2e",
+            "readOnly": "on",
+            "isolation": "repeatable read",
+            "timezone": "UTC",
+            "snapshot": "1:1:",
+            "transactionTimestampUtc": "2026-10-15T14:00:00Z",
+        }
+
+    def policy(self):
+        result = [self.identity("transaction-before"), self.identity("transaction-after")]
+        result += [
+            {
+                "section": "held-policy",
+                "requestedKey": "data.held_too_long_" + kind + "_seconds",
+                "rowExists": False,
+                "rawValue": None,
+            }
+            for kind in ("fast", "slow")
+        ]
+        result += [
+            {
+                "section": "synthetic-loop-input",
+                "rows": [
+                    {
+                        "id": self.fixture["loopId"],
+                        "tag_name": self.fixture["loopTagName"],
+                        "description": "synthetic CI INPUT: real algorithm, disposable runner only",
+                    }
+                ],
+            }
+        ]
+        result += [
+            {"section": section, "rows": []}
+            for section in (
+                "configuration-revision",
+                "active-release-input",
+                "algorithm-parameter-input",
+                "metric-config-input",
+                "enabled-configuration-overrides",
+                "loop-type-weights-input",
+            )
+        ]
+        return result
+
+    def fake(self, argv, folder, child):
+        self.calls.append(argv)
+        self.assertNotIn("PGHOSTADDR", child)
+        if argv[:2] == ["git", "rev-parse"]:
+            return "a" * 40 + "\n"
+        if argv[0] == "git":
+            return ""
+        if "--version" in argv:
+            return "psql (PostgreSQL) 16\n"
+        if self.fail_query:
+            raise RuntimeError("controlled psql query failure")
+        name = Path(argv[-1]).stem
+        if name == "policy":
+            rows = self.policy()
+        elif name == "dataset-discovery":
+            rows = [
+                self.identity("discovery-transaction"),
+                {"section": "dataset-candidates", "rows": self.candidates},
+            ]
+        else:
+            rows = [
+                {
+                    **self.identity("input-package-transaction"),
+                    "requestedLoopId": self.fixture["loopId"],
+                    "requestedSnapshotId": self.row["id"],
+                },
+                self.row,
+            ]
+        folder.mkdir(parents=True)
+        raw = "\n".join(json.dumps(r) for r in rows) + "\n"
+        (folder / "stdout.log").write_text(raw)
+        return raw
+
+    def capture(self, phase):
+        with patch.object(tool.shutil, "which", return_value="/fake/psql"):
+            tool.capture(
+                phase,
+                self.base / "input-evidence" / phase,
+                self.env,
+                self.fake,
+                lambda row, fixture, root: {"snapshotId": row["id"], "pureTestOnly": True},
+            )
+
+    def test_complete_before_after_reads_only_real_input_query_contract(self):
+        self.capture("before")
+        self.capture("after")
+        result = json.loads((self.base / "input-evidence/after/header.json").read_text())
+        self.assertTrue(result["complete"] and result["policyBeforeAfterEqual"])
+        self.assertEqual(result["package"]["snapshotId"], self.row["id"])
+        self.assertEqual(
+            tool.sha(Path(__file__).with_name("critical-input-policy.sql")),
+            tool.SQL_HASHES["critical-input-policy.sql"],
+        )
+
+    def test_wrong_scope_refuses_before_psql(self):
+        for key in (
+            "POSTGRES_DB",
+            "POSTGRES_PORT",
+            "REDIS_PORT",
+            "TDENGINE_DB",
+            "GITHUB_SHA",
+            "E2E_EXECUTION_ENV",
+        ):
+            with self.subTest(key=key):
+                invalid = {**self.env, key: "wrong"}
+                with self.assertRaises(ValueError):
+                    tool.scope(invalid, self.fixture, "a" * 40)
+
+    def test_pr_merge_event_is_preserved_without_relabelling_checkout(self):
+        env = {**self.env, "GITHUB_SHA": "b" * 40}
+        fixture = {**self.fixture, "githubEventSha": "b" * 40}
+        tool.scope(env, fixture, "a" * 40)
+        for changed in (
+            {**fixture, "candidateSha": "b" * 40},
+            {**fixture, "githubEventSha": "c" * 40},
+        ):
+            with self.assertRaises(ValueError):
+                tool.scope(env, changed, "a" * 40)
+
+    def test_fixture_and_actual_transaction_identity_are_required(self):
+        for change in ({"synthetic": False}, {"inputOnly": False}, {"candidateSha": "b" * 40}):
+            with self.assertRaises(ValueError):
+                tool.scope(self.env, {**self.fixture, **change}, "a" * 40)
+        self.wrong_identity = True
+        with self.assertRaises(ValueError):
+            self.capture("before")
+
+    def test_query_failure_is_not_a_complete_capture(self):
+        self.fail_query = True
+        with self.assertRaises(RuntimeError):
+            self.capture("before")
+        self.assertFalse(
+            json.loads((self.base / "input-evidence/before/header.json").read_text())["complete"]
+        )
+
+    def test_zero_and_multiple_rows_refused(self):
+        for rows in ([], [self.row, self.row]):
+            with self.subTest(count=len(rows)):
+                with self.assertRaises(ValueError):
+                    tool.candidate(
+                        [
+                            self.identity("discovery-transaction"),
+                            {"section": "dataset-candidates", "rows": rows},
+                        ],
+                        self.fixture,
+                    )
+
+    def test_wrong_loop_or_window_refused(self):
+        for change in (
+            {"loop_id": "foreign"},
+            {"ts_start": "2020-01-01T00:00:00"},
+            {"kind": "IDENTIFICATION"},
+        ):
+            with self.assertRaises(ValueError):
+                tool.candidate(
+                    [
+                        self.identity("discovery-transaction"),
+                        {"section": "dataset-candidates", "rows": [{**self.row, **change}]},
+                    ],
+                    self.fixture,
+                )
+
+    def test_raw_command_failure_and_exit_are_preserved(self):
+        def failed(argv, **kwargs):
+            kwargs["stderr"].write(b"controlled query failure\n")
+            return SimpleNamespace(returncode=2)
+
+        with patch.object(tool.subprocess, "run", side_effect=failed):
+            with self.assertRaises(RuntimeError):
+                tool.command(["/fake/psql"], self.base / "command", {})
+        result = json.loads((self.base / "command/command.json").read_text())
+        self.assertEqual(result["rc"], 2)
+        self.assertIn("query failure", (self.base / "command/stderr.log").read_text())
+
+    def test_package_is_bound_to_real_npz_manifest_and_input_row(self):
+        import sys
+
+        sys.path.insert(0, str(tool.ROOT / "backend"))
+        from app.services import calc_snapshot as cs
+
+        root = self.base / "calc-snapshots"
+        root.mkdir()
+        manifest = {
+            "kind": "KPI_GRID",
+            "schemaVersion": "1.3",
+            "loopId": self.fixture["loopId"],
+            "window": {"tsStart": self.fixture["windowStart"], "tsEnd": self.fixture["windowEnd"]},
+            "binding": {"datasetRef": "pure-control-input"},
+            "createdByRecordId": None,
+            "source": {"executableBuildDigest": cs.executable_build_digest()},
+        }
+        arrays = {"signal": np.array([1.0, np.nan]), "valid": np.array([True, False])}
+        npz = root / (self.row["id"] + ".npz")
+        meta = root / (self.row["id"] + ".manifest.json")
+        np.savez_compressed(npz, **arrays)
+        tool.write(meta, manifest)
+        row = {
+            **self.row,
+            "dataset_ref": "pure-control-input",
+            "cleaned_at": None,
+            "schema_version": "1.3",
+            "created_by_record_id": None,
+            "input_hash": cs.compute_input_hash(manifest, arrays),
+            "size_bytes": npz.stat().st_size + meta.stat().st_size,
+        }
+        result = tool.package(row, self.fixture, root)
+        self.assertEqual(result["inputHash"], row["input_hash"])
+        self.assertEqual(result["files"][0]["sha256"], tool.sha(npz))
+        for change in ({"input_hash": "0" * 64}, {"dataset_ref": "wrong"}, {"size_bytes": 0}):
+            with self.assertRaises(ValueError):
+                tool.package({**row, **change}, self.fixture, root)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -4,7 +4,7 @@
 - 纯函数: _get_tag_name / _ts_to_float / _build_ts_index / _find_nearest_value / _quantize
 - _save_snapshot: 幂等写入（新增/更新/不同 status）+ 7 个数据血缘字段写入
 - _calculate_loop_kpi: DataPlanner 取数 + 三层计算编排（注入 mock data_planner）
-    - DataPlanner 异常 → INCONCLUSIVE
+    - DataPlanner 异常 → 保留原始异常进入失败/重试链
     - DataPlanner 返回空 → INCONCLUSIVE
     - 综合评分为 None（R 可信度 E 级）→ INCONCLUSIVE
     - 必需指标齐全 → SUCCESS
@@ -655,8 +655,8 @@ class TestCalculateLoopKpi:
     """
 
     @pytest.mark.asyncio
-    async def test_dataplanner_exception_returns_inconclusive(self) -> None:
-        """DataPlanner 取数异常时返回 INCONCLUSIVE。"""
+    async def test_dataplanner_exception_propagates(self) -> None:
+        """取数失败不冒充 DATA_INSUFFICIENT，保留原始失败进入外层重试。"""
         loop = _make_loop()
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_make_scalar_one_or_none_mock(None))
@@ -667,17 +667,15 @@ class TestCalculateLoopKpi:
             side_effect=RuntimeError("TDengine connection failed")
         )
 
-        result = await _calculate_loop_kpi(
-            db=db,
-            loop=loop,
-            metric_configs={},
-            ts_start=datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC),
-            ts_end=datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC),
-            data_planner=mock_planner,
-        )
-
-        assert result["status"] == "INCONCLUSIVE"
-        assert result["score"] is None
+        with pytest.raises(RuntimeError, match="TDengine connection failed"):
+            await _calculate_loop_kpi(
+                db=db,
+                loop=loop,
+                metric_configs={},
+                ts_start=datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC),
+                ts_end=datetime(2026, 6, 22, 9, 0, 0, tzinfo=UTC),
+                data_planner=mock_planner,
+            )
 
     @pytest.mark.asyncio
     async def test_empty_bundles_returns_inconclusive(self) -> None:
@@ -997,6 +995,8 @@ class TestBatchCalculationHelpers:
             "success": 1,
             "inconclusive": 1,
             "failed": 2,
+            # G-c B2（2026-10-16）：取消单列列（0=本批无取消）
+            "cancelled": 0,
             # 2026-10-10 失败明细（回路位号+原因；未传 loops 时用序号占位）
             "failed_detail": ["#2: (无返回)", "#3: database unavailable"],
         }

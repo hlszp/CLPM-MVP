@@ -58,9 +58,8 @@ async function resolveUserHomePath(
 ): Promise<string> {
   const roleHome = resolveHomePath(role, backendDefaultHome);
   try {
-    const { fetchDefaultHomePreference, isValidHomePath } = await import(
-      '#/composables/use-clpm-preferences'
-    );
+    const { fetchDefaultHomePreference, isValidHomePath } =
+      await import('#/composables/use-clpm-preferences');
     const preferred = await fetchDefaultHomePreference();
     return preferred && isValidHomePath(preferred) ? preferred : roleHome;
   } catch {
@@ -69,6 +68,13 @@ async function resolveUserHomePath(
 }
 
 export { resolveHomePath, resolveUserHomePath, ROLE_DEFAULT_HOME };
+
+/** 动态导入避免 auth → personal-work/request → store 初始化环。 */
+async function clearLoopFollowSession(): Promise<void> {
+  const { resetLoopFollowState } =
+    await import('#/composables/use-loop-follow');
+  resetLoopFollowState();
+}
 
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
@@ -100,6 +106,9 @@ export const useAuthStore = defineStore('auth', () => {
       const { accessToken, refreshToken, user: loginUser } = loginResult;
 
       if (accessToken) {
+        // F07：更换 token 前使上一会话失效（包括同 userId 重新登录）。
+        // 旧请求不能在 /auth/me 尚未返回时拿新 token 重试个人关注写入。
+        await clearLoopFollowSession();
         // 2. 存储 accessToken 和 refreshToken（持久化到 localStorage）
         accessStore.setAccessToken(accessToken);
         accessStore.setRefreshToken(refreshToken);
@@ -138,9 +147,8 @@ export const useAuthStore = defineStore('auth', () => {
         // 本部署账户维度偏好缓存（上一个人的内容不能展示给下一个人）。
         // 动态 import 避免 auth → composables → api/request → store 初始化环。
         try {
-          const { noteClpmAccountLogin } = await import(
-            '#/composables/use-clpm-preferences'
-          );
+          const { noteClpmAccountLogin } =
+            await import('#/composables/use-clpm-preferences');
           noteClpmAccountLogin(String(currentUser.id));
         } catch {
           /* 缓存清理失败不阻断登录 */
@@ -209,6 +217,13 @@ export const useAuthStore = defineStore('auth', () => {
     const hasToken = Boolean(accessStore.accessToken);
     const currentFullPath = router.currentRoute.value.fullPath;
     try {
+      // isLoggingOut 的同步订阅已经清空已加载单例；动态导入兜底未加载模块。
+      // 关注清理失败也不能阻断退出，finally 仍负责清 token 与跳转。
+      try {
+        await clearLoopFollowSession();
+      } catch {
+        /* noop */
+      }
       if (hasToken) {
         try {
           await logoutApi();
@@ -235,9 +250,8 @@ export const useAuthStore = defineStore('auth', () => {
       // P6-06：退出清理账户维度偏好缓存与模块状态（服务端数据不受影响；
       // 换设备/换账号/清理浏览器后由服务端恢复，不在本机残留上一个人内容）。
       try {
-        const { handleClpmAccountLogout } = await import(
-          '#/composables/use-clpm-preferences'
-        );
+        const { handleClpmAccountLogout } =
+          await import('#/composables/use-clpm-preferences');
         handleClpmAccountLogout();
       } catch {
         /* 缓存清理失败不阻断登出 */

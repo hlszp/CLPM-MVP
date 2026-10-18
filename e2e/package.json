@@ -10,6 +10,7 @@
     "test:ui": "playwright test --ui",
     "test:debug": "playwright test --debug",
     "test:report": "playwright show-report",
+    "test:gate-contract": "node --test scripts/test-critical-gate.mjs",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

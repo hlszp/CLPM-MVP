@@ -34,6 +34,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from operator import attrgetter
 from typing import Any
 
 from app.contracts import series_context as sc
@@ -297,12 +298,17 @@ class MetricTimeView:
         )
 
 
+_RUN_START = attrgetter("start")
+
+
 def _runs_contain(runs: list[sc.IntervalRun], ts: datetime) -> sc.IntervalRun | None:
     """ts 所在的游程（runs 按 start 升序；半开语义；未命中 → None）。"""
     if not runs:
         return None
-    starts = [r.start for r in runs]
-    idx = bisect.bisect_right(starts, ts) - 1
+    if len(runs) == 1:
+        r = runs[0]
+        return r if r.start <= ts < r.end else None
+    idx = bisect.bisect_right(runs, ts, key=_RUN_START) - 1
     if idx < 0:
         return None
     r = runs[idx]
@@ -402,7 +408,8 @@ def build_metric_time_view(
         return None
     w_start, w_end = half_open
 
-    timestamps = list(block.timestamps)
+    # 仅在本次视图构建内复用原始 UTC 时间；覆盖判定不可改用裁窗后的 starts。
+    timestamps = [_utc(ts) for ts in block.timestamps]
     if not timestamps:
         return None
     period = _grid_period(block)
@@ -412,9 +419,8 @@ def build_metric_time_view(
     indices: list[int] = []
     starts: list[datetime] = []
     seconds: list[float] = []
-    for i, raw_ts in enumerate(timestamps):
-        s = _utc(raw_ts)
-        e = _utc(timestamps[i + 1]) if i + 1 < len(timestamps) else w_end
+    for i, s in enumerate(timestamps):
+        e = timestamps[i + 1] if i + 1 < len(timestamps) else w_end
         e = min(e, w_end)
         s = max(s, w_start)
         sec = (e - s).total_seconds()
@@ -441,7 +447,7 @@ def build_metric_time_view(
         reasons: list[str | None] = []
         valids: list[bool] = []
         for _slot_i, orig_i in enumerate(indices):
-            ts = _utc(timestamps[orig_i])
+            ts = timestamps[orig_i]
             value = sig[orig_i] if sig is not None and orig_i < len(sig) else None
             known, observed, unknown_reason = _classify_coverage(cov, ts)
             if known and value is None:
@@ -469,7 +475,8 @@ def build_metric_time_view(
         boundaries = sorted(_utc(b.at) for b in (ctx.segment_boundaries or []))
 
     def _boundary_between(prev_ts: datetime, cur_ts: datetime) -> bool:
-        return any(prev_ts < b <= cur_ts for b in boundaries)
+        idx = bisect.bisect_right(boundaries, prev_ts)
+        return idx < len(boundaries) and boundaries[idx] <= cur_ts
 
     segments: list[tuple[int, int]] = []
     seg_start: int | None = None
@@ -481,9 +488,7 @@ def build_metric_time_view(
         )
         cut_by_boundary = False
         if slot_i > 0:
-            cut_by_boundary = _boundary_between(
-                _utc(timestamps[indices[slot_i - 1]]), _utc(timestamps[orig_i])
-            )
+            cut_by_boundary = _boundary_between(timestamps[indices[slot_i - 1]], timestamps[orig_i])
         if ok and not cut_by_boundary:
             if seg_start is None:
                 seg_start = slot_i

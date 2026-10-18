@@ -25,8 +25,10 @@ jobs:
       run:
         working-directory: frontend
     steps:
-      - name: Checkout code
+      - name: Checkout candidate code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -69,7 +71,14 @@ jobs:
   backend-ci:
     name: Backend CI
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Two extra minutes cover the post-pytest diagnosis and artifact upload only.
+    timeout-minutes: 17
+    env:
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
     defaults:
       run:
         working-directory: backend
@@ -102,8 +111,10 @@ jobs:
           --health-retries 5
 
     steps:
-      - name: Checkout code
+      - name: Checkout candidate code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -118,6 +129,15 @@ jobs:
 
       - name: Sync dependencies
         run: uv sync --frozen
+
+      - name: Record fixed numeric resource profile
+        run: |
+          uv run python - <<'PY'
+          import json, os, platform
+          import numpy as np
+          keys = ["OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"]
+          print(json.dumps({"platform": platform.platform(), "numpy": np.__version__, "cpuCount": os.cpu_count(), "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None, "threads": {key: os.environ.get(key) for key in keys}, "numpyConfig": np.show_config(mode="dicts")}, default=str))
+          PY
 
       - name: Ruff check
         run: uv run ruff check .
@@ -168,6 +188,7 @@ jobs:
       # 实测（本地带该 env 跑全量）：4848 passed 无回归，G15 的 DISTINCT ON 去重
       # 断言由 skip 转为实跑。
       - name: Pytest with coverage
+        id: backend_pytest
         env:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: "5432"
@@ -176,11 +197,76 @@ jobs:
           POSTGRES_DB: clpm
         run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=60
 
+      # Read-only post-test diagnosis. A diagnostic error remains a failed step;
+      # the original pytest command, environment, exit code and outcome are kept.
+      - name: Capture G3 numerical originals after pytest
+        id: g3_numeric_diagnosis
+        if: ${{ always() && !cancelled() && (steps.backend_pytest.outcome == 'success' || steps.backend_pytest.outcome == 'failure') }}
+        env:
+          CLPM_TEST_MODE: "1"
+          CLPM_SKIP_EXIT_HOOKS: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+          G3_PYTEST_OUTCOME: ${{ steps.backend_pytest.outcome }}
+          CLPM_BUILD_CODE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          g3_out="$RUNNER_TEMP/g3-numerical-originals"
+          mkdir "$g3_out"
+          cp "$GITHUB_WORKSPACE/.github/workflows/ci.yml" "$g3_out/workflow.yml"
+          date -u +%Y-%m-%dT%H:%M:%SZ > "$g3_out/ci-started-at.txt"
+          g3_rc=0
+          timeout --signal=TERM 60s "$GITHUB_WORKSPACE/backend/.venv/bin/python" \
+            "$GITHUB_WORKSPACE/backend/scripts/profile_identification_numerics.py" \
+            "$g3_out/observation" "$GITHUB_WORKSPACE" \
+            > "$g3_out/ci-stdout.log" 2> "$g3_out/ci-stderr.log" || g3_rc=$?
+          printf '%s\n' "$g3_rc" > "$g3_out/ci-exit-code.txt"
+          date -u +%Y-%m-%dT%H:%M:%SZ > "$g3_out/ci-finished-at.txt"
+          find "$g3_out" -type f ! -name ci-sha256.txt -print0 | sort -z | \
+            xargs -0 sha256sum > "$g3_out/ci-sha256.txt"
+          cat "$g3_out/ci-stdout.log"
+          cat "$g3_out/ci-stderr.log" >&2
+          exit "$g3_rc"
+
+      - name: Upload G3 numerical originals
+        if: ${{ always() && steps.g3_numeric_diagnosis.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-g3-numerics-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/g3-numerical-originals
+          if-no-files-found: error
+          retention-days: 7
+
   critical-e2e:
     name: Critical E2E Gate (blocking)
     runs-on: ubuntu-latest
     timeout-minutes: 25
-    needs: backend-ci
+    # These three service containers are owned by this job and discarded even
+    # when the gate fails. The input generator refuses every other DB identity.
+    env:
+      ENV: development
+      CLPM_TEST_MODE: "0"
+      E2E_EXECUTION_ENV: disposable-github-ci
+      OPENBLAS_NUM_THREADS: "1"
+      OMP_NUM_THREADS: "1"
+      MKL_NUM_THREADS: "1"
+      NUMEXPR_NUM_THREADS: "1"
+      VECLIB_MAXIMUM_THREADS: "1"
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: clpm
+      POSTGRES_PASSWORD: clpm_ci_only_2026
+      POSTGRES_DB: clpm_critical_e2e
+      REDIS_HOST: localhost
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_PASSWORD: ""
+      TDENGINE_HOST: localhost
+      TDENGINE_PORT: "6030"
+      TDENGINE_USER: root
+      TDENGINE_PASSWORD: taosdata
+      TDENGINE_DB: clpm_critical_e2e_ts
+      CORS_ORIGINS: '["http://localhost:15666"]'
+      JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
+      CLPM_BUILD_CODE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     services:
       redis:
         image: redis:7-alpine
@@ -196,18 +282,40 @@ jobs:
         env:
           POSTGRES_USER: clpm
           POSTGRES_PASSWORD: clpm_ci_only_2026
-          POSTGRES_DB: clpm
+          POSTGRES_DB: clpm_critical_e2e
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U clpm -d clpm"
+          --health-cmd "pg_isready -U clpm -d clpm_critical_e2e"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
 
+      tdengine:
+        image: tdengine/tdengine:3.3.6.6
+        ports:
+          - 6030:6030
+          - 6041:6041
+        options: >-
+          --health-cmd "taos -s 'SELECT SERVER_VERSION();'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
     steps:
-      - name: Checkout code
+      - name: Checkout candidate code
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set isolated artifact paths in runner context
+        run: |
+          mkdir -p "$RUNNER_TEMP/critical-e2e"
+          printf '%s\n' \
+            "E2E_CRITICAL_FIXTURE=$RUNNER_TEMP/critical-e2e/fixture.json" \
+            "E2E_ARTIFACT_DIR=$RUNNER_TEMP/critical-e2e/gate" \
+            "CLPM_CALC_SNAPSHOT_DIR=$RUNNER_TEMP/critical-e2e/calc-snapshots" \
+            >> "$GITHUB_ENV"
 
       # ---- Backend setup ----
       - name: Setup Python
@@ -225,6 +333,19 @@ jobs:
         working-directory: backend
         run: uv sync --frozen
 
+      - name: Record fixed numeric resource profile
+        working-directory: backend
+        run: |
+          uv run python - <<'PY'
+          import json, os, platform
+          from pathlib import Path
+          import numpy as np
+          keys = ["OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"]
+          data = {"platform": platform.platform(), "numpy": np.__version__, "cpuCount": os.cpu_count(), "affinity": sorted(os.sched_getaffinity(0)) if hasattr(os, "sched_getaffinity") else None, "threads": {key: os.environ.get(key) for key in keys}, "numpyConfig": np.show_config(mode="dicts")}
+          Path(os.environ["E2E_CRITICAL_FIXTURE"]).with_name("numeric-runtime.json").write_text(json.dumps(data, default=str, indent=2) + "\n")
+          print(json.dumps(data, default=str))
+          PY
+
       - name: Apply bootstrap SQL + stamp
         working-directory: backend
         env:
@@ -232,11 +353,26 @@ jobs:
           POSTGRES_PORT: "5432"
           POSTGRES_USER: clpm
           POSTGRES_PASSWORD: clpm_ci_only_2026
-          POSTGRES_DB: clpm
+          POSTGRES_DB: clpm_critical_e2e
           JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
         run: |
           uv run python scripts/apply_bootstrap_sql.py
           uv run alembic stamp head
+          uv run alembic check
+
+      - name: Initialize disposable TDengine database
+        run: |
+          curl --fail-with-body --silent --show-error --user root:taosdata \
+            http://localhost:6041/rest/sql \
+            --data "CREATE DATABASE IF NOT EXISTS clpm_critical_e2e_ts KEEP 365 DURATION 10 PRECISION 'ms'" \
+            > /tmp/critical-td-bootstrap.json
+          python -c 'import json; result=json.load(open("/tmp/critical-td-bootstrap.json")); assert result["code"] == 0, result'
+
+      - name: Isolate seeded external services before real application lifespan
+        working-directory: backend
+        run: |
+          uv run python ../e2e/scripts/prepare-critical-fixture.py --configure-services \
+            --output "${{ runner.temp }}/critical-e2e/service-config.json"
 
       - name: Start backend
         working-directory: backend
@@ -245,12 +381,12 @@ jobs:
           POSTGRES_PORT: "5432"
           POSTGRES_USER: clpm
           POSTGRES_PASSWORD: clpm_ci_only_2026
-          POSTGRES_DB: clpm
+          POSTGRES_DB: clpm_critical_e2e
           JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
           REDIS_HOST: localhost
           REDIS_PORT: "6379"
         run: |
-          uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 &
+          uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 > /tmp/critical-backend.log 2>&1 &
           echo $! > /tmp/backend.pid
           for i in $(seq 1 30); do
             curl -sf http://localhost:17101/health && break
@@ -275,30 +411,96 @@ jobs:
         working-directory: frontend
         run: pnpm install --frozen-lockfile
 
+      - name: Install E2E dependencies from its own lockfile
+        working-directory: e2e
+        run: npm ci
+
+      - name: Validate fail-closed gate contract (no product DB writes)
+        working-directory: e2e
+        env:
+          GATE_CONTRACT_ARTIFACT_DIR: ${{ runner.temp }}/critical-e2e/contract
+        run: npm run test:gate-contract
+
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_ROUTER_HISTORY: history
+          VITE_GLOB_API_URL: http://localhost:17101/api/v1
         run: pnpm build:antd
 
       - name: Start frontend preview
         working-directory: frontend
         run: |
-          pnpm -F @vben/web-antd preview --port 15666 &
+          pnpm -F @vben/web-antd preview --port 15666 > /tmp/critical-frontend.log 2>&1 &
           echo $! > /tmp/frontend.pid
           for i in $(seq 1 30); do
             curl -sf http://localhost:15666 && break
             sleep 2
           done
 
+      - name: Prepare isolated synthetic inputs (no KPI result seeding)
+        working-directory: backend
+        run: |
+          uv run python ../e2e/scripts/test_critical_fixture.py
+          uv run python ../e2e/scripts/prepare-critical-fixture.py --execute --output "$E2E_CRITICAL_FIXTURE"
+
+      - name: Capture actual input policy before the critical gate
+        run: |
+          evidence_root="$RUNNER_TEMP/critical-e2e/input-evidence"
+          mkdir -p "$evidence_root"
+          unit_rc=0
+          "$GITHUB_WORKSPACE/backend/.venv/bin/python" e2e/scripts/test_critical_input_evidence.py \
+            > "$evidence_root/before-tests.stdout.log" 2> "$evidence_root/before-tests.stderr.log" || unit_rc=$?
+          printf '%s\n' "$unit_rc" > "$evidence_root/before-tests.exit-code.txt"
+          cat "$evidence_root/before-tests.stdout.log"
+          cat "$evidence_root/before-tests.stderr.log" >&2
+          if [ "$unit_rc" -ne 0 ]; then exit "$unit_rc"; fi
+          capture_rc=0
+          "$GITHUB_WORKSPACE/backend/.venv/bin/python" e2e/scripts/capture-critical-input-evidence.py \
+            --phase before --output "$evidence_root/before" \
+            > "$evidence_root/before-launch.stdout.log" 2> "$evidence_root/before-launch.stderr.log" || capture_rc=$?
+          printf '%s\n' "$capture_rc" > "$evidence_root/before-launch.exit-code.txt"
+          cat "$evidence_root/before-launch.stdout.log"
+          cat "$evidence_root/before-launch.stderr.log" >&2
+          exit "$capture_rc"
+
       # ---- Critical E2E gate ----
       - name: Install Playwright browsers
-        run: npx playwright install --with-deps chromium
+        run: npm exec playwright install --with-deps chromium
         working-directory: e2e
 
       - name: Run critical E2E gate (blocking)
         run: bash scripts/run-critical-e2e.sh
         env:
           E2E_BASE_URL: http://localhost:15666
-          E2E_API_BASE_URL: http://localhost:17101
+          E2E_API_BASE_URL: http://localhost:17101/api/v1
+
+      - name: Capture actual input policy and dataset row after the critical gate
+        if: always()
+        run: |
+          evidence_root="$RUNNER_TEMP/critical-e2e/input-evidence"
+          mkdir -p "$evidence_root"
+          capture_rc=0
+          "$GITHUB_WORKSPACE/backend/.venv/bin/python" e2e/scripts/capture-critical-input-evidence.py \
+            --phase after --output "$evidence_root/after" \
+            > "$evidence_root/after-launch.stdout.log" 2> "$evidence_root/after-launch.stderr.log" || capture_rc=$?
+          printf '%s\n' "$capture_rc" > "$evidence_root/after-launch.exit-code.txt"
+          cat "$evidence_root/after-launch.stdout.log"
+          cat "$evidence_root/after-launch.stderr.log" >&2
+          exit "$capture_rc"
+
+      - name: Preserve reports, raw exits, task/result attachments and input manifest
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-e2e-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/critical-e2e
+            /tmp/critical-backend.log
+            /tmp/critical-frontend.log
+            /tmp/critical-td-bootstrap.json
+            backend/logs/
+          if-no-files-found: error
 
       - name: Cleanup
         if: always()

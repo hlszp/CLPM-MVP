@@ -29,10 +29,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 import subprocess
 import time
 from datetime import UTC, datetime, timedelta
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -220,8 +222,24 @@ def retained_build_digests() -> set[str]:
 # ---------------------------------------------------------------------------
 
 
+def _normalize_manifest_numbers(value: Any) -> Any:
+    """Numeric 配置按计算/结果账本的 float 语义保存，拒绝非有限数及溢出。"""
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError("snapshot Decimal must be finite")
+        number = float(value)
+        if not math.isfinite(number):
+            raise ValueError("snapshot Decimal must fit a finite float")
+        return number
+    if isinstance(value, dict):
+        return {k: _normalize_manifest_numbers(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_normalize_manifest_numbers(v) for v in value]
+    return value
+
+
 def _canonical_json(value: Any) -> str:
-    """确定性 JSON（键排序、紧凑分隔符；非 JSON 原生类型先字符串化）。"""
+    """确定性 JSON；Decimal 用数值，其余既有类型规范（含键规则）保持。"""
 
     def _norm(v: Any) -> Any:
         if isinstance(v, dict):
@@ -232,7 +250,12 @@ def _canonical_json(value: Any) -> str:
             return v
         return str(v)
 
-    return json.dumps(_norm(value), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return json.dumps(
+        _norm(_normalize_manifest_numbers(value)),
+        sort_keys=True,
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
 
 
 def compute_input_hash(manifest: dict[str, Any], arrays: dict[str, np.ndarray]) -> str:
@@ -336,6 +359,12 @@ async def save_calculation_snapshot(
     }
     manifest["arrays"] = _describe_arrays(arrays)
     manifest.setdefault("source", {})["executableBuildDigest"] = executable_build_digest()
+    manifest = _normalize_manifest_numbers(manifest)
+    # 在任何文件/DB IO 前验证完整 JSON，拒绝非有限值/不支持的对象；
+    # 同一规范化结构同时用于 hash、落盘与重放，避免先落孤立 NPZ。
+    manifest_bytes = json.dumps(
+        manifest, ensure_ascii=False, sort_keys=True, allow_nan=False
+    ).encode()
 
     input_hash = compute_input_hash(manifest, arrays)
 
@@ -368,10 +397,7 @@ async def save_calculation_snapshot(
     manifest_path = month / f"{snapshot_id}.manifest.json"
 
     _atomic_write(npz_path, _write_npz(arrays))
-    _atomic_write(
-        manifest_path,
-        lambda f: f.write(json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode()),
-    )
+    _atomic_write(manifest_path, lambda f: f.write(manifest_bytes))
 
     # rename 后核 hash（读回重算，防写入损坏）
     r_manifest, r_arrays = _read_files(npz_path, manifest_path)
@@ -825,7 +851,16 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
         block = bundle.data_block
         prefix = f"blk{i}"
         arrays[f"{prefix}__ts"] = _ns_int(list(block.timestamps))
+        signal_metadata: dict[str, list[str | None]] = {}
         for name, values in block.signals.items():
+            if name in ("op_limits_source", "op_limits_provenance"):
+                # DataPlanner 的限位依据是标量元数据，不是 float 信号列。
+                # 保留原值参与 inputHash，并在重放时还原；数值列仍严格校验。
+                values = list(values)
+                if any(value is not None and not isinstance(value, str) for value in values):
+                    raise ValueError(f"信号元数据 {name} 必须为字符串或 None")
+                signal_metadata[name] = values
+                continue
             serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
         for name, flags in (block.validity or {}).items():
             if len(flags) == len(block.timestamps):
@@ -846,6 +881,8 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
             "consecutiveSegments": [[int(a), int(b)] for a, b in block.consecutive_segments],
             "outlierReasons": outlier,
         }
+        if signal_metadata:
+            meta["signalMetadata"] = signal_metadata
         if getattr(block, "series_context", None) is not None:
             sc = block.series_context
 
@@ -936,6 +973,15 @@ def deserialize_data_blocks(arrays: dict[str, np.ndarray], blocks_meta: list[dic
                     else:
                         vals.append(float(arr[j]))
                 signals[name] = vals
+        for name, values in (meta.get("signalMetadata") or {}).items():
+            if (
+                name not in ("op_limits_source", "op_limits_provenance")
+                or name in signals
+                or not isinstance(values, list)
+                or any(value is not None and not isinstance(value, str) for value in values)
+            ):
+                raise ValueError(f"无效信号元数据: {name}")
+            signals[name] = list(values)
         validity = {
             key.split("__valid_", 1)[1]: [bool(v) for v in arrays[key]]
             for key in arrays

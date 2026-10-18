@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import logging
-import re
+from functools import lru_cache
 
 from app.contracts.data_types import DataBlock
 
@@ -91,23 +91,53 @@ def _evaluate_mask(data_block: DataBlock, expr: str) -> list[bool]:
             consecutive[i] = True
     context["consecutive_valid"] = consecutive
 
-    # 逐点求值（简单表达式引擎，支持 && / || / ! / 括号 / 变量）
-    result = [False] * n
-    for i in range(n):
-        env = {k: v[i] if i < len(v) else False for k, v in context.items()}
-        try:
-            result[i] = _eval_expr(expr, env)
-        except Exception:
-            logger.warning("Mask eval failed at idx=%d: expr=%r", i, expr, exc_info=True)
-            result[i] = False
-    return result
+    # 编译只缓存不可变指令，不缓存 DataBlock、validity 或求值结果。
+    # 每次调用重新消费当前布尔向量，避免修改数据后复用旧 mask。
+    try:
+        return _evaluate_program(_compile_expr(expr), context, n)
+    except Exception:
+        # 无效语法对整块均为 False；一条表达式记录一次，避免逐点刷屏。
+        logger.warning("Mask eval failed: expr=%r", expr, exc_info=True)
+        return [False] * n
 
 
 # ---------------------------------------------------------------------------
 # 简单布尔表达式求值器
 # ---------------------------------------------------------------------------
 
-_TOKEN_RE = re.compile(r"\s*(?:(\()|(\))|(&&)|(\"\|\|\")|(\|\|)|(!)|([a-zA-Z_]\w*))")
+
+@lru_cache(maxsize=256)
+def _compile_expr(expr: str) -> tuple[tuple[str, ...], ...]:
+    """Compile the complete grammar into immutable postfix instructions."""
+    tokens = _tokenize(expr)
+    parser = _BoolParser(tokens)
+    parser.parse_or()
+    if parser.pos != len(tokens):
+        raise ValueError(f"Unexpected token at pos {parser.pos}: {tokens[parser.pos :]}")
+    return tuple(parser.instructions)
+
+
+def _evaluate_program(
+    program: tuple[tuple[str, ...], ...], context: dict[str, list[bool]], n: int
+) -> list[bool]:
+    """Evaluate per-variable vectors, with missing/short arrays padded False."""
+    stack: list[list[bool]] = []
+    for instruction in program:
+        op = instruction[0]
+        if op == "var":
+            values = context.get(instruction[1], [])
+            vector = [bool(value) for value in values[:n]]
+            vector.extend([False] * (n - len(vector)))
+            stack.append(vector)
+        elif op == "not":
+            stack.append([not value for value in stack.pop()])
+        else:
+            right, left = stack.pop(), stack.pop()
+            if op == "and":
+                stack.append([a and b for a, b in zip(left, right, strict=True)])
+            else:
+                stack.append([a or b for a, b in zip(left, right, strict=True)])
+    return stack[0]
 
 
 def _eval_expr(expr: str, env: dict[str, bool]) -> bool:
@@ -116,12 +146,9 @@ def _eval_expr(expr: str, env: dict[str, bool]) -> bool:
     支持：``&&`` / ``||`` / ``!`` / ``()`` / 变量名。
     不调用 eval()，安全沙箱。
     """
-    tokens = _tokenize(expr)
-    parser = _BoolParser(tokens, env)
-    result = parser.parse_or()
-    if parser.pos != len(tokens):
-        raise ValueError(f"Unexpected token at pos {parser.pos}: {tokens[parser.pos :]}")
-    return result
+    return _evaluate_program(_compile_expr(expr), {key: [value] for key, value in env.items()}, 1)[
+        0
+    ]
 
 
 def _tokenize(expr: str) -> list[str]:
@@ -166,10 +193,10 @@ class _BoolParser:
         primary  := '(' or_expr ')' | VAR
     """
 
-    def __init__(self, tokens: list[str], env: dict[str, bool]) -> None:
+    def __init__(self, tokens: list[str]) -> None:
         self.tokens = tokens
-        self.env = env
         self.pos = 0
+        self.instructions: list[tuple[str, ...]] = []
 
     def peek(self) -> str | None:
         return self.tokens[self.pos] if self.pos < len(self.tokens) else None
@@ -179,38 +206,39 @@ class _BoolParser:
         self.pos += 1
         return tok
 
-    def parse_or(self) -> bool:
-        result = self.parse_and()
+    def parse_or(self) -> None:
+        self.parse_and()
         while self.peek() == "||":
             self.consume()
-            rhs = self.parse_and()
-            result = result or rhs
-        return result
+            self.parse_and()
+            self.instructions.append(("or",))
 
-    def parse_and(self) -> bool:
-        result = self.parse_not()
+    def parse_and(self) -> None:
+        self.parse_not()
         while self.peek() == "&&":
             self.consume()
-            rhs = self.parse_not()
-            result = result and rhs
-        return result
+            self.parse_not()
+            self.instructions.append(("and",))
 
-    def parse_not(self) -> bool:
+    def parse_not(self) -> None:
         if self.peek() == "!":
             self.consume()
-            return not self.parse_not()
-        return self.parse_primary()
+            self.parse_not()
+            self.instructions.append(("not",))
+        else:
+            self.parse_primary()
 
-    def parse_primary(self) -> bool:
+    def parse_primary(self) -> None:
         tok = self.peek()
         if tok == "(":
             self.consume()
-            result = self.parse_or()
+            self.parse_or()
             if self.peek() != ")":
                 raise ValueError("Expected ')'")
             self.consume()
-            return result
+            return
         if tok is not None and (tok[0].isalpha() or tok[0] == "_"):
             self.consume()
-            return bool(self.env.get(tok, False))
+            self.instructions.append(("var", tok))
+            return
         raise ValueError(f"Unexpected token: {tok!r} at pos {self.pos}")
