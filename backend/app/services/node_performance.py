@@ -2035,6 +2035,32 @@ async def aggregate_node_snapshot_with_presets(
     }
 
 
+def _classify_node_results(results: list) -> dict[str, int]:
+    """节点聚合结果分类计数（G-c B1，2026-10-14 裁决 / 2026-10-16 修复）.
+
+    原逐分支内联计数（``isinstance(r, Exception)`` / None / else）对
+    BaseException 系不命中 Exception 分支、直接落入 else 计为 success——
+    取消节点"静默误收"（快照缺失但计数成功，failed 漏报）。现单列
+    ``cancelled``（诚实化：取消≠成功也≠失败，快照缺失可观测）；
+    CancelledError 之外的 BaseException（KeyboardInterrupt/SystemExit）
+    为理论项一并落 cancelled（防御性兜底，与 B2 登记口径一致）。
+    提取为纯函数便于取消注入回归（裁决书 §复现矩阵形态）。
+    """
+    counts = {"success": 0, "skipped": 0, "failed": 0, "cancelled": 0}
+    for r in results:
+        if isinstance(r, Exception):
+            counts["failed"] += 1
+            logger.warning("[批量节点聚合] 节点聚合失败: %s", r)
+        elif isinstance(r, BaseException):
+            counts["cancelled"] += 1
+            logger.warning("[批量节点聚合] 节点聚合被取消/中断（快照未写入）: %r", r)
+        elif r is None:
+            counts["skipped"] += 1
+        else:
+            counts["success"] += 1
+    return counts
+
+
 async def batch_calculate_and_save_node_snapshots(
     nodes: list,
     ts_start: datetime,
@@ -2054,14 +2080,15 @@ async def batch_calculate_and_save_node_snapshots(
         concurrency: 最大并发数
 
     Returns:
-        ``{total, success, skipped, failed, ts_start, ts_end}``
+        ``{total, success, skipped, failed, cancelled, ts_start, ts_end}``
+        （G-c B1：cancelled 单列——取消节点不再静默计 success）
     """
     import asyncio
 
     from app.core.db import AsyncSessionLocal
 
     if not nodes:
-        return {"total": 0, "success": 0, "skipped": 0, "failed": 0}
+        return {"total": 0, "success": 0, "skipped": 0, "failed": 0, "cancelled": 0}
 
     node_ids = [str(n.id) for n in nodes]
 
@@ -2119,23 +2146,16 @@ async def batch_calculate_and_save_node_snapshots(
     tasks = [asyncio.create_task(_process_node(node)) for node in nodes]
     results = await asyncio.gather(*tasks, return_exceptions=True)
 
-    success_count = 0
-    skipped_count = 0
-    failed_count = 0
-    for r in results:
-        if isinstance(r, Exception):
-            failed_count += 1
-            logger.warning("[批量节点聚合] 节点聚合失败: %s", r)
-        elif r is None:
-            skipped_count += 1
-        else:
-            success_count += 1
+    # G-c B1：分类计数提取至 _classify_node_results（CancelledError 单列
+    # cancelled，不再静默误收 success；返回 dict 增键 cancelled）
+    counts = _classify_node_results(results)
 
     return {
         "total": len(nodes),
-        "success": success_count,
-        "skipped": skipped_count,
-        "failed": failed_count,
+        "success": counts["success"],
+        "skipped": counts["skipped"],
+        "failed": counts["failed"],
+        "cancelled": counts["cancelled"],
         "ts_start": ts_start.isoformat(),
         "ts_end": ts_end.isoformat(),
     }
