@@ -8,6 +8,9 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
+from fractions import Fraction
+
 import pytest
 
 from app.contracts.data_types import QualityStatus
@@ -262,3 +265,79 @@ class TestQualityCodeMappingLogic:
         """is_good_quality(x) == (map_quality_code(x) == GOOD) 必须对所有输入成立。"""
         expected = map_quality_code(raw_code) == QualityStatus.GOOD
         assert is_good_quality(raw_code) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (False, False),
+        (True, False),
+        (-0.0, False),
+        (1e308, False),
+        (5e-324, False),
+        (" -1.25 ", False),
+        ("1_000", False),
+        (b"3.5", False),
+        ("NaN", True),
+        ("-Infinity", True),
+        ("", True),
+        ("bad", True),
+        ([], True),
+        ({}, True),
+        (object(), True),
+        (1 + 2j, True),
+    ],
+)
+def test_finite_conversion_contract(value, expected):
+    assert is_nan_or_inf(value) is expected
+
+
+@pytest.mark.parametrize(
+    "converted,expected",
+    [(2.0, False), (float("nan"), True), (float("inf"), True), (-float("inf"), True)],
+)
+def test_custom_float_is_converted_once_and_not_cached(converted, expected):
+    class Value:
+        calls = 0
+
+        def __float__(self):
+            self.calls += 1
+            return converted if self.calls == 1 else 3.0
+
+    value = Value()
+    assert is_nan_or_inf(value) is expected
+    assert value.calls == 1
+    assert is_nan_or_inf(value) is False
+    assert value.calls == 2
+
+
+@pytest.mark.parametrize("error", [ValueError, TypeError, OverflowError, RuntimeError])
+def test_float_conversion_exception_policy_is_unchanged(error):
+    class Value:
+        def __float__(self):
+            raise error("conversion")
+
+    if error in (ValueError, TypeError):
+        assert is_nan_or_inf(Value()) is True
+    else:
+        with pytest.raises(error, match="conversion"):
+            is_nan_or_inf(Value())
+
+
+def test_huge_integer_float_overflow_still_propagates():
+    with pytest.raises(OverflowError):
+        is_nan_or_inf(10**1000)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (Decimal("1.125"), False),
+        (Fraction(1, 3), False),
+        (Decimal("NaN"), True),
+        (Decimal("sNaN"), True),
+        (Decimal("Infinity"), True),
+    ],
+)
+def test_decimal_and_fraction_conversion_contract(value, expected):
+    assert is_nan_or_inf(value) is expected

@@ -95,4 +95,4 @@ def is_nan_or_inf(value: Any) -> bool:
         f = float(value)
     except (ValueError, TypeError):
         return True
-    return math.isnan(f) or math.isinf(f)
+    return not math.isfinite(f)
