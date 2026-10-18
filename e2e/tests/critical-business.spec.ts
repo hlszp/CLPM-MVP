@@ -11,6 +11,7 @@ interface InputFixture {
   inputOnly: boolean;
   environment: string;
   candidateSha: string;
+  githubEventSha?: string | null;
   loopId: string;
   loopTagName: string;
   windowStart: string;
@@ -145,7 +146,11 @@ test.beforeAll(() => {
   expect(fixture.candidateSha).toMatch(/^[0-9a-f]{40}$/);
   expect(fixture.environment).toBe(local ? 'disposable-local' : 'disposable-github-ci');
   expect(fixture.loopTagName).toMatch(local ? /^CRITICAL-LOCAL-\d+-\d+-FLOW001$/ : /^CRITICAL-E2E-\d+-\d+-FLOW001$/);
-  expect(fixture.candidateSha).toBe(local ? process.env.CLPM_BUILD_CODE_SHA : process.env.GITHUB_SHA);
+  expect(fixture.candidateSha).toBe(process.env.CLPM_BUILD_CODE_SHA);
+  if (!local) {
+    expect(fixture.githubEventSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(fixture.githubEventSha).toBe(process.env.GITHUB_SHA);
+  }
 });
 
 test('CRITICAL-AUTH-001: real login and authenticated identity', async ({ page }) => {

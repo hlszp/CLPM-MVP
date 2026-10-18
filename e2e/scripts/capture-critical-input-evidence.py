@@ -86,7 +86,8 @@ def scope(env, fixture, head):
         raise ValueError("refuse outside exact disposable CI services")
     if (
         not re.fullmatch(r"[0-9a-f]{40}", head)
-        or head != env.get("GITHUB_SHA")
+        or not re.fullmatch(r"[0-9a-f]{40}", env.get("GITHUB_SHA", ""))
+        or fixture.get("githubEventSha") != env.get("GITHUB_SHA")
         or head != env.get("CLPM_BUILD_CODE_SHA")
         or head != fixture.get("candidateSha")
         or fixture.get("environment") != "disposable-github-ci"
@@ -268,6 +269,7 @@ def capture(phase, out, env, run=command, bind=package):
         fixture = json.loads(Path(env["E2E_CRITICAL_FIXTURE"]).read_text())
         head = call(["git", "rev-parse", "HEAD"], "git-head").strip()
         header["actualCheckoutSha"] = head
+        header["githubEventSha"] = env.get("GITHUB_SHA")
         scope(env, fixture, head)
         call(["git", "ls-files", "--error-unmatch", "--", *SOURCES], "tracked-sources")
         call(["git", "diff", "--quiet", "HEAD"], "clean-sources")

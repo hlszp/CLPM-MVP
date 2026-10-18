@@ -33,6 +33,7 @@ class EvidenceControls(unittest.TestCase):
             "inputOnly": True,
             "environment": "disposable-github-ci",
             "candidateSha": "a" * 40,
+            "githubEventSha": "a" * 40,
             "loopId": "10000000-0000-0000-0000-000000000001",
             "loopTagName": "CRITICAL-E2E-12-1-FLOW001",
             "windowStart": "2026-10-15T12:00:00",
@@ -188,6 +189,17 @@ class EvidenceControls(unittest.TestCase):
                 invalid = {**self.env, key: "wrong"}
                 with self.assertRaises(ValueError):
                     tool.scope(invalid, self.fixture, "a" * 40)
+
+    def test_pr_merge_event_is_preserved_without_relabelling_checkout(self):
+        env = {**self.env, "GITHUB_SHA": "b" * 40}
+        fixture = {**self.fixture, "githubEventSha": "b" * 40}
+        tool.scope(env, fixture, "a" * 40)
+        for changed in (
+            {**fixture, "candidateSha": "b" * 40},
+            {**fixture, "githubEventSha": "c" * 40},
+        ):
+            with self.assertRaises(ValueError):
+                tool.scope(env, changed, "a" * 40)
 
     def test_fixture_and_actual_transaction_identity_are_required(self):
         for change in ({"synthetic": False}, {"inputOnly": False}, {"candidateSha": "b" * 40}):

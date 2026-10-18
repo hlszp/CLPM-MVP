@@ -29,6 +29,7 @@ class IsolationProtectionTests(unittest.TestCase):
             "GITHUB_RUN_ID": "12345",
             "GITHUB_RUN_ATTEMPT": "1",
             "GITHUB_SHA": "a" * 40,
+            "CLPM_BUILD_CODE_SHA": "a" * 40,
             "POSTGRES_HOST": "localhost",
             "REDIS_HOST": "127.0.0.1",
             "TDENGINE_HOST": "localhost",
@@ -38,6 +39,13 @@ class IsolationProtectionTests(unittest.TestCase):
 
     def test_only_disposable_ci_identity_is_accepted(self):
         self.assertEqual(CHECK(self.env, "http://localhost:17101/api/v1"), [])
+
+    def test_pr_head_and_event_merge_have_separate_identities(self):
+        env = {**self.env, "GITHUB_SHA": "b" * 40}
+        self.assertEqual(CHECK(env, "http://localhost:17101/api/v1"), [])
+        identity = IDENTITY(env)
+        self.assertEqual(identity["sourceSha"], "a" * 40)
+        self.assertEqual(identity["githubEventSha"], "b" * 40)
 
     def test_every_service_identity_guard_is_required(self):
         for key in self.env:

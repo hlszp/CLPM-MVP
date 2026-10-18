@@ -265,7 +265,7 @@ jobs:
       TDENGINE_DB: clpm_critical_e2e_ts
       CORS_ORIGINS: '["http://localhost:15666"]'
       JWT_SECRET_KEY: ci-test-secret-key-at-least-32-characters-long!!!
-      CLPM_BUILD_CODE_SHA: ${{ github.sha }}
+      CLPM_BUILD_CODE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
     services:
       redis:
         image: redis:7-alpine

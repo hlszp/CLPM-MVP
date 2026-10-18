@@ -316,7 +316,8 @@ def execution_identity(env: dict[str, str]) -> dict[str, str]:
         "prefix": "CRITICAL-E2E",
         "runId": env.get("GITHUB_RUN_ID", ""),
         "attempt": env.get("GITHUB_RUN_ATTEMPT", "1"),
-        "sourceSha": env.get("GITHUB_SHA", ""),
+        "sourceSha": env.get("CLPM_BUILD_CODE_SHA", ""),
+        "githubEventSha": env.get("GITHUB_SHA", ""),
     }
 
 
@@ -378,7 +379,9 @@ def isolation_errors(env: dict[str, str], api_url: str) -> list[str]:
     if not re.fullmatch(r"\d+", env.get("GITHUB_RUN_ATTEMPT", "")):
         errors.append("GITHUB_RUN_ATTEMPT must be present")
     if not re.fullmatch(r"[0-9a-f]{40}", env.get("GITHUB_SHA", "")):
-        errors.append("GITHUB_SHA must identify the fixed checkout")
+        errors.append("GITHUB_SHA must preserve the original GitHub event identity")
+    if not re.fullmatch(r"[0-9a-f]{40}", env.get("CLPM_BUILD_CODE_SHA", "")):
+        errors.append("CLPM_BUILD_CODE_SHA must identify the actual candidate checkout")
     if urlparse(api_url).hostname not in {"localhost", "127.0.0.1"}:
         errors.append("API must be on the same disposable CI runner")
     return errors
@@ -417,6 +420,7 @@ async def configure_services(output: Path) -> None:
         await connection.close()
     payload = {
         "candidateSha": execution_identity(dict(os.environ))["sourceSha"],
+        "githubEventSha": execution_identity(dict(os.environ)).get("githubEventSha"),
         "configurationWritten": True,
         "database": os.environ["POSTGRES_DB"],
         "values": actual,
@@ -613,6 +617,7 @@ async def prepare(api_url: str, output: Path) -> None:
         "environment": identity["environment"],
         "executionLocation": identity["location"],
         "candidateSha": identity["sourceSha"],
+        "githubEventSha": identity.get("githubEventSha"),
         "loopId": loop_id,
         "loopTagName": tag_name,
         "windowStart": start.isoformat(),
