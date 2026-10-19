@@ -519,8 +519,13 @@ function formatDuration(record: TaskApi.TaskItem): string {
   const end = parseTimestamp(record.finishedAt) ?? Date.now();
   const diffSec = Math.floor((end - start) / 1000);
   if (diffSec < 0) return '—';
-  const mm = Math.floor(diffSec / 60);
+  const hh = Math.floor(diffSec / 3600);
+  const mm = Math.floor((diffSec % 3600) / 60);
   const ss = diffSec % 60;
+  // 长任务用 H:MM:SS（否则 12379 分会渲染成「12379:16」被误读为 mm:ss）
+  if (hh > 0) {
+    return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
+  }
   return `${String(mm).padStart(2, '0')}:${String(ss).padStart(2, '0')}`;
 }
 

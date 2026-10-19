@@ -241,7 +241,7 @@ def shape_fitness_gates(
 def shape_rule_stats(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """诊断规则命中统计（F-DG-04 前置数据，symptom_tags 标签聚合，D2=a 重定义）。
 
-    - hits: 近 30d 检出该症状标签的 run 数；resolved_rate: 其中已复核确认（REVIEWED）占比
+    - hits: 当前时间窗内检出该症状标签的 run 数；resolved_rate: 其中已复核确认（REVIEWED）占比
     - rule_id: 标签域名（如 OSCILLATION）；name: 中文标签名（symptom_label）
     """
     items: list[dict[str, Any]] = []
@@ -812,9 +812,11 @@ async def _build_diagnosis(
     except Exception:  # noqa: BLE001
         logger.warning("诊断 fitness_gates 块构建失败", exc_info=True)
 
-    # --- rule_stats：诊断规则命中统计（F-DG-04 前置，D2=a 近 30d 固定窗口）---
+    # --- rule_stats：诊断规则命中统计（F-DG-04）---
+    # 与 Pareto/顶卡同一时间窗（此前固定 since_30d，导致 UI「近 7d」仍展示
+    # 30d 命中、或与其它窗卡片口径不一致）。窗语义=诊断 run 发生时间。
     try:
-        diagnosis["rule_stats"] = shape_rule_stats(await _query_rule_stat_rows(db, since_30d))
+        diagnosis["rule_stats"] = shape_rule_stats(await _query_rule_stat_rows(db, since))
     except Exception:  # noqa: BLE001
         logger.warning("诊断 rule_stats 块构建失败", exc_info=True)
 
@@ -825,8 +827,9 @@ async def _build_diagnosis(
         logger.warning("诊断 pareto 块构建失败", exc_info=True)
 
     # --- rootcause_top：根因 TopN（symptom_tags 标签聚合，与 G-总览 roots 同构）---
+    # 同步改为当前窗，避免「近 7d」页展示 30d 根因 Top
     try:
-        diagnosis["rootcause_top"] = shape_rootcause_top(await _query_rootcause_rows(db, since_30d))
+        diagnosis["rootcause_top"] = shape_rootcause_top(await _query_rootcause_rows(db, since))
     except Exception:  # noqa: BLE001
         logger.warning("诊断 rootcause_top 块构建失败", exc_info=True)
 
@@ -834,6 +837,7 @@ async def _build_diagnosis(
     try:
         # 0930 诚实化：平均时延=SUCCESS run 实际时长均值；引擎版本=run 内
         # algorithm_version 最新值（此前硬编码 42s/原型常量）
+        # 时延/引擎版本仍取 30d 样本（样本量），但顶卡确诊条次已用 since（当前窗）
         avg_latency, algo_ver = await _query_avg_latency(db, since_30d)
         engine_meta = {"version": algo_ver, "status": "ONLINE"} if algo_ver else None
         diagnosis["summary_band"] = shape_summary_band(

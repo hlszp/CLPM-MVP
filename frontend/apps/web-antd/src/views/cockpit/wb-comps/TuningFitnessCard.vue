@@ -42,7 +42,7 @@ function onSegClick(level: string) {
 const helpItems = [
   { label: '饼图', text: 'L0~L4 五档分级占比（按 KpiSnapshotHourly.score 分桶）。' },
   { label: '中心徽章', text: '整体最高非空级别 + 评分/100（取自 fitness_gates.score）。' },
-  { label: '示例', text: 'level_counts 为空时使用 8/16/32/28/16 demo 占比并标注「（示例）」。' },
+  { label: '空数据', text: 'level_counts 为空时不渲染分布，显示「暂无适用性分级数据」，不使用演示占比。' },
 ];
 
 const LEVEL_COLORS: Record<string, string> = {
@@ -101,15 +101,21 @@ const segments = computed<Seg[]>(() => {
   });
 });
 
-const level = computed(() => props.gates?.level ?? 'L3');
-const levelLabel = computed(() => LEVEL_LABELS[level.value] ?? '未知');
-const levelColor = computed(() => LEVEL_COLORS[level.value] ?? 'var(--ck-accent)');
+const level = computed(() => props.gates?.level ?? null);
+const levelLabel = computed(() =>
+  level.value ? (LEVEL_LABELS[level.value] ?? '未知') : '—',
+);
+const levelColor = computed(() =>
+  level.value ? (LEVEL_COLORS[level.value] ?? 'var(--ck-accent)') : 'var(--ck-text-3)',
+);
 const score = computed(() => {
   const n = props.gates?.score;
-  return typeof n === 'number' ? Math.round(n) : 70;
+  return typeof n === 'number' ? Math.round(n) : null;
 });
 
-const evaluated = computed(() => props.gates?.evaluated ?? total.value);
+const evaluated = computed(() =>
+  props.gates?.evaluated ?? (usingFallback.value ? null : total.value),
+);
 </script>
 
 <template>
@@ -121,7 +127,14 @@ const evaluated = computed(() => props.gates?.evaluated ?? total.value);
       <span class="ml-auto text-[9.5px] font-normal text-[#8C8C8C]">B-09</span>
     </div>
     <div class="min-h-0 flex-1 flex items-center justify-center overflow-hidden p-[6px_8px]">
-      <div class="flex h-full w-full items-center gap-[6px]">
+      <!-- 空数据：不渲染演示占比 -->
+      <div
+        v-if="usingFallback"
+        class="flex h-full w-full items-center justify-center text-[11px] ckwb-text-3"
+      >
+        暂无适用性分级数据
+      </div>
+      <div v-else class="flex h-full w-full items-center gap-[6px]">
         <!-- 饼图 -->
         <div class="relative flex h-full max-h-[150px] w-[150px] flex-none items-center justify-center">
           <svg viewBox="0 0 100 100" class="h-full w-full">
@@ -148,7 +161,7 @@ const evaluated = computed(() => props.gates?.evaluated ?? total.value);
             <span
               class="rounded-[2px] px-[5px] py-[0.5px] text-[10.5px] font-bold text-white"
               :style="{ background: levelColor }"
-            >{{ level }}</span>
+            >{{ level ?? '—' }}</span>
             <span class="font-medium text-[#595959]">{{ levelLabel }}</span>
             <span class="ml-auto font-bold tabular-nums" :style="{ color: levelColor }">{{ score != null ? score.toFixed(2) : '—' }}<span class="text-[7.5px] text-[#8C8C8C]">/100</span></span>
           </div>
@@ -166,8 +179,7 @@ const evaluated = computed(() => props.gates?.evaluated ?? total.value);
           </template>
           <div class="mt-[2px] flex items-center gap-[4px] border-t border-dashed ckwb-border pt-[3px] text-[9.5px]">
             <span class="text-[#8C8C8C]">已评估</span>
-            <span class="ml-auto font-bold tabular-nums ckwb-accent">{{ evaluated }}</span>
-            <span v-if="usingFallback" class="text-[#FA8C16]">（示例）</span>
+            <span class="ml-auto font-bold tabular-nums ckwb-accent">{{ evaluated ?? '—' }}</span>
           </div>
         </div>
       </div>

@@ -491,7 +491,8 @@ onMounted(() => {
             最新诊断概览
             <span class="text-xs font-normal text-neutral-400">
               {{ selectedPlantNodeId ? '当前装置范围' : '全厂' }} ·
-              {{ overviewLoopCount }} 个回路（一回路一条最新结论）
+              <template v-if="latestLoading">加载中…</template>
+              <template v-else>{{ overviewLoopCount }} 个回路（一回路一条最新结论）</template>
             </span>
           </template>
           <!-- 筛选：诊断状态标签 + 等级/评分/结论/严重度下拉 -->

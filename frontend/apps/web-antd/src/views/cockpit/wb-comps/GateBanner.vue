@@ -24,7 +24,7 @@ const banner = computed(() => {
       bg: '#FFF1F0',
       border: '#FFA39E',
       color: '#FF4D4F',
-      text: `诊断数据不足，无法进入根因分析 —— ${l0Count.value} 个回路 L0（数据严重不足），请先在数据管理补齐历史数据`,
+      text: `诊断数据不足，无法进入根因分析 —— 最新适用性快照中 ${l0Count.value} 个回路 L0（数据严重不足），请先在数据管理补齐历史数据`,
     };
   }
   if (level.value === 'L1') {
