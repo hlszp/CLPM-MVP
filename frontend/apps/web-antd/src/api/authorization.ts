@@ -219,5 +219,7 @@ export function rollbackAuthorizationRevisionApi(
 export function getMyEffectiveAccessApi() {
   return requestClient.get<AuthorizationApi.MyEffectiveAccess>(
     '/auth/effective-access',
+    // 25s 轮询锚：401/网络抖动由调用方 catch 静默，不弹全局错误（降噪）
+    { skipErrorMessage: true } as any,
   );
 }

@@ -77,6 +77,10 @@ async def build_alert_statistics(
     - trend：按天 severity 堆叠量（INFO/WARN/ERROR/CRITICAL）
     - statusDistribution / severityDistribution：状态与严重度分布
     - topRules / topLoops：TOP10 规则 / 回路（计数 + 误报数）
+
+    性能（2026-10-19）：6 段聚合原先串行，生产 30d 窗口下常超 60s。
+    改为独立 session 并行 + 120s TTL 短缓存（同 cockpit-overview 模式），
+    多用户/刷新命中缓存，冷算也从 6 次串行 RTT 降为并行。
     """
     if start is None or end is None:
         end = datetime.now(UTC).replace(tzinfo=None)
@@ -87,51 +91,126 @@ async def build_alert_statistics(
         start=start, end=end, unit_ids=unit_ids, severity=severity, status=status
     )
 
-    # 1) KPI 汇总（单行）
-    summary_row = (
-        await db.execute(
-            text(
-                f"""
-                SELECT COUNT(*) AS total,
-                       COUNT(*) FILTER (WHERE ae.status = 'ACTIVE') AS active,
-                       AVG(EXTRACT(EPOCH FROM (ae.acknowledged_at - ae.triggered_at))
-                           / 3600.0)
-                           FILTER (WHERE ae.acknowledged_at IS NOT NULL) AS mtta_hours,
-                       AVG(EXTRACT(EPOCH FROM (ae.resolved_at - ae.triggered_at))
-                           / 3600.0)
-                           FILTER (WHERE ae.resolved_at IS NOT NULL) AS mttr_hours,
-                       COUNT(*) FILTER (WHERE ae.is_false_positive IS NOT NULL)
-                           AS marked_total,
-                       COUNT(*) FILTER (WHERE ae.is_false_positive = true) AS fp_total
-                FROM alert_event ae
-                JOIN loop_ledger ll ON ll.id = ae.loop_id
-                WHERE {where}
-                """
-            ),
-            params,
-        )
-    ).one()
+    from app.services.agg_cache import cached_agg
 
-    active_suppressions = (
-        await db.execute(text("SELECT COUNT(*) FROM alert_suppression WHERE is_active = true"))
-    ).scalar_one()
+    key = (
+        "alert-stats:"
+        f"{start.isoformat()}:{end.isoformat()}:"
+        f"{plant_node_id or 'ALL'}:{severity or '-'}:{status or '-'}:"
+        f"{len(unit_ids) if unit_ids is not None else 'n'}"
+    )
+    return await cached_agg(
+        key,
+        lambda: _build_alert_statistics_uncached(where, params),
+        ttl=120.0,
+    )
 
-    # 2) 按天 severity 堆叠
-    trend_rows = (
-        await db.execute(
-            text(
-                f"""
-                SELECT to_char(date_trunc('day', ae.triggered_at), 'YYYY-MM-DD') AS d,
-                       ae.severity, COUNT(*) AS cnt
-                FROM alert_event ae
-                JOIN loop_ledger ll ON ll.id = ae.loop_id
-                WHERE {where}
-                GROUP BY 1, 2 ORDER BY 1
-                """
-            ),
-            params,
-        )
-    ).all()
+
+async def _q_all(sql: str, params: dict[str, Any]) -> list[Any]:
+    """独立 session 执行一条只读 SQL（供并行聚合；避免同 session 并发不安全）。"""
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as s:
+        return (await s.execute(text(sql), params)).all()
+
+
+async def _q_one(sql: str, params: dict[str, Any]) -> Any:
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as s:
+        return (await s.execute(text(sql), params)).one()
+
+
+async def _q_scalar(sql: str, params: dict[str, Any]) -> Any:
+    from app.core.db import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as s:
+        return (await s.execute(text(sql), params)).scalar()
+
+
+async def _build_alert_statistics_uncached(where: str, params: dict[str, Any]) -> dict[str, Any]:
+    """并行执行 6+1 段聚合（各自独立 session）。"""
+    import asyncio
+
+    summary_sql = f"""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE ae.status = 'ACTIVE') AS active,
+               AVG(EXTRACT(EPOCH FROM (ae.acknowledged_at - ae.triggered_at))
+                   / 3600.0)
+                   FILTER (WHERE ae.acknowledged_at IS NOT NULL) AS mtta_hours,
+               AVG(EXTRACT(EPOCH FROM (ae.resolved_at - ae.triggered_at))
+                   / 3600.0)
+                   FILTER (WHERE ae.resolved_at IS NOT NULL) AS mttr_hours,
+               COUNT(*) FILTER (WHERE ae.is_false_positive IS NOT NULL)
+                   AS marked_total,
+               COUNT(*) FILTER (WHERE ae.is_false_positive = true) AS fp_total
+        FROM alert_event ae
+        JOIN loop_ledger ll ON ll.id = ae.loop_id
+        WHERE {where}
+    """
+    trend_sql = f"""
+        SELECT to_char(date_trunc('day', ae.triggered_at), 'YYYY-MM-DD') AS d,
+               ae.severity, COUNT(*) AS cnt
+        FROM alert_event ae
+        JOIN loop_ledger ll ON ll.id = ae.loop_id
+        WHERE {where}
+        GROUP BY 1, 2 ORDER BY 1
+    """
+    status_sql = f"""
+        SELECT ae.status AS k, COUNT(*) AS cnt
+        FROM alert_event ae
+        JOIN loop_ledger ll ON ll.id = ae.loop_id
+        WHERE {where}
+        GROUP BY 1 ORDER BY 2 DESC
+    """
+    severity_sql = f"""
+        SELECT ae.severity AS k, COUNT(*) AS cnt
+        FROM alert_event ae
+        JOIN loop_ledger ll ON ll.id = ae.loop_id
+        WHERE {where}
+        GROUP BY 1 ORDER BY 2 DESC
+    """
+    top_rules_sql = f"""
+        SELECT ae.rule_code,
+               MAX(ar.rule_name) AS rule_name,
+               COUNT(*) AS cnt,
+               COUNT(*) FILTER (WHERE ae.is_false_positive = true) AS fp_cnt
+        FROM alert_event ae
+        JOIN loop_ledger ll ON ll.id = ae.loop_id
+        LEFT JOIN alert_rule ar ON ar.id = ae.rule_id
+        WHERE {where}
+        GROUP BY ae.rule_code ORDER BY cnt DESC LIMIT 10
+    """
+    top_loops_sql = f"""
+        SELECT ae.loop_id,
+               MAX(ll.tag_name) AS loop_tag_name,
+               COUNT(*) AS cnt,
+               COUNT(*) FILTER (WHERE ae.is_false_positive = true) AS fp_cnt
+        FROM alert_event ae
+        JOIN loop_ledger ll ON ll.id = ae.loop_id
+        WHERE {where}
+        GROUP BY ae.loop_id ORDER BY cnt DESC LIMIT 10
+    """
+    suppress_sql = "SELECT COUNT(*) FROM alert_suppression WHERE is_active = true"
+
+    (
+        summary_row,
+        trend_rows,
+        status_rows,
+        severity_rows,
+        top_rules,
+        top_loops,
+        active_suppressions,
+    ) = await asyncio.gather(
+        _q_one(summary_sql, params),
+        _q_all(trend_sql, params),
+        _q_all(status_sql, params),
+        _q_all(severity_sql, params),
+        _q_all(top_rules_sql, params),
+        _q_all(top_loops_sql, params),
+        _q_scalar(suppress_sql, {}),
+    )
+
     trend: list[dict[str, Any]] = []
     by_day: dict[str, dict[str, Any]] = {}
     for r in trend_rows:
@@ -139,63 +218,8 @@ async def build_alert_statistics(
         row[r.severity] = int(r.cnt)
     trend = list(by_day.values())
 
-    # 3) 状态 / 严重度分布
-    async def _dist(group_col: str) -> list[dict[str, Any]]:
-        rows = (
-            await db.execute(
-                text(
-                    f"""
-                    SELECT ae.{group_col} AS k, COUNT(*) AS cnt
-                    FROM alert_event ae
-                    JOIN loop_ledger ll ON ll.id = ae.loop_id
-                    WHERE {where}
-                    GROUP BY 1 ORDER BY 2 DESC
-                    """
-                ),
-                params,
-            )
-        ).all()
+    def _dist(rows: list[Any]) -> list[dict[str, Any]]:
         return [{"key": r.k, "count": int(r.cnt)} for r in rows]
-
-    status_distribution = await _dist("status")
-    severity_distribution = await _dist("severity")
-
-    # 4) TOP10 规则 / 回路（计数 + 误报数）
-    top_rules = (
-        await db.execute(
-            text(
-                f"""
-                SELECT ae.rule_code,
-                       MAX(ar.rule_name) AS rule_name,
-                       COUNT(*) AS cnt,
-                       COUNT(*) FILTER (WHERE ae.is_false_positive = true) AS fp_cnt
-                FROM alert_event ae
-                JOIN loop_ledger ll ON ll.id = ae.loop_id
-                LEFT JOIN alert_rule ar ON ar.id = ae.rule_id
-                WHERE {where}
-                GROUP BY ae.rule_code ORDER BY cnt DESC LIMIT 10
-                """
-            ),
-            params,
-        )
-    ).all()
-    top_loops = (
-        await db.execute(
-            text(
-                f"""
-                SELECT ae.loop_id,
-                       MAX(ll.tag_name) AS loop_tag_name,
-                       COUNT(*) AS cnt,
-                       COUNT(*) FILTER (WHERE ae.is_false_positive = true) AS fp_cnt
-                FROM alert_event ae
-                JOIN loop_ledger ll ON ll.id = ae.loop_id
-                WHERE {where}
-                GROUP BY ae.loop_id ORDER BY cnt DESC LIMIT 10
-                """
-            ),
-            params,
-        )
-    ).all()
 
     total = int(summary_row.total)
     return {
@@ -212,8 +236,8 @@ async def build_alert_statistics(
             "activeSuppressions": int(active_suppressions),
         },
         "trend": trend,
-        "statusDistribution": status_distribution,
-        "severityDistribution": severity_distribution,
+        "statusDistribution": _dist(status_rows),
+        "severityDistribution": _dist(severity_rows),
         "topRules": [
             {
                 "ruleCode": r.rule_code,

@@ -879,8 +879,26 @@ def _make_alert_db(
     return db
 
 
+def _patch_alert_runtime(monkeypatch, db):
+    """让 alert_stats 并行查询走打桩 db，并旁路 agg_cache。"""
+
+    class _Ctx:
+        async def __aenter__(self):
+            return db
+
+        async def __aexit__(self, *args):
+            return False
+
+    monkeypatch.setattr("app.core.db.AsyncSessionLocal", lambda: _Ctx())
+
+    async def _no_cache(key, builder, ttl=None):
+        return await builder()
+
+    monkeypatch.setattr("app.services.agg_cache.cached_agg", _no_cache)
+
+
 class TestBuildAlertStatistics:
-    async def test_summary_trend_and_top_lists(self) -> None:
+    async def test_summary_trend_and_top_lists(self, monkeypatch) -> None:
         """KPI 口径 + 按天 severity 堆叠透视 + TOP10 规则/回路。"""
         db = _make_alert_db(
             trend_rows=[
@@ -898,6 +916,7 @@ class TestBuildAlertStatistics:
             ],
             top_loop_rows=[SimpleNamespace(loop_id="l1", loop_tag_name="TIC-101", cnt=4, fp_cnt=0)],
         )
+        _patch_alert_runtime(monkeypatch, db)
 
         data = await als.build_alert_statistics(db)
 
@@ -926,7 +945,7 @@ class TestBuildAlertStatistics:
         }
         assert data["topLoops"][0]["loopTagName"] == "TIC-101"
 
-    async def test_empty_data_and_suppression_count(self) -> None:
+    async def test_empty_data_and_suppression_count(self, monkeypatch) -> None:
         """空数据（预警未接入）：指标 null、分布/TOP 空；抑制条数独立统计。"""
         db = _make_alert_db(
             summary_row=SimpleNamespace(
@@ -939,6 +958,7 @@ class TestBuildAlertStatistics:
             ),
             suppression_count=2,
         )
+        _patch_alert_runtime(monkeypatch, db)
 
         data = await als.build_alert_statistics(db)
 
@@ -952,13 +972,14 @@ class TestBuildAlertStatistics:
         assert data["topRules"] == []
         assert data["topLoops"] == []
 
-    async def test_filters_and_plant_subtree(self) -> None:
+    async def test_filters_and_plant_subtree(self, monkeypatch) -> None:
         """severity/status 过滤 + 装置下钻下推到全部聚合 SQL。"""
         captured: list[str] = []
         db = _make_alert_db(
             subtree_rows=[SimpleNamespace(id="u1")],
             captured=captured,
         )
+        _patch_alert_runtime(monkeypatch, db)
 
         await als.build_alert_statistics(
             db,
