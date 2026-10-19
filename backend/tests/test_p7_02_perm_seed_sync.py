@@ -46,9 +46,9 @@ def _seed_roles(code: str) -> set[str]:
 
 
 class TestCatalogSourceOfTruth:
-    def test_catalog_total_127_codes(self) -> None:
-        """目录总数 127（E2E 对账口径：124 缺失 3 码 → 修复后满额）."""
-        assert len(az.CATALOG) == 127
+    def test_catalog_total_128_codes(self) -> None:
+        """目录总数 128（+期报 page:reports.period）."""
+        assert len(az.CATALOG) == 128
 
     def test_my_work_group_definition(self) -> None:
         d = az.CATALOG["page:my-work"]

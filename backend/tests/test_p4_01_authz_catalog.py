@@ -74,9 +74,9 @@ class TestCatalogStructure:
         # 规模登记（P4-01 交接口径 + P4-02 目录增量 alert:subscription-manage
         # + P4-02 尾批 data:import + P6-06 我的工作 page:my-work 组与
         # page:my-work.main 页，2026-10-14 + P2-04 维护 UI page:config.eng-templates
-        # 页，2026-10-14）：11 组 + 60 页面 + 56 动作 = 127 码
-        assert (groups, pages, actions) == (11, 60, 56)
-        assert len(az.CATALOG) == 127
+        # 页，2026-10-19）：11 组 + 61 页面 + 56 动作 = 128 码（+期报）
+        assert (groups, pages, actions) == (11, 61, 56)
+        assert len(az.CATALOG) == 128
 
     def test_requires_point_to_action_codes_only(self) -> None:
         for d in az.CATALOG.values():
@@ -699,7 +699,7 @@ class TestAuthorizationEndpoints:
         assert resp.status_code == 200
         data = resp.json()["data"]
         assert data["revision"] == 1
-        assert len(data["pages"]) == 71  # 11 组 + 60 页面（+P2-04 eng-templates）
+        assert len(data["pages"]) == 72  # 11 组 + 61 页面（+P2-04 eng-templates）
         assert len(data["actions"]) == 56  # +alert:subscription-manage(P4-02)+data:import(尾批)
 
     def test_roles_effective_unknown_role_404(self, client, mock_db) -> None:

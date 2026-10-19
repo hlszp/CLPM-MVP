@@ -317,6 +317,9 @@ describe('既有 path 未变回归（旧书签/报告链接）', () => {
     ],
     reports: [
       '/reports',
+      '/reports/period',
+      '/reports/governance',
+      '/reports/quality',
       '/reports/performance',
       '/reports/data-quality',
       '/reports/alert-statistics',

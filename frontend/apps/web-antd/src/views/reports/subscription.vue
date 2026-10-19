@@ -81,7 +81,7 @@ const selectedDisableCount = computed(
     ).length,
 );
 
-/** 报表周期选项 */
+/** 期报周期选项 */
 const periodOptions = [
   { label: '班报', value: 'SHIFT' },
   { label: '日报', value: 'DAILY' },

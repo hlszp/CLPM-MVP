@@ -175,6 +175,7 @@ CATALOG: dict[str, PermDef] = {
     "page:handling.workbench": _p("page:handling", "处置工作台", "五角色", "handling", False, 50),
     "page:handling.statistics": _p("page:handling", "处置报告", "五角色", "handling", False, 60),
     # 统计分析
+    "page:reports.period": _p("page:reports", "期报", "五角色", "reports", False, 5),
     "page:reports.performance": _p("page:reports", "绩效报告", "五角色", "reports", False, 10),
     "page:reports.data-quality": _p("page:reports", "数据质量", "五角色", "reports", False, 20),
     "page:reports.alert-statistics": _p("page:reports", "预警统计", "五角色", "reports", False, 30),
@@ -498,6 +499,7 @@ _HANDLING_PAGES = frozenset(
 )
 _REPORTS_PAGES_COMMON = frozenset(
     {
+        "page:reports.period",
         "page:reports.performance",
         "page:reports.data-quality",
         "page:reports.alert-statistics",

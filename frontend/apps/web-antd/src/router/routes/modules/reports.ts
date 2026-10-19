@@ -37,6 +37,42 @@ const routes: RouteRecordRaw[] = [
     },
     children: [
       {
+        name: 'ReportsPeriod',
+        path: '/reports/period',
+        component: () => import('#/views/reports/period.vue'),
+        meta: {
+          permCode: 'page:reports.period',
+          authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          icon: 'lucide:calendar-range',
+          title: '期报',
+          module: 'reports',
+        },
+      },
+      {
+        name: 'ReportsGovernance',
+        path: '/reports/governance',
+        component: () => import('#/views/reports/governance.vue'),
+        meta: {
+          permCode: 'page:reports.diagnosis',
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          icon: 'lucide:workflow',
+          title: '诊断与处置',
+          module: 'reports',
+        },
+      },
+      {
+        name: 'ReportsQuality',
+        path: '/reports/quality',
+        component: () => import('#/views/reports/quality.vue'),
+        meta: {
+          permCode: 'page:reports.data-quality',
+          authority: ['ADMIN', 'EXPERT', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
+          icon: 'lucide:shield-check',
+          title: '质量与预警',
+          module: 'reports',
+        },
+      },
+      {
         name: 'ReportsPerformance',
         path: '/reports/performance',
         component: () => import('#/views/reports/performance.vue'),
@@ -44,15 +80,16 @@ const routes: RouteRecordRaw[] = [
           permCode: 'page:reports.performance',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:gauge',
-          title: '绩效报告',
+          title: '绩效专题',
           module: 'reports',
         },
       },
       {
         name: 'ReportsDataQuality',
         path: '/reports/data-quality',
-        component: () => import('#/views/reports/data-quality.vue'),
+        redirect: '/reports/quality',
         meta: {
+          hideInMenu: true,
           permCode: 'page:reports.data-quality',
           authority: [
             'ADMIN',
@@ -69,8 +106,9 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'ReportsAlertStatistics',
         path: '/reports/alert-statistics',
-        component: () => import('#/views/reports/alert-statistics.vue'),
+        redirect: '/reports/quality',
         meta: {
+          hideInMenu: true,
           permCode: 'page:reports.alert-statistics',
           authority: [
             'ADMIN',
@@ -87,8 +125,9 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'ReportsDiagnosis',
         path: '/reports/diagnosis',
-        component: () => import('#/views/reports/diagnosis.vue'),
+        redirect: '/reports/governance',
         meta: {
+          hideInMenu: true,
           permCode: 'page:reports.diagnosis',
           authority: [
             'ADMIN',
@@ -105,8 +144,9 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'ReportsHandling',
         path: '/reports/handling',
-        component: () => import('#/views/reports/handling.vue'),
+        redirect: '/reports/governance',
         meta: {
+          hideInMenu: true,
           permCode: 'page:reports.handling',
           authority: [
             'ADMIN',
@@ -123,8 +163,9 @@ const routes: RouteRecordRaw[] = [
       {
         name: 'ReportsBenefit',
         path: '/reports/benefit',
-        component: () => import('#/views/reports/benefit.vue'),
+        redirect: '/reports/governance',
         meta: {
+          hideInMenu: true,
           permCode: 'page:reports.benefit',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:trending-up',
