@@ -594,7 +594,7 @@ class TestBuildDiagnosis:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("window,expected_hours", [("24h", 24), ("7d", 168), ("30d", 720)])
     async def test_窗口换算下发到查询(self, window: str, expected_hours: int):
-        """近窗口 since = now − 窗口时长（24h/7d/30d）；rule_stats 固定近 30d。"""
+        """近窗口 since = now − 窗口时长；rule_stats/rootcause 与 Pareto 同窗（不再固定 30d）。"""
         import app.services.workbench_diagnosis as svc
 
         with (
@@ -607,13 +607,17 @@ class TestBuildDiagnosis:
             patch.object(svc, "_query_scope_loop_ids", new=AsyncMock(return_value=[])),
             patch.object(svc, "get_latest_fitness_per_loop", new=AsyncMock(return_value={})),
             patch.object(svc, "_query_rule_stat_rows", new=AsyncMock(return_value=[])) as mock_rule,
-            patch.object(svc, "_query_pareto_rows", new=AsyncMock(return_value=[])),
-            patch.object(svc, "_query_rootcause_rows", new=AsyncMock(return_value=[])),
+            patch.object(svc, "_query_pareto_rows", new=AsyncMock(return_value=[])) as mock_pareto,
+            patch.object(svc, "_query_rootcause_rows", new=AsyncMock(return_value=[])) as mock_root,
         ):
             await build_diagnosis(object(), window=window)
 
         now_utc = datetime.now(UTC).replace(tzinfo=None)
         since = mock_open.call_args[0][1]
         assert (now_utc - since).total_seconds() / 3600 == pytest.approx(expected_hours, abs=1)
-        since_30d = mock_rule.call_args[0][1]
-        assert (now_utc - since_30d).total_seconds() / 3600 == pytest.approx(720, abs=1)
+        # rule_stats / pareto / rootcause_top 全部使用当前窗 since
+        rule_since = mock_rule.call_args[0][1]
+        pareto_since = mock_pareto.call_args[0][1]
+        root_since = mock_root.call_args[0][1]
+        for w in (rule_since, pareto_since, root_since):
+            assert (now_utc - w).total_seconds() / 3600 == pytest.approx(expected_hours, abs=1)

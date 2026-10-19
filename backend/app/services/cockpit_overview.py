@@ -115,14 +115,15 @@ def shape_node_tree(
     roots: list[dict[str, Any]] = []
     for n in sorted(nodes, key=lambda x: (x.sort_order or 0, x.name or "")):
         it = items[n.id]
-        if n.type == "UNIT":
-            it["loopCount"] = int(loop_counts.get(n.id, 0) or 0)
+        # 本节点自身挂的回路（unit_id 指向工厂/装置节点的回路也要计入）
+        it["loopCount"] = int(loop_counts.get(n.id, 0) or 0)
         if n.parent_id and n.parent_id in by_id:
             items[n.parent_id]["children"].append(it)
         else:
             roots.append(it)
 
     def _accumulate(node: dict[str, Any]) -> int:
+        # 自身 + 全部子孙（与 /loops/monitor 的 plant 子树口径对齐）
         total = node["loopCount"]
         for child in node["children"]:
             total += _accumulate(child)
@@ -280,7 +281,12 @@ async def _query_todo_counts(db: AsyncSession, unit_ids: list[str] | None = None
 async def _query_alert_counts(
     db: AsyncSession, since: datetime, unit_ids: list[str] | None = None
 ) -> dict[str, int]:
-    """预警事件：时间窗内 ACTIVE 计数 + 时间窗内未确认（acknowledged_at IS NULL）计数。"""
+    """预警事件：时间窗内 ACTIVE 计数 + 未确认（ACTIVE 且未 acknowledge）计数。
+
+    未确认口径与预警页「实时 Tab」一致（status=ACTIVE AND acknowledged_at IS NULL）。
+    此前误把任意状态的 acknowledged_at IS NULL 都算未确认，会把已解决/已归档但
+    从未点确认的事件计入，导致驾驶舱「未确认」远大于实时 Tab。
+    """
     active_loops = _active_loop_ids(unit_ids)
     active = await db.execute(
         select(func.count())
@@ -291,7 +297,11 @@ async def _query_alert_counts(
     unconfirmed = await db.execute(
         select(func.count())
         .select_from(AlertEvent)
-        .where(AlertEvent.acknowledged_at.is_(None), AlertEvent.triggered_at >= since)
+        .where(
+            AlertEvent.status == "ACTIVE",
+            AlertEvent.acknowledged_at.is_(None),
+            AlertEvent.triggered_at >= since,
+        )
         .where(AlertEvent.loop_id.in_(active_loops))
     )
     return {"active": int(active.scalar() or 0), "unconfirmed": int(unconfirmed.scalar() or 0)}

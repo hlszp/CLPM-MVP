@@ -164,7 +164,7 @@ async def list_loops_endpoint(
                 status_code=400,
             ) from None
     # P4-03：ALL/NODE_SUBTREE 与筛选取交集（显式筛选不在范围内 → 空结果）
-    scope_node_ids = scope.intersect_node_ids([plantNodeId] if plantNodeId is not None else None)
+    scope_node_ids = scope.scope_node_ids_for_filter()
     # v5.3 对齐 DDS v4.1：level → importanceLevel（保留 level 向后兼容）
     effective_level = importanceLevel if importanceLevel is not None else level
     try:
@@ -550,7 +550,7 @@ async def list_loop_monitor_endpoint(
     data = await list_loop_monitor(
         db=db,
         plant_node_id=plantNodeId,
-        scope_node_ids=scope.intersect_node_ids([plantNodeId] if plantNodeId is not None else None),
+        scope_node_ids=scope.scope_node_ids_for_filter(),
         view=view,
         keyword=keyword,
         loop_type=loopType,

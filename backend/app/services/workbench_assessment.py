@@ -250,7 +250,10 @@ def shape_ranking_plant(
         src_id = getattr(row, "scope_id", None)
         name = name_by_source_id.get(src_id) or f"装置#{src_id}"
         sparkline = getattr(row, "score_trend", None) or []
-        loop_count = getattr(row, "loop_count", 0) or 0
+        raw_loop_count = getattr(row, "loop_count", 0) or 0
+        # 参评列与摘要带同口径：窗口累计 → 平均每小时参评回路数（勿用小时累计
+        # 直接除以回路台账分母，会出现 15018/961 这类分子≫分母的不可读口径）
+        loop_count = _loops_per_hour(raw_loop_count, getattr(row, "window_w", None))
         factory_id = factory_id_by_source.get(src_id)
         unit_ids = units_per_factory.get(factory_id, []) if factory_id else []
         score = _row_score(row)
@@ -263,6 +266,7 @@ def shape_ranking_plant(
                 "delta": _window_delta(score, _row_score(prev_rows_by_scope.get(src_id))),
                 "join": f"{loop_count}/{total_loops}",
                 "loop_count": loop_count,
+                "loop_count_cum": raw_loop_count,
                 # 0930：真值聚合（此前硬编码 0，排名表预警/超期两列恒空）
                 "alarm_count": sum(alarm_per_unit.get(uid, 0) for uid in unit_ids),
                 "overdue_tasks": sum(overdue_per_unit.get(uid, 0) for uid in unit_ids),

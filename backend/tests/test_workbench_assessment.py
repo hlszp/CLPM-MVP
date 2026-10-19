@@ -220,8 +220,23 @@ class TestShapeRankingPlant:
         assert plants[0]["rank"] == 1
         assert plants[0]["name"] == "EO 工厂"
         assert "平稳率" in plants[0]["lose_factors"]
-        assert plants[0]["join"] == "34/34"
+        # 参评列与摘要带同口径：小时累计 loop_count 经 _loops_per_hour 折算
+        # （34 累计 / 24h ≈ 1）/ 回路台账 34，不再直接 34/34 或 15018/961
+        assert plants[0]["join"] == "1/34"
+        assert plants[0]["loop_count_cum"] == 34
         assert plants[1]["rank"] == 2
+
+    def test_参评列使用小时均而非累计(self):
+        """CAL：join 分子=平均每小时参评，避免累计分子≫台账分母。"""
+        hierarchy = _hierarchy()
+        r = _win_row(score=82.0, loop_count=15018)
+        r.scope_id = 100
+        r.window_w = "24h"
+        plants = shape_ranking_plant([r], hierarchy, {}, {}, threshold=0.90, total_loops=961)
+        # 15018/24 ≈ 626
+        assert plants[0]["join"] == "626/961"
+        assert plants[0]["loop_count"] == 626
+        assert plants[0]["loop_count_cum"] == 15018
 
     def test_空输入(self):
         assert shape_ranking_plant([], _hierarchy(), {}, {}, 0.90, 34) == []

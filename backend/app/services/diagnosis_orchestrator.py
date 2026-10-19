@@ -1456,6 +1456,29 @@ async def run_diagnosis_for_loop(
             await db.commit()  # 仅审计行提交（不发布结果/模型）
             raise
 
+    # 防重复：同回路同时间窗已有 SUCCESS 结论时不再落第二条 run
+    # （双任务/双触发同窗会产出完全相同的结论行，污染「一回路一条最新」与记录列表）
+    existing_same_window = (
+        await db.execute(
+            select(DiagnosisRun.id).where(
+                DiagnosisRun.loop_id == str(loop_id),
+                DiagnosisRun.time_window_start == start,
+                DiagnosisRun.time_window_end == end,
+                DiagnosisRun.status == "SUCCESS",
+            )
+        )
+    ).scalar_one_or_none()
+    # 仅在真正取到 run id（str）时跳过，避免 mock/异常返回值误触发短路
+    if isinstance(existing_same_window, str) and existing_same_window:
+        logger.info(
+            "跳过重复诊断落库 回路=%s 窗=%s~%s 已有 SUCCESS run=%s",
+            loop.tag_name,
+            start,
+            end,
+            existing_same_window,
+        )
+        return await db.get(DiagnosisRun, existing_same_window)
+
     db.add(run)
     await db.commit()
     # A3：诊断落库即时生成 SYSTEM 处置建议（失败仅记日志，不阻塞主链路）

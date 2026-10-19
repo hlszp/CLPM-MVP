@@ -86,6 +86,10 @@ const passCount = computed(
   () => rows.value.filter((r) => r.value !== null && r.value >= TARGET).length,
 );
 const globalSteadyPct = computed(() => toPct(globalSteady.value));
+/** 全厂均值是否达到目标；null/空数据不得标「达标」 */
+const globalMeetsTarget = computed(
+  () => globalSteadyPct.value !== null && globalSteadyPct.value >= TARGET,
+);
 
 /** 色阶 → 驾驶舱五档 CSS 变量（深浅主题自适应） */
 function gradeVar(v: null | number): string {
@@ -155,7 +159,11 @@ const emptyText = computed(() => {
     </div>
     <div class="steady__ft">
       全厂平稳率 <b>{{ fmt(globalSteadyPct) }}%</b>
-      · 达标（≥{{ TARGET }}）<b>{{ passCount }}/{{ validCount }}</b> 单元
+      · 目标 ≥{{ TARGET }}
+      <b :style="{ color: globalMeetsTarget ? 'var(--ck-grade-excellent)' : 'var(--ck-grade-warning)' }">
+        {{ globalSteadyPct === null ? '—' : (globalMeetsTarget ? '已达标' : '未达标') }}
+      </b>
+      · 达标单元 <b>{{ passCount }}/{{ validCount }}</b>
     </div>
   </div>
 </template>

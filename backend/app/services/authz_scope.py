@@ -143,12 +143,26 @@ class ScopeContext:
         返回 None 表示"不过滤"（ALL 且未显式筛选，或交集为空由调用方语义
         决定）；NODE_SUBTREE 下：requested=None → 范围全集；requested 非
         None → 交集（空交集返回 []——空结果而非报错，列表语义）。
+
+        ⚠️ 调用方注意：**不要**把 UI 装置筛选（plantNodeId）当作 requested
+        传入后又同时传 plant_node_id——ALL 下会退化成 `unit_id IN (plant)`
+        仅本节点，丢掉子树（表现为装置树计 961/25 而卡片墙只显示挂在
+        工厂节点上的少量回路）。UI 装置筛选请只走服务的 plant_node_id
+        （含子孙）；本方法仅用于**数据范围**约束。
         """
         if self.allowed_node_ids is None:
             return requested  # ALL：尊重显式筛选，不额外收紧
         if requested is None:
             return sorted(self.allowed_node_ids)
         return sorted(set(requested) & self.allowed_node_ids)
+
+    def scope_node_ids_for_filter(self) -> list[str] | None:
+        """数据范围约束（供 plant_node_id 已单独承载 UI 筛选时使用）。
+
+        ALL → None（不限）；NODE_SUBTREE → 允许节点集。避免与 plant 子树
+        过滤 AND 后丢子孙。
+        """
+        return None if self.allowed_node_ids is None else sorted(self.allowed_node_ids)
 
 
 # ---------------------------------------------------------------------------

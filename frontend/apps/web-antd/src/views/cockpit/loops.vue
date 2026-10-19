@@ -235,6 +235,30 @@ const models = computed<LoopCardModel[]>(() =>
 );
 const pageItems = computed<LoopCardModel[]>(() => models.value);
 
+/** 空态细分：有筛选 vs 树计数与列表不一致（装置级 0 / 单元有数） */
+const hasActiveFilters = computed(() => {
+  const f = cockpitStore.loopsFilters;
+  return f.grades.length > 0 || f.modes.length > 0;
+});
+
+function findNodeLoopCountDeep(
+  nodes: CockpitApi.NodeTreeNode[],
+  id: string,
+): null | number {
+  for (const n of nodes) {
+    if (n.nodeId === id) return n.loopCount ?? 0;
+    const hit = findNodeLoopCountDeep(n.children ?? [], id);
+    if (hit !== null) return hit;
+  }
+  return null;
+}
+
+const selectedNodeLoopCount = computed(() => {
+  const id = cockpitStore.loopsNodeId;
+  if (!id) return treeNodes.value[0]?.loopCount ?? 0;
+  return findNodeLoopCountDeep(treeNodes.value, id) ?? 0;
+});
+
 const pageCount = computed(() =>
   Math.max(1, Math.ceil(total.value / PAGE_SIZE)),
 );
@@ -670,7 +694,12 @@ function setSort(sortBy: 'degradeDesc' | 'scoreDesc') {
         <div class="cockpit-panel loops-wall__cards">
           <div v-if="!booted" class="loops-wall__hint">回路加载中…</div>
           <div v-else-if="pageItems.length === 0" class="loops-wall__hint">
-            {{ busy ? '加载中…' : '当前条件下无回路' }}
+            <template v-if="busy">加载中…</template>
+            <template v-else-if="hasActiveFilters">当前筛选条件下无回路（可清除等级/模式筛选）</template>
+            <template v-else-if="selectedNodeLoopCount > 0">
+              当前条件下无回路（节点树计 {{ selectedNodeLoopCount }}，可能仍在加载或服务端筛选为空；可点单元节点下钻）
+            </template>
+            <template v-else>当前条件下无回路</template>
           </div>
           <template v-else>
             <div v-if="busy" class="loops-wall__updating">更新中…</div>

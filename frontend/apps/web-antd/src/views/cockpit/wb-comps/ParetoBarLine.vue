@@ -60,20 +60,22 @@ const LINE_H = PLOT_H - PAD_LINE;
 // ---------- 数据 ----------
 const data = computed(() => (props.pareto ?? []).slice(0, 8));
 
+/** 条次合计：真实求和（空数据为 0，禁止用 Math.max(1,…) 撑出假「1 条次」） */
 const total = computed(() =>
-  Math.max(1, data.value.reduce((s, p) => s + (p.tag_count ?? 0), 0)),
+  data.value.reduce((s, p) => s + (p.tag_count ?? 0), 0),
 );
 
 const maxCount = computed(() =>
   Math.max(1, ...data.value.map((p) => p.tag_count ?? 0)),
 );
 
-/** 累计百分比（0~100，保留 1 位小数） */
+/** 累计百分比（0~100，保留 1 位小数）；total=0 时全 0，避免除零 */
 const cumulativePct = computed(() => {
   let acc = 0;
+  const denom = total.value > 0 ? total.value : 1;
   return data.value.map((p) => {
     acc += p.tag_count ?? 0;
-    return Math.round((acc / total.value) * 1000) / 10;
+    return Math.round((acc / denom) * 1000) / 10;
   });
 });
 
@@ -146,7 +148,7 @@ function rightTickTop(t: number): number {
 // ---------- 前 2 类聚合占比（底部说明行）----------
 const top2 = computed(() => {
   const arr = data.value;
-  if (arr.length === 0) return { names: [] as string[], pct: 0 };
+  if (arr.length === 0 || total.value <= 0) return { names: [] as string[], pct: 0 };
   const sum2 = (arr[0]?.tag_count ?? 0) + (arr[1]?.tag_count ?? 0);
   const pct = Math.round((sum2 / total.value) * 10_000) / 100;
   const names = arr
@@ -165,7 +167,7 @@ const top2 = computed(() => {
         <span class="inline-block h-1 w-3 rounded-sm bg-[var(--ck-accent)]"></span>
         异常类型 Pareto
         <span class="text-[10px] font-normal ckwb-text-3">
-          确诊 {{ total }} 条次 · 近 {{ window ?? '24h' }}
+          确诊 {{ total }} 条次 · 近 {{ window ?? '24h' }}<template v-if="data.length === 0">（窗口内无 Pareto 明细）</template>
         </span>
       </span>
       <span
