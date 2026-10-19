@@ -620,6 +620,4 @@ class TestBuildDiagnosis:
         pareto_since = mock_pareto.call_args[0][1]
         root_since = mock_root.call_args[0][1]
         for w in (rule_since, pareto_since, root_since):
-            assert (now_utc - w).total_seconds() / 3600 == pytest.approx(
-                expected_hours, abs=1
-            )
+            assert (now_utc - w).total_seconds() / 3600 == pytest.approx(expected_hours, abs=1)

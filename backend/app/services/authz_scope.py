@@ -162,9 +162,7 @@ class ScopeContext:
         ALL → None（不限）；NODE_SUBTREE → 允许节点集。避免与 plant 子树
         过滤 AND 后丢子孙。
         """
-        return (
-            None if self.allowed_node_ids is None else sorted(self.allowed_node_ids)
-        )
+        return None if self.allowed_node_ids is None else sorted(self.allowed_node_ids)
 
 
 # ---------------------------------------------------------------------------
