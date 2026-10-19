@@ -82,7 +82,7 @@ const routes: RouteRecordRaw[] = [
           authority: ['ADMIN', 'IC_ENGINEER'],
           icon: 'lucide:list-checks',
           // IAR-D3（2026-10-14）：「计算任务」始终指系统计算——评估类计算任务
-          title: '评估计算任务',
+          title: '评估任务',
         },
       },
     ],

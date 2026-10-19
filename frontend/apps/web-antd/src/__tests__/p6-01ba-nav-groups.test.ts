@@ -5,8 +5,8 @@
  * - IAR-D1 五组归组/命名快照：11 个可见一级菜单的组归属（meta.navGroup）、
  *   组名（个人责任/全局观察/回路作业/统计分析/系统）与菜单顺序（组内连续、
  *   组间不交错；我的工作 order=-1 保留现状）；
- * - IAR-D3 术语：可见菜单含「回路工作台/系统建议/评估计算任务/诊断任务」，
- *   旧称（工作台/关注队列/评估任务/诊断任务）与内部代号（360/wb360）不上界面；
+ * - IAR-D3 术语：可见菜单含「回路工作台/系统建议/评估任务/诊断任务」，
+ *   旧称（工作台/关注队列）与内部代号（360/wb360）不上界面；
  * - 旧书签回归：全部模块既有 path 逐模块锁定（只改归组/命名，不改 path）；
  * - 角色首页与导航一致：ROLE_DEFAULT_HOME 五个落点均为已知路由 path（无死链）。
  * （驾驶舱「进入工作区」按钮已于 2026-10-19 按用户要求删除，相关用例一并移除）
@@ -210,11 +210,11 @@ describe('IAR-D1 五组导航归组与命名（Slice H）', () => {
 // IAR-D3 术语（内部代号不上界面）
 // ---------------------------------------------------------------------------
 describe('IAR-D3 菜单术语（Slice H）', () => {
-  it('新术语在可见菜单中生效：回路工作台/系统建议/评估计算任务/诊断任务', () => {
+  it('新术语在可见菜单中生效：回路工作台/系统建议/评估任务/诊断任务', () => {
     const titles = visibleMenuTitles();
     expect(titles).toContain('回路工作台');
     expect(titles).toContain('系统建议');
-    expect(titles).toContain('评估计算任务');
+    expect(titles).toContain('评估任务');
     expect(titles).toContain('诊断任务');
   });
 
@@ -223,7 +223,6 @@ describe('IAR-D3 菜单术语（Slice H）', () => {
     // 旧称（精确相等，新名为其超集不误伤）
     expect(titles).not.toContain('工作台');
     expect(titles).not.toContain('关注队列');
-    expect(titles).not.toContain('评估任务');
     // 内部代号（wb360/工作台360/Workbench360）不上界面
     for (const t of titles) {
       expect(t, `菜单「${t}」含内部代号`).not.toMatch(/360/i);
