@@ -1,8 +1,0 @@
-{
-  "attempt": "Extend existing clpm-g5 heartbeat name/prompt to P5/P6; keep 20-minute RRULE and thresholds",
-  "result": "not_applied",
-  "tool": "mcp__codex_app__automation_update",
-  "reason": "MCP tool call requires approval, but approval policy is never",
-  "fallback": "existing heartbeat unchanged; root directly checks quota during ongoing P6 work on user interval; no duplicate/workaround schedule",
-  "permissionQuestionNeeded": false
-}

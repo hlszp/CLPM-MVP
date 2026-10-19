@@ -1,9 +1,0 @@
-{
-  "script": "/private/tmp/g5_b1000_export_20261014.py",
-  "scriptSha256": "cd1b1078e4033ba8ac8f3cff5fd35c21ec8793504b722e4258652173acd832c3",
-  "candidateSha": "6c92cf6944d40bc2c92c9296110711933be28ec7",
-  "validation": "local syntax/help only; shared IO NOT_RUN by author",
-  "scope": "all1030 global LOOP records/snapshot/latest,26 test NODE full roster/stats/weights/refs; PG repeatable-read READ ONLY, Redis GET/HGETALL only, TD exact7000 COUNT only; no control.inspect RPC",
-  "inputManifest": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/b1000-real/manifest_b_2026101405.json",
-  "weightBaselineForIndependentSupplement": "/Users/zhangping/DEV/CLPM-MVP/docs/设计文档/系统改造优化-2026-10-10/执行状态/G5接管-20261014/smoke-real/freeze.json"
-}

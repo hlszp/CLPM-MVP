@@ -1,5 +1,0 @@
-{
-  "exitStatus": 1,
-  "blockedInternetOrDnsAttempts": [],
-  "networkGuard": "AF_INET/AF_INET6 connect/connect_ex/sendto/sendmsg, create_connection, getaddrinfo denied; AF_UNIX loop sockets permitted"
-}

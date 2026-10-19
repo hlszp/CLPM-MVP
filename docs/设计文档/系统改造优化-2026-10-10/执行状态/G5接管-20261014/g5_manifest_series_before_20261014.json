@@ -1,7 +1,0 @@
-{
-  "(1, 'normal', 'steady', 400.0)": "64aaa494d14c4b3949db73441a433950291528c025b4af4bd8d167443b683dbf",
-  "(801, 'insufficient', 'steady', 400.0)": "9f170360aa586cbe6baa16441c356e10d9ffc7b0870b9c6c84ade278684e15bf",
-  "(901, 'manual', 'steady', 400.0)": "274a017f23a775d538576be36ec2ccaf11535db2ded31ecf9c745813b3068774",
-  "(951, 'gap', 'steady', 400.0)": "4c4732134021590b4871b7cce6cda8d5217a51d29604c053ee223e772d7adcb9",
-  "(949, 'normal', 'noisy', 400.0)": "175793247fae132395cd07100ae9fc746599940af31a7b425b0ccc04d0d7ec27"
-}

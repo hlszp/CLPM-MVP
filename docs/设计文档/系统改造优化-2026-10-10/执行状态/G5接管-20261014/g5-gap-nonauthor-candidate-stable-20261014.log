@@ -1,7 +1,0 @@
-Traceback (most recent call last):
-  File "/private/tmp/g5_v2_candidate_probe_20261014.py", line 47, in <module>
-    from app.services.data_source import logical_wide_builder as lwb
-  File "/private/tmp/clpm-g5-followup-20261014/backend/app/services/data_source/logical_wide_builder.py", line 82, in <module>
-    @g5_trace.traced("builder.held_config")
-     ^^^^^^^^
-NameError: name 'g5_trace' is not defined
