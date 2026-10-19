@@ -129,6 +129,7 @@ class TestLogin:
                     "page:reports.diagnosis",
                     "page:reports.handling",
                     "page:reports.performance",
+                    "page:reports.period",
                     "page:tuning.overview",
                     "page:tuning.records",
                     "page:tuning.verification",
