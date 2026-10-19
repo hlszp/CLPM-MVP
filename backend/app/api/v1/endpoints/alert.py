@@ -284,7 +284,7 @@ async def list_events_endpoint(
         end_time=endTime,
         limit=limit,
         offset=offset,
-        scope_node_ids=scope.intersect_node_ids([plantNodeId] if plantNodeId is not None else None),
+        scope_node_ids=scope.scope_node_ids_for_filter(),
     )
     return success(data=data)
 

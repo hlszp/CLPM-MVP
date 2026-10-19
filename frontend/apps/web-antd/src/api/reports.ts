@@ -480,6 +480,7 @@ export function exportReportDiagnosisRunsApi(
 export function getReportDataQualityApi(params: ReportsApi.ReportQuery) {
   return requestClient.get<ReportsApi.DataQualityData>('/reports/data-quality', {
     params,
+    timeout: 60_000,
   });
 }
 
@@ -504,7 +505,7 @@ export function getReportAlertStatisticsApi(
 ) {
   return requestClient.get<ReportsApi.AlertStatisticsData>(
     '/reports/alert-statistics',
-    { params },
+    { params, timeout: 60_000 },
   );
 }
 
