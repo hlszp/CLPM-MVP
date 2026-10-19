@@ -85,8 +85,8 @@ const routes: RouteRecordRaw[] = [
           ],
           icon: 'lucide:loader-circle',
           order: 2,
-          // IAR-D3（2026-10-14）：「计算任务」始终指系统计算——诊断类计算任务
-          title: '诊断计算任务',
+          // 2026-10-19 用户裁决：菜单简称为「诊断任务」
+          title: '诊断任务',
         },
       },
       {

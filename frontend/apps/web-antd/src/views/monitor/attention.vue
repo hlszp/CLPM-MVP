@@ -632,7 +632,7 @@ function tryOpenDetailByEventId(eventId: string) {
   }
 }
 
-// ===== 截断提示（摘要条内小图标） =====
+// ===== 截断/降级提示（诚实化，挂在筛选行） =====
 const hasTruncation = computed(() =>
   Object.values(truncated.value).some(Boolean),
 );
@@ -741,41 +741,8 @@ watch(
     <div class="h-full flex flex-col overflow-hidden bg-[var(--clr-surface)]">
       <Spin :spinning="loading" class="flex-1 flex flex-col min-h-0">
         <div class="flex flex-col h-full p-3 gap-3 overflow-auto">
-          <!-- 2. 摘要条（截断提示收为右侧小图标） -->
-          <div
-            class="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-gray-100 bg-white px-4 py-2.5"
-          >
-            <div class="flex items-baseline gap-2">
-              <span class="text-2xl font-semibold tabular-nums text-red-600">
-                {{ aggregates.openCount || 0 }}
-              </span>
-              <span class="text-sm text-gray-500">待处理</span>
-            </div>
-            <div class="h-5 w-px bg-gray-200"></div>
-            <div class="flex items-baseline gap-2">
-              <span class="text-2xl font-semibold tabular-nums">
-                {{ aggregates.groupCount || 0 }}
-              </span>
-              <span class="text-sm text-gray-500">问题回路</span>
-            </div>
-            <template v-if="aggregates.urgentCount">
-              <div class="h-5 w-px bg-gray-200"></div>
-              <div class="flex items-baseline gap-2">
-                <span class="text-2xl font-semibold tabular-nums text-red-600">
-                  {{ aggregates.urgentCount }}
-                </span>
-                <span class="text-sm text-gray-500">紧急</span>
-              </div>
-            </template>
-            <template v-if="aggregates.dataQualityCount">
-              <div class="h-5 w-px bg-gray-200"></div>
-              <div class="flex items-baseline gap-2">
-                <span class="text-2xl font-semibold tabular-nums text-gray-600">
-                  {{ aggregates.dataQualityCount }}
-                </span>
-                <span class="text-sm text-gray-500">数据质量</span>
-              </div>
-            </template>
+          <!-- 3. 优先级速览卡（组口径）+ 来源 chips（项口径）+ 诚实化提示 -->
+          <div class="flex flex-wrap items-center gap-3">
             <div class="ml-auto flex items-center gap-2 text-xs text-gray-400">
               <Tooltip v-if="hasUnavailable" :title="unavailableMessage">
                 <span
@@ -796,13 +763,7 @@ watch(
                   class="text-amber-500"
                 />
               </Tooltip>
-              <IconifyIcon icon="lucide:clock" :size="12" />
-              <span>聚合于 {{ formatTime(loadedAt) }}</span>
             </div>
-          </div>
-
-          <!-- 3. 优先级速览卡（组口径）+ 来源 chips（项口径） -->
-          <div class="flex flex-wrap items-center gap-3">
             <div class="flex items-center gap-1.5">
               <button
                 class="rounded-md border px-3 py-1.5 text-sm transition-colors"

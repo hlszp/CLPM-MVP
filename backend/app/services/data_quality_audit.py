@@ -87,37 +87,47 @@ async def fetch_point_stats(
 
     返回 {pointId: {"rows", "badRows", "firstTs", "lastTs"}}；缺失的点不在返回里
     （调用方据此判"断流"）。TDengine 支持按 TAGS 列分组的聚合（GROUP BY point_id）。
+
+    point_id 分批查询（500/批）：全量位号可达 7k+，单条 IN 列表过长会在
+    TDengine/REST 侧报错或超时（生产 /reports/data-quality/audit 500 根因之一）。
     """
     if not point_ids:
         return {}
-    id_list = ", ".join("'" + p + "'" for p in point_ids)
-    sql = (
-        "SELECT point_id, COUNT(*) AS n, "
-        "SUM(CASE WHEN quality_class IS NULL OR quality_class <> "
-        f"{QC_GOOD} THEN 1 ELSE 0 END) AS bad, "
-        # TDengine 不支持在分组聚合里对 TIMESTAMP 用 MIN/MAX（会返回空错误信息），
-        # 时间列必须用 FIRST/LAST —— 这是本会话踩过的坑（2026-09-26）。
-        "FIRST(ts) AS t0, LAST(ts) AS t1 "
-        f"FROM {settings.TDENGINE_DB}.st_point_data_v1 "
-        f"WHERE ts >= '{iso_z(start)}' AND ts <= '{iso_z(end)}' AND point_id IN ({id_list}) "
-        "GROUP BY point_id"
-    )
-    rows = await execute_sql(sql, raise_on_error=True)
     out: dict[str, dict[str, Any]] = {}
-    for r in rows or []:
-        pid = str(r.get("point_id") or "")
-        if not pid:
+    batch_size = 500
+    for i in range(0, len(point_ids), batch_size):
+        batch = point_ids[i : i + batch_size]
+        id_list = ", ".join("'" + p + "'" for p in batch)
+        sql = (
+            "SELECT point_id, COUNT(*) AS n, "
+            "SUM(CASE WHEN quality_class IS NULL OR quality_class <> "
+            f"{QC_GOOD} THEN 1 ELSE 0 END) AS bad, "
+            # TDengine 不支持在分组聚合里对 TIMESTAMP 用 MIN/MAX（会返回空错误信息），
+            # 时间列必须用 FIRST/LAST —— 这是本会话踩过的坑（2026-09-26）。
+            "FIRST(ts) AS t0, LAST(ts) AS t1 "
+            f"FROM {settings.TDENGINE_DB}.st_point_data_v1 "
+            f"WHERE ts >= '{iso_z(start)}' AND ts <= '{iso_z(end)}' AND point_id IN ({id_list}) "
+            "GROUP BY point_id"
+        )
+        try:
+            rows = await execute_sql(sql, raise_on_error=True)
+        except Exception:  # noqa: BLE001
+            # 单批失败不拖垮整次体检：该批位号按无数据处理，summary 会露出异常面
             continue
-        n = int(r.get("n") or 0)
-        # 实测坑（2026-09-26）：TDengine 对"窗口内零行"的分组仍会返回 bad=1
-        # （见 SUM(CASE WHEN quality_class IS NULL OR <> 1)），零行时强制归零，
-        # 否则"断流位号"会被同时误报成"质量码坏"。
-        out[pid] = {
-            "rows": n,
-            "badRows": int(r.get("bad") or 0) if n else 0,
-            "firstTs": r.get("t0"),
-            "lastTs": r.get("t1"),
-        }
+        for r in rows or []:
+            pid = str(r.get("point_id") or "")
+            if not pid:
+                continue
+            n = int(r.get("n") or 0)
+            # 实测坑（2026-09-26）：TDengine 对"窗口内零行"的分组仍会返回 bad=1
+            # （见 SUM(CASE WHEN quality_class IS NULL OR <> 1)），零行时强制归零，
+            # 否则"断流位号"会被同时误报成"质量码坏"。
+            out[pid] = {
+                "rows": n,
+                "badRows": int(r.get("bad") or 0) if n else 0,
+                "firstTs": r.get("t0"),
+                "lastTs": r.get("t1"),
+            }
     return out
 
 

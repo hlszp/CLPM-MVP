@@ -27,7 +27,6 @@ import {
   SPINE_MAX_W,
   SPINE_MIN_W,
 } from '../composables/use-wb360-layout';
-import { wb360ContextKey } from '../workbench-context';
 import LoopSpine from './LoopSpine.vue';
 import SingleLoopWorkbench from './SingleLoopWorkbench.vue';
 
@@ -128,10 +127,11 @@ onMounted(() => {
 </script>
 
 <template>
-  <!-- 左脊柱（经核心 #spine 插槽注入，保持页头全宽的原布局） -->
+  <!-- 左脊柱（经核心 #spine 插槽注入，保持页头全宽的原布局）
+       不设 :key：切回路只换 context，脊柱（树/清单）与右侧主区同实例更新，
+       避免整页重挂载导致左栏闪烁/滚动丢失 -->
   <SingleLoopWorkbench
     v-if="coreContext"
-    :key="wb360ContextKey(coreContext)"
     :context="coreContext"
     presentation="page"
     @navigate-request="emit('navigateRequest', $event)"
