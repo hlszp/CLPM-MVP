@@ -2,6 +2,14 @@
 
 本文件记录 CLPM-MVP 的版本锁定基线。版本线自原 CLPM v6.2.0 派生精简重建后延续（v6.2.0 → v7.0.0），设计事实来源为 `docs/MVP设计/`。
 
+## [v7.5.6] - 2026-10-19
+
+**系统改造优化工程整改批次全量上线**（代码基线 main `2e0245fd`（PR #2 合并）+ 设计文档基线化；生产镜像 `full-1036`；**含 23 个数据库迁移，部署必须先备份再 `alembic upgrade head`**）。v7.2.0 → v7.5.6 版本线（281 提交）主线：
+
+- **系统改造优化 P0–P7**（2026-10-10 执行包，终局口径见 `docs/设计文档/系统改造优化-2026-10-10/P7汇总与G7结论.md`）：P0 基线契约（数值语义冻结/场景 manifest）→ P1 结果与链路纠错（结果账本 calculation_result_record）→ P2 工程参数治理（配置覆盖与发布 config_override、不可变输入包 calc_dataset_snapshot、工程模板 engineering_templates）→ P3 诊断/整定与现场证据（评估发布登记 assessment_release、诊断算子改造、辨识 oracle 冻结）→ P4 可配置权限（authorization_catalog 授权目录三轮扩展 + 策略发布守卫）→ P5 千回路与页面效率（服务端过滤/缓存新鲜度/单飞/块编码复用/KPI 逐样本 CPU 优化/attempt 账本）→ P6 工业岗位交互（**我的工作 `/my-work` 个人工作台**（personal_workspace）+ **回路调查 loop_investigation** + 关注队列更名**系统建议** + 默认落地页分流 IC/PE/EXPERT→`/my-work`）→ P7 独立验收与交付准备（权限种子同步 authz_page_seed_sync）。**F02 容量验收待实际数据验证**（20 批/final300/post-20-batch 暂停；严格 runner/supervisor=backend/scripts/capacity_series_runner|supervisor.py，formalReady 协议门禁），G6/G7=CONDITIONAL_PASS（四项用户豁免）
+- **设计文档基线化（2026-10-19）**：`docs/设计文档/` 过程性文档清理（执行状态/交接/验收/台账/证据 ~12G；契约冻结 7 份上移保留），登记见 `docs/过程文档/stale-docs.md`
+- 本地门禁与 CI：ruff/format/alembic check/pytest 7760 collected/typecheck/vitest 996/E2E 冒烟/Critical E2E Gate（main@2e0245fd 三绿）
+
 ## [v7.2.0-workbench360] - 2026-10-03
 
 **回路工作台（新版）全量上线**（main 7a3898b2，多智能体四阶段 P1-P4 + 终验优化；生产镜像 `clpm-frontend:subpath-hotfix-1003`）。以回路为对象的单页全生命周期工作台 `/loop/workbench360`（监视-评估-诊断-整定-处置零跳转全内嵌）：

@@ -4,7 +4,7 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）— **MVP 精简 + 闭环重建版**（自 CLPM v6.2 派生，设计事实来源见 `docs/MVP设计/`）。
 
-产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。后端运行时版本由 `APP_VERSION` 管理（当前 `7.1.0`，与锁定 tag 对齐），发布版本由 Git tag 管理（当前 `v7.1.0`，2026-09-13 锁定），变更记录见 `CHANGELOG.md`。
+产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。后端运行时版本由 `APP_VERSION` 管理（当前 `7.5.6`，与锁定 tag 对齐），发布版本由 Git tag 管理（当前 `v7.5.6`，2026-10-19 锁定），变更记录见 `CHANGELOG.md`。
 
 ## 项目简介
 
@@ -37,7 +37,7 @@ CLPM-MVP 是面向危化企业控制回路的绩效治理与优化闭环平台�
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（4934 collected，2026-08-28）+ vitest（workspace 全量 549 passed / 62 文件，2026-08-28 已纳入 CI 阻塞门禁）+ Playwright E2E（92 用例声明，2026-08-28 新增指标矩阵 3 例 + 报告 P1 2 例；环境类既有失败见 06-UIUX 出口报告） |
+| 测试 | pytest（7760 collected，2026-10-19）+ vitest（workspace 全量 105 文件 / 996 用例，CI 阻塞门禁）+ Playwright E2E 冒烟（CI 阻塞）+ 根 `e2e/` 关键业务链 95 用例（Critical E2E Gate，真实隔离 PostgreSQL/Redis/TDengine，阻塞） |
 
 ## 快速开始（开发环境）
 
@@ -322,7 +322,7 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | v4.0 重构实施方案（历史实施蓝图） | `docs/设计文档/CLPM_v4.0_系统重构实施方案.md` |
 | 原型设计基线 | `DESIGN.md`（v3.1；设计基线，IA 与菜单口径以 `docs/MVP设计/00-信息架构.md` 为准） |
 | 工作台 v2.0 方案/实施计划 | `docs/设计文档/CLPM工作台改进方案-v2.0.md` + `docs/过程文档/工作台v2实施计划-2026-08-25.md` |
-| 版本锁定基线 | `CHANGELOG.md`（v7.1.0 能力清单/已知残留/冗余登记/技术基线） |
+| 版本锁定基线 | `CHANGELOG.md`（v7.5.6 能力清单/已知残留/冗余登记/技术基线） |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 
 ## 推荐阅读顺序
@@ -341,14 +341,14 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | 产品文档基线 **v6.2**；实现契约 v2.11；后端运行时默认 `1.0.0`；发布版本以 Git tag 为准。本轮基线（2026-10-05）：**驾驶舱整合 P1~P7 落地**（`/cockpit` 扩 6 页签满屏：总览/回路/性能/诊断/整定/处置；原运维工作台 4 Tab 迁 `views/cockpit/wb-comps/` 联动弹窗化，旧 `/workbench` redirect→`/cockpit`，默认落地页 ADMIN/SPONSOR→`/cockpit`、IC/PE/EXPERT→`/my-work`（2026-10-14 P6-06））+ **工作台规整 D1~D4**（回路工作台 `/loop/workbench360` 升一级菜单 order=1；诊断三页式概览/记录/任务、整定三页式总览/记录/验证，旧 workbench 路由 redirect）；上轮（2026-10-04）：工作台规整裁决 D1~D4；上上轮（2026-08-26）：工作台 v2.0 M2 + 监控重排 + 列表页标杆 v2.0；更早（2026-08-23）：IA 优化 P0~P4 |
+| 当前版本 | 产品文档基线 **v6.2**；实现契约 v2.11；发布版本 **v7.5.6**（Git tag，2026-10-19 锁定，full-1036 部署基线）。本轮基线（2026-10-19）：**系统改造优化 P0–P7 工程整改合入 main@2e0245fd**（工程参数治理/诊断整定算法改造/可配置权限/千回路效率/工业岗位交互/严格容量 runner；**F02 容量验收待实际数据验证**，G6/G7=CONDITIONAL_PASS，终局口径见 `docs/设计文档/系统改造优化-2026-10-10/P7汇总与G7结论.md`）+ 设计文档基线化（过程性文档清理，`docs/过程文档/stale-docs.md` 登记）。上轮（2026-10-14 P6）：我的工作 `/my-work` 工程师个人首页 + 默认落地页分流；更早见 CHANGELOG |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪、模块弹性交付、适用性分层"闭环 + 驾驶舱管理决策视图 + 回路工作台 |
 | 首版范围 | 驾驶舱 6 页签（/cockpit/*）、回路工作台（/loop/workbench360）、回路监控（回路监视/预警事件/系统建议）、回路结构配置、性能评估（装置性能/指标分析/回路评估/评估计算任务/指标矩阵页/适用性阈值）、诊断中心（概览/记录/任务三页式 + 回路工作台诊断剖面）、参数整定（总览/记录/验证三页式 + 回路工作台整定剖面，门禁 L2+ 提示放行）、运维处置 v2.0（诊断建议/处置任务/处置工单/处置档案）、统计分析（数据质量+绩效/诊断/处置/收益报告+预警统计+订阅配置）、预警规则归配置、系统管理（基础信息/用户/审计/权限矩阵/字典/模块管理） |
 | 模块架构 | **10 个一级菜单**：驾驶舱(0)/回路工作台(1)/回路监控(2)/性能评估(3)/回路诊断(4)/参数整定(5)/运维处置(6)/统计分析(7)/参数配置(8)/系统管理(9)（2026-10-05 驾驶舱整合 D6 十项重排改名；另有「我的工作」/my-work order=-1 工程师个人首页，P6）。诊断/整定/处置支持模块热插拔，按客户阶段弹性启用；回路运行态归回路工作台，预警事件归回路监控、规则归参数配置；双轴导航和各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
 | 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → VERIFYING → CLOSED，P1a 闭环），诊断中心子模块 |
 | 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.11 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表 v1.0 + 文案词表 v1.0）；页面标杆设计负责逐页高保真线框图与实施验收 |
-| UI/UX 整改 | 2026-08-07~09 三轮（Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 清理），Nielsen 20/40→32/40；进度事实来源 `docs/设计文档/06-UIUX/ui-ux-rectification-checklist-2026-08-08.md`，出口报告 `p2-exit-report-2026-08-09.md` |
+| UI/UX 整改 | 2026-08-07~09 三轮（Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 清理），Nielsen 20/40→32/40；现行规范 `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md`（整改过程清单/出口报告已于 2026-10-19 基线化清理，见 Git 历史） |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |
 | 安全边界 | 平台不写 DCS，只输出建议、证据、风险与回退方案 |
 
