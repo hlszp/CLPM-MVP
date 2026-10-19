@@ -1,5 +1,5 @@
 /**
- * P6-01b-a（Slice H）五组导航 / IAR-D3 术语 / 驾驶舱「进入工作区」出口测试
+ * P6-01b-a（Slice H）五组导航 / IAR-D3 术语测试
  *
  * 覆盖任务书验证口径：
  * - IAR-D1 五组归组/命名快照：11 个可见一级菜单的组归属（meta.navGroup）、
@@ -7,18 +7,13 @@
  *   组间不交错；我的工作 order=-1 保留现状）；
  * - IAR-D3 术语：可见菜单含「回路工作台/系统建议/评估计算任务/诊断计算任务」，
  *   旧称（工作台/关注队列/评估任务/诊断任务）与内部代号（360/wb360）不上界面；
- * - IAR-D6/D8 驾驶舱统一出口：buildWorkzoneExitTarget 经 use-drill 冻结构造点
- *   （wb360DrillQuery）携当前页签上下文（剖面/精确窗/回路页签节点·回路/from），
- *   resolveWb360Route 往返消费不丢参；SPONSOR 按 canOpenWorkbench360 降级纯文本；
  * - 旧书签回归：全部模块既有 path 逐模块锁定（只改归组/命名，不改 path）；
  * - 角色首页与导航一致：ROLE_DEFAULT_HOME 五个落点均为已知路由 path（无死链）。
+ * （驾驶舱「进入工作区」按钮已于 2026-10-19 按用户要求删除，相关用例一并移除）
  */
 import type { RouteRecordRaw } from 'vue-router';
 
-import { mount } from '@vue/test-utils';
-
-import { createPinia, setActivePinia } from 'pinia';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 const { routerPush, mockRoute } = vi.hoisted(() => ({
   mockRoute: {
@@ -72,8 +67,6 @@ vi.mock('#/api', () => ({
   logoutApi: vi.fn(),
 }));
 
-import { useUserStore } from '@vben/stores';
-
 import alertRoutes from '#/router/routes/modules/alert';
 import assessRoutes from '#/router/routes/modules/assess';
 import clpmRoutes from '#/router/routes/modules/clpm';
@@ -93,18 +86,8 @@ import {
   NAV_GROUP_LABELS,
   NAV_GROUPS,
 } from '#/router/routes/nav-groups';
-import { useCockpitStore } from '#/store/cockpit';
-import CockpitHeader from '#/views/cockpit/components/cockpit-header.vue';
-import {
-  buildWorkzoneExitTarget,
-  COCKPIT_WORKZONE_SECTION,
-} from '#/views/cockpit/utils/workzone-exit';
-import { localTimezone } from '#/views/cockpit/wb-comps/use-drill';
-import { resolveWb360Route } from '#/views/loop/workbench360/workbench-context';
 
 const { ROLE_DEFAULT_HOME } = await import('#/store/auth');
-
-const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
 const ALL_MODULE_ROUTES: { module: string; routes: RouteRecordRaw[] }[] = [
   { module: 'alert', routes: alertRoutes },
@@ -246,202 +229,6 @@ describe('IAR-D3 菜单术语（Slice H）', () => {
     for (const t of titles) {
       expect(t, `菜单「${t}」含内部代号`).not.toMatch(/360/i);
     }
-  });
-});
-
-// ---------------------------------------------------------------------------
-// IAR-D6/D8 出口目标构造（经 use-drill 冻结构造点 wb360DrillQuery）
-// ---------------------------------------------------------------------------
-describe('IAR-D6/D8 进入工作区出口目标构造（经冻结构造点）', () => {
-  const NOW = new Date('2026-10-14T06:00:00.000Z');
-
-  it('回路页签：选中节点+回路 → single 直达，携 loopId/nodeId/精确窗/from', () => {
-    const { path, query } = buildWorkzoneExitTarget({
-      from: '/cockpit/loops?node=node-7&loop=loop-9',
-      loopId: 'loop-9',
-      nodeId: 'node-7',
-      now: NOW,
-      tabPath: '/cockpit/loops',
-      timeWindow: '24h',
-    });
-    expect(path).toBe('/loop/workbench360');
-    expect(query).toEqual({
-      from: '/cockpit/loops?node=node-7&loop=loop-9',
-      loopId: 'loop-9',
-      mode: 'single',
-      nodeId: 'node-7',
-      tsEnd: '2026-10-14T06:00:00.000Z',
-      tsStart: '2026-10-13T06:00:00.000Z',
-      tz: TZ,
-    });
-    // 往返：Adapter 无错误消费，上下文不丢参
-    const r = resolveWb360Route(query);
-    expect(r.errors).toEqual([]);
-    expect(r.mode).toBe('single');
-    expect(r.context?.loopId).toBe('loop-9');
-    expect(r.context?.scope?.nodeId).toBe('node-7');
-    expect(r.context?.window?.tsStart).toBe('2026-10-13T06:00:00.000Z');
-    expect(r.context?.window?.timezone).toBe(TZ);
-    expect(r.returnRef).toBe('/cockpit/loops?node=node-7&loop=loop-9');
-  });
-
-  it('回路页签：仅选节点 → all 模式 + nodeId scope（无 loopId 不造对象）', () => {
-    const { query } = buildWorkzoneExitTarget({
-      from: '/cockpit/loops',
-      loopId: null,
-      nodeId: 'node-7',
-      now: NOW,
-      tabPath: '/cockpit/loops',
-      timeWindow: '7d',
-    });
-    expect(query.mode).toBe('all');
-    expect(query.nodeId).toBe('node-7');
-    expect(query.loopId).toBeUndefined();
-    expect(query.section).toBeUndefined();
-    const r = resolveWb360Route(query);
-    expect(r.errors).toEqual([]);
-    expect(r.mode).toBe('all');
-    expect(r.context).toBeNull();
-    expect(r.carried.scope?.nodeId).toBe('node-7');
-    expect(r.carried.window?.tsEnd).toBe('2026-10-14T06:00:00.000Z');
-  });
-
-  it('诊断/整定/处置页签 → 对应剖面；总览/性能默认 assess 不显式携带', () => {
-    const sectionOf = (tab: string) =>
-      buildWorkzoneExitTarget({
-        from: tab,
-        now: NOW,
-        tabPath: tab,
-        timeWindow: '24h',
-      }).query;
-    expect(sectionOf('/cockpit/diagnosis').section).toBe('diagnosis');
-    expect(sectionOf('/cockpit/tuning').section).toBe('tuning');
-    expect(sectionOf('/cockpit/handling').section).toBe('handling');
-    expect(sectionOf('/cockpit').section).toBeUndefined();
-    expect(sectionOf('/cockpit/performance').section).toBeUndefined();
-    // 剖面映射表与六页签一一对应（其余页签缺省）
-    expect(Object.keys(COCKPIT_WORKZONE_SECTION).toSorted()).toEqual([
-      '/cockpit/diagnosis',
-      '/cockpit/handling',
-      '/cockpit/tuning',
-    ]);
-    // 往返：诊断页签 → carried.section 保留待选中回路后消费
-    const r = resolveWb360Route(sectionOf('/cockpit/diagnosis'));
-    expect(r.errors).toEqual([]);
-    expect(r.carried.section).toBe('diagnosis');
-  });
-
-  it('精确时间窗：24h/7d/30d 换算为等长精确起止（禁近似滚动窗）', () => {
-    const HOUR = 3_600_000;
-    for (const [win, hours] of [
-      ['24h', 24],
-      ['7d', 168],
-      ['30d', 720],
-    ] as const) {
-      const { query } = buildWorkzoneExitTarget({
-        from: '/cockpit',
-        now: NOW,
-        tabPath: '/cockpit',
-        timeWindow: win,
-      });
-      const span = Date.parse(query.tsEnd!) - Date.parse(query.tsStart!);
-      expect(span).toBe(hours * HOUR);
-      expect(query.tz).toBe(localTimezone());
-    }
-  });
-
-  it('非回路页签不携带节点/回路（页内瞬态选中不泄漏为工作区上下文）', () => {
-    const { query } = buildWorkzoneExitTarget({
-      from: '/cockpit',
-      loopId: 'loop-stale',
-      nodeId: 'node-stale',
-      now: NOW,
-      tabPath: '/cockpit',
-      timeWindow: '24h',
-    });
-    expect(query.mode).toBe('all');
-    expect(query.loopId).toBeUndefined();
-    expect(query.nodeId).toBeUndefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// 驾驶舱头区出口按钮：权限降级与点击跳转（SPONSOR 纯文本）
-// ---------------------------------------------------------------------------
-describe('驾驶舱头区「进入工作区」出口（IAR-D6/D8，按角色落地）', () => {
-  beforeEach(() => {
-    setActivePinia(createPinia());
-    routerPush.mockReset();
-    mockRoute.path = '/cockpit';
-    mockRoute.fullPath = '/cockpit';
-    mockRoute.query = {};
-  });
-
-  function mountHeader(tabPath: string, roles: string[]) {
-    mockRoute.path = tabPath;
-    mockRoute.fullPath = tabPath;
-    useUserStore().setUserInfo({ roles } as never);
-    return mount(CockpitHeader, {
-      global: {
-        mocks: { $route: mockRoute },
-        stubs: {
-          IconifyIcon: { template: '<span class="icon-stub" />' },
-          RouterLink: { template: '<a class="tab-stub"><slot /></a>' },
-        },
-      },
-    });
-  }
-
-  it('SPONSOR（无 wb360 权限）→ 降级纯文本，不渲染可点击按钮', () => {
-    const w = mountHeader('/cockpit', ['SPONSOR']);
-    expect(w.find('[data-testid="workzone-exit"]').exists()).toBe(false);
-    const plain = w.find('[data-testid="workzone-exit-plain"]');
-    expect(plain.exists()).toBe(true);
-    expect(plain.text()).toBe('进入工作区');
-    w.unmount();
-  });
-
-  it('空角色 → 同样降级纯文本（不造死链）', () => {
-    const w = mountHeader('/cockpit', []);
-    expect(w.find('[data-testid="workzone-exit"]').exists()).toBe(false);
-    expect(w.find('[data-testid="workzone-exit-plain"]').exists()).toBe(true);
-    w.unmount();
-  });
-
-  it('ADMIN 在诊断页签点击 → 经冻结构造点跳 wb360（all + section=diagnosis + 精确窗 + from）', async () => {
-    const w = mountHeader('/cockpit/diagnosis', ['ADMIN']);
-    const btn = w.find('[data-testid="workzone-exit"]');
-    expect(btn.exists()).toBe(true);
-    await btn.trigger('click');
-    expect(routerPush).toHaveBeenCalledTimes(1);
-    const arg = routerPush.mock.calls[0]![0] as {
-      path: string;
-      query: Record<string, string>;
-    };
-    expect(arg.path).toBe('/loop/workbench360');
-    expect(arg.query.mode).toBe('all');
-    expect(arg.query.section).toBe('diagnosis');
-    expect(arg.query.from).toBe('/cockpit/diagnosis');
-    expect(arg.query.tsStart).toEqual(expect.any(String));
-    expect(arg.query.tsEnd).toEqual(expect.any(String));
-    expect(arg.query.tz).toBe(TZ);
-    w.unmount();
-  });
-
-  it('IC_ENGINEER 在回路页签（已选节点+回路）点击 → single 直达携 loopId/nodeId', async () => {
-    const cockpitStore = useCockpitStore();
-    cockpitStore.setLoopsNode('node-7');
-    cockpitStore.selectLoop('loop-9');
-    const w = mountHeader('/cockpit/loops', ['IC_ENGINEER']);
-    await w.find('[data-testid="workzone-exit"]').trigger('click');
-    const arg = routerPush.mock.calls[0]![0] as {
-      query: Record<string, string>;
-    };
-    expect(arg.query.mode).toBe('single');
-    expect(arg.query.loopId).toBe('loop-9');
-    expect(arg.query.nodeId).toBe('node-7');
-    expect(arg.query.from).toBe('/cockpit/loops');
-    w.unmount();
   });
 });
 

@@ -44,7 +44,7 @@ export const NAV_GROUPS: readonly NavGroupDef[] = [
   {
     key: 'observe',
     label: '全局观察',
-    contains: '驾驶舱（六页签 + 进入工作区统一出口）',
+    contains: '驾驶舱（六页签）',
   },
   {
     key: 'loop-ops',

@@ -7,13 +7,12 @@
  * 中：主标题「控制回路绩效监控驾驶舱」居中 + 两侧装饰条（渐变线+菱形端点，纯 CSS）
  * 右：自动刷新暂停/恢复 · 手动刷新（store.refreshTick ++，全页重拉）·
  *     时间窗切换（近 24h/近 7 天/近 30 天，驾驶舱 store 共享）· 实时时钟 ·
- *     主题切换（深/浅，仅驾驶舱容器）· 进入工作区（IAR-D6/D8 统一出口）·
- *     管理后台（唯一后台入口 + 角色清单校验）
+ *     主题切换（深/浅，仅驾驶舱容器）· 管理后台（唯一后台入口 + 角色清单校验）
  */
 import type { CockpitApi } from '#/api/cockpit';
 
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -23,11 +22,7 @@ import { message } from 'ant-design-vue';
 import { getBackendAccessRolesApi } from '#/api/cockpit';
 import { useCockpitStore } from '#/store/cockpit';
 
-import { buildWorkzoneExitTarget } from '../utils/workzone-exit';
-import { canOpenWorkbench360 } from '../wb-comps/use-drill';
-
 const router = useRouter();
-const route = useRoute();
 const userStore = useUserStore();
 const cockpitStore = useCockpitStore();
 
@@ -63,26 +58,6 @@ const clockDate = computed(() => {
   const week = ['日', '一', '二', '三', '四', '五', '六'][d.getDay()];
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} 星期${week}`;
 });
-
-// ============ 右：进入工作区（IAR-D6/D8，2026-10-14） ============
-// 驾驶舱六页签统一出口：携当前页签上下文（剖面/精确窗 + 回路页签的节点/回路
-// 选中态）经 use-drill 冻结构造点跳回路工作台；SPONSOR 等无 wb360 路由权限
-// 角色按 canOpenWorkbench360 降级为纯文本（不造死链）。
-/** 当前用户角色可打开回路工作台 */
-const canOpenWorkzone = computed(() =>
-  canOpenWorkbench360(userStore.userInfo?.roles ?? []),
-);
-
-function openWorkzone() {
-  const { path, query } = buildWorkzoneExitTarget({
-    from: route.fullPath,
-    loopId: cockpitStore.loopsSelectedLoopId,
-    nodeId: cockpitStore.loopsNodeId,
-    tabPath: route.path,
-    timeWindow: cockpitStore.timeWindow,
-  });
-  void router.push({ path, query });
-}
 
 // ============ 右：管理后台入口（角色清单校验，方案 §3.2） ============
 const backendRoles = ref<string[]>([]);
@@ -225,23 +200,6 @@ onUnmounted(() => {
           :size="15"
         />
       </button>
-      <button
-        v-if="canOpenWorkzone"
-        class="ck-btn-workzone"
-        data-testid="workzone-exit"
-        title="进入回路工作台（携当前页签上下文）"
-        @click="openWorkzone"
-      >
-        进入工作区
-      </button>
-      <span
-        v-else
-        class="ck-btn-workzone ck-btn-workzone--plain"
-        data-testid="workzone-exit-plain"
-        title="当前角色无回路工作台入口"
-      >
-        进入工作区
-      </span>
       <button v-if="backendVisible" class="ck-btn-backend" @click="goBackend">
         管理后台
       </button>
@@ -441,36 +399,7 @@ onUnmounted(() => {
   }
 }
 
-/* 「进入工作区」出口（IAR-D6/D8）：描边样式与管理后台渐变按钮区分；
-   无 wb360 权限角色降级为纯文本（不可点击，不渲染死链按钮） */
-.ck-btn-workzone {
-  height: 36px;
-  padding: 0 16px;
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--ck-accent);
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  background: transparent;
-  border: 1px solid var(--ck-accent);
-  border-radius: 8px;
-  transition: 0.15s;
-}
-
-.ck-btn-workzone:hover {
-  background: var(--ck-hover);
-}
-
-.ck-btn-workzone--plain {
-  color: var(--ck-text-3);
-  cursor: default;
-  border-color: var(--ck-border);
-}
-
-.ck-btn-workzone--plain:hover {
-  background: transparent;
-}
-
+/* 「管理后台」入口 */
 .ck-btn-backend {
   height: 36px;
   padding: 0 18px;
