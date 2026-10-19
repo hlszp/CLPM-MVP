@@ -7,12 +7,12 @@
  * 中：主标题「控制回路绩效监控驾驶舱」居中 + 两侧装饰条（渐变线+菱形端点，纯 CSS）
  * 右：自动刷新暂停/恢复 · 手动刷新（store.refreshTick ++，全页重拉）·
  *     时间窗切换（近 24h/近 7 天/近 30 天，驾驶舱 store 共享）· 实时时钟 ·
- *     主题切换（深/浅，仅驾驶舱容器）· 管理后台（唯一后台入口 + 角色清单校验）
+ *     主题切换（深/浅，仅驾驶舱容器）· 进入工作区（按页签落到对应后台页）
  */
 import type { CockpitApi } from '#/api/cockpit';
 
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { IconifyIcon } from '@vben/icons';
 import { useUserStore } from '@vben/stores';
@@ -23,6 +23,7 @@ import { getBackendAccessRolesApi } from '#/api/cockpit';
 import { useCockpitStore } from '#/store/cockpit';
 
 const router = useRouter();
+const route = useRoute();
 const userStore = useUserStore();
 const cockpitStore = useCockpitStore();
 
@@ -59,7 +60,7 @@ const clockDate = computed(() => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} 星期${week}`;
 });
 
-// ============ 右：管理后台入口（角色清单校验，方案 §3.2） ============
+// ============ 右：进入工作区入口（角色清单校验，按页签落到对应后台页） ============
 const backendRoles = ref<string[]>([]);
 
 /** 当前用户角色命中后台访问清单时按钮可见；清单拉取失败时隐藏（Poka-Yoke 宁缺毋滥） */
@@ -71,13 +72,23 @@ const backendVisible = computed(() => {
   );
 });
 
+/** 驾驶舱页签 → 后台目标页（2026-10-19 用户裁决） */
+const WORKZONE_TARGET_BY_TAB: Record<string, string> = {
+  '/cockpit': '/my-work',
+  '/cockpit/loops': '/monitor/loops',
+  '/cockpit/performance': '/metric/pid-dashboard',
+  '/cockpit/diagnosis': '/diagnosis/overview',
+  '/cockpit/tuning': '/tuning/overview',
+  '/cockpit/handling': '/handling/suggestions',
+};
+
 function goBackend() {
   if (!backendVisible.value) {
     message.warning('当前角色无后台访问权限');
     return;
   }
-  // 2026-10-07 P7：旧运维工作台退役，管理后台入口改指回路监视
-  router.push('/monitor/loops');
+  const target = WORKZONE_TARGET_BY_TAB[route.path] ?? '/my-work';
+  router.push(target);
 }
 
 // ============ 右：刷新控制（暂停/恢复自动刷新 + 手动全页刷新） ============
@@ -145,7 +156,7 @@ onUnmounted(() => {
       <span class="ck-deco flip"></span>
     </div>
 
-    <!-- 右：刷新控制 · 时间窗 · 时钟 · 主题 · 管理后台 -->
+    <!-- 右：刷新控制 · 时间窗 · 时钟 · 主题 · 进入工作区 -->
     <div class="ck-actions">
       <button
         class="ck-iconbtn"
@@ -201,7 +212,7 @@ onUnmounted(() => {
         />
       </button>
       <button v-if="backendVisible" class="ck-btn-backend" @click="goBackend">
-        管理后台
+        进入工作区
       </button>
     </div>
   </header>
@@ -399,7 +410,7 @@ onUnmounted(() => {
   }
 }
 
-/* 「管理后台」入口 */
+/* 「进入工作区」入口 */
 .ck-btn-backend {
   height: 36px;
   padding: 0 18px;

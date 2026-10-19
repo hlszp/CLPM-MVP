@@ -41,7 +41,7 @@ const routes: RouteRecordRaw[] = [
           permCode: 'page:assess.dashboard',
           authority: ['ADMIN', 'IC_ENGINEER', 'PE_ENGINEER', 'SPONSOR'],
           icon: 'lucide:layout-dashboard',
-          title: '装置性能',
+          title: '性能概览',
         },
       },
       {
