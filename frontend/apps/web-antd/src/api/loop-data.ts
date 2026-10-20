@@ -36,6 +36,7 @@ export namespace LoopDataApi {
     taskId: string;
     status: ImportStatus;
     progress: number;
+    currentStage?: string;
     loopCount: number;
     importedCount: number;
     errorCount: number;

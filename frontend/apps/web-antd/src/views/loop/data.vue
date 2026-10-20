@@ -329,7 +329,7 @@ const filterSummary = computed(() => {
 // 默认时间窗 = 近 7 天：系统上线后导入历史数据、快速投入指标计算
 const timeRange = ref<[dayjs.Dayjs, dayjs.Dayjs]>([
   dayjs().subtract(7, 'day'),
-  dayjs(),
+  dayjs().subtract(5, 'minute'),
 ]);
 const interval = ref(1);
 const triggerBackfill = ref(false);
@@ -420,7 +420,8 @@ const taskColumns: TableColumnsType = [
       if (!record.tsStart || !record.tsEnd) return '-';
       const h = Math.max(
         0,
-        (dayjs(record.tsEnd).valueOf() - dayjs(record.tsStart).valueOf()) / 3_600_000,
+        (dayjs(record.tsEnd).valueOf() - dayjs(record.tsStart).valueOf()) /
+          3_600_000,
       );
       return h.toFixed(1);
     },
@@ -431,11 +432,13 @@ const taskColumns: TableColumnsType = [
     width: 88,
     align: 'center',
     customRender: ({ record }) => {
-      if (!record.startedAt || !record.finishedAt) return '-';
+      if (!record.startedAt) return '-';
       const sec = Math.max(
         0,
         Math.round(
-          (dayjs(record.finishedAt).valueOf() - dayjs(record.startedAt).valueOf()) / 1000,
+          ((record.finishedAt ? dayjs(record.finishedAt) : dayjs()).valueOf() -
+            dayjs(record.startedAt).valueOf()) /
+            1000,
         ),
       );
       const mm = Math.floor(sec / 60);
@@ -449,6 +452,16 @@ const taskColumns: TableColumnsType = [
     width: 150,
     customRender: ({ record }) => {
       const pct = Math.round((record.progress ?? 0) * 100);
+      const progressStatus = {
+        CANCELLED: 'normal',
+        FAILED: 'exception',
+        PENDING: 'normal',
+        RUNNING: 'active',
+        SUCCESS: 'success',
+      } as const;
+      let strokeColor: string = themeColors.value.INFO;
+      if (record.status === 'FAILED') strokeColor = themeColors.value.DANGER;
+      if (record.status === 'SUCCESS') strokeColor = themeColors.value.SUCCESS;
       return h('div', {}, [
         h(
           'div',
@@ -458,12 +471,32 @@ const taskColumns: TableColumnsType = [
         h(Progress, {
           percent: pct,
           size: 'small',
-          strokeColor:
-            record.status === 'FAILED'
-              ? themeColors.value.DANGER
-              : themeColors.value.INFO,
+          status: progressStatus[record.status as LoopDataApi.ImportStatus],
+          strokeColor,
           showInfo: false,
         }),
+        record.currentStage
+          ? h(
+              'div',
+              { class: 'text-xs text-gray-500 mt-1' },
+              record.currentStage,
+            )
+          : null,
+        h(
+          'div',
+          { class: 'text-xs mt-1' },
+          `成功 ${record.importedCount ?? 0} / ${record.loopCount}，失败 ${record.errorCount ?? 0}`,
+        ),
+        record.errorMessage
+          ? h(
+              'div',
+              {
+                class: 'text-xs mt-1',
+                style: { color: themeColors.value.DANGER },
+              },
+              record.errorMessage,
+            )
+          : null,
       ]);
     },
   },
@@ -650,7 +683,7 @@ async function loadTasks() {
 
 function handleTaskPageChange(pag: TablePaginationConfig) {
   taskPagination.value.current = pag.current ?? 1;
-  loadTasks();
+  void loadTasks().then(syncTaskPolling);
 }
 
 // --- 导入执行 ---
@@ -691,6 +724,7 @@ async function handleStartImport() {
       pointOnly: pointOnly.value,
     });
     message.success('导入任务已启动');
+    taskPagination.value.current = 1;
     await loadTasks();
     syncTaskPolling();
   } catch {
