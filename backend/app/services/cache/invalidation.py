@@ -101,6 +101,29 @@ class CacheInvalidator:
         )
         return deleted
 
+    async def invalidate_loops(self, loop_ids: set[str]) -> int:
+        """批次导入后只扫描一次 keyspace，精确删除指定回路的三层缓存。"""
+        if not loop_ids:
+            return 0
+        cursor: int | str = 0
+        deleted = 0
+        while True:
+            cursor, keys = await self._scan(cursor, f"{_CACHE_GLOB_PREFIX}:*", _SCAN_COUNT)
+            selected = []
+            for key in keys:
+                name = key.decode() if isinstance(key, bytes) else str(key)
+                parts = name.split(":", 2)
+                if (
+                    len(parts) == 3
+                    and parts[0] in {"pdb", "pdb_l2", "pdb_l3"}
+                    and parts[1] in loop_ids
+                ):
+                    selected.append(name)
+            for offset in range(0, len(selected), _SCAN_COUNT):
+                deleted += await self._delete_batch(selected[offset : offset + _SCAN_COUNT])
+            if cursor in (0, "0"):
+                return deleted
+
     async def invalidate_tag_group(
         self, loop_id: str, tag_group: str, old_quality_policy: str | None = None
     ) -> int:

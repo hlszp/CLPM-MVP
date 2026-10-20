@@ -22,6 +22,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections import deque
 from datetime import datetime
 from typing import Any
 
@@ -92,6 +93,49 @@ class RemoteApiCircuitOpenError(RuntimeError):
     """远端 API 熔断中，请求被快速失败（未发出 HTTP 请求）."""
 
 
+class _ResizableLimiter:
+    """同一事件循环内原位调节容量；缩容等待在途请求释放，不创建第二道闸。"""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self.active = 0
+        self.waiters: deque[asyncio.Future] = deque()
+
+    @property
+    def _value(self) -> int:
+        return max(0, self.limit - self.active)
+
+    def resize(self, limit: int) -> None:
+        self.limit = max(1, limit)
+        self._wake()
+
+    def _wake(self) -> None:
+        while self.waiters and self.active < self.limit:
+            future = self.waiters.popleft()
+            if not future.done():
+                self.active += 1
+                future.set_result(None)
+
+    async def __aenter__(self):
+        future = asyncio.get_running_loop().create_future()
+        self.waiters.append(future)
+        self._wake()
+        try:
+            await future
+        except asyncio.CancelledError:
+            if not future.cancelled():
+                self.active -= 1  # 已获准、尚未恢复执行时被取消
+            elif future in self.waiters:
+                self.waiters.remove(future)
+            self._wake()
+            raise
+        return self
+
+    async def __aexit__(self, *args) -> None:
+        self.active -= 1
+        self._wake()
+
+
 class RemoteApiProvider:
     """远程 HTTP API 数据源提供者.
 
@@ -101,7 +145,7 @@ class RemoteApiProvider:
     连接管理：httpx.AsyncClient 单例，支持 Celery 跨 event loop 复用。
 
     调用保护（防止压垮边缘 API / 向不可用服务持续施压）：
-    - 限流：per-loop ``asyncio.Semaphore``（``REMOTE_API_MAX_CONCURRENCY``），
+    - 限流：per-loop 可调整容量闸（``REMOTE_API_MAX_CONCURRENCY``），
       覆盖 DataPlanner 的无界 gather 并发
     - 熔断：连续失败 ``REMOTE_API_CIRCUIT_FAILURES`` 次后熔断
       ``REMOTE_API_CIRCUIT_OPEN_SECONDS`` 秒，期间请求快速失败，
@@ -117,40 +161,32 @@ class RemoteApiProvider:
         self._client_timeout: float | None = None
         self._client_token: str | None = None
         # 限流信号量（随 event loop 重建，与 client 生命周期一致）
-        self._semaphore: asyncio.Semaphore | None = None
+        self._semaphore: _ResizableLimiter | None = None
         self._semaphore_loop: asyncio.AbstractEventLoop | None = None
-        # 当前闸容量（2026-10-08 导入提速：支持 sys_config 运行时扩容重建）
+        # 当前闸容量：支持 sys_config 运行时扩缩容，保留在途请求计数。
         self._semaphore_limit: int = 0
         # 熔断器状态（进程内）
         self._cb_failures = 0
         self._cb_open_until = 0.0  # time.monotonic() 截止时间，0 = 闭合
         self._cb_last_open_log = 0.0
 
-    def _get_semaphore(self) -> asyncio.Semaphore:
+    def _get_semaphore(self) -> _ResizableLimiter:
         """获取限流信号量（Celery-safe：event loop 变化时重建）。"""
         loop = asyncio.get_running_loop()
         if self._semaphore is None or self._semaphore_loop is not loop or loop.is_closed():
-            self._semaphore = asyncio.Semaphore(settings.REMOTE_API_MAX_CONCURRENCY)
+            self._semaphore = _ResizableLimiter(settings.REMOTE_API_MAX_CONCURRENCY)
             self._semaphore_loop = loop
             self._semaphore_limit = settings.REMOTE_API_MAX_CONCURRENCY
         return self._semaphore
 
     def ensure_remote_concurrency(self, limit: int) -> None:
-        """按导入提速配置扩容限流闸（2026-10-08，sys_config 免重启可调）.
-
-        仅扩容重建（新请求走新闸；在途请求持旧闸自然完成，过渡期短暂
-        略超限无害）；缩容不重建——等在途持有自然收敛到新上限以内。
-        非导入消费方不受影响（无人调用本方法时闸容量恒为 env 默认值）。
-        """
-        if limit <= self._semaphore_limit:
-            return
-        loop = asyncio.get_running_loop()
-        if self._semaphore_loop is not loop or loop.is_closed():
-            return  # 下一请求会按 loop 重建，届时再以新容量创建
-        self._semaphore = asyncio.Semaphore(limit)
-        self._semaphore_loop = loop
-        self._semaphore_limit = limit
-        logger.info("远端限流闸扩容: %d → %d", self._semaphore_limit, limit)
+        """任务启动时应用容量；扩缩容共享在途计数，跨事件循环重新初始化。"""
+        limiter = self._get_semaphore()
+        old_limit = limiter.limit
+        limiter.resize(max(1, int(limit)))
+        self._semaphore_limit = limiter.limit
+        if old_limit != limiter.limit:
+            logger.info("远端限流闸调整: %d → %d", old_limit, limiter.limit)
 
     # ---- 熔断器 ----
 

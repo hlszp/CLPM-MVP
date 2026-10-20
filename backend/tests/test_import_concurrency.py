@@ -2,7 +2,7 @@
 
 覆盖：
 - _read_import_concurrency：缺省回退默认 / 表值读取 / 非法值钳制 / 上限钳制
-- ensure_remote_concurrency：仅扩容重建、缩容不动
+- ensure_remote_concurrency：扩缩容原位生效
 - chunk 并行化：chunk_concurrency=1 顺序语义（原行为）与 >1 并行收口（计数完整）
 """
 
@@ -74,7 +74,7 @@ class TestReadImportConcurrency:
 
 
 class TestEnsureRemoteConcurrency:
-    def test_扩容重建_缩容不动(self):
+    def test_扩缩容原位生效(self):
         import asyncio
 
         from app.services.data_source.remote_api_provider import RemoteApiProvider
@@ -86,10 +86,11 @@ class TestEnsureRemoteConcurrency:
             # 缩容请求：不重建（返回同一对象）
             p.ensure_remote_concurrency(2)
             assert p._get_semaphore() is s1
-            # 扩容请求：重建新闸
+            assert s1._value == 2
+            # 扩容同样保留在途请求计数
             p.ensure_remote_concurrency(12)
             s2 = p._get_semaphore()
-            assert s2 is not s1
+            assert s2 is s1
             assert p._semaphore_limit == 12
 
         asyncio.run(run())
