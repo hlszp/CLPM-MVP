@@ -8,6 +8,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from celery._state import _task_stack
 from redis.asyncio import Redis
 from redis.exceptions import LockNotOwnedError
 
@@ -20,6 +21,43 @@ pytestmark = [
     pytest.mark.integration,
     pytest.mark.skipif(not os.getenv("TEST_REDIS_URL"), reason="需提供隔离 TEST_REDIS_URL"),
 ]
+
+
+@pytest.mark.parametrize("parent_priority", [PRIORITY_EVENT, PRIORITY_MANUAL, PRIORITY_NIGHTLY])
+def test_child_task_inherits_parent_priority_without_overriding_explicit(parent_priority):
+    """真实 Redis 消息验证人工子任务不掉到后台桶；显式后台等级仍保留。"""
+    queue = f"qa-ops1043-{uuid4().hex}"
+    options = dict(celery_app.conf.broker_transport_options)
+    options["global_keyprefix"] = queue + ":"
+    parent = alert_patrol.run_alert_patrol
+    with celery_app.connection_for_write(
+        os.environ["TEST_REDIS_URL"], transport_options=options
+    ) as connection:
+        messages = connection.SimpleQueue(queue)
+        parent.push_request(
+            id=str(uuid4()),
+            called_directly=False,
+            delivery_info={"priority": parent_priority},
+        )
+        _task_stack.push(parent)
+        try:
+            producer = connection.Producer()
+            parent.apply_async(queue=queue, producer=producer, ignore_result=True)
+            inherited = messages.get(block=True, timeout=3)
+            assert inherited.properties["priority"] == parent_priority
+            inherited.ack()
+            parent.apply_async(
+                queue=queue, producer=producer, ignore_result=True, priority=PRIORITY_NIGHTLY
+            )
+            explicit = messages.get(block=True, timeout=3)
+            assert explicit.properties["priority"] == PRIORITY_NIGHTLY
+            explicit.ack()
+        finally:
+            _task_stack.pop()
+            parent.pop_request()
+            messages.clear()
+            messages.close()
+            connection.default_channel.queue_delete(queue)
 
 
 @pytest.fixture

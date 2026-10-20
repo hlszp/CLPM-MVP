@@ -92,6 +92,9 @@ celery_app.conf.update(
     task_default_routing_key="default",
     task_queue_max_priority=10,
     task_default_priority=PRIORITY_NIGHTLY,
+    # 人工回填等任务创建 chord/group 子任务时沿用父任务等级；
+    # 显式设置的后台聚合/死信等级仍优先，避免人工子任务掉回默认 9 桶。
+    task_inherit_parent_priority=True,
     # 整改 G32：visibility_timeout 必须**大于任何任务的 time_limit**，否则未 ack
     # 的消息会被 broker 重投给另一个 worker，造成同一任务并发双跑。
     # 原值 9000s（2.5h）的依据是"import_history_data 的 time_limit=7200s（2h）"，
@@ -137,6 +140,18 @@ class AsyncTask(Task):
     abstract = True
 
     min_retry_countdown = 30.0
+
+    def apply_async(self, args=None, kwargs=None, **options):
+        # Task.apply_async 先把 task_default_priority=9 填入执行选项，
+        # Celery.send_task 的 setdefault 继承随后无法覆盖这个默认值。
+        # 在父类填默认值之前继承；调用方显式指定的等级（含 0）始终优先。
+        if options.get("priority") is None and self.app.conf.task_inherit_parent_priority:
+            parent = self.app.current_worker_task
+            if parent is not None:
+                priority = (parent.request.delivery_info or {}).get("priority")
+                if priority is not None:
+                    options["priority"] = priority
+        return super().apply_async(args=args, kwargs=kwargs, **options)
 
     def retry(self, *args, countdown=None, **kwargs):
         floor = getattr(self, "min_retry_countdown", None)

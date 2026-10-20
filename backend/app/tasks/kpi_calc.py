@@ -1845,16 +1845,8 @@ async def _do_calculate_custom_batch(
             ts_start_dt, custom_task_id=task_id
         )
 
-        t_prewarm_start = time.perf_counter()
-        prewarm_result = await _prewarm_cache_for_loops(loops, ts_start_dt, ts_end_dt, loop_configs)
-        t_prewarm_elapsed = time.perf_counter() - t_prewarm_start
-        logger.info(
-            "自定义批量缓存预热完成: total=%d, succeeded=%d, failed=%d, elapsed=%.3fs",
-            prewarm_result["total"],
-            prewarm_result["succeeded"],
-            prewarm_result["failed"],
-            t_prewarm_elapsed,
-        )
+        # 与标准评估一致按需取数：不能等全批预热完成后才计算首个回路。
+        # DataPlanner 保留 L1/L2 命中与有界并发，省去冷窗的重复读取/预处理。
 
         completed = 0
 
@@ -1922,7 +1914,7 @@ async def _do_calculate_custom_batch(
             "success": summary["success"],
             "inconclusive": summary["inconclusive"],
             "failed": summary["failed"],
-            "prewarm": prewarm_result,
+            "data_loading": "on_demand",
             "ts_start": ts_start_dt.isoformat(),
             "ts_end": ts_end_dt.isoformat(),
         }
