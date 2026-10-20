@@ -516,7 +516,11 @@ function parseTimestamp(ts: null | string | undefined): null | number {
 function formatDuration(record: TaskApi.TaskItem): string {
   const start = parseTimestamp(record.startedAt);
   if (!start) return '—';
-  const end = parseTimestamp(record.finishedAt) ?? Date.now();
+  const finished = parseTimestamp(record.finishedAt);
+  // 终态任务缺 finishedAt 时不得用 Date.now()——时长会随时间一直涨，
+  // 出现「成功任务 16 小时」这类假耗时；仅在途任务用当前时刻做实时计时
+  const end = finished ?? (isTaskActive(record) ? Date.now() : null);
+  if (end == null) return '—';
   const diffSec = Math.floor((end - start) / 1000);
   if (diffSec < 0) return '—';
   const hh = Math.floor(diffSec / 3600);

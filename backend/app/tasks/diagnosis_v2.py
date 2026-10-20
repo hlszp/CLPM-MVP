@@ -82,22 +82,43 @@ def run_diagnosis_batch(
     P4-03 主体绑定：subject_* 为人工来源提交时快照（MANUAL）；定时/事件
     调度来源不带 subject_user_id → SYSTEM 独立身份（不可撤权）。
     """
-    return self.run_async(
-        _do_run_batch(
-            loop_ids,
-            start,
-            end,
-            task_id,
-            operator_group,
-            triggered_by,
-            operators,
-            trigger_type,
-            subject_user_id=subject_user_id,
-            subject_role=subject_role,
-            subject_action=subject_action,
-            policy_revision=policy_revision,
+    try:
+        return self.run_async(
+            _do_run_batch(
+                loop_ids,
+                start,
+                end,
+                task_id,
+                operator_group,
+                triggered_by,
+                operators,
+                trigger_type,
+                subject_user_id=subject_user_id,
+                subject_role=subject_role,
+                subject_action=subject_action,
+                policy_revision=policy_revision,
+            )
         )
-    )
+    except Exception as exc:  # noqa: BLE001
+        # 顶层兜底：避免 autoretry 让任务长期停在 RUNNING（前端一直「执行中」）。
+        # 能落 FAILED 的业务异常直接终态；仅对明确瞬时故障再交给 Celery 重试。
+        try:
+            awaitable = update_status(
+                task_id,
+                TaskStatus.FAILED,
+                progress=1.0,
+                error_message=f"诊断任务异常终止: {exc}",
+                current_stage="诊断失败",
+            )
+            self.run_async(awaitable)
+        except Exception:  # noqa: BLE001
+            logger.exception("诊断任务终态写入失败 task=%s", task_id)
+        if isinstance(exc, (ConnectionError, TimeoutError, OSError)):
+            raise
+        return {
+            "ok": 0,
+            "failed": [{"loopId": lid, "error": str(exc)} for lid in loop_ids],
+        }
 
 
 async def _task_cancelled(task_id: str) -> bool:

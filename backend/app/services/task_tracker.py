@@ -682,6 +682,14 @@ async def update_status(
         updates["started_at"] = started_at
     if finished_at is not None:
         updates["finished_at"] = finished_at
+    elif status in (
+        TaskStatus.SUCCESS,
+        TaskStatus.FAILED,
+        TaskStatus.CANCELLED,
+    ):
+        # 终态必须落 finished_at：否则前端时长列用「当前时刻-start」会随时间
+        # 一直增长（出现成功任务显示 16 小时等假耗时）
+        updates["finished_at"] = _now_iso()
 
     script_args: list[str] = [status.value]
     for field, value in updates.items():
