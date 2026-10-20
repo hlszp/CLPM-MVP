@@ -47,7 +47,7 @@ docker exec clpm-postgres pg_dump -U clpm clpm | gzip > /opt/pg-backup-1039.sql.
 ```
 
 ```bash
-docker network ls | grep clpm && docker run --rm --network clpm-prod_net --env-file /opt/clpm-delivery-20261005-full/.env.prod clpm-backend:full-1039 alembic upgrade head
+docker network ls | grep clpm && docker run --rm --network clpm-prod-net --env-file /opt/clpm-delivery-20261005-full/.env.prod clpm-backend:full-1039 alembic upgrade head
 ```
 
 ✅ 末行 `Running upgrade p702perm01 -> p703report01`（1 步）
