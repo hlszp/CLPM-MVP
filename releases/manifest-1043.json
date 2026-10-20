@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "v7.5.6-1043-full",
+  "builtAt": "2026-10-20T17:11:31.729169+00:00",
+  "sourceRevision": "3eca21e832ebded04290dc0c75915dcecc54315c",
+  "branch": "macbook",
+  "platform": "linux/amd64",
+  "archive": "clpm-images-1043-full.tar.gz",
+  "sizeBytes": 227543602,
+  "sha256": "fb26935ddbf77124921000772ebc50f2a2ff94a6d81faefaebb8ddfccd93d246",
+  "images": [
+    {
+      "tags": [
+        "clpm-backend:full-1043"
+      ],
+      "id": "sha256:2d6e4229bdb4d3e0933ff9d728cafcf63b90fd8e7b3396efd013c1c24a9ec586"
+    },
+    {
+      "tags": [
+        "clpm-frontend:full-1043"
+      ],
+      "id": "sha256:e59760888dd7a71cd394c2a2176eb7091c75e4106a806c2afbb6dcb9d0af3c94"
+    }
+  ],
+  "databaseHead": "p703report01",
+  "newMigration": false,
+  "frontendBuild": "all current static assets rebuilt from clean source; full-1042 nginx runtime base retained",
+  "productionDeployed": false
+}
