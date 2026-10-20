@@ -50,7 +50,10 @@ import {
   TASK_STATUS_LABEL,
   TASK_STATUS_TO_STATUS,
 } from '#/constants/clpm-ui';
-import { TASK_POLLING_INTERVAL } from '#/constants/polling';
+import {
+  PROGRESS_POLLING_INTERVAL,
+  TASK_POLLING_INTERVAL,
+} from '#/constants/polling';
 import { runWithConcurrency } from '#/utils/concurrency';
 import { formatLocalTime, normalizeUtcTimestamp } from '#/utils/format';
 
@@ -201,13 +204,12 @@ const dangerImpact = computed(() => {
     : `${scope}；仅删除任务记录，不影响已写入的${artifactTerm.value}`;
 });
 
-const dangerRollback = computed(() =>
-  dangerAction.value === 'cancel'
-    ? (isDiagnosisScope.value
-      ? '取消不可撤销；如需诊断可在本页重新发起批量诊断，或在回路工作台诊断剖面单回路发起'
-      : '取消不可撤销；如需评估可重新触发标准评估')
-    : '任务记录删除后不可恢复',
-);
+const dangerRollback = computed(() => {
+  if (dangerAction.value !== 'cancel') return '任务记录删除后不可恢复';
+  return isDiagnosisScope.value
+    ? '取消不可撤销；如需诊断可在本页重新发起批量诊断，或在回路工作台诊断剖面单回路发起'
+    : '取消不可撤销；如需评估可重新触发标准评估';
+});
 
 function openDanger(
   action: 'batch-delete' | 'cancel' | 'delete',
@@ -473,7 +475,11 @@ const { start: startPolling, stop: stopPolling } = usePolling(
       stopPolling();
     }
   },
-  { interval: TASK_POLLING_INTERVAL },
+  {
+    interval: isDiagnosisScope.value
+      ? PROGRESS_POLLING_INTERVAL
+      : TASK_POLLING_INTERVAL,
+  },
 );
 
 function updatePolling() {
@@ -792,17 +798,25 @@ onUnmounted(() => {
             </template>
           </template>
           <template v-else-if="column.key === 'progress'">
-            <Progress
-              :percent="formatProgress(record.progress)"
-              size="small"
-              :status="
-                record.status === 'FAILED'
-                  ? 'exception'
-                  : record.status === 'SUCCESS'
-                    ? 'success'
-                    : 'active'
-              "
-            />
+            <div
+              role="progressbar"
+              :aria-label="`${record.title || '任务'}进度`"
+              :aria-valuenow="formatProgress(record.progress)"
+              :aria-valuemin="0"
+              :aria-valuemax="100"
+            >
+              <Progress
+                :percent="formatProgress(record.progress)"
+                size="small"
+                :status="
+                  record.status === 'FAILED'
+                    ? 'exception'
+                    : record.status === 'SUCCESS'
+                      ? 'success'
+                      : 'active'
+                "
+              />
+            </div>
           </template>
           <template v-else-if="column.key === 'createdAt'">
             <span class="clpm-num">{{ formatTime(record.createdAt) }}</span>
