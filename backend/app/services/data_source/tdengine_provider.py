@@ -202,13 +202,32 @@ async def _point_or_mixed_query(
         raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
         if raw.series_context is not None:
             point_context = raw.series_context
+        # 缺列兜底只构造一次，禁止在逐点循环中反复分配整窗数组。
+        columns = {
+            role: raw.signals.get(role) or [None] * len(raw.timestamps) for role in roles_lower
+        }
+        qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
+        # builder 的单片严格升序网格不需要再逐列复制、排序和去重。
+        # 非标准/重叠输入仍走下方通用合并路径，保留后段覆盖语义。
+        if (
+            len(layouts) == 1
+            and all(len(values) == len(raw.timestamps) for values in columns.values())
+            and (not wants_pv_quality or len(qc) == len(raw.timestamps))
+            and all(
+                raw.timestamps[i - 1] < raw.timestamps[i] for i in range(1, len(raw.timestamps))
+            )
+        ):
+            return RawTimeSeries(
+                timestamps=raw.timestamps,
+                signals=columns,
+                quality_codes={"pv_quality": qc} if wants_pv_quality else {},
+                series_context=point_context,
+            )
         for i, ts in enumerate(raw.timestamps):
             merged_ts.append(ts)
             for role in roles_lower:
-                sig = raw.signals.get(role) or [None] * len(raw.timestamps)
-                merged_signals[role].append(sig[i])
+                merged_signals[role].append(columns[role][i])
             if wants_pv_quality:
-                qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
                 merged_pv_q.append(qc[i])
 
     # 排序 + 边界去重（同 ts 保留后段——边界 T 处 point 覆盖 legacy）

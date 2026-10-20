@@ -93,7 +93,9 @@ async def _held_limits_s(step_s: int) -> dict[str, float]:
 
     now = time.monotonic()
     if _held_cfg_cache and now - _held_cfg_read_at < _HELD_CFG_TTL_S:
-        return _held_cfg_cache
+        # 缓存配置原值，步长相关钳制每次重算；不同 TagGroup/降采样步长
+        # 不能复用上一次查询的 3×step_s 结果。
+        return {key: max(3.0 * step_s, value) for key, value in _held_cfg_cache.items()}
     fast, slow = DEFAULT_HELD_FAST_S, DEFAULT_HELD_SLOW_S
     try:
         from sqlalchemy import select
@@ -117,7 +119,7 @@ async def _held_limits_s(step_s: int) -> dict[str, float]:
         "slow": max(3.0 * step_s, slow),
     }
     _held_cfg_cache.clear()
-    _held_cfg_cache.update(limits)
+    _held_cfg_cache.update({"fast": fast, "slow": slow})
     _held_cfg_read_at = now
     return limits
 
@@ -311,35 +313,42 @@ async def build_logical_wide(
         # 多子表合并大查询）；>16 点退回单条批量 IN 查询（SQL 次数仍有界）。
         # 最小列集（ts/value/quality_class——减小 TD 响应体量）。
         sorted_points = sorted(all_points)
-        if 1 < len(sorted_points) <= 16:
-            # F02：一条点查询失败也须等待兄弟查询收束，再交给外层重试。
-            per_point = await gather_settled(
-                *[
-                    g5_trace.awaited(
-                        "builder.events",
-                        repo.read_events([pid], grid_start, grid_end, full_columns=False),
-                        pointId=pid,
-                    )
-                    for pid in sorted_points
-                ]
-            )
-            events_map = {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
-        else:
-            events_map = await g5_trace.awaited(
-                "builder.events",
-                repo.read_events(sorted_points, grid_start, grid_end, full_columns=False),
-            )
-        # 各探测时刻的窗口前最后状态（batch per 时刻）
-        by_before: dict[datetime, list[str]] = {}
-        for pid, before in initial_probes:
-            by_before.setdefault(before, []).append(pid)
-        initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
-        for before, pids in by_before.items():
-            states = await g5_trace.awaited(
-                "builder.initial_state", repo.read_last_states_before(pids, before)
-            )
-            for pid, st in states.items():
-                initial_states[(pid, before)] = st
+
+        async def _window_events():
+            if 1 < len(sorted_points) <= 16:
+                # F02：一条点查询失败也须等待兄弟查询收束，再交给外层重试。
+                per_point = await gather_settled(
+                    *[
+                        g5_trace.awaited(
+                            "builder.events",
+                            repo.read_events([pid], grid_start, grid_end, full_columns=False),
+                            pointId=pid,
+                        )
+                        for pid in sorted_points
+                    ]
+                )
+                return {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
+            else:
+                return await g5_trace.awaited(
+                    "builder.events",
+                    repo.read_events(sorted_points, grid_start, grid_end, full_columns=False),
+                )
+
+        async def _initial_states():
+            by_before: dict[datetime, list[str]] = {}
+            for pid, before in initial_probes:
+                by_before.setdefault(before, []).append(pid)
+            initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
+            for before, pids in by_before.items():
+                states = await g5_trace.awaited(
+                    "builder.initial_state", repo.read_last_states_before(pids, before)
+                )
+                for pid, st in states.items():
+                    initial_states[(pid, before)] = st
+            return initial_states
+
+        # 两条 TD 查询没有数据依赖；全部收束后再继续，失败不遗留在途查询。
+        events_map, initial_states = await gather_settled(_window_events(), _initial_states())
         # 锚点（批量单查询；作为虚拟事件按其 sourceTime 生效）
         anchors = await g5_trace.awaited(
             "builder.anchors",

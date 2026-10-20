@@ -46,6 +46,16 @@ _TD_REST_PORT = settings.TDENGINE_PORT + 11
 # 查询高峰期实时写入的 to_thread 排队饥饿，flush 挂起 → 队列满仓 →
 # 全回路间歇断流。独立线程池保证实时写入不再与重查询争抢
 _TDNATIVE_EXECUTOR = ThreadPoolExecutor(max_workers=8, thread_name_prefix="tdnative")
+# 窄写通道与查询队列隔离：趋势/评估取数占满读线程时，实时落库仍能提交。
+# 每进程最多 8 读+2 写，连接回收池容量 32 保持不变。
+_TDWRITE_EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="tdwrite")
+
+
+def _sql_executor(sql: str) -> ThreadPoolExecutor:
+    command = sql.lstrip().split(None, 1)[0].upper() if sql.strip() else ""
+    if command in {"INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP"}:
+        return _TDWRITE_EXECUTOR
+    return _TDNATIVE_EXECUTOR
 
 
 class TDengineConnectionPool:
@@ -180,7 +190,7 @@ async def execute_native(sql: str) -> list[dict[str, Any]]:
     # 重试，避免写入协程被单条慢查询无限期钉死。
     # 专用线程池：与默认执行器隔离，实时写入不与趋势/分析长查询争抢
     return await asyncio.wait_for(
-        g5_trace.threaded("td.executor", _execute, executor=_TDNATIVE_EXECUTOR), timeout=90
+        g5_trace.threaded("td.executor", _execute, executor=_sql_executor(sql)), timeout=90
     )
 
 
@@ -209,4 +219,4 @@ async def execute_native_effective(sql: str) -> int:
                 cursor.close()
 
     loop = asyncio.get_running_loop()
-    return await asyncio.wait_for(loop.run_in_executor(_TDNATIVE_EXECUTOR, _execute), timeout=90)
+    return await asyncio.wait_for(loop.run_in_executor(_TDWRITE_EXECUTOR, _execute), timeout=90)
