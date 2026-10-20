@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from sqlalchemy import select, update
@@ -281,6 +281,7 @@ async def _do_run_batch(
         loops_total=n,
         loops_done=0,
         current_stage="开始诊断",
+        started_at=datetime.now(UTC).isoformat(),
     )
 
     for i, loop_id in enumerate(loop_ids):

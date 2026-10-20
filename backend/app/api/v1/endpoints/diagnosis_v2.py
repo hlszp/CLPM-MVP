@@ -400,7 +400,7 @@ async def trigger_diagnosis(
             "subject_action": _subject.action,
             "policy_revision": _subject.policy_revision,
         },
-        # P5-02：人工触发走人工优先级（Redis 队列分桶：事件9>人工5>夜间1）
+        # Redis 低数值先消费：事件 0、人工 3、后台 9。
         priority=PRIORITY_MANUAL,
     )
     from app.services.task_tracker import set_celery_task_ids

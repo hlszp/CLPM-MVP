@@ -21,15 +21,24 @@ Beat 调度：
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
-from app.tasks.celery_app import AsyncTask, celery_app
+from redis.exceptions import LockError, RedisError
+
+from app.tasks.celery_app import PRIORITY_NIGHTLY, AsyncTask, celery_app
 
 if TYPE_CHECKING:
+    from redis.asyncio.lock import Lock
+
     from app.services.alert_rule_engine.suppressor import Suppressor
 
 logger = logging.getLogger(__name__)
+
+_PATROL_LOCK_KEY = "alert:patrol:round-lock"
+_PATROL_LEASE_SECONDS = 120
+_PATROL_RENEW_SECONDS = 30
 
 
 @celery_app.task(
@@ -65,7 +74,46 @@ def cleanup_suppressions(self: AsyncTask) -> dict:
 
 
 async def _do_patrol() -> dict:
-    """巡检主流程。"""
+    """整轮互斥：重叠直接跳过；租约失效立即取消本轮，进程退出后锁可到期。"""
+    from app.core.redis import redis_client
+
+    lock = redis_client.lock(
+        _PATROL_LOCK_KEY,
+        timeout=_PATROL_LEASE_SECONDS,
+        blocking=False,
+        thread_local=False,
+    )
+    if not await lock.acquire():
+        logger.info("预警巡检已有一轮执行中，跳过重叠触发")
+        return {"skipped": True, "reason": "already_running"}
+
+    patrol = asyncio.create_task(_patrol_loops())
+    renewal = asyncio.create_task(_renew_patrol_lock(lock))
+    try:
+        done, _ = await asyncio.wait((patrol, renewal), return_when=asyncio.FIRST_COMPLETED)
+        if renewal in done:
+            # 续租异常不能 fail-open：先停止正在执行的巡检，再交任务层重试。
+            await renewal
+        return await patrol
+    finally:
+        for task in (patrol, renewal):
+            task.cancel()
+        await asyncio.gather(patrol, renewal, return_exceptions=True)
+        try:
+            # redis-py 用 token + Lua 原子释放，不能删除后继持有者的锁。
+            await lock.release()
+        except (LockError, RedisError):
+            logger.warning("预警巡检锁释放失败，等待租约到期", exc_info=True)
+
+
+async def _renew_patrol_lock(lock: Lock) -> None:
+    while True:
+        await asyncio.sleep(_PATROL_RENEW_SECONDS)
+        await lock.extend(_PATROL_LEASE_SECONDS, replace_ttl=True)
+
+
+async def _patrol_loops() -> dict:
+    """巡检主流程（仅整轮锁持有者进入）。"""
     from app.core.db import AsyncSessionLocal, close_session_guarded
     from app.services.alert_rule_engine.cache import get_all_active_loops
     from app.services.alert_rule_engine.evaluator import evaluate_loop_rules
@@ -333,6 +381,8 @@ _existing_beat = getattr(celery_app.conf, "beat_schedule", None) or {}
 _existing_beat["alert-patrol"] = {
     "task": "app.tasks.alert_patrol.run_alert_patrol",
     "schedule": crontab(minute="*/1"),
+    # 本分钟的触发错过执行时机后失效，避免拥塞恢复后逐个补跑陈旧整轮。
+    "options": {"priority": PRIORITY_NIGHTLY, "expires": 60},
 }
 # 过期抑制清扫：每小时执行
 _existing_beat["alert-suppression-cleanup"] = {

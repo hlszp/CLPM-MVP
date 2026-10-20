@@ -25,7 +25,7 @@ from celery import Task
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.core.exceptions import BizError
-from app.tasks.celery_app import celery_app
+from app.tasks.celery_app import PRIORITY_MANUAL, celery_app
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -485,6 +485,7 @@ async def _do_identify(
     name="app.tasks.tuning.identify_model_task",
     bind=True,
     base=AsyncTask,
+    priority=PRIORITY_MANUAL,
     time_limit=120,
     soft_time_limit=100,
 )

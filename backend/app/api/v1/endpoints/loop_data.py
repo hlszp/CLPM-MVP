@@ -129,16 +129,20 @@ async def start_import(
     )
 
     # 触发 Celery 任务，传入 task_id 用于状态跟踪
+    from app.tasks.celery_app import PRIORITY_MANUAL
     from app.tasks.kpi_calc import import_history_data as import_task
 
-    celery_result = import_task.delay(
-        loop_ids=body.loopIds,
-        ts_start=body.tsStart,
-        ts_end=body.tsEnd,
-        interval=body.interval,
-        trigger_backfill=body.triggerBackfill,
-        point_only=body.pointOnly,
-        task_id=task_id,
+    celery_result = import_task.apply_async(
+        kwargs={
+            "loop_ids": body.loopIds,
+            "ts_start": body.tsStart,
+            "ts_end": body.tsEnd,
+            "interval": body.interval,
+            "trigger_backfill": body.triggerBackfill,
+            "point_only": body.pointOnly,
+            "task_id": task_id,
+        },
+        priority=PRIORITY_MANUAL,
     )
 
     # 回填 celery_task_id

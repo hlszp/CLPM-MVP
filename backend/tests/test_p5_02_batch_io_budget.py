@@ -10,7 +10,7 @@
 3. **attempt 表/FAILED 终态**（G2 遗留③，P0-02 冻结 v2 §2.2）：attempt
    序号推导、终末判定、FAILED record 追加（status/payload 错误摘要）、
    显式重评链 sourceRecordId 自动回链、3 次 attempt 上限（max_retries=2）。
-4. **队列优先级**：EVENT(9) > MANUAL(5) > NIGHTLY(1) 常量、default 队列
+4. **队列优先级**：Redis 低数值先消费：EVENT(0)、MANUAL(3)、NIGHTLY(9)，default 队列
    max_priority、beat 条目夜间优先级、派发点接线断言。
 
 IO/队列峰值实测归联测批（批 γ）；迁移/真实 PG 行为由 alembic check +
@@ -621,13 +621,24 @@ class TestFinalAttemptWiring:
 
 class TestQueuePriority:
     def test_priority_ordering(self) -> None:
-        assert PRIORITY_EVENT > PRIORITY_MANUAL > PRIORITY_NIGHTLY
-        assert (PRIORITY_EVENT, PRIORITY_MANUAL, PRIORITY_NIGHTLY) == (9, 5, 1)
+        assert PRIORITY_EVENT < PRIORITY_MANUAL < PRIORITY_NIGHTLY
+        assert (PRIORITY_EVENT, PRIORITY_MANUAL, PRIORITY_NIGHTLY) == (0, 3, 9)
+        assert celery_app.conf.task_default_priority == PRIORITY_NIGHTLY
 
     def test_default_queue_max_priority_declared(self) -> None:
         queues = {q.name: q for q in celery_app.conf.task_queues}
         assert queues["default"].max_priority == 10
         assert celery_app.conf.task_queue_max_priority == 10
+
+    def test_manual_only_tasks_keep_manual_priority(self) -> None:
+        from app.tasks.report_generator import (
+            export_diagnosis_statistics,
+            generate_diagnosis_pdf_task,
+        )
+        from app.tasks.tuning import identify_model_task
+
+        for task in (identify_model_task, export_diagnosis_statistics, generate_diagnosis_pdf_task):
+            assert task.priority == PRIORITY_MANUAL
 
     def test_beat_entries_nightly_priority(self) -> None:
         schedule = kpi_calc.celery_app.conf.beat_schedule

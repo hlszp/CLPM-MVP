@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
@@ -245,6 +245,14 @@ class _BatchEnv:
 
 
 class TestCheckpointIdempotency:
+    @pytest.mark.asyncio
+    async def test_worker_records_actual_start_before_first_loop(self) -> None:
+        before = datetime.now(UTC)
+        with _BatchEnv() as env:
+            await dv._do_run_batch(["l1"], *_WINDOW, "task-clock", "full", "user")
+        started = datetime.fromisoformat(env.update.await_args_list[0].kwargs["started_at"])
+        assert before <= started <= datetime.now(UTC)
+
     @pytest.mark.asyncio
     async def test_retry_skips_completed_and_redoes_failed(self) -> None:
         """中途失败重试：已完成回路跳过（不重复 run/建议），失败回路脱链重做。"""

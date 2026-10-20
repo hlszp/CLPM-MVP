@@ -205,6 +205,8 @@ class FakeTaskRedis:
                 ) not in {None, ""}:
                     if float(value) < float(task[field]):
                         continue
+                if field in {"started_at", "finished_at"} and task.get(field):
+                    continue
                 task[field] = value
             return ["UPDATED", old_status]
 
@@ -562,6 +564,111 @@ class TestCustomTaskEvaluate:
 
 class TestGetTaskStatus:
     """GET /api/v1/tasks/{taskId} tests."""
+
+    @pytest.mark.parametrize("celery_state", ["PENDING", "RECEIVED", "RETRY"])
+    def test_queued_child_does_not_start_task_clock(
+        self, client, task_redis, fake_redis, celery_state
+    ) -> None:
+        """带 Celery ID 的排队任务不能因读取详情变为执行中。"""
+        _save_task_to_redis(
+            task_redis, task_id="queued-diag", task_type="DIAGNOSIS", celery_task_id="child"
+        )
+        child = MagicMock(state=celery_state, date_done=None)
+        with (
+            patch("celery.result.AsyncResult", return_value=child),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            for _ in range(2):
+                data = client.get(
+                    "/api/v1/tasks/queued-diag",
+                    headers={"Authorization": "Bearer fake-token"},
+                ).json()["data"]
+                assert data["status"] == "PENDING"
+                assert data["startedAt"] is None
+
+    def test_started_child_does_not_invent_start_time(self, client, task_redis, fake_redis):
+        """STARTED 能确认状态，但结果后端不含真实开始时间时不能用查询时刻代替。"""
+        _save_task_to_redis(task_redis, task_id="started-diag", celery_task_id="child")
+        with (
+            patch("celery.result.AsyncResult", return_value=MagicMock(state="STARTED")),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            data = client.get(
+                "/api/v1/tasks/started-diag",
+                headers={"Authorization": "Bearer fake-token"},
+            ).json()["data"]
+        assert data["status"] == "RUNNING"
+        assert data["startedAt"] is None
+
+    def test_completed_child_uses_worker_finish_time(self, client, task_redis, fake_redis):
+        finished = datetime(2026, 10, 20, 10, 0, tzinfo=UTC)
+        _save_task_to_redis(
+            task_redis,
+            task_id="finished-diag",
+            status="RUNNING",
+            celery_task_id="child",
+            started_at=(finished - timedelta(seconds=9)).isoformat(),
+        )
+        with (
+            patch(
+                "celery.result.AsyncResult",
+                return_value=MagicMock(state="SUCCESS", date_done=finished),
+            ),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            data = client.get(
+                "/api/v1/tasks/finished-diag",
+                headers={"Authorization": "Bearer fake-token"},
+            ).json()["data"]
+        assert data["status"] == "SUCCESS"
+        assert data["finishedAt"] == finished.isoformat()
+
+    def test_partial_children_preserve_worker_progress(self, client, task_redis, fake_redis):
+        started = "2026-10-20T10:00:00+00:00"
+        _save_task_to_redis(
+            task_redis,
+            task_id="partial-diag",
+            status="RUNNING",
+            celery_task_ids='["done", "queued"]',
+            progress="0.42",
+            current_stage="算法检查 5/11",
+            started_at=started,
+        )
+        with (
+            patch(
+                "celery.result.AsyncResult",
+                side_effect=[
+                    MagicMock(state="SUCCESS", date_done=datetime.now(UTC)),
+                    MagicMock(state="PENDING"),
+                ],
+            ),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            data = client.get(
+                "/api/v1/tasks/partial-diag",
+                headers={"Authorization": "Bearer fake-token"},
+            ).json()["data"]
+        assert data["status"] == "RUNNING"
+        assert data["progress"] == 0.42
+        assert data["currentStage"] == "算法检查 5/11"
+        assert data["startedAt"] == started
+        assert data["finishedAt"] is None
+
+    def test_unknown_finish_time_stays_unknown(self, client, task_redis, fake_redis):
+        _save_task_to_redis(task_redis, task_id="revoked-diag", celery_task_id="child")
+        with (
+            patch(
+                "celery.result.AsyncResult", return_value=MagicMock(state="REVOKED", date_done=None)
+            ),
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            data = client.get(
+                "/api/v1/tasks/revoked-diag",
+                headers={"Authorization": "Bearer fake-token"},
+            ).json()["data"]
+        assert data["status"] == "FAILED"
+        assert data["startedAt"] is None
+        assert data["finishedAt"] is None
 
     def test_get_task_pending(self, client, task_redis, fake_redis) -> None:
         """查询 PENDING 状态任务."""
