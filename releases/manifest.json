@@ -55,5 +55,29 @@
     "tarSha256": "30d37d9369c2feaed88de12be55968c9672c489f6493b3bff0fac942096e8e26",
     "migration": "53f2f20435f1 (idx_kpi_snapshot_loop_ts_end, CONCURRENTLY)",
     "note": "1008 监视+驾驶舱性能批 + 1009 趋势窗口统一（-8h 修复）；前端根路径版（83 入口）"
+  },
+  {
+    "version": "full-1041 (v7.5.6)",
+    "buildTime": "2026-10-20T17:02:35+08:00",
+    "gitCommit": "0311041d3bc56a5aa0c57c3f0842cfefaf372698",
+    "gitBranch": "main",
+    "buildPlatform": "linux/amd64 (clean git archive)",
+    "appVersion": "v7.5.6-1041-full",
+    "images": [
+      {
+        "name": "clpm-backend:full-1041",
+        "configDigest": "sha256:575c006d5e3966f01bfdc7d2c500fda13fbb0005ea79a6fb38e28e3a005c22a5"
+      },
+      {
+        "name": "clpm-frontend:full-1041",
+        "configDigest": "sha256:bef6b16941c1e8ec435dc00096e646fabdcff5e15e70558d5af804a507bf5d95"
+      }
+    ],
+    "tarFile": "clpm-images-1041-full.tar.gz",
+    "tarSizeBytes": 221089898,
+    "tarSha256": "43bbce48bbcb0c32f234707a34af77f6597c07742f8d51bcd5452599999d9dc9",
+    "migration": "no new migration; head remains p703report01",
+    "guide": "部署指令-1041-ToDesk人工.md",
+    "note": "诊断性能与进度、历史数据导入性能与稳定性；现有环境双镜像升级包，根路径前端；用户经 ToDesk 手工部署，现场效果待验收。"
   }
 ]
