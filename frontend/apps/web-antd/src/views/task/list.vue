@@ -38,6 +38,7 @@ import dayjs from 'dayjs';
 import {
   cancelTaskApi,
   deleteTaskApi,
+  getTaskDetailApi,
   getTaskListApi,
   triggerStandardEvaluateApi,
 } from '#/api/task';
@@ -148,6 +149,7 @@ const emptyActionText = computed(() =>
 // ============ 详情 Drawer ============
 const drawerVisible = ref(false);
 const selectedTask = ref<null | TaskApi.TaskItem>(null);
+const detailRefreshError = ref(false);
 const selectedRowKeys = ref<string[]>([]);
 
 // ============ 危险操作确认（取消/删除任务：普通确认弹框，无需输入确认码） ============
@@ -401,6 +403,7 @@ async function loadList() {
     const result = await getTaskListApi(buildQueryParams());
     taskList.value = result.items ?? [];
     totalCount.value = result.total ?? 0;
+    await refreshSelectedTask();
     updatePolling();
   } catch (error) {
     console.error('加载任务列表失败:', error);
@@ -411,9 +414,36 @@ async function loadList() {
 }
 
 // ============ 自动刷新（polling 活跃任务） ============
+async function refreshSelectedTask() {
+  const selected = selectedTask.value;
+  if (!drawerVisible.value || !selected) return;
+  const listed = taskList.value.find((task) => task.taskId === selected.taskId);
+  if (listed) {
+    selectedTask.value = listed;
+    detailRefreshError.value = false;
+    return;
+  }
+  // 任务可能因状态筛选/分页移出列表；打开的在途任务仍需独立跟进到终态。
+  if (!isTaskActive(selected)) return;
+  try {
+    const fresh = await getTaskDetailApi(selected.taskId);
+    if (drawerVisible.value && selectedTask.value?.taskId === selected.taskId) {
+      selectedTask.value = fresh;
+      detailRefreshError.value = false;
+    }
+  } catch {
+    if (drawerVisible.value && selectedTask.value?.taskId === selected.taskId) {
+      detailRefreshError.value = true;
+    }
+  }
+}
+
 function hasActiveTask(): boolean {
-  return taskList.value.some(
-    (t) => t.status === 'RUNNING' || t.status === 'PENDING',
+  return (
+    taskList.value.some((task) => isTaskActive(task)) ||
+    (drawerVisible.value &&
+      selectedTask.value !== null &&
+      isTaskActive(selectedTask.value))
   );
 }
 
@@ -437,6 +467,7 @@ const { start: startPolling, stop: stopPolling } = usePolling(
     const result = await getTaskListApi(buildQueryParams());
     taskList.value = result.items ?? [];
     totalCount.value = result.total ?? 0;
+    await refreshSelectedTask();
     emit('polled');
     if (!hasActiveTask()) {
       stopPolling();
@@ -494,7 +525,9 @@ function viewResults(task: TaskApi.TaskItem) {
 // ============ 行点击 → 详情抽屉 ============
 function handleRowClick(record: TaskApi.TaskItem) {
   selectedTask.value = record;
+  detailRefreshError.value = false;
   drawerVisible.value = true;
+  updatePolling();
 }
 
 // ============ 工具函数 ============
@@ -848,6 +881,9 @@ onUnmounted(() => {
     >
       <template v-if="selectedTask">
         <div class="space-y-3">
+          <div v-if="detailRefreshError" role="alert" class="text-warning">
+            任务详情刷新失败，当前显示上次状态，请刷新重试。
+          </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">任务标题</span>
             <span class="font-medium">{{ getTaskTitle(selectedTask) }}</span>
@@ -881,6 +917,13 @@ onUnmounted(() => {
               "
               style="width: 180px"
             />
+          </div>
+          <div
+            v-if="isTaskActive(selectedTask) && selectedTask.currentStage"
+            class="border-b pb-2"
+          >
+            <span :style="{ color: themeColors.NEUTRAL }">当前阶段：</span>
+            <span>{{ selectedTask.currentStage }}</span>
           </div>
           <div class="flex justify-between border-b pb-2">
             <span :style="{ color: themeColors.NEUTRAL }">时间窗口</span>

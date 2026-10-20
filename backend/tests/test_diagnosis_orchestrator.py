@@ -70,7 +70,7 @@ def _mock_loop() -> MagicMock:
     return loop
 
 
-async def _run(raw_series: RawTimeSeries | None):
+async def _run(raw_series: RawTimeSeries | None, **kwargs):
     loop = _mock_loop()
     db = _mock_db(loop)
 
@@ -85,9 +85,151 @@ async def _run(raw_series: RawTimeSeries | None):
         ),
     ):
         run = await orch.run_diagnosis_for_loop(
-            db, LOOP_ID, start=START, end=END, task_id="task-1", triggered_by="tester"
+            db, LOOP_ID, start=START, end=END, task_id="task-1", triggered_by="tester", **kwargs
         )
     return run, db
+
+
+@pytest.mark.asyncio
+async def test_progress_reports_each_operator_before_execution() -> None:
+    """执行中能收到算法检查进度；不允许等全部算子跑完才更新。"""
+    reports = []
+    executed = []
+
+    async def progress(frac, stage):
+        reports.append((frac, stage))
+
+    registry = {}
+    for name, (meta, fn) in OPERATOR_REGISTRY.items():
+
+        def checked(data, thresholds, *, fn=fn, name=name, meta=meta):
+            assert meta.display_name in reports[-1][1]
+            executed.append(name)
+            return fn(data, thresholds)
+
+        registry[name] = (meta, checked)
+
+    with patch.dict(OPERATOR_REGISTRY, registry):
+        run, _ = await _run(_frozen_series(), progress_cb=progress)
+    assert len(executed) == len(OPERATOR_REGISTRY)
+    assert all(not r.get("error") for r in run.operator_results.values())
+    fractions = [frac for frac, _ in reports]
+    assert fractions == sorted(fractions)
+    assert len([frac for frac in fractions if 0.2 < frac < 0.9]) >= len(OPERATOR_REGISTRY)
+    assert fractions[-1] == 1.0
+
+
+@pytest.mark.asyncio
+async def test_cancel_between_operators_stops_execution_and_persistence() -> None:
+    """进度回调的取消信号必须向外传播，不能作为算子 ERROR 吞掉。"""
+    from app.tasks.diagnosis_v2 import DiagnosisTaskCancelledError
+
+    names = list(OPERATOR_REGISTRY)
+    stop_name = names[2]
+    stop_meta, _ = OPERATOR_REGISTRY[stop_name]
+    never_run = MagicMock(side_effect=AssertionError("取消后仍执行算子"))
+    db = _mock_db(_mock_loop())
+
+    async def progress(frac, stage):
+        if stop_meta.display_name in stage:
+            raise DiagnosisTaskCancelledError(stage)
+
+    with (
+        patch.dict(OPERATOR_REGISTRY, {stop_name: (stop_meta, never_run)}),
+        patch(__name__ + "._mock_db", return_value=db),
+        pytest.raises(DiagnosisTaskCancelledError),
+    ):
+        await _run(_frozen_series(), progress_cb=progress)
+    never_run.assert_not_called()
+    db.add.assert_not_called()
+    db.commit.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("case", ["full", "fast", "custom", "disabled", "missing", "error"])
+async def test_progress_path_preserves_operator_results_and_fusion(case) -> None:
+    """增加进度不能改变过滤、缺数、异常状态、指标或融合结论。"""
+    raw = _frozen_series()
+    data = OperatorInput(
+        loop_id=LOOP_ID,
+        signals={name: np.array(values) for name, values in raw.signals.items()},
+        timestamps=np.arange(len(raw.timestamps), dtype=float),
+        meta={"sample_interval": 1.0, "loop_type": "FLOW"},
+        kpi_context={},
+    )
+    names = list(OPERATOR_REGISTRY)
+    name = names[0]
+    meta, fn = OPERATOR_REGISTRY[name]
+    group = "fast" if case == "fast" else "full"
+    selected = names[:2] if case == "custom" else None
+    disabled = {meta.diag_code} if case == "disabled" else None
+    if case == "missing":
+        data.signals.pop("pv")
+    if case == "error":
+        fn = MagicMock(side_effect=ValueError("operator failed"))
+    with patch.dict(OPERATOR_REGISTRY, {name: (meta, fn)}):
+        expected = orch._run_operators(data, {}, group, selected, disabled)
+        actual = await orch._run_operators_with_progress(
+            data, {}, group, selected, disabled, AsyncMock()
+        )
+    assert actual == expected
+
+
+def _reference_observed_mask(timestamps, runs):
+    """独立复刻优化前逐点逐区间扫描，保留半开边界和 UTC 去时区口径。"""
+    mask = np.ones(len(timestamps), dtype=bool)
+    if runs:
+        for i, ts in enumerate(timestamps):
+            if ts is None:
+                mask[i] = False
+                continue
+            ts = ts.replace(tzinfo=None) if ts.tzinfo else ts
+            for run in runs:
+                if run.start.replace(tzinfo=None) <= ts < run.end.replace(tzinfo=None):
+                    mask[i] = False
+                    break
+    return mask
+
+
+def test_observed_mask_matches_reference_with_fragmented_intervals() -> None:
+    from datetime import UTC
+
+    from app.contracts.series_context import IntervalRun
+
+    rng = np.random.default_rng(42)
+    for case in range(100):
+        timestamps = [START + timedelta(microseconds=int(v)) for v in rng.integers(-100, 1000, 100)]
+        timestamps[0] = None
+        runs = [
+            IntervalRun(
+                START + timedelta(microseconds=int(a)),
+                START + timedelta(microseconds=int(b)),
+            )
+            for a, b in rng.integers(-100, 1000, (case % 15, 2))
+        ]
+        # 包含首尾边界、重叠/乱序区间、倒置区间、空区间、缺失时间、aware UTC。
+        for run in runs:
+            timestamps.extend([run.start, run.end])
+            if case % 2:
+                run.start = run.start.replace(tzinfo=UTC)
+                run.end = run.end.replace(tzinfo=UTC)
+        np.testing.assert_array_equal(
+            orch._build_observed_mask(timestamps, runs),
+            _reference_observed_mask(timestamps, runs),
+        )
+
+
+def test_observed_mask_full_day_keeps_all_fragmented_gaps() -> None:
+    from app.contracts.series_context import IntervalRun
+
+    n = 86_400
+    timestamps = [START + timedelta(seconds=i) for i in range(n)]
+    runs = []
+    expected = np.ones(n, dtype=bool)
+    for i in range(0, n, 83):
+        runs.append(IntervalRun(timestamps[i], timestamps[i] + timedelta(seconds=2)))
+        expected[i : i + 2] = False
+    np.testing.assert_array_equal(orch._build_observed_mask(timestamps, runs), expected)
 
 
 @pytest.mark.asyncio

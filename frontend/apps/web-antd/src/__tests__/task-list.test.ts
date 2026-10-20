@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils';
+import { flushPromises, mount } from '@vue/test-utils';
 import { nextTick } from 'vue';
 
 /**
@@ -30,7 +30,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const {
   cancelTaskApiMock,
   deleteTaskApiMock,
+  getTaskDetailApiMock,
   getTaskListApiMock,
+  polling,
   routerPushMock,
 } = vi.hoisted(() => ({
   cancelTaskApiMock: vi.fn().mockResolvedValue({
@@ -45,6 +47,12 @@ const {
     items: [],
     total: 0,
   }),
+  getTaskDetailApiMock: vi.fn(),
+  polling: {
+    task: null as (() => Promise<void>) | null,
+    start: vi.fn(),
+    stop: vi.fn(),
+  },
   routerPushMock: vi.fn(),
 }));
 
@@ -55,10 +63,18 @@ vi.mock('vue-router', () => ({
 vi.mock('#/api/task', () => ({
   cancelTaskApi: cancelTaskApiMock,
   deleteTaskApi: deleteTaskApiMock,
+  getTaskDetailApi: getTaskDetailApiMock,
   getTaskListApi: getTaskListApiMock,
   startTaskApi: vi.fn().mockResolvedValue({ taskId: 'task-x' }),
   triggerBackfillApi: vi.fn(),
   triggerStandardEvaluateApi: vi.fn().mockResolvedValue({ taskId: 'task-x' }),
+}));
+
+vi.mock('#/composables/use-polling', () => ({
+  usePolling: (task: () => Promise<void>) => {
+    polling.task = task;
+    return { start: polling.start, stop: polling.stop };
+  },
 }));
 
 vi.mock('#/api/plant-node', () => ({
@@ -112,6 +128,7 @@ const mountOptions = {
 describe('统一评估任务列表 task/list.vue', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getTaskDetailApiMock.mockReset();
     getTaskListApiMock.mockResolvedValue({
       items: [
         {
@@ -128,6 +145,97 @@ describe('统一评估任务列表 task/list.vue', () => {
       ],
       total: 1,
     });
+  });
+
+  it('轮询同步详情抽屉的进度、阶段和终态', async () => {
+    const wrapper = mount(TaskList, mountOptions);
+    await flushPromises();
+    const state = (wrapper.vm as any).$.setupState;
+    state.handleRowClick(state.taskList[0]);
+    const updated = {
+      ...state.taskList[0],
+      progress: 0.8,
+      currentStage: '算法检查 10/11：阶跃响应过激分析',
+    };
+    getTaskListApiMock.mockResolvedValue({ items: [updated], total: 1 });
+    await polling.task!();
+    expect(state.selectedTask.progress).toBe(0.8);
+    expect(state.selectedTask.currentStage).toBe(updated.currentStage);
+    getTaskListApiMock.mockResolvedValue({
+      items: [{ ...updated, status: 'SUCCESS', progress: 1 }],
+      total: 1,
+    });
+    await polling.task!();
+    expect(state.selectedTask.status).toBe('SUCCESS');
+    expect(state.selectedTask.progress).toBe(1);
+    expect(getTaskDetailApiMock).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('任务移出当前筛选后仍刷新打开的详情，直到终态', async () => {
+    const wrapper = mount(TaskList, mountOptions);
+    await flushPromises();
+    const state = (wrapper.vm as any).$.setupState;
+    const current = state.taskList[0];
+    state.handleRowClick(current);
+    getTaskListApiMock.mockResolvedValue({ items: [], total: 0 });
+    getTaskDetailApiMock.mockResolvedValue({ ...current, progress: 0.8 });
+    await polling.task!();
+    expect(getTaskDetailApiMock).toHaveBeenCalledWith('task-1');
+    expect(state.selectedTask.progress).toBe(0.8);
+    expect(polling.stop).not.toHaveBeenCalled();
+    getTaskDetailApiMock.mockResolvedValue({
+      ...current,
+      status: 'SUCCESS',
+      progress: 1,
+    });
+    await polling.task!();
+    expect(state.selectedTask.status).toBe('SUCCESS');
+    expect(polling.stop).toHaveBeenCalled();
+    wrapper.unmount();
+  });
+
+  it('迟到的详情响应不覆盖后来选中的另一任务', async () => {
+    const wrapper = mount(TaskList, mountOptions);
+    await flushPromises();
+    const state = (wrapper.vm as any).$.setupState;
+    const current = state.taskList[0];
+    state.handleRowClick(current);
+    getTaskListApiMock.mockResolvedValue({ items: [], total: 0 });
+    let resolveDetail!: (task: unknown) => void;
+    getTaskDetailApiMock.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveDetail = resolve;
+        }),
+    );
+    const pending = polling.task!();
+    await flushPromises();
+    state.handleRowClick({ ...current, taskId: 'task-2' });
+    resolveDetail({ ...current, progress: 0.9 });
+    await pending;
+    expect(state.selectedTask.taskId).toBe('task-2');
+    wrapper.unmount();
+  });
+
+  it('详情刷新失败显式提示并保留执行状态，下次成功后清除提示', async () => {
+    const wrapper = mount(TaskList, mountOptions);
+    await flushPromises();
+    const state = (wrapper.vm as any).$.setupState;
+    const current = state.taskList[0];
+    state.handleRowClick(current);
+    getTaskListApiMock.mockResolvedValue({ items: [], total: 0 });
+    getTaskDetailApiMock.mockRejectedValueOnce(
+      new Error('network unavailable'),
+    );
+    await polling.task!();
+    expect(state.detailRefreshError).toBe(true);
+    expect(state.selectedTask.status).toBe('RUNNING');
+    getTaskDetailApiMock.mockResolvedValue({ ...current, progress: 0.8 });
+    await polling.task!();
+    expect(state.detailRefreshError).toBe(false);
+    expect(state.selectedTask.progress).toBe(0.8);
+    wrapper.unmount();
   });
 
   // ============ 状态判定测试 ============
@@ -348,9 +456,7 @@ describe('统一任务列表 task/list.vue 诊断口径', () => {
 
   it('uT-TASKLIST-015: 诊断口径确认弹窗文案使用诊断记录术语', async () => {
     getTaskListApiMock.mockResolvedValue({
-      items: [
-        { taskId: 'task-1', taskType: 'DIAGNOSIS', status: 'RUNNING' },
-      ],
+      items: [{ taskId: 'task-1', taskType: 'DIAGNOSIS', status: 'RUNNING' }],
       total: 1,
     });
     const wrapper = mountDiagnosis();
@@ -477,8 +583,7 @@ describe('统一任务列表 task/list.vue AUTH-03 角色显隐', () => {
     'uT-TASKLIST-016: %s 可见批量删除/取消/删除（对齐后端 _TASK_CREATOR_ROLES）',
     async (role) => {
       const wrapper = mountWithRoles([role]);
-      await nextTick();
-      await nextTick();
+      await flushPromises();
       const texts = buttonTexts(wrapper);
       expect(texts).toContain('批量删除');
       expect(texts).toContain('取消');
@@ -490,8 +595,7 @@ describe('统一任务列表 task/list.vue AUTH-03 角色显隐', () => {
     'uT-TASKLIST-017: %s 不可见批量删除/取消/删除（后端必 403 的按钮不渲染）',
     async (role) => {
       const wrapper = mountWithRoles([role]);
-      await nextTick();
-      await nextTick();
+      await flushPromises();
       const texts = buttonTexts(wrapper);
       expect(texts).not.toContain('批量删除');
       expect(texts).not.toContain('取消');

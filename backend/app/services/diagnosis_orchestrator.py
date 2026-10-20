@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 import math
 import warnings
-from collections.abc import Awaitable, Callable
+from bisect import bisect_right
+from collections.abc import Awaitable, Callable, Generator
 from datetime import datetime
 from decimal import Decimal
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -21,6 +23,7 @@ import numpy as np
 from sqlalchemy import func, select
 
 from app.contracts.data_types import ControlType, LoopPreprocessConfig, QualityStatus, RawTimeSeries
+from app.contracts.series_context import IntervalRun
 from app.models.diagnosis_run import DiagnosisRun
 from app.models.loop import LoopLedger, LoopTagMapping
 from app.models.tag import TagRegistry
@@ -825,13 +828,45 @@ def _derive_assessment_state(r: OperatorResult) -> None:
     r.assessment_state = ASSESSMENT_NEGATIVE
 
 
-def _run_operators(
+def _build_observed_mask(
+    timestamps: list[datetime | None], unknown_runs: list[IntervalRun]
+) -> np.ndarray:
+    """将未知半开区间映射为掩码，O(M log M + N log M)，不逐点遍历 M 个区间。
+
+    区间先排序，再保存终点前缀最大值，兼容乱序和重叠区间。沿用 point
+    契约的 UTC 时间及原去时区口径，空区间不命中，不改变缺失数据判定。
+    """
+    mask = np.ones(len(timestamps), dtype=bool)
+    if not unknown_runs:
+        return mask
+    intervals = sorted(
+        (run.start.replace(tzinfo=None), run.end.replace(tzinfo=None)) for run in unknown_runs
+    )
+    starts: list[datetime] = []
+    ends: list[datetime] = []
+    for start, end in intervals:
+        if end <= start:
+            continue
+        starts.append(start)
+        ends.append(max(ends[-1], end) if ends else end)
+    for i, ts in enumerate(timestamps):
+        if ts is None:
+            mask[i] = False
+            continue
+        at = ts.replace(tzinfo=None) if ts.tzinfo else ts
+        j = bisect_right(starts, at) - 1
+        if j >= 0 and at < ends[j]:
+            mask[i] = False
+    return mask
+
+
+def _operator_steps(
     op_input: OperatorInput,
     effective_thresholds: dict[str, dict[str, Any]],
     operator_group: str,
     operators: list[str] | None = None,
     disabled_diag_codes: set[str] | None = None,
-) -> tuple[dict[str, OperatorResult], dict[str, FamilyFusion]]:
+) -> Generator[tuple[float, str], None, tuple[dict[str, OperatorResult], dict[str, FamilyFusion]]]:
     """执行全部算子并按症状分组做族内融合。
 
     operators 为单算子细选白名单（None=不细选）：与 fast 组过滤叠加生效。
@@ -852,7 +887,11 @@ def _run_operators(
     # TestScopedInputSharing）；key 的 numeric 过滤条件与
     # _scoped_operator_input 内部推导逐字一致。
     scoped_cache: dict[tuple[str, ...], tuple[OperatorInput, str | None]] = {}
-    for name, (meta, fn) in OPERATOR_REGISTRY.items():
+    total = len(OPERATOR_REGISTRY)
+    for index, (name, (meta, fn)) in enumerate(OPERATOR_REGISTRY.items()):
+        # 在检查前交还控制权：异步入口上报真实检查阶段，并消费取消信号。
+        # 排除/缺数也属于已检查项，不改变 selected/coverage 的科学计数。
+        yield 0.3 + 0.6 * index / total, f"算法检查 {index + 1}/{total}：{meta.display_name}"
         if operator_group == "fast" and not meta.fast_group:
             results[name] = OperatorResult(
                 name,
@@ -941,6 +980,47 @@ def _run_operators(
     return results, fusions
 
 
+def _run_operators(
+    op_input: OperatorInput,
+    effective_thresholds: dict[str, dict[str, Any]],
+    operator_group: str,
+    operators: list[str] | None = None,
+    disabled_diag_codes: set[str] | None = None,
+) -> tuple[dict[str, OperatorResult], dict[str, FamilyFusion]]:
+    """同步纯计算入口，与异步编排共享同一算子执行及融合实现。"""
+    steps = _operator_steps(
+        op_input, effective_thresholds, operator_group, operators, disabled_diag_codes
+    )
+    while True:
+        try:
+            next(steps)
+        except StopIteration as done:
+            return done.value
+
+
+async def _run_operators_with_progress(
+    op_input: OperatorInput,
+    effective_thresholds: dict[str, dict[str, Any]],
+    operator_group: str,
+    operators: list[str] | None,
+    disabled_diag_codes: set[str] | None,
+    progress_cb: ProgressCb,
+) -> tuple[dict[str, OperatorResult], dict[str, FamilyFusion]]:
+    steps = _operator_steps(
+        op_input, effective_thresholds, operator_group, operators, disabled_diag_codes
+    )
+    try:
+        while True:
+            try:
+                fraction, stage = next(steps)
+            except StopIteration as done:
+                return done.value
+            # 回调位于算子异常捕获之外，取消信号不能被转换为 ERROR 后继续执行。
+            await progress_cb(fraction, stage)
+    finally:
+        steps.close()
+
+
 def _profile_expected_operators(operator_group: str, operators: list[str] | None) -> list[str]:
     """本次 profile 期望算子清单（08§4.3：任务开始固定，不因结果缩小）。
 
@@ -994,7 +1074,20 @@ async def run_diagnosis_for_loop(
     复核，失权不发布结果（仅 REVOKED 审计）。
     """
 
+    stage_started = perf_counter()
+    previous_stage = "加载回路配置"
+
     async def _report(frac: float, stage: str) -> None:
+        nonlocal stage_started, previous_stage
+        now = perf_counter()
+        logger.info(
+            "诊断阶段耗时 task=%s loop=%s stage=%s duration_ms=%.1f",
+            task_id,
+            loop_id,
+            previous_stage,
+            (now - stage_started) * 1000,
+        )
+        stage_started, previous_stage = now, stage
         if progress_cb is not None:
             await progress_cb(frac, stage)
 
@@ -1046,6 +1139,7 @@ async def run_diagnosis_for_loop(
         logger.warning("诊断宽表查询失败（回路 %s）: %s", loop.tag_name, exc)
         raw_series = None
 
+    await _report(0.1, "对齐采样与质量码")
     raw_series = raw_series if isinstance(raw_series, RawTimeSeries) else None
 
     # ---- 对齐 + 质量码过滤（复制引擎 L1053-1092；point 分支 AD04/I03）----
@@ -1184,6 +1278,7 @@ async def run_diagnosis_for_loop(
 
     # ---- 算子执行 + 融合 + 分类 ----
     if gate.passed:
+        await _report(0.25, "准备算法输入与缺失区间")
         if is_point:
             # AD04/I03：point 全轴组装——各信号等长（None 保位），逐信号有效
             # 掩码随行；同轴切片由 _run_operators 按算子 required_signals 公共
@@ -1211,24 +1306,11 @@ async def run_diagnosis_for_loop(
             # 映射成逐槽 observed_mask 透传给算子 —— 冻结等判据只能看 OBSERVED 槽，
             # 否则数据缺口（HELD 保持）会被误报成"传感器冻结"。
             # 质量码算子仍消费完整轴（本掩码只对声明需要的算子生效）。
-            observed_mask = np.ones(len(aligned), dtype=bool)
             _ctx = getattr(raw_series, "series_context", None)
             _cov = getattr(_ctx, "role_coverage", None) or {}
             _pv_cov = _cov.get("pv") if isinstance(_cov, dict) else None
             _runs = list(getattr(_pv_cov, "unknown", []) or []) if _pv_cov else []
-            if _runs:
-                for _i, _d in enumerate(aligned):
-                    _t = _d.get("ts")
-                    if _t is None:
-                        observed_mask[_i] = False
-                        continue
-                    _tn = _t.replace(tzinfo=None) if getattr(_t, "tzinfo", None) else _t
-                    for _run in _runs:
-                        _rs = _run.start.replace(tzinfo=None)
-                        _re = _run.end.replace(tzinfo=None)
-                        if _rs <= _tn < _re:
-                            observed_mask[_i] = False
-                            break
+            observed_mask = _build_observed_mask([d.get("ts") for d in aligned], _runs)
         else:
             # D4 修复（2026-10-01）：pv/sp/op 原各自按"非 None"独立过滤，
             # 任一信号中途缺值时 pv[:min_len]-sp[:min_len] 的 PV-OP 配对
@@ -1298,8 +1380,8 @@ async def run_diagnosis_for_loop(
             kpi_context=kpi_ctx,
         )
 
-        op_results, fusions = _run_operators(
-            op_input, effective_thresholds, operator_group, operators, disabled_diag_codes
+        op_results, fusions = await _run_operators_with_progress(
+            op_input, effective_thresholds, operator_group, operators, disabled_diag_codes, _report
         )
         await _report(0.9, "融合与分类")
         classification: ClassificationResult = classify(fusions, op_results, kpi_ctx, gate)
