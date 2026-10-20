@@ -23,7 +23,9 @@ from __future__ import annotations
 import json
 import logging
 import math
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta, timezone
+from time import perf_counter
 from typing import Any
 from uuid import uuid4
 
@@ -419,6 +421,10 @@ class HistoryDataSourceError(RuntimeError):
     """远端历史数据源不可用或返回无效响应。"""
 
 
+class _ImportCancelled(Exception):
+    """取消在取数后和每批写入前生效，已落库数据仍参与缓存失效。"""
+
+
 def _compute_chunk_hours(start_dt: datetime, end_dt: datetime) -> int:
     """根据导入时间范围动态计算分块大小（小时）.
 
@@ -483,6 +489,10 @@ async def _update_task(task_id: str, **fields: Any) -> None:
     （status=RUNNING/SUCCESS/FAILED/CANCELLED）应使用 ``_update_task_cas``，
     后者通过 Lua CAS 防止终态被重投任务覆盖。
     """
+    if "progress" in fields or "current_stage" in fields:
+        # 晚到的并发进度不能覆盖 CANCELLED/FAILED/SUCCESS，计数保持单调。
+        await _update_task_cas(task_id, new_status=ImportStatus.RUNNING.value, **fields)
+        return
     mapping = {k: _to_str(v) for k, v in fields.items() if v is not None}
     if mapping:
         ttl = int(settings.IMPORT_TASK_TTL_DAYS) * 86400
@@ -594,6 +604,7 @@ def _task_to_response(data: dict[str, Any]) -> dict[str, Any]:
         "taskId": data.get("task_id", ""),
         "status": data.get("status", ImportStatus.PENDING.value),
         "progress": _to_float(data.get("progress")),
+        "currentStage": _to_str_or_none(data.get("current_stage")),
         "loopCount": _to_int(data.get("loop_count")),
         "importedCount": _to_int(data.get("imported_count")),
         "errorCount": _to_int(data.get("error_count")),
@@ -613,7 +624,8 @@ async def _is_task_cancelled(task_id: str) -> bool:
     """检查任务是否已被取消."""
     raw = await redis_client.hget(_task_key(task_id), "status")
     if raw is None:
-        return False
+        # 用户可在取消后立即删除列表记录；仍须让在途 Worker 看到取消。
+        return bool(await redis_client.exists(f"{_task_key(task_id)}:cancelled"))
     return str(raw).upper() == ImportStatus.CANCELLED.value
 
 
@@ -698,6 +710,9 @@ async def import_history_data(
     # 解析时间范围
     start_dt = _parse_dt(ts_start)
     end_dt = _parse_dt(ts_end)
+    if start_dt >= end_dt or interval < 1:
+        raise ValueError("导入时间窗口或采样间隔无效")
+    loop_ids = list(dict.fromkeys(loop_ids))
 
     # 背压兜底（整改 G13）：端点层已校验，此处再断言一次，防止绕过接口直接
     # 投递 Celery 任务（脚本/重投）把导入窗口压到正在写入的实时时段上。
@@ -715,6 +730,8 @@ async def import_history_data(
             started_at=_now_iso(),
             # 进度心跳起点：清扫器以此判活（无心跳旧任务回退 started_at 口径）
             last_progress_at=_now_iso(),
+            current_stage="检查远端数据源",
+            loop_count=len(loop_ids),
         )
         if cas_code == "BLOCKED":
             # 已终态（入口预检查漏网的 TOCTOU 窗口兜底）— 不执行导入
@@ -739,6 +756,7 @@ async def import_history_data(
     total = len(loop_ids)
     errors: list[str] = []
     terminal_set = False  # 正常流程是否已置终态（finally 兜底依据）
+    shared_completed_units = shared_succeeded = shared_failed = total_units = 0
 
     try:
         # 前置探测（加固 0909）：批量导入启动前快检远端。
@@ -800,6 +818,7 @@ async def import_history_data(
         db_session = AsyncSessionLocal()
         try:
             loop_data_map = await _batch_get_loop_data(db_session, loop_ids)
+            loop_conc, chunk_conc, remote_conc = await _read_import_concurrency(db_session)
         finally:
             await db_session.close()
 
@@ -827,12 +846,11 @@ async def import_history_data(
         # 回路级并发（2026-10-08 参数化：sys_config datasource.import_loop_concurrency，
         # 免重启可调——任务发起时直读表，跑中任务不受影响；默认 4=原硬编码行为）。
         # 总对外并发 = loop_conc × chunk_conc，受远端闸（provider 信号量，随
-        # datasource.import_remote_concurrency 扩容）总约束。
-        loop_conc, chunk_conc, remote_conc = await _read_import_concurrency(db_session)
+        # datasource.import_remote_concurrency 调整）总约束。
         try:
             _get_remote_guard().ensure_remote_concurrency(remote_conc)
-        except Exception as exc:  # noqa: BLE001 — 扩容失败不影响默认闸导入
-            logger.warning("远端闸扩容失败（沿用当前容量）: %s", exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("远端闸调整失败（沿用当前容量）: %s", exc)
         if (loop_conc, chunk_conc, remote_conc) != (
             _DEFAULT_LOOP_CONC,
             _DEFAULT_CHUNK_CONC,
@@ -850,26 +868,41 @@ async def import_history_data(
         shared_succeeded = 0
         shared_failed = 0
         shared_completed_units = 0  # 完成的小时窗口数
+        loop_progress: dict[int, float] = {}
+        last_report_at = 0.0
 
-        async def _record_progress(chunk_complete: int = 0) -> None:
+        async def _record_progress(chunk_complete: int = 0, stage: str | None = None) -> None:
             if not task_id:
                 return
-            nonlocal shared_completed_units
+            nonlocal shared_completed_units, last_report_at
             async with progress_lock:
                 cur_s, cur_f = shared_succeeded, shared_failed
                 if chunk_complete > 0:
                     shared_completed_units += chunk_complete
                 cur_units = shared_completed_units
-            # 进度 = 完成的分块数 / 总分块数；同时写 last_progress_at 心跳，
-            # 供清扫器区分"执行中但停滞"（卡死）与"执行中且持续推进"（正常长任务）
-            progress_value = round(cur_units / total_units, 4) if total_units > 0 else 1.0
-            await _update_task(
-                task_id,
-                progress=progress_value,
-                imported_count=cur_s,
-                error_count=cur_f,
-                last_progress_at=_now_iso(),
-            )
+                now = perf_counter()
+                if stage is not None and not chunk_complete and now - last_report_at < 0.5:
+                    return  # 批量写入的细粒度回调限频，避免 Redis 成为新瓶颈。
+                last_report_at = now
+                fraction = max(
+                    cur_units / total_units if total_units else 0,
+                    sum(loop_progress.values()) / total if total else 0,
+                )
+                try:
+                    await _update_task(
+                        task_id,
+                        progress=round(min(fraction, 1.0) * 0.9, 4),
+                        imported_count=cur_s,
+                        error_count=cur_f,
+                        current_stage=stage or "处理导入分块",
+                        last_progress_at=_now_iso(),
+                    )
+                except Exception:
+                    # 进度存储故障不能让已写入数据的计数丢失；收口后显式报错。
+                    error = "导入进度更新失败"
+                    if error not in errors:
+                        errors.append(error)
+                    logger.exception(error)
 
         async def _import_with_sem(i: int, lid: str) -> tuple[int, int, str]:
             """带信号量控制的单回路导入，返回 (index, count, error)."""
@@ -883,6 +916,10 @@ async def import_history_data(
                 nonlocal loop_done
                 loop_done += 1
                 await _record_progress(chunk_complete=1)
+
+            async def _on_progress(fraction: float, stage: str) -> None:
+                loop_progress[i] = max(loop_progress.get(i, 0), fraction)
+                await _record_progress(stage=f"回路 {i + 1}/{total}：{stage}")
 
             async with sem:
                 if task_id and await _is_task_cancelled(task_id):
@@ -916,6 +953,7 @@ async def import_history_data(
                         role_point_map=loop_meta.get("role_point_map", {}),
                         storage_mode=storage_mode,
                         chunk_concurrency=chunk_conc,
+                        on_progress=_on_progress,
                     )
                     if loop_cancelled:
                         # 取消中断：不计成功也不计失败（最终状态由任务级取消
@@ -923,7 +961,7 @@ async def import_history_data(
                         async with progress_lock:
                             shared_completed_units += max(chunks_per_loop - loop_done, 0)
                         await _record_progress()
-                        return (i, 0, "")
+                        return (i, count, "")
                     if count <= 0 and not failed_windows:
                         raise HistoryDataSourceError("远端历史数据 API 未返回可导入数据")
                     if failed_windows:
@@ -972,6 +1010,8 @@ async def import_history_data(
 
         # 收敛结果：按指定时间窗 + 回路号取数即可，不再量化覆盖率
         # （远端 COV 稀疏，按理想网格点数做分母会系统性误报"缺口"）
+        dirty_loops: dict[str, str] = {}
+        successful_loop_ids: list[str] = []
         for task_result in task_results:
             if isinstance(task_result, BaseException):
                 errors.append(f"导入协程异常: {task_result}")
@@ -980,10 +1020,23 @@ async def import_history_data(
             lid = loop_ids[i]
             if error:
                 errors.append(error)
+            elif count > 0:
+                successful_loop_ids.append(lid)
             if count > 0:
                 # R13：本地 TD 已写入新数据 → 失效 realtime:history 与 L1/L2/L3
-                # 计算缓存，避免残缺/陈旧缓存遮蔽新数据（失效失败只记日志）
-                await _invalidate_loop_caches(lid, loop_data_map.get(lid, {}).get("loop_part", ""))
+                # 计算缓存，避免残缺/陈旧缓存遮蔽新数据。
+                dirty_loops[lid] = loop_data_map.get(lid, {}).get("loop_part", "")
+
+        if task_id:
+            await _update_task(task_id, progress=0.95, current_stage="刷新导入数据缓存")
+        # 一次扫描替代每回路全库扫描；失败显式进入任务结果，禁止静默发布成功。
+        cleanup_ok = True
+        if dirty_loops:
+            try:
+                await _invalidate_import_caches(dirty_loops)
+            except Exception as exc:  # noqa: BLE001
+                cleanup_ok = False
+                errors.append(f"导入数据已写入，但缓存刷新失败：{exc}")
 
         succeeded = shared_succeeded
         failed = shared_failed
@@ -995,11 +1048,21 @@ async def import_history_data(
             "errors": errors[:10],  # 只保留前 10 条错误
         }
 
+        cancelled = bool(task_id and await _is_task_cancelled(task_id))
+        if trigger_backfill and successful_loop_ids and not cancelled and cleanup_ok:
+            if task_id:
+                await _update_task(task_id, progress=0.98, current_stage="提交 KPI 回算")
+            try:
+                await _trigger_kpi_backfill(successful_loop_ids, ts_start, ts_end)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"数据已导入，但提交 KPI 回算失败：{exc}")
+                result["errors"] = errors[:10]
+
         # 更新任务终态
         if task_id:
             if await _is_task_cancelled(task_id):
                 final_status = ImportStatus.CANCELLED.value
-            elif succeeded > 0:
+            elif succeeded == total and not errors:
                 final_status = ImportStatus.SUCCESS.value
             else:
                 final_status = ImportStatus.FAILED.value
@@ -1014,6 +1077,11 @@ async def import_history_data(
                 ),
                 finished_at=_now_iso(),
                 error_message="; ".join(errors[:3]) if errors else "",
+                current_stage={
+                    ImportStatus.SUCCESS.value: "导入完成",
+                    ImportStatus.FAILED.value: "导入未全部完成，请查看错误信息",
+                    ImportStatus.CANCELLED.value: "已取消",
+                }[final_status],
                 result=result,
             )
             if cas_code == "BLOCKED":
@@ -1024,13 +1092,6 @@ async def import_history_data(
                     final_status,
                 )
             terminal_set = True
-
-        # 触发 KPI 回算
-        if trigger_backfill and succeeded > 0:
-            try:
-                await _trigger_kpi_backfill(loop_ids, ts_start, ts_end)
-            except Exception as exc:
-                logger.warning("触发 KPI 回算失败: %s", exc)
 
         return result
     except Exception:
@@ -1077,6 +1138,7 @@ async def _import_single_loop(
     role_point_map: dict[str, tuple[str, str]] | None = None,
     storage_mode: str = "point",
     chunk_concurrency: int = 1,
+    on_progress: Callable[[float, str], Awaitable[None]] | None = None,
 ) -> tuple[int, list[dict[str, str]], bool]:
     """导入单个回路的历史数据（算法 v3：单相逐位号直导）.
 
@@ -1099,35 +1161,34 @@ async def _import_single_loop(
     total_count = 0
     failed_windows: list[dict[str, str]] = []
     was_cancelled = False
-    point_ok_chunks: list[tuple[datetime, datetime]] = []
+    point_ok_chunks: list[tuple[datetime, datetime, set[str]]] = []
     point_import_batch_id: str | None = None
+    import asyncio as _asyncio_sem
+
+    batch_lock = _asyncio_sem.Lock()
 
     async def _ensure_point_batch() -> str | None:
-        """点级批次惰性创建（覆盖登记用）；失败不阻塞数据面."""
+        """同一回路的并行分块共用一个已提交批次。"""
         nonlocal point_import_batch_id
-        if point_import_batch_id is None:
-            try:
+        async with batch_lock:
+            if point_import_batch_id is None:
                 from app.core.db import AsyncSessionLocal as _ASL
                 from app.services.data_source import point_history_metadata as _phm
 
                 async with _ASL() as _bs:
                     _batch = await _phm.create_batch(
                         _bs,
-                        window_start=start_dt.replace(tzinfo=UTC),
-                        window_end=end_dt.replace(tzinfo=UTC),
+                        window_start=start_dt.replace(tzinfo=_TARGET_TZ).astimezone(UTC),
+                        window_end=end_dt.replace(tzinfo=_TARGET_TZ).astimezone(UTC),
                         source_task=f"import:{task_id or loop_id[:8]}",
                     )
                     await _bs.commit()
                     point_import_batch_id = _batch.batch_id
-            except Exception as exc:  # noqa: BLE001 — 元数据失败不阻塞导入数据面
-                logger.warning("点级批次创建失败（覆盖登记缺失）: %s", exc)
         return point_import_batch_id
 
     # 绑定位号（显式链接）：一次拉全部角色
     fetch_map = dict(role_tag_map)
     fetch_point_map = {r: v for r, v in role_point_map.items() if r in fetch_map}
-
-    import asyncio as _asyncio_sem
 
     # 分块窗口预生成（2026-10-08 参数化并行：chunk_concurrency=1 时逐个顺序执行，
     # 行为与原 while 循环完全等价；>1 时分块内并行拉取写入——asyncio 单线程内
@@ -1139,24 +1200,42 @@ async def _import_single_loop(
         chunk_windows.append((cs, ce))
         cs = ce
     chunk_sem = _asyncio_sem.Semaphore(max(1, chunk_concurrency))
+    fractions = [0.0] * len(chunk_windows)
 
-    async def _do_chunk(chunk_start: datetime, chunk_end: datetime) -> None:
-        nonlocal total_count, was_cancelled
+    async def _check_cancelled() -> None:
         if task_id and await _is_task_cancelled(task_id):
-            was_cancelled = True
-            logger.info(
-                "回路 %s 导入被取消（已写入 %d 行），跳过该分块",
-                loop_id,
-                total_count,
-            )
-            return
+            raise _ImportCancelled()
+
+    async def _report(index: int, fraction: float, stage: str) -> None:
+        fractions[index] = max(fractions[index], fraction)
+        if on_progress:
+            await on_progress(0.95 * sum(fractions) / len(fractions), stage)
+
+    async def _do_chunk(index: int, chunk_start: datetime, chunk_end: datetime) -> None:
+        nonlocal total_count, was_cancelled
+        partial_count = 0
+        written_points: set[str] = set()
+        started = perf_counter()
+        fetched_at: float | None = None
+
+        async def wrote(count: int) -> None:
+            nonlocal partial_count
+            partial_count += count
+
+        async def writing(fraction: float) -> None:
+            await _report(index, 0.2 + 0.75 * fraction, f"写入分块 {index + 1}/{len(fractions)}")
+
         try:
+            await _check_cancelled()
+            await _report(index, 0, f"读取分块 {index + 1}/{len(fractions)}")
             raw_data = await _fetch_remote_history(
                 list(fetch_map.values()),
                 chunk_start.isoformat(),
                 chunk_end.isoformat(),
                 interval,
             )
+            fetched_at = perf_counter()
+            await _check_cancelled()
             if not raw_data or not raw_data[0]:
                 logger.warning(
                     "远端该分块无数据: loop=%s, 窗口=%s ~ %s",
@@ -1166,10 +1245,26 @@ async def _import_single_loop(
                 )
             if raw_data and raw_data[0]:
                 await _ensure_point_batch()
-                point_ok_chunks.append((chunk_start, chunk_end))
-                total_count += await _write_points_bulk(
-                    fetch_point_map, raw_data, source_task=task_id or ""
+                await _report(index, 0.2, f"写入分块 {index + 1}/{len(fractions)}")
+                count = await _write_points_bulk(
+                    fetch_point_map,
+                    raw_data,
+                    source_task=task_id or "",
+                    before_batch=_check_cancelled,
+                    on_batch_written=wrote,
+                    on_progress=writing,
+                    on_point_complete=written_points.add,
                 )
+                total_count += count
+                partial_count = 0
+                if count > 0:
+                    point_ok_chunks.append((chunk_start, chunk_end, written_points))
+                else:
+                    raise HistoryDataSourceError("该分块未返回可写入的测点数据")
+            else:
+                raise HistoryDataSourceError("该分块未返回历史数据")
+        except _ImportCancelled:
+            was_cancelled = True
         except Exception as exc:  # noqa: BLE001 — 分块级容错：记录窗口后继续其他分块
             failed_windows.append(
                 {
@@ -1185,45 +1280,91 @@ async def _import_single_loop(
                 chunk_end.isoformat(),
                 exc,
             )
+        finally:
+            total_count += partial_count
+            logger.info(
+                "导入分块耗时 task=%s loop=%s chunk=%d fetch_ms=%.1f write_ms=%.1f",
+                task_id,
+                loop_id,
+                index + 1,
+                ((fetched_at or perf_counter()) - started) * 1000,
+                (perf_counter() - fetched_at) * 1000 if fetched_at is not None else 0,
+            )
+        await _report(index, 1, f"已处理分块 {index + 1}/{len(fractions)}")
 
-    async def _do_chunk_with_sem(chunk_start: datetime, chunk_end: datetime) -> None:
+    async def _do_chunk_with_sem(index: int, chunk_start: datetime, chunk_end: datetime) -> None:
         async with chunk_sem:
-            await _do_chunk(chunk_start, chunk_end)
+            await _do_chunk(index, chunk_start, chunk_end)
             if on_chunk_complete:
                 await on_chunk_complete()
 
-    await _asyncio_sem.gather(*[_do_chunk_with_sem(cs_, ce_) for cs_, ce_ in chunk_windows])
+    chunk_results = await _asyncio_sem.gather(
+        *[_do_chunk_with_sem(i, cs_, ce_) for i, (cs_, ce_) in enumerate(chunk_windows)],
+        return_exceptions=True,
+    )
+    # 回调异常也必须等待所有在途分块退出，防止任务已终止后仍有后台写入。
+    for (cs, ce), result in zip(chunk_windows, chunk_results, strict=True):
+        if isinstance(result, BaseException):
+            failed_windows.append(
+                {"start": cs.isoformat(), "end": ce.isoformat(), "error": str(result)[:200]}
+            )
 
     # 覆盖登记（v3 批量化）：每个 (位号, 分块窗口) 一条段——不再逐点，
     # 读取侧 anchor 语义保留（窗口级覆盖证明）
-    if point_import_batch_id is not None and point_ok_chunks:
+    if point_import_batch_id is not None:
         try:
+            from sqlalchemy import update
+
             from app.core.db import AsyncSessionLocal as _ASL
+            from app.models.point_history import HistoryCoverageSegment, HistoryWriteBatch
             from app.services.data_source import point_history_metadata as _phm
 
+            if on_progress:
+                await on_progress(0.95, "登记已写入数据覆盖范围")
             async with _ASL() as _cs:
-                unique_points = sorted({pid for _n, pid in role_point_map.values() if pid})
-                for cs, ce in point_ok_chunks:
-                    for pid in unique_points:
-                        await _phm.register_coverage(
-                            _cs,
-                            seg_start=cs.replace(tzinfo=UTC),
-                            seg_end=ce.replace(tzinfo=UTC),
-                            point_id=pid,
-                            batch_id=point_import_batch_id,
-                            source_task=f"import:{task_id or ''}",
+                segments = []
+                for cs, ce, written_points in point_ok_chunks:
+                    for pid in sorted(written_points):
+                        segments.append(
+                            HistoryCoverageSegment(
+                                seg_start=cs.replace(tzinfo=_TARGET_TZ).astimezone(UTC),
+                                seg_end=ce.replace(tzinfo=_TARGET_TZ).astimezone(UTC),
+                                point_id=pid,
+                                batch_id=point_import_batch_id,
+                                source_task=f"import:{task_id or ''}",
+                                status="pending",
+                            )
                         )
-                await _phm.confirm_batch(
-                    _cs,
-                    point_import_batch_id,
-                    stats={"slots": total_count, "failed_chunks": len(failed_windows)},
-                    partial_reason=(
-                        f"{len(failed_windows)} 个分块失败" if failed_windows else None
-                    ),
-                )
+                reason = "用户取消，保留已完成写入" if was_cancelled else None
+                if failed_windows:
+                    reason = f"{len(failed_windows)} 个分块失败"
+                stats = {"slots": total_count, "failed_chunks": len(failed_windows)}
+                if segments:
+                    _cs.add_all(segments)
+                    await _cs.flush()
+                    await _phm.confirm_batch(
+                        _cs, point_import_batch_id, stats=stats, partial_reason=reason
+                    )
+                else:
+                    await _cs.execute(
+                        update(HistoryWriteBatch)
+                        .where(HistoryWriteBatch.batch_id == point_import_batch_id)
+                        .values(
+                            status="cancelled" if was_cancelled else "failed",
+                            stats=stats,
+                            failure_reason=reason or "无完整写入分块",
+                        )
+                    )
                 await _cs.commit()
         except Exception as exc:  # noqa: BLE001
             logger.warning("点级覆盖登记失败（数据已写，登记缺失）: %s", exc)
+            failed_windows.append(
+                {
+                    "start": start_dt.isoformat(),
+                    "end": end_dt.isoformat(),
+                    "error": f"数据已写入，但覆盖登记失败：{exc}",
+                }
+            )
 
     if not failed_windows and total_count <= 0:
         logger.warning(
@@ -1233,6 +1374,13 @@ async def _import_single_loop(
             end_dt.isoformat(),
         )
 
+    if on_progress:
+        try:
+            await on_progress(1.0, "回路导入处理完成")
+        except Exception as exc:
+            failed_windows.append(
+                {"start": start_dt.isoformat(), "end": end_dt.isoformat(), "error": str(exc)[:200]}
+            )
     return total_count, failed_windows, was_cancelled
 
 
@@ -1292,12 +1440,16 @@ async def _write_points_bulk(
     *,
     source_task: str,
     dense_roles: frozenset[str] = frozenset({"PV", "OP"}),
+    before_batch: Callable[[], Awaitable[None]] | None = None,
+    on_batch_written: Callable[[int], Awaitable[None]] | None = None,
+    on_progress: Callable[[float], Awaitable[None]] | None = None,
+    on_point_complete: Callable[[str], None] | None = None,
 ) -> int:
     """远端响应 → 点表批量直写（v3.1：稀疏去重 + 轻量直拼 SQL + 大批次）.
 
     性能要点（0909 961 回路实测单回路写入 25~90s 的瓶颈在此）：
-    - 不走 PointEvent 对象 / payload_hash（逐点 UUID 解析，60 万次纯 CPU
-      浪费）——导入行靠 ts UPSERT 幂等，hash 仅实时路径冲突登记用；
+    - 直接组装批量 SQL，时间解析和格式化跨角色复用；保留与实时路径一致的
+      payload_hash，保证同一事实重放时的幂等判断；
     - 稀疏角色（SP/KP/TI/TD/MODE）COV 去重：只落值变化点（正常低频语义），
       兼防 SP=PV 错接时被高频灌满（行数暴增即导入变慢）；
     - 大批次 5000 行/条 SQL，HTTP POST 次数减为 1/5。
@@ -1316,12 +1468,17 @@ async def _write_points_bulk(
     db = settings.TDENGINE_DB
     timestamps, series_map = raw_data
     ts_parsed = [_parse_remote_ts(t) for t in timestamps]
+    ts_ms_list = [None if t is None else int(t.timestamp() * 1000) for t in ts_parsed]
+    ts_sql = [None if t is None else format_ts_utc(t) for t in ts_parsed]
     recv = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S.%f")[:-3]
     source_tag = f"'import:{source_task[:32].replace(chr(39), chr(39) * 2)}'"
     BATCH = 5000
     total = 0
 
-    for _role, entry in role_point_map.items():
+    for role_index, (_role, entry) in enumerate(role_point_map.items()):
+        role_start_total = total
+        if before_batch:
+            await before_batch()
         _tag, point_id = entry
         if not point_id:
             continue
@@ -1340,17 +1497,22 @@ async def _write_points_bulk(
         prev = _SENTINEL
         prev_q = _SENTINEL
 
-        async def _flush(head=head, buf=buf) -> None:
+        async def _flush(fraction: float, head=head, buf=buf) -> None:
             nonlocal n_buf, total
             if not buf:
                 return
+            if before_batch:
+                await before_batch()
             await execute_native_effective(" ".join([head] + buf))
             total += n_buf
+            if on_batch_written:
+                await on_batch_written(n_buf)
             buf.clear()
             n_buf = 0
+            if on_progress:
+                await on_progress(fraction)
 
         # G11：ts_ms 按索引预算一次（避免每点重复 timestamp() 计算）
-        ts_ms_list = [None if t is None else int(t.timestamp() * 1000) for t in ts_parsed]
         for i, ts in enumerate(ts_parsed):
             if ts is None:
                 continue
@@ -1389,15 +1551,19 @@ async def _write_points_bulk(
                 quality_raw=q_raw_dec,
             )
             buf.append(
-                f"('{format_ts_utc(ts)}', {_sql_num(v)}, "
+                f"('{ts_sql[i]}', {_sql_num(v)}, "
                 f"{_sql_num(q_raw_dec)}, {_sql_num(q_class)}, 1, '{recv}', 4, '{ph}')"
             )
             n_buf += 1
             prev = v
             prev_q = q_class
             if n_buf >= BATCH:
-                await _flush()
-        await _flush()  # 角色收尾残余批
+                await _flush((role_index + (i + 1) / len(ts_parsed)) / len(role_point_map))
+        await _flush((role_index + 1) / len(role_point_map))  # 角色收尾残余批
+        if on_point_complete and total > role_start_total:
+            on_point_complete(point_id)
+        if on_progress:
+            await on_progress((role_index + 1) / len(role_point_map))
         prev = _SENTINEL
         prev_q = _SENTINEL
 
@@ -1941,6 +2107,17 @@ async def _invalidate_loop_caches(loop_id: str, loop_part: str) -> None:
         )
 
 
+async def _invalidate_import_caches(loops: dict[str, str]) -> None:
+    """导入批次集中失效，错误交由任务明确报告。"""
+    from app.services.cache.invalidation import CacheInvalidator
+    from app.services.data_source.realtime_subscriber import _REDIS_KEY_PREFIX
+
+    keys = [f"{_REDIS_KEY_PREFIX}history:{part}" for part in set(loops.values()) if part]
+    for offset in range(0, len(keys), 200):
+        await redis_client.delete(*keys[offset : offset + 200])
+    await CacheInvalidator(redis_client).invalidate_loops(set(loops))
+
+
 async def _trigger_kpi_backfill(loop_ids: list[str], ts_start: str, ts_end: str) -> None:
     """触发 KPI 回算任务."""
     from app.tasks.celery_app import PRIORITY_MANUAL
@@ -1967,18 +2144,39 @@ async def get_import_task(task_id: str) -> dict[str, Any] | None:
 
 
 async def list_import_tasks(page: int = 1, page_size: int = 20) -> dict[str, Any]:
-    """查询导入任务列表（按创建时间倒序）."""
-    task_ids = await redis_client.zrevrange(_IMPORT_TASK_INDEX, 0, -1)
-    items: list[dict[str, Any]] = []
-    for tid in task_ids:
-        data = await _get_task(tid)
-        if data:
-            items.append(_task_to_response(data))
+    """仅取本页 Hash；分批管道检查索引存活，保持 TTL 过期后的 total 准确。
 
-    total = len(items)
+    存量索引没有过期时间，不能直接 ZCARD 当有效总数。EXISTS 只读小型元数据，
+    每 500 个一批，避免逐条 HGETALL 拉取所有任务及大体积 loop_ids/result。
+    """
+    task_ids = await redis_client.zrevrange(_IMPORT_TASK_INDEX, 0, -1)
+    live_ids = []
+    for offset in range(0, len(task_ids), 500):
+        batch = task_ids[offset : offset + 500]
+        pipe = redis_client.pipeline()
+        for tid in batch:
+            pipe.exists(_task_key(tid))
+        alive = await pipe.execute()
+        expired = [tid for tid, exists in zip(batch, alive, strict=True) if not exists]
+        live_ids.extend(tid for tid, exists in zip(batch, alive, strict=True) if exists)
+        if expired:
+            await redis_client.zrem(_IMPORT_TASK_INDEX, *expired)
+
     offset = (page - 1) * page_size
-    paginated = items[offset : offset + page_size]
-    return {"items": paginated, "total": total}
+    items = []
+    while offset < len(live_ids) and len(items) < page_size:
+        ids = live_ids[offset : offset + page_size - len(items)]
+        pipe = redis_client.pipeline()
+        for tid in ids:
+            pipe.hgetall(_task_key(tid))
+        for tid, data in zip(ids, await pipe.execute(), strict=True):
+            if data:
+                items.append(_task_to_response(data))
+                offset += 1
+            else:  # 存活检查与取详情之间恰好过期/被删除，移除并补足本页。
+                live_ids.remove(tid)
+                await redis_client.zrem(_IMPORT_TASK_INDEX, tid)
+    return {"items": items, "total": len(live_ids)}
 
 
 async def cancel_import_task(task_id: str) -> dict[str, Any] | None:
@@ -1987,20 +2185,11 @@ async def cancel_import_task(task_id: str) -> dict[str, Any] | None:
     if not data:
         return None
 
-    # 撤销 Celery 任务
-    celery_task_id = data.get("celery_task_id", "")
-    if celery_task_id:
-        try:
-            from app.tasks.celery_app import celery_app
-
-            celery_app.control.revoke(celery_task_id, terminate=True)
-        except Exception:
-            logger.warning("撤销 Celery 任务失败: %s", celery_task_id)
-
     cas_code, old_status = await _update_task_cas(
         task_id,
         new_status=ImportStatus.CANCELLED.value,
         finished_at=_now_iso(),
+        current_stage="已取消",
     )
     if cas_code == "BLOCKED":
         # 任务已处于终态（SUCCESS/FAILED），无法取消已完成任务
@@ -2013,8 +2202,17 @@ async def cancel_import_task(task_id: str) -> dict[str, Any] | None:
         resp = _task_to_response(fresh)
         resp["was_blocked"] = True
         return resp
-    data["status"] = ImportStatus.CANCELLED.value
-    return _task_to_response(data)
+    # 先发布取消标志；排队任务撤销，运行中任务在请求/写入批次边界协作退出。
+    # 不杀 Worker，确保已写入数据仍能登记覆盖及失效缓存。
+    celery_task_id = data.get("celery_task_id", "")
+    if celery_task_id:
+        try:
+            from app.tasks.celery_app import celery_app
+
+            celery_app.control.revoke(celery_task_id, terminate=False)
+        except Exception:
+            logger.warning("撤销排队任务失败（运行中任务仍会检测取消标志）: %s", celery_task_id)
+    return _task_to_response(await _get_task(task_id) or {**data, "status": "CANCELLED"})
 
 
 async def delete_import_task(task_id: str) -> bool:
@@ -2034,6 +2232,12 @@ async def delete_import_task(task_id: str) -> bool:
     if status_val in (ImportStatus.PENDING.value, ImportStatus.RUNNING.value):
         raise ValueError("任务正在执行中，请先取消再删除")
 
+    if status_val == ImportStatus.CANCELLED.value:
+        await redis_client.set(
+            f"{_task_key(task_id)}:cancelled",
+            "1",
+            ex=int(settings.IMPORT_TASK_TTL_DAYS) * 86400,
+        )
     await redis_client.delete(_task_key(task_id))
     await redis_client.zrem(_IMPORT_TASK_INDEX, task_id)
     logger.info("导入任务已删除: task_id=%s", task_id)

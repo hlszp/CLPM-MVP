@@ -26,6 +26,17 @@ from app.services.data_import import (
 )
 
 
+def _mock_db_session():
+    session = MagicMock()
+    session.__aenter__ = AsyncMock(return_value=session)
+    session.__aexit__ = AsyncMock()
+    session.close = AsyncMock()
+    session.commit = AsyncMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock(return_value=MagicMock(all=lambda: []))
+    return session
+
+
 class TestParseHelpers:
     """解析辅助函数测试."""
 
@@ -263,6 +274,18 @@ class TestTaskResponse:
 class TestImportHistoryData:
     """import_history_data 集成测试（mock 依赖）."""
 
+    @pytest.fixture(autouse=True)
+    def isolate_external_io(self):
+        with (
+            patch("app.services.data_import._probe_remote_history_api", new=AsyncMock()),
+            patch(
+                "app.services.data_import._read_import_concurrency",
+                new=AsyncMock(return_value=(4, 1, 4)),
+            ),
+            patch("app.core.db.AsyncSessionLocal", return_value=AsyncMock()),
+        ):
+            yield
+
     @pytest.mark.asyncio
     async def test_import_empty_loop_ids(self):
         """空回路列表应正常返回零结果."""
@@ -290,7 +313,7 @@ class TestImportHistoryData:
         mock_result.scalars.return_value = mock_scalars
         mock_db.execute.return_value = mock_result
 
-        mock_session = AsyncMock()
+        mock_session = _mock_db_session()
         # mock_session 在 _batch_get_loop_data 中直接作为 db 使用，需要 execute 返回 mock_result
         mock_session.execute.return_value = mock_result
         mock_session.__aenter__ = AsyncMock(return_value=mock_db)
@@ -594,6 +617,7 @@ class _FakeRedisImport:
     def __init__(self) -> None:
         self._hashes: dict[str, dict[str, str]] = {}
         self._zsets: dict[str, dict[str, float]] = {}
+        self._strings: dict[str, str] = {}
 
     def pipeline(self):
         return _FakePipe(self)
@@ -603,6 +627,16 @@ class _FakeRedisImport:
 
     async def hgetall(self, key: str) -> dict[str, str]:
         return dict(self._hashes.get(key, {}))
+
+    async def exists(self, key: str) -> bool:
+        return key in self._hashes or key in self._strings
+
+    async def set(self, key: str, value: str, **kwargs) -> None:
+        self._strings[key] = value
+
+    async def delete(self, key: str) -> None:
+        self._hashes.pop(key, None)
+        self._strings.pop(key, None)
 
     async def zadd(self, key: str, mapping: dict) -> int:
         self._zsets.setdefault(key, {}).update(mapping)
@@ -1146,7 +1180,7 @@ class TestImportProgressPerLoop:
                 progress_updates.append(float(fields["progress"]))
             await orig_update_task(task_id, **fields)
 
-        mock_session = AsyncMock()  # AsyncSessionLocal() → 仅需 close()
+        mock_session = _mock_db_session()  # AsyncSessionLocal() → 仅需 close()
 
         with (
             patch("app.services.data_import.redis_client", fake),
@@ -1184,7 +1218,7 @@ class TestImportProgressPerLoop:
         assert progress_updates
         assert all(0.0 <= p <= 1.0 for p in progress_updates)
         assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
-        assert progress_updates[-1] == 1.0
+        assert progress_updates[-1] == 0.95  # 终态 CAS 才写入 1.0
 
     @pytest.mark.asyncio
     async def test_failure_compensation_uses_loop_own_progress(self):
@@ -1239,7 +1273,9 @@ class TestImportProgressPerLoop:
                 progress_updates.append(float(fields["progress"]))
             await orig_update_task(task_id, **fields)
 
-        mock_session = AsyncMock()
+        mock_session = _mock_db_session()
+        mock_session.add_all = MagicMock()
+        mock_session.execute.return_value = MagicMock(all=lambda: [])
 
         with (
             patch("app.services.data_import.redis_client", fake),
@@ -1268,7 +1304,7 @@ class TestImportProgressPerLoop:
         assert progress_updates
         assert all(0.0 <= p <= 1.0 for p in progress_updates)
         assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
-        assert progress_updates[-1] == 1.0
+        assert progress_updates[-1] == 0.95  # 终态 CAS 才写入 1.0
 
 
 class TestImportProgressChunkUnits:
@@ -1311,7 +1347,9 @@ class TestImportProgressChunkUnits:
                 progress_updates.append(float(fields["progress"]))
             await orig_update_task(task_id, **fields)
 
-        mock_session = AsyncMock()
+        mock_session = _mock_db_session()
+        mock_session.add_all = MagicMock()
+        mock_session.execute.return_value = MagicMock(all=lambda: [])
 
         with (
             patch("app.services.data_import.redis_client", fake),
@@ -1348,7 +1386,7 @@ class TestImportProgressChunkUnits:
         assert all(0.0 <= p <= 1.0 for p in progress_updates)
         assert all(b >= a for a, b in zip(progress_updates, progress_updates[1:], strict=False))
         # 修复前此处只能到 48/72≈0.667（2 回路 × 24 分块 / 2 回路 × 72 小时）
-        assert progress_updates[-1] == 1.0
+        assert progress_updates[-1] == 0.95  # 终态 CAS 才写入 1.0
 
 
 class TestImportProbeDegradation:
@@ -1361,7 +1399,7 @@ class TestImportProbeDegradation:
         loop_data_map = {
             "loop-A": {"role_tag_map": {"PV": "A.PV"}, "unit_id": "u1", "subtable": "t_a"},
         }
-        mock_session = AsyncMock()
+        mock_session = _mock_db_session()
         with (
             patch("app.services.data_import.redis_client", fake),
             patch(
@@ -1406,6 +1444,23 @@ class TestImportProbeDegradation:
 
 class TestImportSingleLoopChunkFaultTolerance:
     """_import_single_loop 分块级容错：单分块失败记录窗口后继续，不整回路中断."""
+
+    @pytest.fixture(autouse=True)
+    def isolate_metadata(self):
+        session = MagicMock()
+        session.__aenter__ = AsyncMock(return_value=session)
+        session.__aexit__ = AsyncMock()
+        session.commit = AsyncMock()
+        session.flush = AsyncMock()
+        with (
+            patch("app.core.db.AsyncSessionLocal", return_value=session),
+            patch(
+                "app.services.data_source.point_history_metadata.create_batch",
+                new=AsyncMock(return_value=MagicMock(batch_id="local-test")),
+            ),
+            patch("app.services.data_source.point_history_metadata.confirm_batch", new=AsyncMock()),
+        ):
+            yield
 
     @pytest.mark.asyncio
     async def test_chunk_failure_continues_remaining_chunks(self):
@@ -1497,7 +1552,9 @@ class TestImportSingleLoopChunkFaultTolerance:
                 raise HistoryDataSourceError("远端历史数据 API 返回 HTTP 504")
             return _payload()
 
-        mock_session = AsyncMock()
+        mock_session = _mock_db_session()
+        mock_session.add_all = MagicMock()
+        mock_session.execute.return_value = MagicMock(all=lambda: [])
 
         with (
             patch("app.services.data_import.redis_client", fake),

@@ -70,6 +70,7 @@ class ImportTaskResponse(CamelModel):
     taskId: str
     status: ImportStatus
     progress: float = 0.0
+    currentStage: str | None = None
     loopCount: int = 0
     importedCount: int = 0
     errorCount: int = 0
