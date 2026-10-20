@@ -79,5 +79,32 @@
     "migration": "no new migration; head remains p703report01",
     "guide": "部署指令-1041-ToDesk人工.md",
     "note": "诊断性能与进度、历史数据导入性能与稳定性；现有环境双镜像升级包，根路径前端；用户经 ToDesk 手工部署，现场效果待验收。"
+  },
+  {
+    "version": "full-1042 (v7.5.6)",
+    "buildTime": "2026-10-20",
+    "gitCommit": "e97c3e7ffedd48ec9cba92e849a428bcdfb3f909",
+    "gitBranch": "macbook",
+    "buildPlatform": "linux/amd64 (clean git archive; frontend application unchanged from full-1041)",
+    "appVersion": "v7.5.6-1042-full",
+    "images": [
+      {
+        "name": "clpm-backend:full-1042",
+        "configDigest": "sha256:6f15b5f8fcc965e47824375e9197e8232324c1dfb19fb0a00569119684767d20"
+      },
+      {
+        "name": "clpm-frontend:full-1042",
+        "configDigest": "sha256:cc7593e72390753a9952f9335f239c13e350f7e4e9ec622b4ae23ab149225635"
+      }
+    ],
+    "tarFile": "clpm-images-1042-full.tar.gz",
+    "tarSizeBytes": 221087644,
+    "tarSha256": "022094dbfb5837a994cd19b4589b4edd15983b7b42688d62d12da2b6b7800dcb",
+    "migration": "no new migration; head remains p703report01",
+    "guide": "部署指令-1042-ToDesk人工.md",
+    "note": "巡检整轮互斥/续租与过期触发、Redis 低值优先、诊断真实状态及固定执行时间；用户通过 ToDesk 手工部署。",
+    "deliveryZipFile": "clpm-deploy-1042.zip",
+    "deliveryZipSizeBytes": 221096712,
+    "deliveryZipSha256": "c285eb7ee1aef4b9c6f5ef666da0d03b0ec7862844cade29ad5d385948d926c1"
   }
 ]
