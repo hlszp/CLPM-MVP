@@ -29,7 +29,7 @@ from app.contracts.data_types import (
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.metric_calculator.time_axis import to_half_open, utc
 from app.services.preprocessing.data_quality_assessor import CORE_TAGS, DataQualityAssessor
-from app.services.preprocessing.outlier_detection import OutlierDetector
+from app.services.preprocessing.outlier_detection import OutlierDetector, detect_ts_anomaly
 from app.services.preprocessing.quality_code import (
     is_nan_or_inf,
     map_quality_code,
@@ -134,8 +134,6 @@ class PreprocessingPipeline:
 
         for tag_name, values in raw.signals.items():
             signals[tag_name] = list(values)
-            validity[f"{tag_name}_valid"] = [True] * n
-            outlier_reasons[tag_name] = [[] for _ in range(n)]
 
         # Step ① 质量码识别（算法说明 §3.4.2 步骤①）
         quality_status_map = self._step1_identify_quality(raw)
@@ -461,6 +459,9 @@ class PreprocessingPipeline:
         设计依据：算法说明 §3.4.2 步骤④, §3.4.3-3.4.4
         """
         result: dict[str, dict[int, list[OutlierReason]]] = {}
+        timestamp_anomalies = detect_ts_anomaly(
+            raw.timestamps, float(self.threshold.base_sampling_freq)
+        )
         for tag_name, values in normalized_signals.items():
             # 质量码仅 PV 有
             qc_key = f"{tag_name}_quality"
@@ -477,6 +478,7 @@ class PreprocessingPipeline:
                 quality_codes=quality_codes,
                 is_normalized=is_norm,
                 skip_frozen=skip_frozen,
+                timestamp_anomalies=timestamp_anomalies,
             )
             result[tag_name] = reasons
         return result

@@ -90,6 +90,54 @@ async def _run(raw_series: RawTimeSeries | None, **kwargs):
     return run, db
 
 
+@pytest.mark.parametrize("task_id", ["task-new", "task-old", None])
+async def test_same_window_results_belong_to_their_own_task(task_id):
+    """新任务不能返回旧任务结果；同任务重投可复用，非任务入口不做跨运行去重。"""
+    from sqlalchemy.dialects import postgresql
+
+    loop = _mock_loop()
+    db = _mock_db(loop)
+    old = MagicMock(id=str(uuid4()), task_id="task-old")
+    db.get.return_value = old
+    execute = db.execute
+
+    async def execute_with_existing(stmt, *args, **kwargs):
+        compiled = stmt.compile(dialect=postgresql.dialect())
+        if str(compiled).startswith("SELECT diagnosis_run.id"):
+            result = MagicMock()
+            # 旧版未按 task_id 过滤，无论哪个新任务都会命中旧 run。
+            requested = compiled.params.get("task_id_1")
+            result.scalar_one_or_none.return_value = (
+                old.id if requested in (None, "task-old") else None
+            )
+            return result
+        return await execute(stmt, *args, **kwargs)
+
+    db.execute = AsyncMock(side_effect=execute_with_existing)
+    provider = MagicMock()
+    provider.make_query_fn.return_value = AsyncMock(return_value=_frozen_series(360))
+    with (
+        patch.object(orch, "get_provider", return_value=provider),
+        patch.object(orch, "_save_diagnosis_raw_snapshot", AsyncMock(return_value=None)),
+    ):
+        run = await orch.run_diagnosis_for_loop(
+            db, LOOP_ID, start=START, end=END, task_id=task_id, triggered_by="tester"
+        )
+    if task_id == "task-old":
+        assert run is old
+        db.add.assert_not_called()
+    else:
+        assert run is not old
+        assert run.task_id == task_id
+        own_runs = [
+            call.args[0]
+            for call in db.add.call_args_list
+            if isinstance(call.args[0], orch.DiagnosisRun)
+        ]
+        assert own_runs == [run]
+    assert old.task_id == "task-old"
+
+
 @pytest.mark.asyncio
 async def test_progress_reports_each_operator_before_execution() -> None:
     """执行中能收到算法检查进度；不允许等全部算子跑完才更新。"""

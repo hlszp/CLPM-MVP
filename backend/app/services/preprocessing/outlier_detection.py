@@ -28,7 +28,6 @@ from app.contracts.data_types import (
     QualityStatus,
 )
 from app.services.preprocessing.quality_code import (
-    is_nan_or_inf,
     map_quality_code,
 )
 from app.services.preprocessing.thresholds import ControlTypeThreshold, is_detector_enabled
@@ -48,6 +47,23 @@ _MARK_ONLY: frozenset[OutlierReason] = frozenset(
 # ---------------------------------------------------------------------------
 
 
+def _numeric_values(values: list[Any] | np.ndarray) -> np.ndarray:
+    """一次转换数值列；非法值与非有限数保持原 NaN 检测语义，不修改输入。"""
+    try:
+        arr = np.asarray(values, dtype=float)
+    except (ValueError, TypeError):
+
+        def convert(value: Any) -> float:
+            try:
+                return float(value) if value is not None else float("nan")
+            except (ValueError, TypeError):
+                return float("nan")
+
+        arr = np.fromiter((convert(value) for value in values), dtype=float, count=len(values))
+    finite = np.isfinite(arr)
+    return arr if finite.all() else np.where(finite, arr, np.nan)
+
+
 def detect_nan(values: list[Any]) -> list[tuple[int, OutlierReason]]:
     """检测 NaN/Inf/NULL 值（算法说明 §3.4.3 第5类）.
 
@@ -57,7 +73,9 @@ def detect_nan(values: list[Any]) -> list[tuple[int, OutlierReason]]:
     Returns:
         (index, OutlierReason.NAN) 列表
     """
-    return [(i, OutlierReason.NAN) for i, v in enumerate(values) if is_nan_or_inf(v)]
+    return [
+        (int(i), OutlierReason.NAN) for i in np.flatnonzero(~np.isfinite(_numeric_values(values)))
+    ]
 
 
 def detect_out_of_range(
@@ -76,17 +94,9 @@ def detect_out_of_range(
     Returns:
         (index, OutlierReason.OUT_OF_RANGE) 列表
     """
-    results: list[tuple[int, OutlierReason]] = []
-    for i, v in enumerate(values):
-        if is_nan_or_inf(v):
-            continue
-        try:
-            f = float(v)
-        except (ValueError, TypeError):
-            continue
-        if f < range_min or f > range_max:
-            results.append((i, OutlierReason.OUT_OF_RANGE))
-    return results
+    arr = _numeric_values(values)
+    indices = np.flatnonzero((arr < range_min) | (arr > range_max))
+    return [(int(i), OutlierReason.OUT_OF_RANGE) for i in indices]
 
 
 def _detect_frozen_indices(values: list[Any], win: int, std_threshold: float) -> list[int]:
@@ -99,17 +109,7 @@ def _detect_frozen_indices(values: list[Any], win: int, std_threshold: float) ->
     if n < win:
         return []
 
-    float_vals: list[float] = []
-    for value in values:
-        if is_nan_or_inf(value):
-            float_vals.append(float("nan"))
-        else:
-            try:
-                float_vals.append(float(value))
-            except (ValueError, TypeError):
-                float_vals.append(float("nan"))
-
-    arr = np.asarray(float_vals, dtype=float)
+    arr = _numeric_values(values)
     valid = ~np.isnan(arr)
     # Variance is translation-invariant. Center before prefix sums so raw
     # engineering values with a large offset do not lose small variance through
@@ -217,17 +217,9 @@ def detect_jump(
     range_span = max(range_max - range_min, 1e-9)
     jump_threshold = threshold.jump_threshold_pct * range_span
 
-    results: list[tuple[int, OutlierReason]] = []
-    for i in range(1, n):
-        if is_nan_or_inf(values[i]) or is_nan_or_inf(values[i - 1]):
-            continue
-        try:
-            diff = abs(float(values[i]) - float(values[i - 1]))
-        except (ValueError, TypeError):
-            continue
-        if diff > jump_threshold:
-            results.append((i, OutlierReason.JUMP))
-    return results
+    arr = _numeric_values(values)
+    indices = np.flatnonzero(np.abs(np.diff(arr)) > jump_threshold) + 1
+    return [(int(i), OutlierReason.JUMP) for i in indices]
 
 
 def detect_spike(
@@ -257,18 +249,10 @@ def detect_spike(
     range_span = max(range_max - range_min, 1e-9)
     spike_threshold = threshold.spike_threshold_pct * range_span
 
-    results: list[tuple[int, OutlierReason]] = []
-    for i in range(1, n - 1):
-        if is_nan_or_inf(values[i]) or is_nan_or_inf(values[i - 1]) or is_nan_or_inf(values[i + 1]):
-            continue
-        try:
-            prev_diff = abs(float(values[i]) - float(values[i - 1]))
-            next_diff = abs(float(values[i]) - float(values[i + 1]))
-        except (ValueError, TypeError):
-            continue
-        if prev_diff > spike_threshold and next_diff > spike_threshold:
-            results.append((i, OutlierReason.SPIKE))
-    return results
+    arr = _numeric_values(values)
+    diffs = np.abs(np.diff(arr))
+    indices = np.flatnonzero((diffs[:-1] > spike_threshold) & (diffs[1:] > spike_threshold)) + 1
+    return [(int(i), OutlierReason.SPIKE) for i in indices]
 
 
 def detect_ts_anomaly(
@@ -364,17 +348,7 @@ def detect_hf_noise(
         return []
 
     # 提取有效浮点值，NaN 用线性插值填充
-    float_vals: list[float] = []
-    for v in values:
-        if is_nan_or_inf(v):
-            float_vals.append(float("nan"))
-        else:
-            try:
-                float_vals.append(float(v))
-            except (ValueError, TypeError):
-                float_vals.append(float("nan"))
-
-    arr = np.array(float_vals, dtype=float)
+    arr = _numeric_values(values).copy()
     nan_mask = np.isnan(arr)
     if nan_mask.all():
         return []
@@ -437,6 +411,7 @@ class OutlierDetector:
         quality_codes: list[int] | None = None,
         is_normalized: bool = False,
         skip_frozen: bool = False,
+        timestamp_anomalies: list[tuple[int, OutlierReason]] | None = None,
     ) -> dict[int, list[OutlierReason]]:
         """对单个信号执行全部 8 类异常值检测.
 
@@ -456,6 +431,17 @@ class OutlierDetector:
         n = len(values)
         if n == 0:
             return {}
+        # 数值转换在同一信号的检测器间共享，避免 NaN/量程/跳变/尖峰/FFT
+        # 各自逐点 float()/isfinite()；保持检测顺序和原因码顺序。
+        numeric = (
+            _numeric_values(values)
+            if any(
+                is_detector_enabled(code)
+                for code in ("nan", "out_of_range", "jump", "spike", "hf_noise")
+            )
+            or (not skip_frozen and is_detector_enabled("frozen"))
+            else values
+        )
 
         # 归一化后量程为 0~100，原始值量程为 range_min~range_max
         eff_min = 0.0 if is_normalized else range_min
@@ -474,31 +460,35 @@ class OutlierDetector:
 
         # 1. NaN/Inf/NULL
         if is_detector_enabled("nan"):
-            _add(detect_nan(values))
+            _add(detect_nan(numeric))
 
         # 2. 超量程
         if is_detector_enabled("out_of_range"):
-            _add(detect_out_of_range(values, eff_min, eff_max))
+            _add(detect_out_of_range(numeric, eff_min, eff_max))
 
         # 3. 冻结值（SP/MODE/PID 等常态为常量的信号跳过）
         if not skip_frozen and is_detector_enabled("frozen"):
             if is_normalized:
-                _add(detect_frozen(values, self.threshold))
+                _add(detect_frozen(numeric, self.threshold))
             else:
-                _add(detect_frozen_raw(values, self.threshold, range_min, range_max))
+                _add(detect_frozen_raw(numeric, self.threshold, range_min, range_max))
 
         # 4. 跳变（与超量程/冻结一致，按 is_normalized 选量程：
         #    归一化数据用 0~100，原始数据用工程量程，否则量程≠100 时永不触发）
         if is_detector_enabled("jump"):
-            _add(detect_jump(values, self.threshold, eff_min, eff_max))
+            _add(detect_jump(numeric, self.threshold, eff_min, eff_max))
 
         # 5. 尖峰（同跳变，量程需与数据量纲一致）
         if is_detector_enabled("spike"):
-            _add(detect_spike(values, self.threshold, eff_min, eff_max))
+            _add(detect_spike(numeric, self.threshold, eff_min, eff_max))
 
         # 6. 时间戳异常（仅标记）
         if is_detector_enabled("ts_anomaly"):
-            _add(detect_ts_anomaly(timestamps, expected_interval))
+            _add(
+                timestamp_anomalies
+                if timestamp_anomalies is not None
+                else detect_ts_anomaly(timestamps, expected_interval)
+            )
 
         # 7. 质量码异常（仅 PV 有质量码）
         if quality_codes is not None and is_detector_enabled("qc_bad"):
@@ -506,7 +496,7 @@ class OutlierDetector:
 
         # 8. 高频噪声（仅标记不滤波）
         if is_detector_enabled("hf_noise"):
-            _add(detect_hf_noise(values, self.threshold, sampling_freq_hz))
+            _add(detect_hf_noise(numeric, self.threshold, sampling_freq_hz))
 
         logger.debug(
             "OutlierDetector: tag=%s, points=%d, anomalous=%d, reasons=%s",
