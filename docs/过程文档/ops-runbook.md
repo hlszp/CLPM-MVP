@@ -2,6 +2,8 @@
 
 > 来源：原 AGENTS.md §网络模式切换验证命令 与 §关键注意事项 的详细说明（2026-07-21 拆分）。AGENTS.md 保留一行式规则；排障、验证、背景细节以本文档为准。
 
+> **现行入口（2026-10-21）**：最新交付 full-1043，现场运行版本以 `/health/ready` 为准；升级与回退使用 [ToDesk 逐条命令](../../releases/部署指令-1043-ToDesk人工.md)，固定测试证据见 [验证报告](full-1043-性能修复与验证-2026-10-21.md)。下文带日期的事故记录保留当时背景，不代表当前端口、算法或部署入口；server2 是历史环境。
+
 ## 网络模式切换（Tailscale 局域网/公网）
 
 背景（2026-07-19，PR #75）：UI 链路配置页（`/loop/aas-sync`）支持局域网/公网动态切换。**仅切换网络链路（Tailscale subnet router 透明转发），与数据源选择无关**——局域网/公网只是同一组数据源（远端历史导入接口 + SignalR Hub + 本地 TDengine）的两条可达路径。
@@ -41,6 +43,22 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 - ③ 公网模式 ping 延迟抖动大（6-63ms），可优化 DERP 节点或 Tailscale 直连（未做，低优先级）
 
 ## Celery Worker 运维
+
+### full-1042 / full-1043 现行调度与计时
+
+- Redis 优先级数值越小越先消费：事件 0、人工 3、后台 9，默认 9；prefetch=1。`AsyncTask.apply_async` 在默认值注入前继承父请求优先级，显式传值优先；不能抢占已运行任务。
+- `alert-patrol` 每分钟调度，消息 expires=60 秒；Redis 租约互斥并续租，重叠轮次跳过，失锁停止，过期消息不补跑。
+- 自定义批量评估按需经 DataPlanner 读取，不再等整批预热；仍保留配置批量预加载、缓存与有界并发。
+- 诊断任务写真实开始/结束时间，排队与执行分开；同窗独立复诊各有结果，同任务重投仍幂等。任务页诊断 3 秒、其他任务 5 秒轮询，终态停止轮询并固定耗时。
+- 开发环境沿用 lifespan 管理；生产沿用 Compose 中独立 worker/beat，执行代码变更后需重建对应服务，避免额外启动重复进程。
+
+核对配置与当前执行任务（只读）：
+
+```bash
+docker exec clpm-celery-worker python -c "from app.tasks.celery_app import celery_app, PRIORITY_EVENT, PRIORITY_MANUAL, PRIORITY_NIGHTLY; print('event/manual/background=', PRIORITY_EVENT, PRIORITY_MANUAL, PRIORITY_NIGHTLY, 'default=', celery_app.conf.task_default_priority, 'inherit=', celery_app.conf.task_inherit_parent_priority); print(celery_app.control.inspect(timeout=5).active() or {})"
+```
+
+手动任务等待时区分消息排队、Worker 执行、远端取数、本地写入及预处理；单次健康检查不能证明全厂吞吐或排队 P95。阶段日志为 `诊断阶段耗时`、`导入分块耗时`，可按 task_id 定位。
 
 ### uvicorn --reload 与 Celery 冲突（reload 风暴，2026-08-17 实测，已根治）
 
@@ -134,7 +152,7 @@ prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.pro
 
 ### prewarm 预热策略已废止（2026-07-18）
 
-原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。整点任务数据来源统一为 **realtime 滚动缓存**（`realtime:history:*`，保留 75 分钟×1Hz=4500 点，provider 对近 1 小时窗口自动探测）+ TDengine 回源兜底；`prewarm_cache` 任务保留供手工/运维调用。
+原"每小时 55 分"预热窗口与整点任务窗口错位一小时（预热的是上一任务已算完的窗口，从未命中），已移除 beat 条目、worker_ready 预热与 L2 兜底预热。现行计算通过 DataPlanner 按需读取本地缓存与 TDengine，不访问远端历史 API。full-1043 进一步移除自定义批量评估的整批预热屏障；`prewarm_cache` 仍是注册的手工/运维入口，不能因无前端调用就删除。
 
 ### Beat 双触发背景（2026-07-20 实测）
 
@@ -148,7 +166,15 @@ prod compose worker 默认 `--concurrency=8`（资源限额 8C/6G），`.env.pro
 
 ### 实时数据断点续传（2026-07-20）
 
-SignalR 断线/进程重启导致的数据缺口自动补全。订阅器每次收到数据更新内存 `_last_data_at`，flush 时节流（30s）持久化到 Redis checkpoint（`realtime:gap:last_data_ts`，epoch 秒）；重连成功（含进程重启后首连，启动时从 checkpoint 恢复）检测缺口 ≥ `GAP_BACKFILL_MIN_GAP_SECONDS`（默认 600s=10 分钟）且总开关 `GAP_BACKFILL_ENABLED`（默认 **关闭**）打开时，即创建独立 asyncio 补数任务（单实例守卫，不阻塞实时链路），复用 `import_history_data`（`conflict_strategy="skip"` 依赖 TDengine 同 ts 覆盖——**禁止 overwrite**（会先 DELETE 误删实时行），`trigger_backfill=True` 联动 KPI 回算）；单次窗口上限 `GAP_BACKFILL_MAX_HOURS`（默认 24h），超出截断并告警需手工导入；补数失败仅记日志、checkpoint 不推进，下次重连天然重试。实现在 `app/services/data_source/realtime_subscriber.py`（`_maybe_trigger_gap_backfill` / `_run_gap_backfill`）。
+SignalR 断线/进程重启后的补数由 `realtime_subscriber.py` 的 `_maybe_trigger_gap_backfill` / `_run_gap_backfill` 管理：checkpoint 持久化、单实例守卫，失败不推进 checkpoint。运行时开关为 `sys_config` 的 `gapBackfillEnabled`（默认关闭）及 `gapBackfillMinGapSeconds`（默认 600 秒），环境变量仅作启动兜底；窗口上限默认 24h，超出会提示需人工导入。复用 `import_history_data` 点表 UPSERT，不传已废止的 `conflict_strategy`，不执行前置 DELETE；`trigger_backfill=True` 联动本地 KPI 回算，窗口仍须通过 5 分钟保护。
+
+### 历史导入、读取与 TDengine 原生能力（full-1043）
+
+现役导入为 v3 单相：元数据批量预加载，同一时间块拉取全部角色，再按位号批量直写 `st_point_data_v1`；PV/OP 保留样本，慢变量按值/质量去重，空值不落壳行。分块失败、取消、部分写入与覆盖登记均显式计入结果。回路/分块/远端并发由 `datasource.import_loop_concurrency` / `import_chunk_concurrency` / `import_remote_concurrency` 运行时读取，默认 4/1/4，分别钳制在 1–16/1–8/1–16。
+
+读取使用 `LAST_ROW` 取因果初值，趋势用 `LAST` + `PARTITION BY point_id INTERVAL(...) FILL(PREV)`；诊断保留原始波形、质量码及缺口，不用 AVG 替换算法输入。历史事件与初值独立并行读取，分页边界包含同时间戳并按点去重。
+
+`tdengine_native.py` 使用 taosrest HTTP，文件名不代表 libtaos 协议；进程内读池 8、写池 2，减少长读取占满客户端线程导致的写入等待。点仓储常规批次 500 行，历史直导 5000 行。线程隔离不等于数据库资源隔离，不应仅提高 worker/导入并发来承诺全厂吞吐。
 
 **运行时可调（2026-08-06）**：总开关与缺口阈值已纳入 `sys_config` 运行时配置（键 `datasource.gap_backfill_enabled` / `datasource.gap_backfill_min_gap_seconds`），经 UI 链路配置页（`/loop/aas` 数据源 Tab）修改，即时生效（订阅器每次触发都读 settings，无需重启）；前端阈值以分钟为单位（1-1440），后端存秒。`.env` 中的 `GAP_BACKFILL_*` 仅作启动兜底默认值，`preload_datasource_config` 启动时以 sys_config 覆盖之。默认关闭 + 10 分钟阈值的考量：避免短暂网络抖动（<10 分钟）触发远端拉取，减少远端 API 压力。
 
@@ -197,11 +223,11 @@ API 触发的异步任务全链路可追踪：`before_task_publish` 信号把当
 ## 诊断调度细节（2026-07-20，PR #86-#96；2026-08-07 停旧引擎 Beat；2026-10-01 口径校正）
 
 **现行设计（16 号文 §12 三层触发，2026-10-01 用户裁决确认为现行口径）**：v2 诊断引擎支持三类触发——
-- **MANUAL 手动**：POST /diagnosis/run（工作台勾选发起，L0/L1 fitness 门禁 + 预检徽标）
-- **SCHEDULED 分级定时**：`diagnosis_schedule.py` 注册 `diagnosis-scheduled-daily`（每日 01:10，1 级重要回路近 24h 窗）与 `diagnosis-scheduled-weekly`（每周日 02:10，2 级回路近 7d 窗）；仅当 `enabled_modules` 禁用 diagnosis 模块时才从 Beat 移除（`beat_registry.py`）
-- **EVENT 预警事件**：`alert_rule_engine/dispatcher.py` 预警命中后自动触发诊断（6h 防抖）
+- **MANUAL 手动**：POST /diagnosis/run，工作台发起；L0 警告放行并产出正式 DATA_INSUFFICIENT，预检徽标提示数据情况
+- **SCHEDULED 定时**：`diagnosis_schedule.py` 注册 `diagnosis-scheduled-daily`（每日 00:30，全量 READY 活跃回路近 24h）与 `diagnosis-scheduled-weekly`（每周日 02:10，2 级回路近 7d）；模块禁用时由 `beat_registry.py` 移除
+- **EVENT 预警事件**：`alert_rule_engine/dispatcher.py` 命中后触发，受模块开关、防抖及引擎数据门禁控制
 
-注意：自动路径（SCHEDULED/EVENT）目前**不做** L0/L1 fitness 门禁，仅做数据密度门禁（快照行数 ≥50% 预期）。
+定时路径过滤 L0 并检查 TDengine 数据密度（预期 50%），L1 不拦；符合条件的回路每 50 个一批独立派发。不要把手动、定时和事件的门禁混为一套。
 
 历史口径（旧引擎，已退役，仅备查）：2026-08-07（commit `5e216ba8`）停用的是**旧引擎** `diagnosis_engine.py` 的 `diagnosis-engine-hourly` 与 `diagnosis-engine-checkup-8h` 两条 Beat（代码已注释保留）。旧引擎事件轨整点 10 分深诊 + 8h 体检轨，`is_enabled` 启停开关仅作用于该旧引擎（v2 链路不消费，见三模块审查 P0-2）。
 
@@ -240,6 +266,8 @@ docker logs clpm-tdengine --tail 50
 ```
 
 ## lefthook pre-push 门禁修复（2026-08-03）
+
+以下为历史故障记录；现行六道门禁以 `lefthook.yml` 为准，唯一推送目标为 `github`（本机分支 `macbook`），不执行历史记录中的 origin 推送或绕过命令。
 
 ### 现象
 
@@ -332,13 +360,13 @@ resolver 10.89.0.1 valid=10s ipv6=off;
 # 1. 在 zpdev 上生成 SSH key 并添加到 server2
 ssh zpdev 'ssh-keygen -t ed25519 -N "" -f ~/.ssh/id_ed25519'
 PUBKEY=$(ssh zpdev 'cat ~/.ssh/id_ed25519.pub')
-sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 "echo '${PUBKEY}' >> ~/.ssh/authorized_keys"
+ssh root@192.168.110.3 "echo '${PUBKEY}' >> ~/.ssh/authorized_keys"
 
 # 2. 通过管道直传镜像（zpdev→server2 局域网，~0.87ms 延迟）
 ssh zpdev 'docker save gitea.zlinfot.xyz:2087/zp/clpm-backend:latest | ssh -o StrictHostKeyChecking=no root@192.168.110.3 "podman load"'
 
 # 3. 重启容器
-sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 'cd /home/prod/clpm-deploy && podman-compose -f docker-compose.prod.yml down && podman-compose -f docker-compose.prod.yml up -d'
+ssh root@192.168.110.3 'cd /home/prod/clpm-deploy && podman-compose -f docker-compose.prod.yml down && podman-compose -f docker-compose.prod.yml up -d'
 ```
 
 ### Registry 镜像同步检查
@@ -350,7 +378,7 @@ zpdev 本地构建的镜像（RepoDigests 为空）可能未推送到 gitea regi
 ssh zpdev 'docker inspect gitea.zlinfot.xyz:2087/zp/clpm-backend:latest --format "{{.Id}}" | cut -c8-19'
 
 # 检查 server2 拉取到的镜像 ID（对比是否一致）
-sshpass -p 'ZLinfot@123;,./' ssh root@192.168.110.3 'podman inspect gitea.zlinfot.xyz:2087/zp/clpm-backend:latest --format "{{.Id}}" | cut -c8-19'
+ssh root@192.168.110.3 'podman inspect gitea.zlinfot.xyz:2087/zp/clpm-backend:latest --format "{{.Id}}" | cut -c8-19'
 
 # 如果不一致，说明 registry 上是旧镜像，需从 zpdev 推送或局域网直传
 ```
@@ -434,7 +462,7 @@ WHERE point_id = '<point_id>'
    `SHOW VARIABLES LIKE 'timezone';`（2026-09-26 实测返回 `Asia/Shanghai (CST, +0800)`；
    `SELECT @@timezone;` 是 MySQL 写法，TDengine 报 `unrecognized token`，别照抄），
    或直接看容器 TZ（`docker exec clpm-tdengine printenv TZ`），然后显式换算；
-4. 排查"有没有数据"时，**同时**打印查到的 `MIN(ts)/MAX(ts)`：时段边界能立刻暴露 8 小时偏移。
+4. 排查"有没有数据"时，**同时**打印查到的 `FIRST(ts)/LAST(ts)`：时段边界能立刻暴露 8 小时偏移；TIMESTAMP 函数注意下节限制。
 
 ---
 
@@ -503,10 +531,10 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 
 ```bash
 # ① 连接层：容器在不在、健康不健康（TDengine 是 profile 门控服务，ps 要带 profile）
-docker compose -f docker-compose.prod.yml --profile tdengine ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine ps
 
 # ② 认证层：日志有无 Authentication failure；CLI 能否登录
-docker compose -f docker-compose.prod.yml --profile tdengine logs --tail=60 tdengine
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine logs --tail=60 tdengine
 docker exec -i clpm-tdengine taos -u root -p"<口令>" -s "SHOW DATABASES;"
 
 # ③ 库表存在性：应看到 clpm_ts（缺失原因见下节 DDL 现状）
@@ -516,14 +544,13 @@ docker exec -i clpm-tdengine taos -s "SHOW DATABASES;"
 docker exec -i clpm-tdengine taos -s "SELECT COUNT(*) AS rows_total, FIRST(ts) AS first_ts, LAST(ts) AS last_ts FROM clpm_ts.st_point_data_v1;"
 ```
 
-### 四、TDengine 建表 DDL 现状（**待修缺陷**）
+### 四、TDengine 建表 DDL 现状（仓库已修，既有现场需核对）
 
-- `docker-compose.prod.yml:174` **只挂载** `db/tdengine/01_supertable.sql` 到 entrypoint 初始化目录；
-- 而该文件随宽表退役（2026-09-25）已清空为**无 DDL 的占位文件**；
-- 真正的建表 DDL 在 `db/tdengine/02_point_history.sql`（`CREATE STABLE IF NOT EXISTS clpm_ts.st_point_data_v1 ...`）**未被挂载**；
-- 当前**依赖应用自建**：`app/services/data_source/point_history_repository.py:176-178` 会执行 `CREATE DATABASE IF NOT EXISTS` + `CREATE STABLE IF NOT EXISTS`。
+- 仓库 `docker-compose.prod.yml` 已同时挂载 `01_supertable.sql` 与 `02_point_history.sql`，后者负责 `st_point_data_v1` 点表；前者为宽表退役后的占位文件。
+- `point_history_repository.ensure_schema()` 仍保留应用侧幂等建库/建表兜底。
+- 既有服务器可能保留旧 Compose；只加载新镜像并不自动同步宿主 Compose，需核对现场文件，不能据源码挂载状态宣称现场已经修复。
 
-结论：**全新卷 + 应用连不上 TDengine** 时，点表永远不会被创建——这正是 2026-09-27 现场的表现。待修：把 `02_point_history.sql` 也挂进 `/docker-entrypoint-initdb.d/`（改 compose，需授权）。
+全新部署仍须先排除连接/认证失败，再检查点表；已有卷的 initdb 脚本不会因新增挂载自动重跑。当前 full-1043 升级无新迁移，沿用现有数据卷。
 
 ## 新增能力（2026-09-26/27）
 

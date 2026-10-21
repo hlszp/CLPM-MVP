@@ -4,6 +4,19 @@
 > 本表把 2026-09-24 系统性检查发现的**无消费方代码**逐条登记，并给出处置建议。
 > 机器可读白名单：`scripts/api-contract-allowlist.json`（CI 门禁 `scripts/check_api_contract.py` 消费）。
 
+> **2026-10-21 复核**：现行注册路由 **365**、前端调用路径 **276**；未登记缺失/未登记未消费项均为 0，另有 `/menu/all` 一项已登记缺口。白名单有 **32 条模式**，含健康探针、直链、兼容和待接入能力，不等于 32 个可删除端点。下文 311/234、28、44 是 2026-09-24 历史快照；新增核查与已处理私有遗留见 [本轮记录](文档对齐与冗余代码核查-2026-10-21.md)。
+
+### 本轮已处理（2026-10-21）
+
+| 位置 | 处理 | 证据与边界 |
+|---|---|---|
+| `api/v1/endpoints/configs.py` | 删除旧 metrics CRUD 的 3 个私有 helper 与 5 个孤立常量 | 无现役消费者；现役诊断配置路由保留，指标公开 schema 未删 |
+| `api/v1/endpoints/tasks.py` | 删除 `_count_active_custom_tasks` | 全仓仅定义，现役列表/并发检查路径未改 |
+| `services/data_import.py` | 删除 v2 的 `_fetch_low_freq_points`、`_write_sparse_point_events`、旧 `_get_loop_tag_mapping` 及 2 个孤立常量 | v3 单相批量链路不调用；质量与时序契约仍使用的 helper 保留 |
+| `services/trend_service.py` | 删除重复 LTTB 实现，导入 `waveform.lttb_downsample_multi_series` | 原两份函数体一致，105 组差分输入等价；两个公开导入路径保留 |
+
+未删除公开端点、Celery 任务名、旧诊断/整定文件、迁移或归档表；本轮不修改机器白名单，因公开接口集合未变。私有遗留删除不直接提升运行吞吐，价值在减少错误维护入口。
+
 ## 0. 对账口径（可复现）
 
 ```bash
@@ -28,10 +41,11 @@ cd backend && uv run python ../scripts/check_api_contract.py --json # 机器可�
 | `GET /auth/rbac-test` | 测试专用 | 已 ADMIN 保护，用于权限回归排查。**保留** |
 | `POST /algorithms/kpi/calculate`、`POST /algorithms/tuning/calculate`、`GET /algorithms/tasks/*` | 算法直调 | 计算已全量收敛到 Celery 任务链路（`/tasks/*`、`/tuning/*`）；这三个是历史直调入口。**待清理**：确认无脚本/外部调用后删除 |
 | `POST /algorithms/dataplanner/plan`、`POST /algorithms/dataplanner/bundle`、`GET /algorithms/dataplanner/cache/stats`、`DELETE /algorithms/dataplanner/cache/*` | DataPlanner | 前端只走 `/timeseries/*` 与 `/loop-data/*`；缓存运维入口无 UI。**待清理或补运维页面** |
-| `GET /workbench/flags`、`GET /workbench/staff-load`、`GET /workbench/lane-more` | BFF 子端点 | 已被 `/workbench/aggregate` 合并返回；`workbench.py` 模块 docstring 仍宣称 A-07/08/09，**建议同步修订文档后删除** |
+| `GET /workbench/flags`、`GET /workbench/staff-load`、`GET /workbench/lane-more` | 历史 BFF 子端点 | **已清理（2026-09-29）**，现行聚合及白名单均已收口，不再排期待删 |
 | `GET /tuning/knowledge-base`、`/similar`、`/knowledge-base/*` | 整定知识库 | P0 未接前端（设计保留待 M2）。**保留待接入**，接入前不应清理 |
 | `GET /timeseries/{loopId}/waveform`、`POST /timeseries/batch/waveform` | 波形 | 前端统一走 `/loop-data` 链路。**待清理**（注意与 `tags.py` 的 `_parse_iso_datetime` 共用工具，删除时保留工具函数） |
-| `GET /tasks/active`、`GET /realtime`、`GET /performance/board`、`GET /configs/metrics`、`PUT /configs/metrics` | 历史口径 | 已被同域新端点取代（`/tasks`、`/loop-data/*`、`/performance/aggregate*`、`/configs/metric-definitions`）。**待清理** |
+| `GET /tasks/active`、`GET /realtime` | 兼容入口 | 仍保留并登记白名单，删除前需核对脚本/外部消费者 |
+| `GET /performance/board`、`GET /configs/metrics`、`PUT /configs/metrics` | 历史口径 | **已清理（2026-09-29）**；本轮仅删除后续仍遗留的 metrics 私有 helper |
 
 ## 2. 前端：调用但后端不存在（1 条，白名单）
 
@@ -39,7 +53,9 @@ cd backend && uv run python ../scripts/check_api_contract.py --json # 机器可�
 |---|---|---|
 | `GET /menu/all` | `frontend/apps/web-antd/src/api/core/menu.ts` | vben `accessMode=backend` 的菜单接口；当前 `accessMode=frontend`（默认且未覆盖）故不触发。**风险**：一旦切换后端菜单模式立即 404。处置二选一：① 实现 `/menu/all`；② 删除该封装并在切换前补实现笔记 |
 
-## 3. 前端：无引用的 API 封装函数（44 个，2026-09-24 审计）
+## 3. 前端：无引用的 API 封装函数（44 个，2026-09-24 历史审计）
+
+本节保留当时的候选样例，部分已随 2026-09-29 收口删除；不是当前删除清单。2026-10-21 扫描 468 个应用源码文件，得到 51 个仅定义处命中的 API 导出候选，尚需按页面、动态导入、兼容模式和外部消费逐项确认。
 
 审计方法：对 `src/api/*.ts` 的 `export function` 做全 `src` 引用扫描（含 `.vue`），命中 0 次者计入。
 
@@ -88,6 +104,6 @@ cd backend && uv run python ../scripts/check_api_contract.py --json # 机器可�
 |---|---|---|
 | backend/scripts/import_dcs_history_csv.py | 依赖已删除的 tdengine_native.batch_insert → ImportError，无法运行；且属 2026-09-06「登记不改造」清单 | 应用内「数据管理 → 历史数据导入」（data_import.import_history_data，写点表） |
 | backend/scripts/import_history_csv.py | 同上（INSERT 9 列列序即宽表口径，SQL 由 batch_insert 内部拼接） | 同上 |
-| backend/scripts/td_quality_audit.py | 只读宽表的质量体检工具，宽表已删；检索无现役引用（仅文档提及） | 无替代实现（能力缺口）——见下方说明 |
+| backend/scripts/td_quality_audit.py | 只读宽表的旧工具，宽表已退役 | 已由点表口径 `scripts/audit_data_quality.py` 及报告接口替代，见下方说明 |
 
-**能力缺口说明（td_quality_audit）**：该脚本提供「数据质量体检」——按回路统计断流位号与「有值但质量码坏」的情况。宽表退役后此能力目前没有替代实现。若将来需要，应按点表口径重写：点表是稀疏行 (point_id, ts, value, quality_class, quality_raw)，须按 point_id 关联 tag_registry 才能还原某回路的 PV 质量分布，不能只换表名。
+**替代能力已落地（2026-09-26，2026-10-21 复核）**：根目录 `scripts/audit_data_quality.py`、`GET /api/v1/reports/data-quality/audit` 与报告页数据质量体检采用点表口径，覆盖断流、质量码坏、密度不足及 HELD 填平；旧宽表脚本不恢复。生产大范围体检仍需按运维手册评估实际负载。

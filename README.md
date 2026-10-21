@@ -4,7 +4,7 @@
 
 危化企业控制回路性能治理与优化平台（Control Loop Performance Monitoring & Optimization）— **MVP 精简 + 闭环重建版**（自 CLPM v6.2 派生，设计事实来源见 `docs/MVP设计/`）。
 
-产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。后端运行时版本由 `APP_VERSION` 管理（当前 `7.5.6`，与锁定 tag 对齐），发布版本由 Git tag 管理（当前 `v7.5.6`，2026-10-19 锁定），变更记录见 `CHANGELOG.md`。
+产品文档基线：**v6.2**（派生自原项目，MVP 差异以 `docs/MVP设计/` 为准）。产品锁定 tag 为 **v7.5.6**；镜像运行版本由 `APP_VERSION` 标识。最新交付为 **v7.5.6-1043-full**（2026-10-21），同日现场部署与健康检查通过，业务性能仍待验收。源码、镜像及部署记录见 [验证报告](docs/过程文档/full-1043-性能修复与验证-2026-10-21.md)、[交付清单](releases/manifest-1043.json) 和 [逐条部署说明](releases/部署指令-1043-ToDesk人工.md)，变更记录见 `CHANGELOG.md`。
 
 ## 项目简介
 
@@ -37,7 +37,7 @@ CLPM-MVP 是面向危化企业控制回路的绩效治理与优化闭环平台�
 | 算法 | NumPy + SciPy（模型辨识 / PID 整定 / 闭环仿真 RK4 / ARMA 辨识） |
 | v4.0 核心组件 | DataPlanner（统一数据读取，L1/L2 缓存已接入；L3 Feature Cache 预留）+ ConfidenceEvaluator（可信度评估）+ TaskTracker（任务跟踪）+ 预处理 Pipeline（8步+8类异常检测）|
 | 部署 | Docker + Docker Compose + Nginx 反向代理 |
-| 测试 | pytest（7760 collected，2026-10-19）+ vitest（workspace 全量 105 文件 / 996 用例，CI 阻塞门禁）+ Playwright E2E 冒烟（CI 阻塞）+ 根 `e2e/` 关键业务链 95 用例（Critical E2E Gate，真实隔离 PostgreSQL/Redis/TDengine，阻塞） |
+| 测试 | pytest（默认排除 integration）+ vitest workspace 全量 + Playwright；真实 PostgreSQL/Redis/TDengine 集成需显式启用。full-1043 的固定结果与检查限制见 [验证报告](docs/过程文档/full-1043-性能修复与验证-2026-10-21.md)，不将历史计数或 CI 配置当作当前现场验收 |
 
 ## 快速开始（开发环境）
 
@@ -87,9 +87,9 @@ pnpm run dev:antd              # 默认端口 15666（MVP 隔离端口）
 |---|---|---|
 | admin | ADMIN | 全部模块 |
 | ic_engineer | IC_ENGINEER | 全部业务模块 |
-| pe_engineer | PE_ENGINEER | 监控/评估/工作台 |
-| expert | EXPERT | 监控工作台（只读）/诊断/整定 |
-| sponsor | SPONSOR | 工作台只读 |
+| pe_engineer | PE_ENGINEER | 业务查看及诊断/整定操作，按权限矩阵控制 |
+| expert | EXPERT | 业务查看及诊断/整定操作，按权限矩阵控制 |
+| sponsor | SPONSOR | 业务只读，默认进入驾驶舱 |
 
 > **改密口径（2026-08-31 调整）**：首次登录强制改密功能已移除，系统无改密要求；种子用户默认密码统一为 `admin123`，用户可经个人中心自愿改密。
 
@@ -114,7 +114,7 @@ pnpm exec playwright test
 | 数据 | 来源 | 说明 |
 |---|---|---|
 | 历史数据（计算用） | **本地 TDengine** | 性能评估、回路诊断、回路整定等所有计算任务唯一历史数据来源；数据不完整时按 INCONCLUSIVE/数据不足提示，**不会**自动降级到远端接口 |
-| 历史数据（采集用） | 远端 AAS 历史数据接口 | 有且仅有「数据管理 → 历史数据导入」任务调用，把远端数据补齐到本地 TDengine |
+| 历史数据（采集用） | 远端 AAS 历史数据接口 | 手工导入及显式启用后的断点回填经 `data_import.py` 写本地点表；计算任务不直接调用远端 |
 | 实时数据 | SignalR Hub（唯一） | `ws://<现场>/signalr/realValueForClpmHub`，开发/生产一致；写入 Redis 实时缓存（页面实时监控）+ 可选写回本地 TDengine（KPI 计算） |
 
 #### 7.1 历史数据导入接口（remote_api）
@@ -124,7 +124,7 @@ pnpm exec playwright test
 - 历史数据 API 地址：如 `http://192.168.100.2:81/api/services/v1/HistoryData/Get`
 - 鉴权 Token（可选）、请求超时
 
-该接口**只在手工启动历史数据导入任务时**由 `data_import.py` 直接调用，任何计算任务（KPI 整点/回填/诊断/趋势）都不会调用它。对接接口规范见 `docs/设计文档/05-IDS/HisDATA_API.md`。
+该接口由 `data_import.py` 直接调用，供手工导入及启用后的断点回填使用；KPI 整点/历史重算/诊断/趋势均读取本地 TDengine。导入采用单相分块、按位号 UPSERT，保留原始质量码并登记实际写入覆盖；对接规范见 `docs/设计文档/05-IDS/HisDATA_API.md`。
 
 > 兼容说明：`DATA_SOURCE_TYPE` 环境变量已废止（仅作配置保留），不再影响计算路径的数据源选择。
 
@@ -134,10 +134,10 @@ pnpm exec playwright test
 
 - SignalR Hub URL：如 `ws://192.168.100.2:81/signalr/realValueForClpmHub`
 - 断线重连基础间隔（指数退避 5s→30s 封顶）
-- 实时数据写回本地 TDengine 宽表（`REALTIME_WRITEBACK_ENABLED`，默认开启）
+- 实时数据写回本地 TDengine 点表 `st_point_data_v1`（由链路配置中的写回开关控制；`.env` 为启动默认值）
 
 对接接口规范见 `docs/设计文档/05-IDS/RealDATA_API.md`。
-实时值查询 API：`GET /api/v1/realtime?tagCodes=LIC-101.PV,TIC-101.PV`
+实时页面经 `/api/v1/loop-data/*` 与 WebSocket 消费缓存；`GET /api/v1/realtime` 仍是保留的兼容入口。
 
 #### 7.3 网络链路（局域网/公网，与数据源无关）
 
@@ -164,9 +164,17 @@ PYTHONPATH=/path/to/CLPM-MVP python -m uvicorn mock_data_server.main:app --host 
 
 > **注意**：`mock_data_server/` 是独立目录，正式项目可整体删除，不影响主应用。
 
+#### 7.5 诊断、批量任务与 TDengine
+
+诊断支持手动、定时及预警事件触发；同回路同窗口的独立任务分别保存结果，同任务重投保留幂等检查。诊断任务页每 3 秒刷新执行进度，其他任务每 5 秒；完成后使用真实开始/结束时刻固定计时。
+
+Redis 优先级为事件 0、人工 3、后台 9，子任务继承父优先级，显式指定值优先；优先级不能抢占已执行任务。预警巡检采用续租互斥，过期消息不补跑；自定义批量评估按需加载，不再等待整批预热。
+
+TDengine 已使用 `LAST_ROW`、`LAST/INTERVAL/FILL(PREV)` 和批量 INSERT；诊断原始波形与质量码仍保留。客户端使用 taosrest HTTP，进程内读 8 / 写 2 线程隔离；仓储常规写批次为 500 行，历史直导为 5000 行。源码与测量边界见 [full-1043 验证报告](docs/过程文档/full-1043-性能修复与验证-2026-10-21.md)。
+
 ## 生产部署
 
-> **MVP 说明**：`docker-compose.prod.yml` 当前仍沿用原项目容器名（`clpm-*`）与端口（7141/7101），**生产隔离改造尚未执行**；开发环境已完成 `clpm-mvp-*` 隔离。生产部署前需先完成容器名/端口/数据卷的 MVP 隔离改造。
+> **现有现场升级**：沿用已部署的 `clpm-*` 容器、Compose、端口和数据卷；开发环境的 `clpm-mvp-*` 隔离不要求现场改名。full-1043 镜像 tar.gz 的传输、SHA 校验、四个应用容器重建及回退命令见 [ToDesk 人工部署说明](releases/部署指令-1043-ToDesk人工.md)。下面是一套源码新部署流程，不替代现场升级步骤。
 
 ### 环境要求
 
@@ -191,7 +199,7 @@ cp .env.prod.example .env.prod
 | `JWT_SECRET_KEY` | JWT 签名密钥（≥32 字符） | `openssl rand -hex 32` |
 | `CORS_ORIGINS` | 允许的前端域名 | `["https://your-domain.com"]` |
 | `TDENGINE_PASSWORD` | TDengine 密码（**必填**，计算一律本地 TDengine） | 内置 3.3.6.6 实例的 root 初始密码，或外部实例凭据 |
-| `CELERY_WORKER_CONCURRENCY` | Celery worker 进程并发数 | `2`（应与 CPU/连接池容量联合调整） |
+| `CELERY_WORKER_CONCURRENCY` | Celery worker 进程并发数 | `8`（模板与 Compose 默认值，需结合 CPU/内存/连接池容量调整） |
 | `AAS_ENDPOINT` | OPC UA 服务地址（`AAS_SYNC_ENABLED=True`） | 现场 OPC UA Endpoint |
 
 #### 2. 一键部署
@@ -207,16 +215,16 @@ cp .env.prod.example .env.prod
 4. 等待健康检查并通过（含 celery `inspect ping`/`scheduled` 硬断言，失败即中止）
 5. 输出服务访问地址
 
-> **2026-07-28 部署链路加固**：两条部署路径（`deploy.sh` / `build-and-deploy.sh`）均强制执行 `alembic upgrade head`（公共函数 `deploy/lib-migrate.sh`，失败即中止）；已有部署升级前自动执行 `deploy/backup.sh`（TDengine 备份带 root 凭据，失败硬中止）；构建前跑测试门禁（ruff + pytest + check:type，`--skip-gate` 可紧急跳过）。
+> **2026-07-28 部署链路加固**：两条部署路径（`deploy.sh` / `build-and-deploy.sh`）共用 `deploy/lib-migrate.sh`：无版本记录时执行 `stamp head`（仅标记，须先确认初始化后的 schema 与 head 一致），有版本记录时执行 `upgrade head` 应用增量迁移，失败即中止；已有部署升级前自动执行 `deploy/backup.sh`（TDengine 备份带 root 凭据，失败硬中止）；构建前跑测试门禁（ruff + pytest + check:type，`--skip-gate` 可紧急跳过）。
 
 #### 3. 验证部署
 
 ```bash
 # 查看服务状态
-docker compose --env-file .env.prod -f docker-compose.prod.yml ps
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine ps
 
 # 后端健康检查
-curl http://localhost:7141/health
+docker exec clpm-backend curl -fsS http://localhost:7101/health/ready
 
 # 前端访问
 curl http://localhost:7141/
@@ -257,22 +265,22 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengin
 
 ```bash
 # 查看实时日志
-docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine logs -f
 
 # 查看指定服务日志
-docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine logs -f backend
 
 # 重启服务
-docker compose --env-file .env.prod -f docker-compose.prod.yml restart backend
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine restart backend
 
 # 停止所有服务
-docker compose --env-file .env.prod -f docker-compose.prod.yml down
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine down
 
 # 停止并清除数据卷（慎用，会丢失数据）
-docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine down -v
 
 # 重新构建并启动
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d --build
 ```
 
 ### 版本回滚
@@ -293,8 +301,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 开启 HTTPS 前需创建 `deploy/ssl/` 并放置证书，同时按模板更新 `deploy/nginx.conf` 和 `docker-compose.prod.yml`。证书或 Nginx 配置更新后重新构建 frontend 镜像：
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml build frontend
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d frontend
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine build frontend
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d frontend
 ```
 
 ### 数据库初始化
@@ -302,8 +310,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d frontend
 PostgreSQL 容器首次启动会自动执行 `db/postgresql/01_schema.sql` 和 `db/postgresql/02_seed_data.sql` 完成建表与种子数据导入。如需重新初始化，需先清除数据卷：
 
 ```bash
-docker compose --env-file .env.prod -f docker-compose.prod.yml down -v
-docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine down -v
+docker compose --env-file .env.prod -f docker-compose.prod.yml --profile tdengine up -d
 ```
 
 ## 当前有效文档
@@ -323,6 +331,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 原型设计基线 | `DESIGN.md`（v3.1；设计基线，IA 与菜单口径以 `docs/MVP设计/00-信息架构.md` 为准） |
 | 工作台 v2.0 方案/实施计划 | `docs/设计文档/CLPM工作台改进方案-v2.0.md` + `docs/过程文档/工作台v2实施计划-2026-08-25.md` |
 | 版本锁定基线 | `CHANGELOG.md`（v7.5.6 能力清单/已知残留/冗余登记/技术基线） |
+| 诊断/导入性能交付 | [full-1043 验证报告](docs/过程文档/full-1043-性能修复与验证-2026-10-21.md) + [人工部署命令](releases/部署指令-1043-ToDesk人工.md) |
+| 冗余检查与文档对齐 | [2026-10-21 核查记录](docs/过程文档/文档对齐与冗余代码核查-2026-10-21.md) + [持续登记表](docs/过程文档/dead-code-registry-2026-09-24.md) |
 | 原型代码入口 | `docs/设计文档/prototype/README.md` |
 
 ## 推荐阅读顺序
@@ -341,12 +351,12 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d
 | 主题 | 当前口径 |
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统 |
-| 当前版本 | 产品文档基线 **v6.2**；实现契约 v2.11；发布版本 **v7.5.6**（Git tag，2026-10-19 锁定，full-1036 部署基线）。本轮基线（2026-10-19）：**系统改造优化 P0–P7 工程整改合入 main@2e0245fd**（工程参数治理/诊断整定算法改造/可配置权限/千回路效率/工业岗位交互/严格容量 runner；**F02 容量验收待实际数据验证**，G6/G7=CONDITIONAL_PASS，终局口径见 `docs/设计文档/系统改造优化-2026-10-10/P7汇总与G7结论.md`）+ 设计文档基线化（过程性文档清理，`docs/过程文档/stale-docs.md` 登记）。上轮（2026-10-14 P6）：我的工作 `/my-work` 工程师个人首页 + 默认落地页分流；更早见 CHANGELOG |
+| 当前版本 | 产品文档基线 **v6.2**；实现契约 v2.11；锁定 tag **v7.5.6**。最新交付 **full-1043**（源码 `3eca21e832ebded04290dc0c75915dcecc54315c`，现场状态以 `/health/ready` 实测为准）。P0–P7 终局仍为 **G6/G7=CONDITIONAL_PASS，F02 容量验收待实际数据验证**，详见 `docs/设计文档/系统改造优化-2026-10-10/P7汇总与G7结论.md`；交付包不改变此验收结论 |
 | 首版主线 | Phase 1 (MVP/V1.0)：跑通"自动评估、自动诊断、轻量跟踪、模块弹性交付、适用性分层"闭环 + 驾驶舱管理决策视图 + 回路工作台 |
 | 首版范围 | 驾驶舱 6 页签（/cockpit/*）、回路工作台（/loop/workbench360）、回路监控（回路监视/预警事件/系统建议）、回路结构配置、性能评估（装置性能/指标分析/回路评估/评估计算任务/指标矩阵页/适用性阈值）、诊断中心（概览/记录/任务三页式 + 回路工作台诊断剖面）、参数整定（总览/记录/验证三页式 + 回路工作台整定剖面，门禁 L2+ 提示放行）、运维处置 v2.0（诊断建议/处置任务/处置工单/处置档案）、统计分析（数据质量+绩效/诊断/处置/收益报告+预警统计+订阅配置）、预警规则归配置、系统管理（基础信息/用户/审计/权限矩阵/字典/模块管理） |
 | 模块架构 | **10 个一级菜单**：驾驶舱(0)/回路工作台(1)/回路监控(2)/性能评估(3)/回路诊断(4)/参数整定(5)/运维处置(6)/统计分析(7)/参数配置(8)/系统管理(9)（2026-10-05 驾驶舱整合 D6 十项重排改名；另有「我的工作」/my-work order=-1 工程师个人首页，P6）。诊断/整定/处置支持模块热插拔，按客户阶段弹性启用；回路运行态归回路工作台，预警事件归回路监控、规则归参数配置；双轴导航和各模块"配置→运行→分析"三态自包含 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体），回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D），数据质量主要针对 PV 值 |
-| 核心模型 | Action Tracker 轻量跟踪（PENDING → IN_PROGRESS → VERIFYING → CLOSED，P1a 闭环），诊断中心子模块 |
+| 核心模型 | `diagnosis_run` 诊断结果 → `loop_action_item` 建议审核 → `handling_order` 处置及验证；旧 Tracker 与旧诊断表保留归档，见 MVP 14 号文 |
 | 工程主约束 | PRD v6.2 负责产品需求；实现契约 v2.11 负责当前 IA/路由/API/权限/状态机/KPI；UI/UX v6.2 负责视觉与交互（配套色彩约定表 v1.0 + 文案词表 v1.0）；页面标杆设计负责逐页高保真线框图与实施验收 |
 | UI/UX 整改 | 2026-08-07~09 三轮（Phase 0 修信任 / Phase 1 立风格 / Phase 2 通动线 + Backlog 清理），Nielsen 20/40→32/40；现行规范 `docs/设计文档/06-UIUX/ui-ux-design-guidelines.md`（整改过程清单/出口报告已于 2026-10-19 基线化清理，见 Git 历史） |
 | 性能边界 | LTTB 降采样 maxPoints=2000，30 天时间窗口 |

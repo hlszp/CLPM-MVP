@@ -6,7 +6,7 @@
 
 本仓库是 **CLPM-MVP**（自原 CLPM v6.2 派生的精简 + 闭环重建版），不是原 CLPM 项目。
 
-**现行事实来源**：`docs/MVP设计/`（00~12 设计与实施文档 + README 索引）。MVP 差异要点：
+**现行事实来源**：`docs/MVP设计/`（00~16 设计与实施文档 + README 索引）。MVP 差异要点：
 
 - **模块现状**：闭环六模块 + 管理层视图 + 工作台 v2.0 已落地；路由模块清单：`cockpit`（驾驶舱）+ `my-work`（我的工作，工程师个人首页，2026-10-14 P6-06）+ `loop-workbench`（工作台）+ `monitor/assess/diagnosis/tuning/handling/reports/alert/config/system/task/loop`；导航顺序（2026-10-05 驾驶舱整合裁决 D6 十项）：**驾驶舱(0)-工作台(1)-回路监控(2)-性能评估(3)-回路诊断(4)-参数整定(5)-运维处置(6)-统计分析(7)-参数配置(8)-系统管理(9)**（另有「我的工作」`/my-work` order=-1 工程师个人首页）；**驾驶舱整合（2026-10-05 用户裁决 D1~D6，方案 `docs/设计文档/驾驶舱整合方案-2026-10-05.md`，P1~P7 全部落地）**：驾驶舱扩为满屏 **6 页签**（总览/回路/性能/诊断/整定/处置，`/cockpit/*`，noBasicLayout+cockpit-header 六页签）；总览=原驾驶舱总览+系统总览合并重构（全厂装置/单元性能为重点，删问题回路 TOP-8+治理漏斗）；**原运维工作台 4 Tab 迁移至 `views/cockpit/wb-comps/`（页内 50 处联动全部弹窗化=use-drill.ts E1~E11，禁止跳管理后台；跨域联动切舱内页签）**；**旧运维工作台已退役**（`/workbench` redirect→`/cockpit`，views/workbench/ 已删；默认落地页 ROLE_DEFAULT_HOME 2026-10-14 P6-06 起分流：ADMIN/SPONSOR→`/cockpit`、IC/PE/EXPERT→`/my-work`；驾驶舱「管理后台」入口→`/monitor/loops`）；回路页卡片墙 6 列×5 行弹性行高+懒加载（首批 30 翻页按需拉，筛选/劣化排序自动补全全量）；**工作台规整（2026-10-04 用户裁决 D1~D4，方案 `docs/设计文档/工作台规整方案-2026-10-04.md`）**：全局工作台更名**运维工作台**（D4）；诊断工作台并入回路工作台诊断剖面不保留（D2，诊断三页式=概览/记录/任务，`/diagnosis/workbench` redirect：带 loopId → `/loop/workbench360?loopId=&section=diagnosis`、无 → 概览；「仅可诊断」过滤+预检徽标筛选迁入诊断概览）；整定工作台转型**整定总览** `/tuning/overview`（D3，四锚点流程移回路工作台整定剖面，行操作带 L0/L1 门禁跳转，`/tuning/workbench` redirect）；操作角色统一为回路工作台剖面四角色 ADMIN/IC/PE/EXPERT（D1：后端 `_DIAGNOSIS_TRIGGER_ROLES`+EXPERT、tuning `require_roles`+PE_ENGINEER；模块查看页全 5 角色；SPONSOR 只读）；回路工作台新增 `?section=` 剖面直达协议（一次性消费）；现行形态：**驾驶舱 6 页签**（总览/回路/性能/诊断/整定/处置，深浅双主题 --ck-* 变量体系）/ **工作台**（原回路工作台 `/loop/workbench360`，2026-10-05 D6 改名）/ 回路监控（装置总览→回路监视→预警事件→关注队列）/ 诊断三页式 / 整定三页式（总览/记录/验证）/ 处置 v2.0 双实体（loop_action_item + handling_order）/ 统计报告一级菜单（order=6，配置→7、系统→8）/ 模块热插拔（诊断/整定/处置可弹性启用禁用）/ 适用性评估 L0~L4（**2026-10-05 三性裁决：可评估性仅 L0 限制（L1 取消）；可诊断性全档位放行——L0 改警告放行产出正式 DATA_INSUFFICIENT 结论，夜间定时全量仍滤 L0；可整定性 L0/L1 阻断 ERR_TUNING_FITNESS_INSUFFICIENT、L2/L3 提示放行**；三性判定条件说明弹窗=components/clpm/fitness-rules-modal，诊断概览/整定总览入口）/ 系统管理含基础信息+字典管理（MEASURE_TYPE/TAG_TYPE/LOOP_TYPE）+ 模块管理页；IA 细节以 `docs/MVP设计/` 为准，演进历史见 `docs/过程文档/agents-md-history-2026-08-24.md`（按需读取）
 - **纪律**：**不删除诊断/整定专属前后端文件**；构建闭环而非屏蔽闭环
@@ -14,7 +14,7 @@
 - **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
 - **CI**：GitHub Actions 已启用且通过（Backend：ruff/format/pytest+coverage；Frontend：eslint apps/web-antd/**vitest 全量**/typecheck/build/E2E）。注意 `@vben/web-antd` 包无 lint 脚本，Lint 用 `pnpm exec eslint apps/web-antd --cache`；前端单测本地跑 `cd frontend && pnpm run test:unit`（workspace 全量，2026-08-28 起为 CI 阻塞门禁）
 - **已知残留**：存在已知残留（部分聚合 service stub 化等），详见 `docs/MVP设计/README.md` §已知残留；monitor_attention 的 TRACKER/VERIFICATION 来源**已收口**（2026-08-28：HANDLING 来源功能性替代，不再按原样恢复）；诊断双引擎分裂已收口（2026-08-27，14 号文 A1~A4 全落地：工作台 A-03/总览统计迁 `diagnosis_run`，旧引擎唯一活跃写入口 `/algorithms/diagnosis/analyze` 已解除注册退役，旧读方全部为死代码链登记不删，`diagnosis_tag`/`diagnosis_result` 表按 D4=a 保留归档）
-- **版本锁定**：当前 **v7.5.6**（2026-10-19 full-1036 部署基线锁定，annotated tag）；已知残留/冗余代码登记/技术基线见根 `CHANGELOG.md`；冗余代码保留待下周期集中清理
+- **版本锁定**：产品 tag **v7.5.6**；最新交付 **full-1043**（2026-10-21，`releases/manifest-1043.json`），交付不代表现场已部署。运维事实见 `docs/过程文档/ops-runbook.md`；冗余处置与保留边界见 [核查记录](docs/过程文档/文档对齐与冗余代码核查-2026-10-21.md)，历史诊断/整定文件继续保留
 - **CLPM-engine/ 目录**：已加入 .gitignore，独立管理不入库
 
 ## 历史基线（v6.2 归档，按需读取）
@@ -31,7 +31,7 @@ docker compose -f deploy/docker/docker-compose.dev.yml up -d
 
 # 2. 后端 API (port 17101，MVP 隔离端口)
 #    后端启动时自动启动 Celery Beat 调度进程和 Celery Worker 任务执行进程
-cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 --reload
+cd backend && uv run uvicorn app.main:app --host 0.0.0.0 --port 17101 --reload --reload-include '*.py'
 
 # 3. 前端 (port 15666，MVP 隔离端口)
 cd frontend && pnpm run dev:antd
@@ -72,13 +72,13 @@ cd frontend && pnpm run format
 
 行为红线（始终遵守）：
 
-- **Celery Worker 和 Beat 随后端自动启动**（lifespan）：后端启动时自动拉起 Worker 和 Beat 子进程，无需手动启动；**严禁手工再启动**，多个 worker/beat 并存会导致任务重复消费或双触发
-- **后端代码更新后需重启后端**：`uvicorn --reload` 只重载 Python 文件，不会重新执行 lifespan，也不会重启 Worker/Beat 子进程；修改 Celery 任务代码后需重启后端让新代码生效
+- **Celery 使用既有进程管理方式**：开发默认由后端 lifespan 自动拉起 Worker/Beat；生产 Compose 默认使用独立 `celery-worker` / `celery-beat` 服务。**严禁在既有管理进程外手工再启动**，避免重复消费或双触发；原生部署显式自启例外以 `main.py` 配置为准
+- **代码更新需更新实际执行进程**：`uvicorn --reload` 不保证独立 Worker/Beat 同步加载新代码。开发完整重启后端并确认其管理的子进程已更新；生产重建对应 backend/worker/beat 服务，仅重启 backend 不会更新其他容器
 - **计算类历史数据查询一律本地 TDengine**：`get_provider()` 恒返回 TDengineProvider，禁止计算任务自动降级到远端 API；远端历史接口仅 `data_import.py` 调用
 - **模型变更必须与迁移同批应用**：ORM 改动与 alembic 迁移同批提交，且先应用迁移再让代码进入运行环境
 - **热路径禁止对 naive datetime 逐点调 `.timestamp()`**
 - **禁止模块级 asyncio.Lock / Semaphore / Event**：首次竞争即绑定当前事件循环，Celery 每任务新循环后全部抛 "bound to a different event loop"；回归测试结构性断言守护
-- **断点续传禁止 overwrite**：gap backfill 复用 `import_history_data` 时必须 `conflict_strategy="skip"`（overwrite 会先 DELETE 误删实时行）；手工导入 overwrite 强制 `tsEnd ≤ now-5min`
+- **断点续传禁止前置 DELETE**：gap backfill 复用 `import_history_data` 的点表 UPSERT；现行接口不再接收 `conflict_strategy`，不恢复旧 overwrite 删除流程。导入窗口强制 `tsEnd ≤ now-5min`
 - **断点续传配置运行时可调**：总开关 `gapBackfillEnabled`（默认**关闭**）与缺口阈值 `gapBackfillMinGapSeconds`（默认 600s=10 分钟）已纳入 `sys_config`，经 UI 链路配置页修改即时生效；`.env` 中 `GAP_BACKFILL_*` 仅作启动兜底默认值
 - **默认账号**：admin / admin123（5 个种子用户详见 README.md）
 - **前端端口是 15666**，后端 API 为 17101（MVP 隔离端口，见顶部 MVP 覆盖说明）
@@ -100,7 +100,7 @@ cd frontend && pnpm run format
 |---|---|
 | 产品定位 | 产品化、工具化的控制回路绩效治理与优化闭环平台，非项目型定制化系统；用户（管理员/工程师）可自助完成配置组态，减少开发团队介入 |
 | AAS 数据模型 | AAS 同步 tag 位号（非回路实体）；回路由用户创建并关联 7 个 OPC tag（PV/SP/OP/MODE/PID_P/PID_I/PID_D）；PID 参数与控制模式从关联 tag 只读读取；数据质量主要针对 PV 值（Good/Bad/Uncertain 质量码） |
-| **数据架构** | **导入走远端、计算全本地**：远端 AAS 历史接口仅"数据管理→历史数据导入"手工任务可调用；本地 TDengine 是所有计算任务唯一历史数据源；本地数据不完整按 INCONCLUSIVE 提示，由用户导入补齐；实时数据源唯一为 SignalR Hub。详见 `docs/过程文档/data-architecture-decision-local-first-2026-07-20.md` |
+| **数据架构** | **导入走远端、计算全本地**：手工导入及显式启用后的断点回填可经 `data_import.py` 调用远端历史接口；计算任务只查本地 TDengine，本地数据不完整按 INCONCLUSIVE 提示，由用户补齐；实时数据源唯一为 SignalR Hub。详见 `docs/过程文档/data-architecture-decision-local-first-2026-07-20.md` |
 | 技术护城河 | 可信数据 + 可解释诊断 + 可验证整定 + 安全闭环 + 规模化交付 |
 | 安全边界 | 平台不直接修改 DCS 的 P/I/D 参数，只输出建议、证据、风险和回退方案；参数由授权人员人工实施并留痕 |
 | 原型/前端开发 | 当前生产前端为 Vue 3 + Vite + TypeScript + vue-vben-admin；MVP 路由/页面以 `docs/MVP设计/` 为准 |
@@ -122,7 +122,7 @@ cd frontend && pnpm run format
 
 ## 回路工作台新版（2026-10-02 起，现行开发主线）
 
-以回路为对象的单页全生命周期工作台（监视-评估-诊断-整定-处置，零跳转全内嵌）正在 `zp` 分支开发，验收通过后合 main。**事实源优先级：原型 > 设计方案 v3 > DESIGN.md**，三者冲突以原型为准并回写变更记录：
+以回路为对象的单页全生命周期工作台（监视-评估-诊断-整定-处置，零跳转全内嵌）P1–P4 已完成并合入 main；以下保留实施契约与历史分支纪律。**事实源优先级：原型 > 设计方案 v3 > DESIGN.md**，三者冲突以原型为准并回写变更记录：
 
 - 原型（交互与视觉事实源，冻结基准，改动须走其变更记录）：`docs/设计文档/原型/回路工作台-原型-2026-10-02.html`
 - 设计方案 v3（结构与行为事实源，含裁决记录 D1–D21、实现规格、P1–P4 计划）：`docs/设计文档/回路工作台-设计方案-2026-10-02.md`
