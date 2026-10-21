@@ -1,0 +1,17 @@
+{
+  "version": "full-1047",
+  "builtAt": "2026-10-21T23:30:00+08:00",
+  "note": "frontend-only resilience: dynamic-import reload, request timeout 30s, post-login nav error toast. backend stays full-1046.",
+  "sourceBranch": "macbook",
+  "images": [
+    {
+      "name": "clpm-frontend:full-1047",
+      "archive": "clpm-frontend-1047.tar.gz",
+      "sha256": "29c258f8cadc38aa09dd90dafaee07aaed0ec28718343fc046f266bd05eabf70",
+      "id": "sha256:dd2f0e1a59f4a204090cbedde18562011086b765964702724ef5ec926cd7c4db",
+      "platform": "linux/amd64"
+    }
+  ],
+  "guide": "部署指令-1047-ToDesk人工.md",
+  "productionDeployed": false
+}
