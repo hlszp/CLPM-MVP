@@ -22,14 +22,42 @@ TTL = 6 * 3600
 MAX_ROWS = 50_000
 MAX_BYTES = 8 * 1024 * 1024
 MAX_PACKED = 128 * 1024
-MAX_BLOCKS = 256  # 含 base64 的值合计至多 32 MiB；过期索引也有界。
+MAX_BLOCKS = 1024  # 可容纳 24 回路 × 7 点 × 6 块；值字节预算独立约束。
+MAX_TOTAL_PACKED = 32 * 1024 * 1024
+INDEX_KEY = "shadow10:v2:block-index"
+SIZES_KEY = "shadow10:v2:block-sizes"
+BYTES_KEY = "shadow10:v2:block-bytes"
+CLOCK_KEY = "shadow10:v2:block-clock"
+HEADS_KEY = "shadow10:v2:block-heads"
+# v1 数据继续自然过期；v2 使用统一预算和访问顺序，不复用旧的未计费条目。
 _PUBLISH = """
-redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2], 'NX')
-redis.call('ZADD', KEYS[2], ARGV[3], KEYS[1])
-while redis.call('ZCARD', KEYS[2]) > tonumber(ARGV[4]) do
-  local old = redis.call('ZPOPMIN', KEYS[2], 1)
-  redis.call('DEL', old[1])
+local size
+if ARGV[7] == 'publish' then
+  size = string.len(ARGV[1])
+  if size > tonumber(ARGV[4]) then return -1 end
+  redis.call('SET', KEYS[1], ARGV[1], 'EX', ARGV[2])
+else
+  if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+  size = redis.call('STRLEN', KEYS[1])
 end
+local previous = tonumber(redis.call('HGET', KEYS[3], KEYS[1]) or '0')
+local total = tonumber(redis.call('GET', KEYS[4]) or '0') - previous + size
+redis.call('HSET', KEYS[3], KEYS[1], size)
+redis.call('ZADD', KEYS[2], redis.call('INCR', KEYS[5]), KEYS[1])
+redis.call('HSET', KEYS[6], ARGV[5], ARGV[6])
+while redis.call('ZCARD', KEYS[2]) > tonumber(ARGV[3]) or total > tonumber(ARGV[4]) do
+  local old = redis.call('ZPOPMIN', KEYS[2], 1)[1]
+  total = total - tonumber(redis.call('HGET', KEYS[3], old) or '0')
+  redis.call('HDEL', KEYS[3], old)
+  redis.call('DEL', old)
+  local prefix = string.sub(old, 1, -66)
+  local revision = string.sub(old, -64)
+  if redis.call('HGET', KEYS[6], prefix) == revision then
+    redis.call('HDEL', KEYS[6], prefix)
+  end
+end
+redis.call('SET', KEYS[4], total)
+for i = 2, 6 do redis.call('EXPIRE', KEYS[i], ARGV[2]) end
 return 1
 """
 
@@ -85,12 +113,15 @@ class TenMinuteBlocks:
         self.stats: Counter = Counter()
         self._inflight: dict[tuple, asyncio.Task] = {}
         self.slots = asyncio.Semaphore(1)
+        self._policy_lock = asyncio.Lock()
+        self._policy_checked = False
+        self._policy_error = None
 
     @staticmethod
     def prefix(point: str, start: datetime) -> str:
         # UUID 校验沿用仓储，禁止任意 key 身份或 SQL 表名。
         point = repo.point_subtable(point)
-        return f"shadow10:events:v1:{point}:{utc(start).isoformat()}"
+        return f"shadow10:events:v2:{point}:{utc(start).isoformat()}"
 
     async def prepare(self, point: str, start: datetime) -> str:
         start = floor_block(start)
@@ -114,24 +145,56 @@ class TenMinuteBlocks:
         payload = canonical_json([{**r, "ts": utc(r["ts"]).isoformat()} for r in rows]).encode()
         if len(payload) > MAX_BYTES:
             raise ValueError("影子块超过字节预算，未截断输入")
-        prefix = self.prefix(point, start)
         # 共用 Redis 客户端启用 decode_responses，不能直接写压缩二进制。
         packed = base64.b64encode(zlib.compress(payload)).decode("ascii")
         if len(packed) > MAX_PACKED:
             raise ValueError("影子块超过压缩预算，未截断输入")
-        await self.redis.eval(
-            _PUBLISH,
-            2,
-            f"{prefix}:{revision}",
-            "shadow10:block-index",
-            packed,
-            TTL,
-            utc(start).timestamp(),
-            MAX_BLOCKS,
-        )
-        # head 只用于统计旧版本失效；读取候选键始终由新鲜基线内容决定。
-        await self.redis.set(f"{prefix}:head", revision, ex=TTL)
+        await self._cache_update(point, start, revision, packed)
         self.stats["prepared"] += 1
+
+    async def _ensure_budget_policy(self):
+        # 计费元数据不能独立于 payload 被 Redis 逐出；不修改共享 Redis 配置。
+        async with self._policy_lock:
+            if not self._policy_checked:
+                try:
+                    config = await self.redis.config_get("maxmemory-policy")
+                    policy = config.get("maxmemory-policy", config.get(b"maxmemory-policy"))
+                    if isinstance(policy, bytes):
+                        policy = policy.decode("ascii")
+                except Exception as exc:
+                    self._policy_error = f"无法核实 Redis maxmemory-policy，拒绝影子缓存: {exc}"
+                else:
+                    if policy != "noeviction":
+                        self._policy_error = (
+                            "影子缓存要求 Redis maxmemory-policy=noeviction，"
+                            f"当前为 {policy!r}，已拒绝缓存"
+                        )
+                self._policy_checked = True
+            if self._policy_error is not None:
+                raise RuntimeError(self._policy_error)
+
+    async def _cache_update(self, point, start, revision, packed=None):
+        await self._ensure_budget_policy()
+        prefix = self.prefix(point, start)
+        status = await self.redis.eval(
+            _PUBLISH,
+            6,
+            f"{prefix}:{revision}",
+            INDEX_KEY,
+            SIZES_KEY,
+            BYTES_KEY,
+            CLOCK_KEY,
+            HEADS_KEY,
+            packed or "",
+            TTL,
+            MAX_BLOCKS,
+            MAX_TOTAL_PACKED,
+            prefix,
+            revision,
+            "publish" if packed is not None else "touch",
+        )
+        if status == -1:
+            raise ValueError("影子块超过总缓存字节预算，未截断输入")
 
     async def _block(self, point, start):
         end = start + BLOCK
@@ -155,12 +218,13 @@ class TenMinuteBlocks:
                     raise ValueError("block content mismatch")
                 if any(not start <= r["ts"] < end for r in rows):
                     raise ValueError("block boundary mismatch")
+                await self._cache_update(point, start, revision)
                 self.stats["hits"] += 1
                 return rows
             except (ValueError, TypeError, KeyError, zlib.error):
                 self.stats["corrupt"] += 1
                 await self.redis.delete(key)
-        head = await self.redis.get(f"{prefix}:head")
+        head = await self.redis.hget(HEADS_KEY, prefix)
         if isinstance(head, bytes):
             head = head.decode()
         if head is not None and head != revision:

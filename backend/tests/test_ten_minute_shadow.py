@@ -21,24 +21,44 @@ POINT = str(uuid4())
 
 
 class MemoryRedis(FakeRedis):
+    async def config_get(self, pattern):
+        assert pattern == "maxmemory-policy"
+        return {"maxmemory-policy": "noeviction"}
+
     async def eval(self, script, n, *args):
-        if n == 2:
-            key, index, value, ttl, score, limit = args
-            await self.set(key, value, nx=True, ex=ttl)
-            z = self._zsets.setdefault(index, {})
-            z[key] = float(score)
-            while len(z) > int(limit):
-                old = min(z, key=z.get)
-                del z[old]
+        # 模拟 Lua 的 Redis 契约；脚本原子性另由真实 Redis 集成验证。
+        if n == 6:
+            key, index, sizes, budget, clock, heads, *values = args
+            value, ttl, limit, max_bytes, prefix, revision, mode = values
+            if mode == "publish":
+                if len(value) > int(max_bytes):
+                    return -1
+                await self.set(key, value, ex=ttl)
+            elif not await self.exists(key):
+                return 0
+            value = await self.get(key)
+            previous = int(await self.hget(sizes, key) or 0)
+            total = int(await self.get(budget) or 0) - previous + len(value)
+            await self.hset(sizes, key, len(value))
+            await self.zadd(index, {key: await self.incr(clock)})
+            await self.hset(heads, prefix, revision)
+            while await self.zcard(index) > int(limit) or total > int(max_bytes):
+                old = (await self.zrange(index, 0, 0))[0]
+                total -= int(await self.hget(sizes, old) or 0)
+                await self.zrem(index, old)
+                await self.hdel(sizes, old)
                 await self.delete(old)
+                if await self.hget(heads, old[:-65]) == old[-64:]:
+                    await self.hdel(heads, old[:-65])
+            await self.set(budget, str(total))
+            for name in (index, sizes, budget, clock, heads):
+                await self.expire(name, ttl)
             return 1
-        key, old, new, ttl = args
-        if await self.get(key) != old:
+        assert n == 2
+        active, lease, old = args
+        if await self.get(active) != old or await self.exists(lease):
             return 0
-        if new:
-            await self.set(key, new, ex=ttl)
-        else:
-            await self.delete(key)
+        await self.delete(active)
         return 1
 
 
@@ -120,8 +140,8 @@ async def test_cache_budget_redis_failure_and_cancelled_shared_consumer(monkeypa
     candidate = blocks.TenMinuteBlocks(redis, reader=read)
     for i in range(3):
         await candidate.prepare(POINT, T + i * blocks.BLOCK)
-    assert len(redis._zsets["shadow10:block-index"]) == 2
-    assert len([k for k in redis._strings if not k.endswith(":head")]) == 2
+    assert len(redis._zsets[blocks.INDEX_KEY]) == 2
+    assert len([k for k in redis._strings if k.startswith("shadow10:events:v2:")]) == 2
     reference = blocks.ReferenceEvents(read)
     await reference([POINT], T, T + blocks.BLOCK, full_columns=False)
     failed = SimpleNamespace(get=AsyncMock(side_effect=RuntimeError("redis offline")))
@@ -145,6 +165,143 @@ async def test_cache_budget_redis_failure_and_cancelled_shared_consumer(monkeypa
     assert len((await two)[POINT]) == 601
     await candidate.finish()
     assert not candidate._inflight
+
+
+def assert_cache_budget(redis):
+    index = redis._zsets.get(blocks.INDEX_KEY, {})
+    sizes = redis._hashes.get(blocks.SIZES_KEY, {})
+    actual = {k: v for k, v in redis._strings.items() if k.startswith("shadow10:events:v2:")}
+    charged = int(redis._strings.get(blocks.BYTES_KEY, 0))
+    assert len(index) <= blocks.MAX_BLOCKS
+    assert set(sizes) == set(index)
+    assert set(actual) <= set(index)
+    assert len(redis._hashes.get(blocks.HEADS_KEY, {})) <= len(index)
+    assert charged == sum(int(size) for size in sizes.values())
+    assert sum(len(v) for v in actual.values()) <= charged <= blocks.MAX_TOTAL_PACKED
+
+
+@pytest.mark.parametrize("point_count", [4, 7])
+async def test_representative_cohort_two_warm_rounds_keep_complete_hour(point_count):
+    # 小事件验证缓存规模/取数契约，不用仿造指标算法或承诺现场加速。
+    rows = [{"ts": T + i * blocks.BLOCK, "value": float(i), "quality_class": 1} for i in range(7)]
+    read, redis = reader_for(rows), MemoryRedis()
+    points = [str(uuid4()) for _ in range(24 * point_count)]
+    prepared = blocks.TenMinuteBlocks(redis, reader=read)
+    for i in range(6):
+        for point in points:
+            await prepared.prepare(point, T + i * blocks.BLOCK)
+    assert_cache_budget(redis)
+    reference = blocks.ReferenceEvents(read)
+    expected = await reference(points, T, T + timedelta(hours=1), full_columns=False)
+    for _ in range(2):
+        read.reset_mock()
+        candidate = blocks.TenMinuteBlocks(redis, reference, read)
+        assert await candidate(points, T, T + timedelta(hours=1), full_columns=False) == expected
+        await candidate.finish()
+        assert candidate.stats["hits"] == 24 * point_count * 6
+        assert candidate.stats["misses"] == 0
+        assert candidate.stats["sourceQueries"] == read.await_count == 24 * point_count
+        assert_cache_budget(redis)
+
+
+async def test_cache_uses_access_order_and_keeps_newly_built_historical_blocks(monkeypatch):
+    monkeypatch.setattr(blocks, "MAX_BLOCKS", 2)
+    read, redis = reader_for([]), MemoryRedis()
+    prepared = blocks.TenMinuteBlocks(redis, reader=read)
+    revision = blocks.event_digest([])
+    first, second = T + 2 * blocks.BLOCK, T + 3 * blocks.BLOCK
+    for start in (first, second):
+        await prepared.prepare(POINT, start)
+    reference = blocks.ReferenceEvents(read)
+    await reference([POINT], T, T + timedelta(hours=1), full_columns=False)
+    # 最近访问 first 后，插入更早历史窗；应逐出 second，不能按源时间逐出新块。
+    assert await blocks.TenMinuteBlocks(redis, reference, read)._block(POINT, first) == []
+    await prepared.prepare(POINT, T)
+    for start, retained in ((T, True), (first, True), (second, False)):
+        assert (
+            await redis.get(f"{prepared.prefix(POINT, start)}:{revision}") is not None
+        ) == retained
+    assert_cache_budget(redis)
+
+
+async def test_total_bytes_bound_metadata_and_expired_corrupt_rebuild(monkeypatch):
+    monkeypatch.setattr(blocks, "MAX_TOTAL_PACKED", 512)
+    rows = [{"ts": T, "value": 42.0, "quality_class": 1}]
+    redis = MemoryRedis()
+    read = reader_for(rows)
+    prepared = blocks.TenMinuteBlocks(redis, reader=read)
+    # 用合法内容、不同点填满字节预算；限制按真实 base64 字节数执行。
+    for _ in range(12):
+        await prepared.prepare(str(uuid4()), T)
+        assert_cache_budget(redis)
+    assert len(redis._zsets[blocks.INDEX_KEY]) < 12
+    revision = await prepared.prepare(POINT, T)
+    key = f"{prepared.prefix(POINT, T)}:{revision}"
+    assert_cache_budget(redis)
+    # 物理 TTL 过期不要求同步清理索引；保守计费可保留，但重建不能二次收费。
+    previous = int(await redis.get(blocks.BYTES_KEY))
+    await redis.delete(key)
+    assert_cache_budget(redis)
+    await prepared.prepare(POINT, T)
+    assert int(await redis.get(blocks.BYTES_KEY)) == previous
+    reference = blocks.ReferenceEvents(read)
+    await reference([POINT], T, T + blocks.BLOCK, full_columns=False)
+    await redis.set(key, "broken")
+    candidate = blocks.TenMinuteBlocks(redis, reference, read)
+    assert await candidate._block(POINT, T) == rows
+    assert candidate.stats["corrupt"] == 1
+    assert_cache_budget(redis)
+    assert int(await redis.get(blocks.BYTES_KEY)) == previous
+
+
+async def test_cache_rejects_single_block_above_total_budget_without_writing(monkeypatch):
+    monkeypatch.setattr(blocks, "MAX_TOTAL_PACKED", 1)
+    redis = MemoryRedis()
+    with pytest.raises(ValueError, match="总缓存字节预算"):
+        await blocks.TenMinuteBlocks(redis, reader=reader_for([])).prepare(POINT, T)
+    assert not redis._strings and not redis._hashes and not redis._zsets
+
+
+async def test_v2_cache_does_not_consume_or_refresh_legacy_unaccounted_values():
+    redis, read = MemoryRedis(), reader_for([])
+    reference = blocks.ReferenceEvents(read)
+    await reference([POINT], T, T + blocks.BLOCK, full_columns=False)
+    candidate = blocks.TenMinuteBlocks(redis, reference, read)
+    revision = blocks.event_digest([])
+    old_key = f"{candidate.prefix(POINT, T).replace(':v2:', ':v1:')}:{revision}"
+    await redis.set(old_key, "legacy", ex=17)
+    assert await candidate._block(POINT, T) == []
+    assert candidate.stats["misses"] == 1
+    assert await redis.get(old_key) == "legacy" and await redis.ttl(old_key) == 17
+    assert_cache_budget(redis)
+
+
+@pytest.mark.parametrize("denied", ["allkeys-lru", PermissionError("CONFIG GET denied")])
+async def test_cache_refuses_unsafe_or_unreadable_policy_before_writing(denied):
+    redis = MemoryRedis()
+    redis.config_get = AsyncMock(
+        side_effect=denied if isinstance(denied, Exception) else None,
+        return_value={"maxmemory-policy": denied},
+    )
+    candidate = blocks.TenMinuteBlocks(redis, reader=reader_for([]))
+    for _ in range(2):
+        with pytest.raises(RuntimeError, match="Redis maxmemory-policy"):
+            await candidate.prepare(POINT, T)
+    assert redis.config_get.await_count == 1
+    assert not redis._strings and not redis._hashes and not redis._zsets
+
+
+async def test_cache_checks_noeviction_once_per_instance_including_concurrent_writes():
+    redis = MemoryRedis()
+    redis.config_get = AsyncMock(return_value={"maxmemory-policy": "noeviction"})
+    candidate = blocks.TenMinuteBlocks(redis, reader=reader_for([]))
+    await asyncio.gather(*(candidate.prepare(str(uuid4()), T) for _ in range(8)))
+    assert redis.config_get.await_count == 1
+    await candidate.prepare(POINT, T)
+    assert redis.config_get.await_count == 1
+    await blocks.TenMinuteBlocks(redis, reader=reader_for([])).prepare(POINT, T)
+    assert redis.config_get.await_count == 2
+    assert_cache_budget(redis)
 
 
 def result(status="SUCCESS", input_hash="input", result_hash="result"):
@@ -218,8 +375,12 @@ async def test_auto_manual_cohorts_share_global_budget_and_keep_task_identity(
     import json
 
     assert json.loads(old)["sourceTaskId"] == "hourly-1"
-    assert not await control.replace_state(redis, "stale-owner", None)
-    assert await control.replace_state(redis, old, None)
+    assert not await control.abort_pending(redis, "stale-owner")
+    await redis.set(control.LEASE_KEY, "execution-owner")
+    assert not await control.abort_pending(redis, old)
+    assert await redis.get(control.ACTIVE_KEY) == old
+    await redis.delete(control.LEASE_KEY)
+    assert await control.abort_pending(redis, old)
     assert (
         await control.enqueue(
             redis, loop_ids=[POINT], start=T, end=T + timedelta(hours=2), kind="MANUAL_SHADOW"
