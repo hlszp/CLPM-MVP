@@ -46,6 +46,8 @@ docker exec clpm-postgres psql -U clpm -d clpm -c \
 
 ### full-1042 / full-1043 现行调度与计时
 
+后续增量的 [10 分钟影子验证](10分钟影子预计算-实现与验收-2026-10-21.md) 默认关闭，复用既有 Worker/Beat；开关、白名单、持久报告、停止及重新发起入口见该文。正式结果不消费新缓存，未启用 TDengine Stream/TSMA；现场性能不能由本机影子结果推定。
+
 - Redis 优先级数值越小越先消费：事件 0、人工 3、后台 9，默认 9；prefetch=1。`AsyncTask.apply_async` 在默认值注入前继承父请求优先级，显式传值优先；不能抢占已运行任务。
 - `alert-patrol` 每分钟调度，消息 expires=60 秒；Redis 租约互斥并续租，重叠轮次跳过，失锁停止，过期消息不补跑。
 - 自定义批量评估按需经 DataPlanner 读取，不再等整批预热；仍保留配置批量预加载、缓存与有界并发。
