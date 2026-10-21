@@ -153,6 +153,7 @@ class Settings(BaseSettings):
     # 未配置时落 ./data/calc-snapshots（开发默认）。禁止静态目录直接对外暴露，
     # 下载/访问走带 scope 校验的服务。
     CLPM_CALC_SNAPSHOT_DIR: str = ""
+    CLPM_KPI_SHADOW_REPORT_DIR: str = ""
 
     # ---- 断点续传（实时数据缺口自动补全）----
     # SignalR 断线/进程重启导致的数据缺口，重连成功后自动调用远端历史数据接口补全

@@ -1558,6 +1558,16 @@ async def _do_calculate(
     summary = _summarize_batch_results(results)
     # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
     _assert_batch_health(summary, len(results))
+    from app.services.ten_minute_control import after_assessment
+
+    await after_assessment(
+        loops,
+        results,
+        ts_start_dt,
+        ts_end_dt,
+        source=source,
+        source_task_id=logical_run_id or source_task_id,
+    )
 
     # 级联触发节点级 KPI 聚合（确保回路快照已写入后再聚合，消除时序竞态）
     # CAL-05（2026-10-10）：级联显式传原窗——历史回算/迟到窗口的节点聚合
@@ -1694,6 +1704,16 @@ async def _do_calculate_single_loop(
                     logger.warning("终末失败 record 追加失败（回路 %s）", loop_id, exc_info=True)
             raise
         await db.commit()
+        from app.services.ten_minute_control import after_assessment
+
+        await after_assessment(
+            [loop],
+            [snap],
+            ts_start_dt,
+            ts_end_dt,
+            source="SINGLE",
+            source_task_id=logical_run_id,
+        )
         return snap or {"loopId": loop_id, "status": "FAILED"}
 
 
@@ -1825,6 +1845,16 @@ async def _do_calculate_custom_loop(
                     )
             raise
         await db.commit()
+        from app.services.ten_minute_control import after_assessment
+
+        await after_assessment(
+            [loop],
+            [snap],
+            ts_start_dt,
+            ts_end_dt,
+            source="CUSTOM",
+            source_task_id=logical_run_id,
+        )
         return snap or {"loopId": loop_id, "taskId": task_id, "status": "FAILED"}
 
 
@@ -1963,6 +1993,16 @@ async def _do_calculate_custom_batch(
         summary = _summarize_batch_results(results)
         # 整改 G29：系统性故障必须进入可观测的失败终态，而非被记成 SUCCESS
         _assert_batch_health(summary, len(results))
+        from app.services.ten_minute_control import after_assessment
+
+        await after_assessment(
+            loops,
+            results,
+            ts_start_dt,
+            ts_end_dt,
+            source="CUSTOM_BATCH",
+            source_task_id=batch_logical_run_id,
+        )
 
         await task_tracker.update_status(
             task_id,
@@ -2450,6 +2490,7 @@ async def _calculate_loop_kpi(
     runtime_overrides: dict | None = None,
     template_keys: dict[str, str] | None = None,
     failed_source_ids: set[str] | None = None,
+    result_writer=None,
 ) -> dict | None:
     """计算单回路 KPI 并写入快照（v4.0 三层架构，幂等）。
 
@@ -2508,6 +2549,7 @@ async def _calculate_loop_kpi(
             调用方（benchmark 等），本函数内回落逐回路加载（兼容口径）。
         template_keys: P5-02 批级预载的 ``{template_id: template_key}`` 映射
             （五层解析 TEMPLATE 层）；None=回落逐回路查询（兼容口径）。
+        result_writer: 影子验证捕获完整语义的只读出口；None 保持正式落库。
 
     Returns:
         快照字典，包含 status 字段
@@ -2608,7 +2650,7 @@ async def _calculate_loop_kpi(
                 release_context, config_revision, params_pinned=pinned_params is not None
             ),
         )
-        _r = await _persist_snapshot(**kwargs)
+        _r = await (result_writer or _persist_snapshot)(**kwargs)
         _t_persist += time.perf_counter() - _tp
         return _r
 
@@ -3598,7 +3640,7 @@ def _extract_lineage_info(
     }
 
 
-def _build_data_planner(db, bundle_cache=None):
+def _build_data_planner(db, bundle_cache=None, *, event_reader=None):
     """构造 DataPlanner 实例（工厂函数）。
 
     从 get_provider().make_query_fn(db) 获取 TDengine 查询函数，
@@ -3616,7 +3658,9 @@ def _build_data_planner(db, bundle_cache=None):
     from app.services.data_source.factory import get_provider
     from app.services.metric_data_bundle import MetricDataBundleAssembler
 
-    query_fn = get_provider().make_query_fn(db)
+    query_fn = get_provider().make_query_fn(
+        db, **({"event_reader": event_reader} if event_reader is not None else {})
+    )
     assembler = MetricDataBundleAssembler()
 
     # L2 Bundle 缓存（默认启用，传入 False 显式禁用 L1 + L2）
