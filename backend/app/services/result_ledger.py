@@ -209,10 +209,7 @@ async def append_result_record(
     """
     key = _record_key_filter(logical_run_id, object_kind, object_id, ts_start, ts_end)
 
-    existing = (await db.execute(select(CalculationResultRecord).where(*key))).scalar_one_or_none()
-    if existing is not None:
-        return existing
-
+    # 新评估是热路径：直接追加，由唯一约束处理重试，省去逐回路前置查询。
     stmt = (
         pg_insert(CalculationResultRecord)
         .values(
@@ -234,7 +231,8 @@ async def append_result_record(
     )
     record = (await db.execute(stmt)).scalar_one_or_none()
     if record is None:
-        # 并发竞态：他人已插入同键 record → 复用（不重复建）
+        # 单独回读取得 READ COMMITTED 的新快照；不能合并成同一条 CTE，
+        # 否则并发提交的胜者可能不在 INSERT 开始时的查询快照内。
         record = (
             await db.execute(select(CalculationResultRecord).where(*key))
         ).scalar_one_or_none()

@@ -16,18 +16,21 @@ CI 跳过：pyproject.toml addopts 中 -m "not integration" 默认排除。
 
 from __future__ import annotations
 
+import asyncio
 import os
 import socket
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.sql.dml import Insert
 
 from app.models.metric import LoopConfidenceLatest
-from app.tasks.kpi_calc import ALGORITHM_VERSION, _persist_snapshot
+from app.services.result_ledger import append_result_record
+from app.tasks.kpi_calc import ALGORITHM_VERSION, _persist_snapshot, _save_confidence_latest
 
 
 def _database_url() -> str:
@@ -57,6 +60,16 @@ pytestmark = [
 ]
 
 
+class _InsertSignalSession:
+    def __init__(self, session, event):
+        self.session, self.event = session, event
+
+    async def execute(self, statement):
+        if isinstance(statement, Insert):
+            self.event.set()
+        return await self.session.execute(statement)
+
+
 @pytest.fixture
 async def pg_context():
     """真实 PG 会话：建表（checkfirst）+ 插入测试回路，用后清理。"""
@@ -78,6 +91,10 @@ async def pg_context():
         await session.close()
         async with engine.connect() as conn:
             await conn.execute(
+                text("DELETE FROM calculation_result_record WHERE object_id = :id"),
+                {"id": loop_id},
+            )
+            await conn.execute(
                 text("DELETE FROM loop_confidence_latest WHERE loop_id = :id"),
                 {"id": loop_id},
             )
@@ -95,6 +112,105 @@ async def pg_context():
 
 class TestPersistSnapshotConfidenceLatestPg:
     """真实 PG：两次写同回路 → 只剩一条且为最新。"""
+
+    @pytest.mark.parametrize("hours,expected_hours", [(0, 1), (1, 1), (2, 2)])
+    async def test_atomic_window_guard(self, pg_context, hours, expected_hours):
+        session, loop_id = pg_context
+        start = datetime(2026, 10, 21)
+        await _save_confidence_latest(
+            session, loop_id, start, start + timedelta(hours=1), "SUCCESS", score=Decimal(10)
+        )
+        await session.commit()
+        await _save_confidence_latest(
+            session, loop_id, start, start + timedelta(hours=hours), "SUCCESS", score=Decimal(20)
+        )
+        await session.commit()
+        row = (
+            await session.execute(
+                text("SELECT data_ts_end,score FROM loop_confidence_latest WHERE loop_id=:id"),
+                {"id": loop_id},
+            )
+        ).one()
+        assert row.data_ts_end == start + timedelta(hours=expected_hours)
+        assert row.score == (Decimal(10) if hours == 0 else Decimal(20))
+
+    async def test_older_writer_cannot_overwrite_concurrent_newer_commit(self, pg_context):
+        """新窗持锁期间旧窗进入写入；提交后仍保留新窗，复现原两条 SQL 竞态。"""
+        session, loop_id = pg_context
+        start = datetime(2026, 10, 21)
+        await _save_confidence_latest(
+            session, loop_id, start, start + timedelta(hours=1), "SUCCESS", score=Decimal(10)
+        )
+        await session.commit()
+        async with AsyncSession(session.bind) as newer, AsyncSession(session.bind) as older:
+            await _save_confidence_latest(
+                newer, loop_id, start, start + timedelta(hours=3), "SUCCESS", score=Decimal(30)
+            )
+            entering_insert = asyncio.Event()
+
+            task = asyncio.create_task(
+                _save_confidence_latest(
+                    _InsertSignalSession(older, entering_insert),
+                    loop_id,
+                    start,
+                    start + timedelta(hours=2),
+                    "SUCCESS",
+                    score=Decimal(20),
+                )
+            )
+            try:
+                await asyncio.wait_for(entering_insert.wait(), timeout=5)
+                await newer.commit()
+                await asyncio.wait_for(task, timeout=5)
+                await older.commit()
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        row = (
+            await session.execute(
+                text("SELECT data_ts_end,score FROM loop_confidence_latest WHERE loop_id=:id"),
+                {"id": loop_id},
+            )
+        ).one()
+        assert row.data_ts_end == start + timedelta(hours=3)
+        assert row.score == Decimal(30)
+
+    async def test_concurrent_ledger_retry_reuses_committed_record(self, pg_context):
+        session, loop_id = pg_context
+        kwargs = {
+            "logical_run_id": str(uuid4()),
+            "object_kind": "LOOP",
+            "object_id": loop_id,
+            "ts_start": datetime(2026, 10, 21),
+            "ts_end": datetime(2026, 10, 21, 1),
+            "algorithm_version": ALGORITHM_VERSION,
+            "config_revision": "test:concurrent-retry",
+        }
+        async with AsyncSession(session.bind) as first, AsyncSession(session.bind) as retry:
+            original = await append_result_record(first, **kwargs, payload={"score": 80})
+            record_id = original.id
+            entering_insert = asyncio.Event()
+            task = asyncio.create_task(
+                append_result_record(
+                    _InsertSignalSession(retry, entering_insert), **kwargs, payload={"score": 99}
+                )
+            )
+            try:
+                await asyncio.wait_for(entering_insert.wait(), timeout=5)
+                await first.commit()
+                reused = await asyncio.wait_for(task, timeout=5)
+                assert reused.id == record_id and reused.payload == {"score": 80}
+                await retry.commit()
+            finally:
+                task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+        count = (
+            await session.execute(
+                text("SELECT count(*) FROM calculation_result_record WHERE object_id=:id"),
+                {"id": loop_id},
+            )
+        ).scalar_one()
+        assert count == 1
 
     @pytest.mark.asyncio
     async def test_double_write_keeps_single_latest_row(self, pg_context) -> None:

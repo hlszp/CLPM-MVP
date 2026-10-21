@@ -4135,27 +4135,12 @@ async def _save_confidence_latest(
     """
     now = datetime.now(UTC).replace(tzinfo=None)
 
-    # DEC-09：先查现存投影的业务窗终点，迟到写入直接跳过（不覆盖当前事实）
-    incoming_end = to_naive_utc(ts_end)
-    existing_result = await db.execute(
-        select(LoopConfidenceLatest.data_ts_end).where(LoopConfidenceLatest.loop_id == loop_id)
-    )
-    existing_end = existing_result.scalar_one_or_none()
-    if existing_end is not None and incoming_end < existing_end:
-        logger.info(
-            "迟到历史窗口不更新 loop_confidence_latest（回路 %s：incoming=%s < current=%s）",
-            loop_id,
-            incoming_end,
-            existing_end,
-        )
-        return
-
     insert_values = {
         "id": str(uuid4()),
         "loop_id": loop_id,
         "eval_time": now,
-        "data_ts_start": ts_start,
-        "data_ts_end": ts_end,
+        "data_ts_start": to_naive_utc(ts_start),
+        "data_ts_end": to_naive_utc(ts_end),
         "status": status,
         "score": score,
         "confidence_level": confidence_level,
@@ -4169,13 +4154,16 @@ async def _save_confidence_latest(
 
     update_cols = {k: v for k, v in insert_values.items() if k not in ("id", "loop_id")}
 
-    stmt = (
-        pg_insert(LoopConfidenceLatest)
-        .values(**insert_values)
-        .on_conflict_do_update(
-            index_elements=["loop_id"],
-            set_=update_cols,
-        )
+    stmt = pg_insert(LoopConfidenceLatest).values(**insert_values)
+    # DEC-09 在行锁内原子判定：先 SELECT 再 UPSERT 会让并发迟到窗口
+    # 越过守卫，反向覆盖已经提交的新窗口。同窗重评仍允许切换。
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["loop_id"],
+        set_=update_cols,
+        where=(
+            LoopConfidenceLatest.data_ts_end.is_(None)
+            | (LoopConfidenceLatest.data_ts_end <= stmt.excluded.data_ts_end)
+        ),
     )
     await db.execute(stmt)
 

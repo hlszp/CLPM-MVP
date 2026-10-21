@@ -428,7 +428,6 @@ class TestAttemptLedger:
         # 显式传 source_record_id 透传 insert values
         db3 = AsyncMock()
         seq3 = [
-            _result(scalar_one_or_none=None),  # 同键不存在
             _result(scalar_one_or_none=None),  # INSERT RETURNING
             _result(scalar_one_or_none=None),  # 冲突回读
         ]
@@ -445,10 +444,10 @@ class TestAttemptLedger:
             payload={"score": 80},
             source_record_id="rec-explicit",
         )
-        insert_stmt = db3.execute.call_args_list[1][0][0]
+        insert_stmt = db3.execute.call_args_list[0][0][0]
         assert isinstance(insert_stmt, Insert)
         assert insert_stmt.compile().params["source_record_id"] == "rec-explicit"
-        assert db3.execute.await_count == 3, "append 本体固定 3 次执行（不内敛查找）"
+        assert db3.execute.await_count == 2, "冲突路径只追加+回读，不内联查找前身"
 
     @pytest.mark.asyncio
     async def test_single_loop_recalc_completed_links_failed_source(self) -> None:
