@@ -449,12 +449,14 @@ const gradeStats = ref<Record<number, number>>({
   4: 0,
   5: 0,
 });
+/** 不确定（INCONCLUSIVE，无评分）计数——与 1~5 级卡片同级展示，保证累加=全部 */
+const inconclusiveCount = ref(0);
 
 /** 统计总数（服务端聚合 total，含 INCONCLUSIVE；不随等级卡片筛选变化） */
 const statsTotal = ref(0);
 
-/** 当前选中的等级筛选（null = 全部；服务端 grade 参数过滤） */
-const selectedGrade = ref<null | number>(null);
+/** 当前选中的等级筛选（null = 全部；'INCONCLUSIVE' = 不确定；1~5 = 等级） */
+const selectedGrade = ref<'INCONCLUSIVE' | null | number>(null);
 
 /** 优良率（一级+二级占比，即默认 score≥80 档，随定级阈值配置联动） */
 const excellentRate = computed(() => {
@@ -494,15 +496,20 @@ function gradeCardColor(level: number): string {
 const gradeChartRef = ref<EchartsUIType>();
 const { renderEcharts: renderGradeChart } = useEcharts(gradeChartRef);
 
-/** 渲染等级分布饼状图 */
+/** 渲染等级分布饼状图（含不确定，扇区之和 = 全部） */
 function updateGradeChart() {
-  const grades = [1, 2, 3, 4, 5];
+  const grades = [1, 2, 3, 4, 5] as const;
   const labels = ['优秀', '良好', '合格', '警告', '不合格'];
   const data = grades.map((g) => ({
     value: gradeStats.value[g] || 0,
     itemStyle: { color: gradeCardColor(g) },
     name: labels[g - 1],
   }));
+  data.push({
+    value: inconclusiveCount.value || 0,
+    itemStyle: { color: themeColors.value.NEUTRAL },
+    name: '不确定',
+  });
 
   renderGradeChart({
     animation: false,
@@ -563,19 +570,22 @@ async function loadStats() {
     const params = buildSnapshotParams();
     if (params === null) {
       gradeStats.value = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      inconclusiveCount.value = 0;
       statsTotal.value = 0;
       updateGradeChart();
       return;
     }
     const dist = await getGradeDistributionApi(params);
-    // 等级名 → level 归集（INCONCLUSIVE/total 不计入 1~5 级卡片）
+    // 只归集五档等级名；INCONCLUSIVE 单独计，保证 1~5 + 不确定 = total
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    for (const [name, count] of Object.entries(dist)) {
-      if (name === 'total' || name === 'INCONCLUSIVE') continue;
+    let inconclusive = 0;
+    for (const name of ['EXCELLENT', 'GOOD', 'FAIR', 'WARNING', 'POOR'] as const) {
       const level = gradeLevelByName(name);
-      if (level !== null) gStats[level] = (gStats[level] ?? 0) + count;
+      if (level !== null) gStats[level] = Number(dist[name] ?? 0);
     }
+    inconclusive = Number(dist.INCONCLUSIVE ?? 0);
     gradeStats.value = gStats;
+    inconclusiveCount.value = inconclusive;
     statsTotal.value = dist.total ?? 0;
     updateGradeChart();
   } catch {
@@ -584,7 +594,7 @@ async function loadStats() {
 }
 
 /** 点击等级卡片筛选 */
-function handleGradeCardClick(grade: null | number) {
+function handleGradeCardClick(grade: 'INCONCLUSIVE' | null | number) {
   selectedGrade.value = selectedGrade.value === grade ? null : grade;
   query.page = 1;
   loadList();
@@ -688,7 +698,9 @@ async function loadList() {
 
     // 等级筛选：服务端 grade 参数按当前定级阈值过滤（level → 等级名映射），
     // 替代原"全量拉取 → 客户端过滤 → 客户端分页"
-    if (selectedGrade.value !== null) {
+    if (selectedGrade.value === 'INCONCLUSIVE') {
+      params.grade = 'INCONCLUSIVE';
+    } else if (selectedGrade.value !== null) {
       params.grade = gradeNameByLevel(selectedGrade.value);
     }
     if (query.sortBy) {
@@ -1229,6 +1241,36 @@ onMounted(async () => {
               }}</span>
               <span class="text-sm" :style="{ color: gradeCardColor(grade) }">
                 {{ gradeStats[grade] || 0 }}
+              </span>
+            </div>
+            <!-- 不确定（无评分）：与 1~5 级并列，保证「全部 = 等级累加」 -->
+            <div
+              class="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selectedGrade === 'INCONCLUSIVE'"
+              :style="{
+                backgroundColor:
+                  selectedGrade === 'INCONCLUSIVE'
+                    ? `${themeColors.NEUTRAL}30`
+                    : `${themeColors.NEUTRAL}15`,
+                borderLeft: `3px solid ${themeColors.NEUTRAL}`,
+                borderBottom:
+                  selectedGrade === 'INCONCLUSIVE'
+                    ? `2px solid ${themeColors.NEUTRAL}`
+                    : 'none',
+              }"
+              @click="handleGradeCardClick('INCONCLUSIVE')"
+              @keydown.enter="handleGradeCardClick('INCONCLUSIVE')"
+              @keydown.space.prevent="handleGradeCardClick('INCONCLUSIVE')"
+            >
+              <span
+                class="w-2 h-2 rounded-full"
+                :style="{ backgroundColor: themeColors.NEUTRAL }"
+              ></span>
+              <span class="text-sm text-gray-600">不确定</span>
+              <span class="text-sm" :style="{ color: themeColors.NEUTRAL }">
+                {{ inconclusiveCount }}
               </span>
             </div>
           </div>
