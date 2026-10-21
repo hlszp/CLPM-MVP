@@ -3,7 +3,7 @@
 日期：2026-10-22。**双镜像全量包**，源码 `23a8953192b0b0bab1f4db96e326d02fc9c16c71`（macbook）。
 
 包：`clpm-images-1047-full.tar.gz`  
-sha256 `38bdbef6397f514b56d5a1f939b8191e82dcbb396a4fce107099d49f39953493`（242M，linux/amd64）
+sha256 `ea864a0cbb0cf52d46135c2122a7c3ca2e36b65af81ca5dd08a8ea4a155d656e`（242M，linux/amd64）
 
 ## 修复内容
 
@@ -48,7 +48,7 @@ sudo -s
 ```
 
 ```bash
-printf '%s  %s\n' '38bdbef6397f514b56d5a1f939b8191e82dcbb396a4fce107099d49f39953493' '/tmp/clpm-images-1047-full.tar.gz' | sha256sum -c -
+printf '%s  %s\n' 'ea864a0cbb0cf52d46135c2122a7c3ca2e36b65af81ca5dd08a8ea4a155d656e' '/tmp/clpm-images-1047-full.tar.gz' | sha256sum -c -
 ```
 
 ```bash

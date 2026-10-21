@@ -576,17 +576,33 @@ async function loadStats() {
       return;
     }
     const dist = await getGradeDistributionApi(params);
-    // 只归集五档等级名；INCONCLUSIVE 单独计，保证 1~5 + 不确定 = total
+    // 五档 + 不确定 = 全部（恒等式以展示分项为准；服务端 total 仅作对照）。
+    // gradeLevelByName 映射失败不得吞数：差额归入「不确定」，避免卡片加总对不上。
     const gStats: Record<number, number> = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-    let inconclusive = 0;
+    let mapped = 0;
     for (const name of ['EXCELLENT', 'GOOD', 'FAIR', 'WARNING', 'POOR'] as const) {
       const level = gradeLevelByName(name);
-      if (level !== null) gStats[level] = Number(dist[name] ?? 0);
+      const n = Number(dist[name] ?? 0);
+      if (level !== null) {
+        gStats[level] = n;
+        mapped += n;
+      }
     }
-    inconclusive = Number(dist.INCONCLUSIVE ?? 0);
+    let inconclusive = Number(dist.INCONCLUSIVE ?? 0);
+    const serverTotal = Number(dist.total ?? 0);
+    const residual = serverTotal - mapped - inconclusive;
+    if (residual !== 0) {
+      inconclusive += residual;
+    }
     gradeStats.value = gStats;
     inconclusiveCount.value = inconclusive;
-    statsTotal.value = dist.total ?? 0;
+    statsTotal.value =
+      (gStats[1] ?? 0) +
+      (gStats[2] ?? 0) +
+      (gStats[3] ?? 0) +
+      (gStats[4] ?? 0) +
+      (gStats[5] ?? 0) +
+      inconclusive;
     updateGradeChart();
   } catch {
     // 统计卡片保留旧数据；错误 toast 由 api/request.ts 拦截器统一弹出
@@ -1248,6 +1264,7 @@ onMounted(async () => {
               class="flex items-center gap-1.5 px-2 py-1 rounded cursor-pointer hover:opacity-80 transition-opacity whitespace-nowrap"
               role="button"
               tabindex="0"
+              title="已纳入评估但最新快照无综合评分（数据不足/可信度 E 级等），不是准入门槛"
               :aria-pressed="selectedGrade === 'INCONCLUSIVE'"
               :style="{
                 backgroundColor:
