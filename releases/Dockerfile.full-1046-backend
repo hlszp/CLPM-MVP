@@ -1,0 +1,14 @@
+# 依赖与 full-1045 相同；替换完整应用源码，保留已验 linux/amd64 运行时。
+FROM clpm-backend:full-1045
+ARG SOURCE_REVISION
+ENV APP_VERSION=v7.5.6-1046-full
+LABEL org.opencontainers.image.revision=${SOURCE_REVISION}
+LABEL org.opencontainers.image.version=v7.5.6-1046-full
+USER root
+RUN python -c "import shutil; [shutil.rmtree(p) for p in ['/app/app','/app/scripts','/app/alembic']]"
+COPY --chown=1001:1001 backend/app /app/app
+COPY --chown=1001:1001 backend/scripts /app/scripts
+COPY --chown=1001:1001 backend/alembic /app/alembic
+COPY --chown=1001:1001 backend/alembic.ini backend/pyproject.toml /app/
+RUN install -d -o clpm -g clpm /app/shadow-reports
+USER clpm
