@@ -61,6 +61,7 @@ celery_app = Celery(
         "app.tasks.config_probe",
         # P2-03：不可变输入包每日清理（DEC-10 保留契约，隔离清理任务）
         "app.tasks.calc_snapshot_cleanup",
+        "app.tasks.ten_minute_shadow",
     ],
 )
 
@@ -208,6 +209,7 @@ import app.tasks.diagnosis_v2  # noqa: E402, F401
 import app.tasks.kpi_calc  # noqa: E402, F401
 import app.tasks.lowfreq_anchor  # noqa: E402, F401
 import app.tasks.report_generator  # noqa: E402, F401
+import app.tasks.ten_minute_shadow  # noqa: E402, F401
 
 # import app.tasks.tracker_verification  # noqa: E402, F401
 import app.tasks.tuning  # noqa: E402, F401  # 整定模块（09 设计方案恢复）

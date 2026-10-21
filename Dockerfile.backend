@@ -76,6 +76,8 @@ COPY --from=builder --chown=clpm:clpm /app/pyproject.toml /app/pyproject.toml
 # 随镜像分发不改变运行行为。
 COPY --from=builder --chown=clpm:clpm /app/scripts /app/scripts
 
+RUN install -d -o clpm -g clpm /app/shadow-reports
+
 USER clpm
 
 EXPOSE 7101
