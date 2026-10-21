@@ -48,7 +48,7 @@ async def _build(monkeypatch, events, t0, t1, gaps):
     async def _fake_anchors(_db, **_kw):
         return {}
 
-    async def _fake_gaps(_db):
+    async def _fake_gaps(_db, _start, _end):
         return gaps
 
     monkeypatch.setattr(lwb, "_resolve_role_segments", _fake_segments)

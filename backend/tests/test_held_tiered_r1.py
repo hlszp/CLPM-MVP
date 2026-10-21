@@ -67,7 +67,7 @@ async def _build(
     async def _fake_anchors(_db, **_kw):
         return {}
 
-    async def _fake_gap_windows(_db):
+    async def _fake_gap_windows(_db, _start, _end):
         return []
 
     async def _fake_limits(_step_s):

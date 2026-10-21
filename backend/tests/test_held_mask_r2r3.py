@@ -49,7 +49,7 @@ async def _build(monkeypatch, events: list[tuple[datetime, float]], t0: datetime
     async def _fake_anchors(_db, **_kw):
         return {}
 
-    async def _fake_gap_windows(_db):
+    async def _fake_gap_windows(_db, _start, _end):
         # 2026-09-26：1a 会把**真实缺口**登记到 PG（history_coverage_segment.status='gap'），
         # 若本用例窗口恰好被某条真实 gap 覆盖，槽位会先被判 gap（更准确的原因），
         # held_too_long 归零 → 用例变成"依赖库里有没有真实缺口"的 flaky 测试。
