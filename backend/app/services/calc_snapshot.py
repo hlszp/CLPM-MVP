@@ -807,12 +807,16 @@ async def cleanup_expired_snapshots(
 
 def _ns_int(datetimes: list[datetime]) -> np.ndarray:
     """datetime 列表 → epoch 纳秒 int64（naive 视为 UTC；无逐点 .timestamp 慢路径）."""
-    base = np.datetime64("1970-01-01T00:00:00", "ns")
-    out = np.empty(len(datetimes), dtype=np.int64)
-    for i, dt in enumerate(datetimes):
-        naive = to_naive_utc(dt) if dt.tzinfo else dt
-        out[i] = (np.datetime64(naive.isoformat(), "ns") - base).astype(np.int64)
-    return out
+    epoch = datetime(1970, 1, 1)
+    deltas = ((to_naive_utc(dt) if dt.tzinfo else dt) - epoch for dt in datetimes)
+    # datetime 精度为微秒；整数差值避免逐点 ISO 编解码和 NumPy 标量转换，
+    # 也保留 1970 年前、小数秒和时区转换后的精确值（不经过浮点秒）。
+    micros = np.fromiter(
+        ((d.days * 86400 + d.seconds) * 1_000_000 + d.microseconds for d in deltas),
+        dtype=np.int64,
+        count=len(datetimes),
+    )
+    return micros * 1000
 
 
 def _ns_to_datetimes(ns: np.ndarray) -> list[datetime]:
@@ -847,10 +851,16 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
 
     arrays: dict[str, np.ndarray] = {}
     blocks_meta: list[dict[str, Any]] = []
+    # 同一 DataBlock 通常供多个指标消费；只在本次调用复用转换。
+    # 仍逐 bundle 输出独立数组，保留既有 NPZ 键、inputHash 和重放格式。
+    encoded_blocks: dict[int, dict[str, np.ndarray]] = {}
     for i, bundle in enumerate(bundles):
         block = bundle.data_block
         prefix = f"blk{i}"
-        arrays[f"{prefix}__ts"] = _ns_int(list(block.timestamps))
+        fresh_block = id(block) not in encoded_blocks
+        block_arrays = encoded_blocks.setdefault(id(block), {})
+        if fresh_block:
+            block_arrays["__ts"] = _ns_int(list(block.timestamps))
         signal_metadata: dict[str, list[str | None]] = {}
         for name, values in block.signals.items():
             if name in ("op_limits_source", "op_limits_provenance"):
@@ -861,10 +871,13 @@ def serialize_data_blocks(bundles: list[Any]) -> tuple[dict[str, np.ndarray], li
                     raise ValueError(f"信号元数据 {name} 必须为字符串或 None")
                 signal_metadata[name] = values
                 continue
-            serialize_signal(list(values), f"{prefix}__sig_{name}", arrays)
-        for name, flags in (block.validity or {}).items():
-            if len(flags) == len(block.timestamps):
-                arrays[f"{prefix}__valid_{name}"] = np.asarray(flags, dtype=bool)
+            if fresh_block:
+                serialize_signal(list(values), f"__sig_{name}", block_arrays)
+        if fresh_block:
+            for name, flags in (block.validity or {}).items():
+                if len(flags) == len(block.timestamps):
+                    block_arrays[f"__valid_{name}"] = np.asarray(flags, dtype=bool)
+        arrays.update({f"{prefix}{key}": values.copy() for key, values in block_arrays.items()})
         outlier = {}
         for name, reasons in (block.outlier_reasons or {}).items():
             outlier[name] = [list(r) for r in reasons] if reasons else []

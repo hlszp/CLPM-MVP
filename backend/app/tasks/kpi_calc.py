@@ -1031,6 +1031,8 @@ async def _run_batch_loop_calculations(
     from app.core.db import AsyncSessionLocal, close_session_guarded
 
     sem = asyncio.Semaphore(concurrency)
+    batch_started = time.perf_counter()
+    completed = 0
     op_limits_map = {
         str(loop_id): (cfg["op_lower"], cfg["op_upper"]) for loop_id, cfg in loop_configs.items()
     }
@@ -1053,6 +1055,7 @@ async def _run_batch_loop_calculations(
     async def _calculate_one(loop: LoopLedger) -> dict | None:
         # F02：PG 连接耗尽、TD 0x073a 查询内存耗尽均为基础设施失败。
         # 有界退避期间释放回路 semaphore/session；未知异常和取消不重试。
+        nonlocal completed
         try:
             for attempt in range(3):
                 try:
@@ -1072,6 +1075,19 @@ async def _run_batch_loop_calculations(
 
             raise AssertionError("unreachable")
         finally:
+            completed += 1
+            if completed % 50 == 0 or completed == len(loops):
+                logger.info(
+                    "[评估批量进度] run=%s 窗口=%s 已处理=%d/%d elapsed=%.1fs "
+                    "concurrency=%d input_snapshot=%s",
+                    logical_run_id or custom_task_id or source_task_id or "hourly",
+                    ts_start.isoformat(),
+                    completed,
+                    len(loops),
+                    time.perf_counter() - batch_started,
+                    concurrency,
+                    save_input_snapshot,
+                )
             # 重试是同一回路的内部尝试，不可重复推进已完成回路分母。
             if on_completed is not None:
                 try:
@@ -1086,7 +1102,10 @@ async def _run_batch_loop_calculations(
         # 现场挂满 100 连接）。显式 finally 走 ``close_session_guarded``
         # （延迟重试 close → 耗尽则 terminate 底层连接，全程不抛出）。
         _sem_requested_ns = time.perf_counter_ns() if g5_trace.enabled() else None
+        wait_started = time.perf_counter()
         async with sem:
+            loop_started = time.perf_counter()
+            wait_s = loop_started - wait_started
             g5_trace.completed_interval(
                 "kpi.semaphore_wait",
                 _sem_requested_ns,
@@ -1096,6 +1115,8 @@ async def _run_batch_loop_calculations(
                 windowEnd=ts_end,
             )
             worker_db = AsyncSessionLocal()
+            result = None
+            commit_s = 0.0
             try:
                 config_loader = _make_config_loader(loop_configs.get(str(loop.id)))
                 data_planner = _build_data_planner(
@@ -1125,6 +1146,7 @@ async def _run_batch_loop_calculations(
                     template_keys=template_keys,
                     failed_source_ids=failed_source_ids,
                 )
+                commit_started = time.perf_counter()
                 await g5_trace.awaited(
                     "pg.commit",
                     worker_db.commit(),
@@ -1133,6 +1155,7 @@ async def _run_batch_loop_calculations(
                     windowStart=ts_start,
                     windowEnd=ts_end,
                 )
+                commit_s = time.perf_counter() - commit_started
                 return result
             except Exception as exc:
                 try:
@@ -1178,6 +1201,7 @@ async def _run_batch_loop_calculations(
                         )
                 raise
             finally:
+                close_started = time.perf_counter()
                 await g5_trace.awaited(
                     "pg.close",
                     close_session_guarded(worker_db, label=f"kpi-worker-session[{loop.tag_name}]"),
@@ -1186,11 +1210,23 @@ async def _run_batch_loop_calculations(
                     windowStart=ts_start,
                     windowEnd=ts_end,
                 )
+                if isinstance(result, dict) and "_timing" in result:
+                    result["_timing"].update(
+                        wait=round(wait_s, 3),
+                        commit=round(commit_s, 3),
+                        close=round(time.perf_counter() - close_started, 3),
+                        total=round(time.perf_counter() - loop_started, 3),
+                    )
 
     _batch_results = await asyncio.gather(
         *[_calculate_one(loop) for loop in loops], return_exceptions=True
     )
-    _log_batch_phase_timings(_batch_results, ts_start)
+    _log_batch_phase_timings(
+        _batch_results,
+        ts_start,
+        run_id=logical_run_id or custom_task_id or source_task_id,
+        elapsed_s=time.perf_counter() - batch_started,
+    )
     # F02：一条未恢复的资源失败也不能让父任务 SUCCESS，否则低于 G29
     # 50% 阈值时不触发 Celery 最终尝试，失败回路永远没有终态 record。
     # 标准/custom 共用这一边界；G29 的一般业务错误阈值保持不变。
@@ -1206,8 +1242,14 @@ def _percentile(sorted_values: list[float], pct: float) -> float:
     return sorted_values[idx]
 
 
-def _log_batch_phase_timings(results: list, ts_start: datetime) -> None:
-    """批量级分段耗时聚合（每窗口一行）：read/persist/compute 的 p50/p95/max。
+def _log_batch_phase_timings(
+    results: list,
+    ts_start: datetime,
+    *,
+    run_id: str | None = None,
+    elapsed_s: float | None = None,
+) -> None:
+    """批量级分段墙钟耗时（每窗口一行，子段有重叠，不能相加当整批耗时）。
 
     数据来自 _calculate_loop_kpi 结果 dict 的 _timing 键（2026-10-08 评估
     吞吐优化观测——生产回填慢的大头定位依据，避免逐回路日志刷屏）。
@@ -1216,17 +1258,37 @@ def _log_batch_phase_timings(results: list, ts_start: datetime) -> None:
     if not timings:
         return
     parts = []
-    for phase in ("read", "compute", "persist"):
+    # compute 为算法/门禁等其余墙钟耗时（含 algorithm 子段）；input_encode
+    # 属 input_snapshot 子段。并发回路的 sum 不能当作整批 elapsed 相加。
+    for phase in (
+        "read",
+        "l2_read",
+        "groups",
+        "l1_write",
+        "assemble",
+        "l2_write",
+        "input_snapshot",
+        "input_encode",
+        "algorithm",
+        "compute",
+        "persist",
+        "commit",
+        "close",
+        "wait",
+        "total",
+    ):
         vals = sorted(float(t.get(phase, 0)) for t in timings)
         parts.append(
             f"{phase} p50={_percentile(vals, 50):.2f}s p95={_percentile(vals, 95):.2f}s "
             f"max={vals[-1]:.2f}s sum={sum(vals):.1f}s"
         )
     logger.info(
-        "[批量计时] 窗口=%s 回路=%d/%d | %s",
-        ts_start.strftime("%m-%d %H:00"),
+        "[批量计时] run=%s 窗口=%s 回路=%d/%d elapsed=%s | %s",
+        run_id or "hourly",
+        ts_start.isoformat(),
         len(timings),
         len(results),
+        f"{elapsed_s:.1f}s" if elapsed_s is not None else "unknown",
         " | ".join(parts),
     )
 
@@ -1450,8 +1512,8 @@ async def _do_calculate(
 
     loops_count = len(loops)
 
-    # 注：原 L2 命中率检查 + 兜底预热已废止。计算阶段由 DataPlanner 按需取数：
-    # 最近 1 小时窗口自动命中 realtime 滚动缓存，否则回源 TDengine（见 provider）。
+    # 原 L2 命中率检查 + 兜底预热已废止。DataPlanner 按需读取本地 L1/L2，
+    # 未命中从 TDengine 点表读取；不再探测旧 Redis realtime 滚动缓存。
     completed_in_window = 0
 
     async def _on_completed(_loop_id: str) -> None:
@@ -2492,8 +2554,8 @@ async def _calculate_loop_kpi(
             pinned_params = None
             pinned_resolve_meta = None
 
-    # 分段计时（2026-10-08 评估吞吐优化观测）：read=TDengine 取数 /
-    # persist=快照写库 / compute=其余（门禁+三层计算+fitness）。
+    # read=DataPlanner（取数、预处理、L1/L2 缓存），persist=结果写库；
+    # 输入包单独计时，compute=其余（门禁+三层计算+fitness，含 algorithm 子段）。
     # 结果 dict 附 _timing 键（仅内存返回供批量聚合日志，不入库）。
     # P2-03：输入包状态（save_input_snapshot 时在三层计算前填充；保存失败
     # 显式降级标记随 payload 入账本，datasetSnapshotId=None）
@@ -2503,13 +2565,23 @@ async def _calculate_loop_kpi(
     _t0 = time.perf_counter()
     _t_read = 0.0
     _t_persist = 0.0
+    _t_input_snapshot = 0.0
+    _t_input_encode = 0.0
+    _t_algorithm = 0.0
+    _t_read_details: dict[str, float] = {}
 
     def _timing_into(result: dict | None) -> dict | None:
         if isinstance(result, dict):
             result["_timing"] = {
                 "read": round(_t_read, 3),
-                "compute": round(time.perf_counter() - _t0 - _t_read - _t_persist, 3),
+                "compute": round(
+                    time.perf_counter() - _t0 - _t_read - _t_persist - _t_input_snapshot, 3
+                ),
                 "persist": round(_t_persist, 3),
+                "input_snapshot": round(_t_input_snapshot, 3),
+                "input_encode": round(_t_input_encode, 3),
+                "algorithm": round(_t_algorithm, 3),
+                **{key: round(value, 3) for key, value in _t_read_details.items()},
             }
         return result
 
@@ -2550,6 +2622,9 @@ async def _calculate_loop_kpi(
             control_type=control_type,
         )
         _t_read += time.perf_counter() - _tr
+        planner_timing = getattr(data_planner, "_last_request_timing", None)
+        if isinstance(planner_timing, dict):
+            _t_read_details = dict(planner_timing)
     except Exception as exc:  # noqa: BLE001
         # ⑤（2026-10-13 连接风暴）：加 exc_info——首发现场只记 message 导致
         # 毒化首发行的精确位置无法钉死（诊断报告 §3.5 的直接原因）。
@@ -2620,11 +2695,14 @@ async def _calculate_loop_kpi(
     # 不拼段）+ manifest（绑定/量程/权重/配置上下文/构建摘要）。写入次序=
     # 先原子写文件核 hash 再提交 DB 引用；失败显式降级（不阻断计算主链）。
     if save_input_snapshot:
+        _input_started = time.perf_counter()
         try:
             from app.services import calc_snapshot as cs
             from app.services.assessment_profile import release_manifest_source_section
 
+            _encode_started = time.perf_counter()
             arrays, blocks_meta = cs.serialize_data_blocks(bundles)
+            _t_input_encode = time.perf_counter() - _encode_started
             dataset_ref = (
                 getattr(_point_ctx, "dataset_ref", None) if _point_ctx is not None else None
             ) or f"loop:{loop.id}"
@@ -2728,12 +2806,16 @@ async def _calculate_loop_kpi(
                 ts_end,
                 exc_info=True,
             )
+        finally:
+            _t_input_snapshot = time.perf_counter() - _input_started
 
     # 三层计算：Layer1（无依赖）→ Layer2（有依赖）→ Layer3（综合评分）
     # G2-INC-a：pinned_params 非空时全部算子只消费任务固定快照（不读当前缓存）
+    _algorithm_started = time.perf_counter()
     metric_results, composite_result = _compute_kpis_three_layer(
         bundles, config_bundle, weights, pinned_params=pinned_params
     )
+    _t_algorithm = time.perf_counter() - _algorithm_started
 
     # 12 子指标值+可信度（随 loop_confidence_latest 存储）
     metrics_detail = _extract_metrics_detail(metric_results)

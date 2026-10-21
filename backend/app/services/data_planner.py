@@ -238,6 +238,7 @@ class DataPlanner:
         self._preloaded_data_version: str | None = None
         # AD02：本请求数据版本（缓存键分量；request-bundles 入口解析一次）
         self._data_version: str = "legacy-v1"
+        self._last_request_timing: dict[str, float] = {}
 
     async def _resolve_data_version(self) -> str:
         """逐回路数据版本解析（回落路径；逻辑单一事实源在模块级 resolve_data_version）."""
@@ -278,6 +279,13 @@ class DataPlanner:
 
         设计依据：ADS §2, §10.7.1, 数据流程图 §7.1
         """
+        self._last_request_timing = {
+            "l2_read": 0.0,
+            "groups": 0.0,
+            "l1_write": 0.0,
+            "assemble": 0.0,
+            "l2_write": 0.0,
+        }
         logger.debug(
             "DataPlanner.request_bundles: loop=%s, metrics=%s, window=%s~%s, control=%s",
             loop_id,
@@ -336,6 +344,7 @@ class DataPlanner:
 
         if self._bundle_cache is not None and metrics:
             # O1 探针（默认 off）：L2 缓存读段（key 构建 + Redis get + 反序列化）
+            _l2_started = time.perf_counter()
             with g5_trace.span("data_planner.h2.l2_read", loopId=loop_id):
                 l2_key = L2BundleCache.build_key(
                     loop_id=loop_id,
@@ -349,6 +358,7 @@ class DataPlanner:
                     data_version=self._data_version,
                 )
                 cached_bundles = await self._bundle_cache.get(l2_key)
+            self._last_request_timing["l2_read"] = time.perf_counter() - _l2_started
             if cached_bundles is not None:
                 logger.info(
                     "DataPlanner L2 命中，跳过查询+组装: loop=%s, bundles=%d",
@@ -384,12 +394,15 @@ class DataPlanner:
         )
 
         # Phase 4-7: 执行查询计划（查缓存 → 未命中查 TDengine + 预处理 → 写缓存）
+        _groups_started = time.perf_counter()
         data_blocks = await self._execute_query_plan(
             query_plan, loop_id, time_window, control_type, preprocess_config
         )
+        self._last_request_timing["groups"] = time.perf_counter() - _groups_started
 
         # Phase 8: 按指标组装 MetricDataBundle
         # O1 探针（默认 off）：Bundle 组装段（纯 CPU；L2 写入在 _maybe_write_l2_cache 内拆分）
+        _assemble_started = time.perf_counter()
         with g5_trace.span("data_planner.h2.assemble", loopId=loop_id):
             bundles = self._assemble_bundles(requirements, data_blocks)
 
@@ -398,9 +411,12 @@ class DataPlanner:
         # 优先级：Loop 表字段 > OP Tag range_min/range_max > 默认值（不填充，由算法兜底）
         # 2026-10-10：传 preprocess_config 将限位归一化到与 OP 序列同尺度（0~100）
         await self._fill_op_output_limits(bundles, loop_id, preprocess_config)
+        self._last_request_timing["assemble"] = time.perf_counter() - _assemble_started
 
         # Phase 8 (续): 写入 L2 缓存（若启用且本次未命中）
+        _l2_write_started = time.perf_counter()
         await self._maybe_write_l2_cache(bundles)
+        self._last_request_timing["l2_write"] = time.perf_counter() - _l2_write_started
 
         logger.info(
             "DataPlanner 完成: loop=%s, bundles=%d, cached_blocks=%d",
@@ -685,7 +701,9 @@ class DataPlanner:
         if pending_writes and self._cache:
             keys = [k for k, _ in pending_writes]
             blocks = [b for _, b in pending_writes]
+            _l1_write_started = time.perf_counter()
             written = await self._cache.set_many(blocks, keys=keys)
+            self._last_request_timing["l1_write"] = time.perf_counter() - _l1_write_started
             logger.info(
                 "DataPlanner 缓存写入: loop=%s, blocks=%d, written=%d",
                 loop_id,

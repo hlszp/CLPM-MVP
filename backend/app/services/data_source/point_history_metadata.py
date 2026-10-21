@@ -557,6 +557,9 @@ async def applicable_anchors_batch(
                 await own.execute(
                     select(PointStateAnchor)
                     .where(PointStateAnchor.point_id.in_(point_ids))
+                    # 现有循环只检查每点第一行；用 PG 原生 DISTINCT ON
+                    # 保留同一行，避免读取全部锚点历史后在 Python 丢弃。
+                    .distinct(PointStateAnchor.point_id)
                     .order_by(PointStateAnchor.point_id, PointStateAnchor.anchor_ts.desc())
                 )
             )
