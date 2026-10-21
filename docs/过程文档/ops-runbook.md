@@ -170,6 +170,8 @@ SignalR 断线/进程重启后的补数由 `realtime_subscriber.py` 的 `_maybe_
 
 ### 历史导入、读取与 TDengine 原生能力（full-1043）
 
+后续 961 回路小时评估的现场基线、源码优化和新增计时字段见 [性能排查记录](961回路小时评估性能排查-2026-10-21.md)。该增量尚未部署；现场 full-1043 日志仍使用旧计时口径。
+
 现役导入为 v3 单相：元数据批量预加载，同一时间块拉取全部角色，再按位号批量直写 `st_point_data_v1`；PV/OP 保留样本，慢变量按值/质量去重，空值不落壳行。分块失败、取消、部分写入与覆盖登记均显式计入结果。回路/分块/远端并发由 `datasource.import_loop_concurrency` / `import_chunk_concurrency` / `import_remote_concurrency` 运行时读取，默认 4/1/4，分别钳制在 1–16/1–8/1–16。
 
 读取使用 `LAST_ROW` 取因果初值，趋势用 `LAST` + `PARTITION BY point_id INTERVAL(...) FILL(PREV)`；诊断保留原始波形、质量码及缺口，不用 AVG 替换算法输入。历史事件与初值独立并行读取，分页边界包含同时间戳并按点去重。
