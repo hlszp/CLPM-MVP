@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from app.constants.mode import ALL_STANDARD_MODES
 from app.contracts.data_types import (
     OutlierReason,
     QualityStatus,
@@ -431,6 +432,7 @@ class OutlierDetector:
         n = len(values)
         if n == 0:
             return {}
+        is_mode = tag_name.lower() == "mode"
         # 数值转换在同一信号的检测器间共享，避免 NaN/量程/跳变/尖峰/FFT
         # 各自逐点 float()/isfinite()；保持检测顺序和原因码顺序。
         numeric = (
@@ -464,10 +466,16 @@ class OutlierDetector:
 
         # 2. 超量程
         if is_detector_enabled("out_of_range"):
-            _add(detect_out_of_range(numeric, eff_min, eff_max))
+            if is_mode:
+                # MODE 是标准离散编码，不使用 PV 工程量程；非法编码仍无效。
+                arr = _numeric_values(numeric)
+                invalid = np.isfinite(arr) & ~np.isin(arr, list(ALL_STANDARD_MODES))
+                _add([(int(i), OutlierReason.OUT_OF_RANGE) for i in np.flatnonzero(invalid)])
+            else:
+                _add(detect_out_of_range(numeric, eff_min, eff_max))
 
         # 3. 冻结值（SP/MODE/PID 等常态为常量的信号跳过）
-        if not skip_frozen and is_detector_enabled("frozen"):
+        if not is_mode and not skip_frozen and is_detector_enabled("frozen"):
             if is_normalized:
                 _add(detect_frozen(numeric, self.threshold))
             else:
@@ -475,11 +483,11 @@ class OutlierDetector:
 
         # 4. 跳变（与超量程/冻结一致，按 is_normalized 选量程：
         #    归一化数据用 0~100，原始数据用工程量程，否则量程≠100 时永不触发）
-        if is_detector_enabled("jump"):
+        if not is_mode and is_detector_enabled("jump"):
             _add(detect_jump(numeric, self.threshold, eff_min, eff_max))
 
         # 5. 尖峰（同跳变，量程需与数据量纲一致）
-        if is_detector_enabled("spike"):
+        if not is_mode and is_detector_enabled("spike"):
             _add(detect_spike(numeric, self.threshold, eff_min, eff_max))
 
         # 6. 时间戳异常（仅标记）
@@ -495,7 +503,7 @@ class OutlierDetector:
             _add(detect_qc_bad(quality_codes))
 
         # 8. 高频噪声（仅标记不滤波）
-        if is_detector_enabled("hf_noise"):
+        if not is_mode and is_detector_enabled("hf_noise"):
             _add(detect_hf_noise(numeric, self.threshold, sampling_freq_hz))
 
         logger.debug(

@@ -154,7 +154,7 @@ def _base_cache_key(
         quality_policy="KEEP_ALL_WITH_VALIDITY",
         pre_version=PREPROCESS_VERSION,
         cfg_version=cfg_version,
-        data_version=f"legacy-v1:{TIME_QUALITY_POLICY_VERSION}",
+        data_version=f"legacy-v1:{TIME_QUALITY_POLICY_VERSION}:{PREPROCESS_VERSION}",
     )
 
 

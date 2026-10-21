@@ -57,8 +57,8 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 #     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
 _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
 
-# G5：UNKNOWN 覆盖不计核心有效率、上下文使用真实网格周期；换键禁止复用旧块。
-PREPROCESS_VERSION = "pre_v2"
+# pre_v3：MODE 按标准离散域校验；失效曾误用 PV 量程生成的 L1/L2 数据块。
+PREPROCESS_VERSION = "pre_v3"
 
 # R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
 # 日志用于定位"数据窗口缺口"型低可信度的根因）

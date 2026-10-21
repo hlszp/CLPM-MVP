@@ -144,7 +144,8 @@ async def resolve_data_version() -> str:
         layout_version = await current_layout_version()
     except Exception:  # noqa: BLE001 — 版本解析失败按 legacy（键保守回退）
         layout_version = "legacy-v1"
-    return f"{layout_version}:{TIME_QUALITY_POLICY_VERSION}"
+    # L2 命中早于 L1 查询，也必须携带预处理版本，不能继续消费旧 MODE 掩码。
+    return f"{layout_version}:{TIME_QUALITY_POLICY_VERSION}:{PREPROCESS_VERSION}"
 
 
 # 回路预处理配置加载器签名：返回 LoopPreprocessConfig（含 range_min/range_max/config_version）
