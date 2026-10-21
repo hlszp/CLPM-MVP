@@ -190,10 +190,105 @@ async def test_provider_shares_queries_without_changing_grid_or_quality(monkeypa
         assert result.quality_codes == expected.quality_codes
         assert result.series_context.to_dict() == expected.series_context.to_dict()
     assert before["events"] == 11 and counts["events"] == 4
-    assert before["initial"] == 5 and counts["initial"] == 4
+    assert before["initial"] == 5 and counts["initial"] == 1
     assert before["loop_tag_binding_history"] == 5 and counts["loop_tag_binding_history"] == 1
     assert before["history_coverage_segment"] == 5 and counts["history_coverage_segment"] == 1
-    assert before["anchors"] == 5 and counts["anchors"] == 4
+    assert before["anchors"] == 5 and counts["anchors"] == 1
     # 共享范围结束后，同窗口复读仍重新访问源（不遮蔽迟到/补入的数据）。
     await query("L1", ["pv"], start, end, 1)
     assert counts["events"] == 5 and counts["loop_tag_binding_history"] == 2
+
+
+async def test_point_batches_union_sets_and_keep_boundaries_separate():
+    scopes = PointReadScopes()
+    load = AsyncMock(side_effect=lambda points: {pid: pid for pid in points})
+    async with scopes.use("L1", 0, 1) as scope:
+        results = await asyncio.gather(
+            scope.read_points(("initial", 0), ["p2", "p1"], load),
+            scope.read_points(("initial", 0), ["p2", "p3"], load),
+            scope.read_points(("initial", 1), ["p1"], load),
+        )
+        assert results == [{"p2": "p2", "p1": "p1"}, {"p2": "p2", "p3": "p3"}, {"p1": "p1"}]
+        assert [call.args[0] for call in load.await_args_list] == [["p1", "p2", "p3"], ["p1"]]
+        # 后到的点只补查缺失点，已读点不重复查。
+        assert await scope.read_points(("initial", 0), ["p1", "p4"], load) == {
+            "p1": "p1",
+            "p4": "p4",
+        }
+        assert load.await_args.args[0] == ["p4"]
+    assert not scope._points and not scope._batches
+
+
+@pytest.mark.parametrize("fail", [False, True])
+async def test_point_batch_cancellation_drains_io_and_retry_is_fresh(fail):
+    scopes = PointReadScopes()
+    started, release, finished = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    async def load(points):
+        started.set()
+        await release.wait()
+        finished.set()
+        if fail:
+            raise RuntimeError("batch failed")
+        return dict.fromkeys(points, 17)
+
+    async def read(points):
+        async with scopes.use("L1", 0, 1) as scope:
+            return await scope.read_points(("initial", 0), points, load)
+
+    first, second = asyncio.create_task(read(["p1"])), asyncio.create_task(read(["p1", "p2"]))
+    await started.wait()
+    first.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await first
+    release.set()
+    if fail:
+        with pytest.raises(RuntimeError, match="batch failed"):
+            await second
+    else:
+        assert await second == {"p1": 17, "p2": 17}
+    assert finished.is_set() and not scopes._active
+    # 本窗的后续任务重新查源，不能缓存异常或遮蔽补数。
+    async with scopes.use("L1", 0, 1) as scope:
+        assert await scope.read_points(("initial", 0), ["p1"], AsyncMock(return_value={})) == {
+            "p1": None
+        }
+
+
+async def test_last_point_consumer_cancelled_waits_for_batch_failure():
+    scopes = PointReadScopes()
+    started, release = asyncio.Event(), asyncio.Event()
+
+    async def load(_points):
+        started.set()
+        await release.wait()
+        raise RuntimeError("unobserved consumer error")
+
+    async def read():
+        async with scopes.use("L1", 0, 1) as scope:
+            await scope.read_points(("initial", 0), ["p1"], load)
+
+    task = asyncio.create_task(read())
+    await started.wait()
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not scopes._active
+
+
+async def test_invalid_batch_response_fails_all_consumers_without_hanging():
+    scopes = PointReadScopes()
+    async with scopes.use("L1", 0, 1) as scope:
+        results = await asyncio.wait_for(
+            asyncio.gather(
+                scope.read_points(("initial", 0), ["p1"], AsyncMock(return_value=None)),
+                scope.read_points(("initial", 0), ["p2"], AsyncMock(return_value=None)),
+                return_exceptions=True,
+            ),
+            timeout=1,
+        )
+        assert all(isinstance(result, AttributeError) for result in results)
+    assert not scopes._active

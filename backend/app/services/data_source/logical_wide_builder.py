@@ -38,7 +38,7 @@ from app.core import g5_trace
 from app.core.async_tasks import gather_settled
 from app.services.data_source import point_history_metadata as meta
 from app.services.data_source import point_history_repository as repo
-from app.services.data_source.point_read_scope import PointReadScope, scoped_read
+from app.services.data_source.point_read_scope import PointReadScope, scoped_point_read, scoped_read
 
 logger = logging.getLogger(__name__)
 
@@ -369,28 +369,34 @@ async def build_logical_wide(
             for before, pids in by_before.items():
                 states = await g5_trace.awaited(
                     "builder.initial_state",
-                    scoped_read(
+                    scoped_point_read(
                         read_scope,
-                        ("initial", tuple(sorted(pids)), before),
-                        lambda pids=pids, before=before: repo.read_last_states_before(pids, before),
+                        ("initial", before),
+                        pids,
+                        lambda points, before=before: repo.read_last_states_before(points, before),
                     ),
                 )
                 for pid, st in states.items():
                     initial_states[(pid, before)] = st
             return initial_states
 
-        # 两条 TD 查询没有数据依赖；全部收束后再继续，失败不遗留在途查询。
-        events_map, initial_states = await gather_settled(_window_events(), _initial_states())
-        # 锚点（批量单查询；作为虚拟事件按其 sourceTime 生效）
-        anchors = await g5_trace.awaited(
-            "builder.anchors",
-            scoped_read(
-                read_scope,
-                ("anchors", tuple(sorted(all_points)), grid_start),
-                lambda: meta.applicable_anchors_batch(
-                    db, point_ids=sorted(all_points), window_start=grid_start
+        async def _anchors():
+            return await g5_trace.awaited(
+                "builder.anchors",
+                scoped_point_read(
+                    read_scope,
+                    ("anchors", grid_start),
+                    sorted_points,
+                    lambda points: meta.applicable_anchors_batch(
+                        db, point_ids=points, window_start=grid_start
+                    ),
                 ),
-            ),
+            )
+
+        # 三者没有数据依赖，同时提交以合并兄弟组的初值/锚点集合。
+        # 全部收束后再继续，失败不遗留在途查询。
+        events_map, initial_states, anchors = await gather_settled(
+            _window_events(), _initial_states(), _anchors()
         )
         # 组装每点因果流
         for pid in all_points:
