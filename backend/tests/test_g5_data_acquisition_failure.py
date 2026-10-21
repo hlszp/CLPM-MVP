@@ -211,7 +211,7 @@ async def test_cancel_during_resource_backoff_does_not_retry(monkeypatch, batch_
     append_failed.assert_not_awaited()
 
 
-@pytest.mark.parametrize("path", ["planner", "point_builder"])
+@pytest.mark.parametrize("path", ["planner", "point_builder", "point_anchors"])
 async def test_sibling_queries_settle_before_local_retry(monkeypatch, batch_boundaries, path):
     """Exercise both production fan-out sites through the batch retry boundary."""
     _, append_failed, _ = batch_boundaries
@@ -258,9 +258,17 @@ async def test_sibling_queries_settle_before_local_retry(monkeypatch, batch_boun
             "OP": [SimpleNamespace(point_id="point-b", initial_check=start)],
         }
         monkeypatch.setattr(builder, "_resolve_role_segments", AsyncMock(return_value=segments))
+        monkeypatch.setattr(builder.repo, "read_last_states_before", AsyncMock(return_value={}))
+
+        async def anchors(*_args, **_kwargs):
+            if path == "point_anchors":
+                return await query(True)
+            return {}
+
+        monkeypatch.setattr(builder.meta, "applicable_anchors_batch", anchors)
 
         async def events(points, *_args, **_kwargs):
-            result = await query(points[0] == "point-a")
+            result = await query(path == "point_builder" and points[0] == "point-a")
             return {points[0]: result}
 
         monkeypatch.setattr(builder.repo, "read_events", events)
