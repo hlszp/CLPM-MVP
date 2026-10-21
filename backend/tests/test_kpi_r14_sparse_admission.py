@@ -379,8 +379,14 @@ class TestGateConclusionPropagatesToSnapshot:
         assert result["score"] is None
 
         # UPSERT 写入值：可信度降为 E，fitness_detail 携带 gate 失败原因
-        # P1-05 结果账本后序列尾部：…主快照 UPSERT、latest 迟到守卫 SELECT、latest UPSERT
-        stmt = db.execute.call_args_list[-3].args[0]  # 倒数第 3 次 = 主快照 UPSERT
+        # 按投影表定位，SQL 往返优化不应改变数据门禁的业务断言。
+        snapshots = [
+            call.args[0]
+            for call in db.execute.call_args_list
+            if getattr(getattr(call.args[0], "table", None), "name", None) == "kpi_snapshot_hourly"
+        ]
+        assert len(snapshots) == 1
+        stmt = snapshots[0]
         set_values = _extract_upsert_set_values(stmt)
         assert set_values.get("confidence_level") == "E"
         fitness_detail = set_values.get("fitness_detail") or {}
