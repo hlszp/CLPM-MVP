@@ -63,7 +63,10 @@ class RequestClient {
       },
       responseReturn: 'raw',
       // 默认超时时间
-      timeout: 10_000,
+      // 公网/弱网下登录后并发拉 chunk 与 API 易顶满 10s，导致
+      // /system/modules 等关键请求被误判超时；放宽到 30s 与
+      // nginx proxy_read_timeout 对齐。
+      timeout: 30_000,
     };
     const { ...axiosConfig } = options;
     const requestConfig = merge(axiosConfig, defaultConfig);

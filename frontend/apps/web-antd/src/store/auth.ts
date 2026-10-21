@@ -160,9 +160,20 @@ export const useAuthStore = defineStore('auth', () => {
         } else {
           await (onSuccess
             ? onSuccess()
-            : router.push(
-                userInfo.homePath || preferences.app.defaultHomePath,
-              ));
+            : Promise.resolve(
+                router.push(
+                  userInfo.homePath || preferences.app.defaultHomePath,
+                ),
+              ).catch((navError: unknown) => {
+                // 懒加载 chunk 失败会由 router.onError 整页重载；若重载
+                // 被防死循环拦截，至少让用户知道不是账密问题。
+                console.error('post-login navigation failed', navError);
+                notification.error({
+                  description: '首页资源加载失败，将自动重试；仍失败请刷新页面',
+                  duration: 5,
+                  message: '页面加载失败',
+                });
+              }));
         }
 
         if (userInfo?.realName) {
