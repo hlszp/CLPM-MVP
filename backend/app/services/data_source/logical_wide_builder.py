@@ -291,6 +291,7 @@ async def build_logical_wide(
     interval_s: int = 1,
     *,
     read_scope: PointReadScope | None = None,
+    event_reader=None,
 ) -> RawTimeSeries:
     """构建窗口的逻辑宽表（设计 §5.2；按调用方周期，默认 1s）。"""
     grid_start = _ceil_second(start)
@@ -329,6 +330,8 @@ async def build_logical_wide(
         # 最小列集（ts/value/quality_class——减小 TD 响应体量）。
         sorted_points = sorted(all_points)
 
+        read_events = event_reader or repo.read_events
+
         async def _window_events():
             if 1 < len(sorted_points) <= 16:
                 # F02：一条点查询失败也须等待兄弟查询收束，再交给外层重试。
@@ -339,7 +342,7 @@ async def build_logical_wide(
                             scoped_read(
                                 read_scope,
                                 ("events", (pid,), grid_start, grid_end),
-                                lambda pid=pid: repo.read_events(
+                                lambda pid=pid: read_events(
                                     [pid], grid_start, grid_end, full_columns=False
                                 ),
                             ),
@@ -355,7 +358,7 @@ async def build_logical_wide(
                     scoped_read(
                         read_scope,
                         ("events", tuple(sorted_points), grid_start, grid_end),
-                        lambda: repo.read_events(
+                        lambda: read_events(
                             sorted_points, grid_start, grid_end, full_columns=False
                         ),
                     ),

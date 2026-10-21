@@ -81,7 +81,7 @@ _REDIS_CACHE_EDGE_TOLERANCE_S = 60.0
 class TDengineProvider:
     """TDengine 数据源提供者（测点点表 + taosrest）。"""
 
-    def make_query_fn(self, db: Any) -> QueryFn:
+    def make_query_fn(self, db: Any, *, event_reader=None) -> QueryFn:
         """构造点表查询闭包，同窗并发 TagGroup 复用相同只读 IO。
 
         Args:
@@ -128,6 +128,7 @@ class TDengineProvider:
                         interval_s,
                         layouts,
                         read_scope=read_scope,
+                        **({"event_reader": event_reader} if event_reader is not None else {}),
                     )
             logger.warning("查询时间边界非法（返回空序列）: loop=%s start=%r", loop_id, start)
             return RawTimeSeries(
@@ -173,6 +174,7 @@ async def _point_or_mixed_query(
     layouts: list,
     *,
     read_scope=None,
+    event_reader=None,
 ) -> Any:
     """测点点表查询：逐分片走 LogicalWideBuilder（2026-09-25 宽表退役）.
 
@@ -203,6 +205,8 @@ async def _point_or_mixed_query(
 
     for part in layouts:
         scope_kwargs = {"read_scope": read_scope} if read_scope is not None else {}
+        if event_reader is not None:
+            scope_kwargs["event_reader"] = event_reader
         raw = await build_logical_wide(
             db, loop_id, tag_roles, part.start, part.end, interval_s, **scope_kwargs
         )
