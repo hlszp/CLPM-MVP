@@ -14,7 +14,7 @@
 - **远端仓库**：`github` = `https://github.com/hlszp/CLPM-MVP`（**唯一可推送目标**）；`origin` = 原 CLPM gitea（**pushurl 已锁死 DISABLE_PUSH_TO_UPSTREAM，严禁推送**）
 - **CI**：GitHub Actions 已启用且通过（Backend：ruff/format/pytest+coverage；Frontend：eslint apps/web-antd/**vitest 全量**/typecheck/build/E2E）。注意 `@vben/web-antd` 包无 lint 脚本，Lint 用 `pnpm exec eslint apps/web-antd --cache`；前端单测本地跑 `cd frontend && pnpm run test:unit`（workspace 全量，2026-08-28 起为 CI 阻塞门禁）
 - **已知残留**：存在已知残留（部分聚合 service stub 化等），详见 `docs/MVP设计/README.md` §已知残留；monitor_attention 的 TRACKER/VERIFICATION 来源**已收口**（2026-08-28：HANDLING 来源功能性替代，不再按原样恢复）；诊断双引擎分裂已收口（2026-08-27，14 号文 A1~A4 全落地：工作台 A-03/总览统计迁 `diagnosis_run`，旧引擎唯一活跃写入口 `/algorithms/diagnosis/analyze` 已解除注册退役，旧读方全部为死代码链登记不删，`diagnosis_tag`/`diagnosis_result` 表按 D4=a 保留归档）
-- **版本锁定**：产品 tag **v7.5.6**；最新交付 **full-1044**（2026-10-21，`releases/manifest-1044.json`），含默认关闭的 10 分钟影子验证，交付不代表现场已部署。运维事实见 `docs/过程文档/ops-runbook.md`；冗余处置与保留边界见 [核查记录](docs/过程文档/文档对齐与冗余代码核查-2026-10-21.md)，历史诊断/整定文件继续保留
+- **版本锁定**：产品 tag **v7.5.6**；最新交付 **full-1045**（2026-10-21，`releases/manifest-1045.json`），含默认关闭的 10 分钟影子验证，交付不代表现场已部署。运维事实见 `docs/过程文档/ops-runbook.md`；冗余处置与保留边界见 [核查记录](docs/过程文档/文档对齐与冗余代码核查-2026-10-21.md)，历史诊断/整定文件继续保留
 - **CLPM-engine/ 目录**：已加入 .gitignore，独立管理不入库
 
 ## 历史基线（v6.2 归档，按需读取）
