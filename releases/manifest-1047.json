@@ -7,8 +7,8 @@
     {
       "name": "clpm-frontend:full-1047",
       "archive": "clpm-frontend-1047.tar.gz",
-      "sha256": "29c258f8cadc38aa09dd90dafaee07aaed0ec28718343fc046f266bd05eabf70",
-      "id": "sha256:dd2f0e1a59f4a204090cbedde18562011086b765964702724ef5ec926cd7c4db",
+      "sha256": "022a0b7bbe0e95b26e3217b1d7a4daf17849b2be1170e18b9cb4fc515e443804",
+      "id": "sha256:5d01d845b0b6e636eafa1d1efa3ff307da76ddcbf9e379ecd82b963c0393564b",
       "platform": "linux/amd64"
     }
   ],

@@ -2,13 +2,14 @@
 
 日期：2026-10-21。**仅更新 frontend**，backend 沿用 full-1046 不变。
 
-镜像源码含未推送工作区改动（`frontend/apps/web-antd/src/router/index.ts`、`store/auth.ts`、`packages/effects/request/.../request-client.ts`）。包：`clpm-frontend-1047.tar.gz`，sha256 `29c258f8cadc38aa09dd90dafaee07aaed0ec28718343fc046f266bd05eabf70`。
+镜像源码含未推送工作区改动（`frontend/apps/web-antd/src/router/index.ts`、`store/auth.ts`、`packages/effects/request/.../request-client.ts`）。包：`clpm-frontend-1047.tar.gz`，sha256 `022a0b7bbe0e95b26e3217b1d7a4daf17849b2be1170e18b9cb4fc515e443804`。
 
 ## 修复内容
 
 1. 路由懒加载 chunk 失败（公网间歇 503/传输中断）→ `router.onError` 整页重载目标路由，15s 防死循环。
 2. 默认请求超时 10s→30s（`/system/modules` 等登录后关键请求被误判超时）。
 3. 登录成功后跳转首页失败时给出可见提示（不再静默停在登录页像“无法登录”）。
+4. **路由守卫只在 401/Token 失效时清会话**：网络超时/503 不再清空 token（此前任意一次抖动都会被放大成「无法登录」）。
 
 影子验证保持关闭，本包不涉及影子配置。
 
@@ -37,7 +38,7 @@ sudo -s
 ```
 
 ```bash
-printf '%s  %s\n' '29c258f8cadc38aa09dd90dafaee07aaed0ec28718343fc046f266bd05eabf70' '/tmp/clpm-frontend-1047.tar.gz' | sha256sum -c -
+printf '%s  %s\n' '022a0b7bbe0e95b26e3217b1d7a4daf17849b2be1170e18b9cb4fc515e443804' '/tmp/clpm-frontend-1047.tar.gz' | sha256sum -c -
 ```
 
 ```bash
@@ -87,10 +88,10 @@ docker ps --format '{{.Names}}  {{.Status}}' | grep clpm-frontend
 ```
 
 ```bash
-docker exec clpm-frontend wget -S -O /dev/null http://127.0.0.1:7141/js/auth-Cy-aCr5G.js
+docker exec clpm-frontend wget -S -O /dev/null http://127.0.0.1:7141/js/auth-CwAAF5go.js
 ```
 
-期望 HTTP 200，且文件名含 `auth-Cy-aCr5G.js`（新 hash）。
+期望 HTTP 200，且文件名含 `auth-CwAAF5go.js`（新 hash）。
 
 浏览器强制刷新 `http://221.226.3.251:83/`，登录后应能进驾驶舱；若 chunk 失败应自动重载一次。
 
