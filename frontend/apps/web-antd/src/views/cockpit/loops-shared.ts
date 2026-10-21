@@ -30,14 +30,16 @@ export interface GradeInfo {
 }
 
 /** 档位名 → CSS 变量 + 兜底中文名 */
-const GRADE_META: Record<CockpitApi.GradeKey, { colorVar: string; label: string }> =
-  {
-    EXCELLENT: { colorVar: '--ck-grade-excellent', label: '优秀' },
-    GOOD: { colorVar: '--ck-grade-good', label: '良好' },
-    FAIR: { colorVar: '--ck-grade-fair', label: '合格' },
-    WARNING: { colorVar: '--ck-grade-warning', label: '警告' },
-    POOR: { colorVar: '--ck-grade-poor', label: '不合格' },
-  };
+const GRADE_META: Record<
+  CockpitApi.GradeKey,
+  { colorVar: string; label: string }
+> = {
+  EXCELLENT: { colorVar: '--ck-grade-excellent', label: '优秀' },
+  GOOD: { colorVar: '--ck-grade-good', label: '良好' },
+  FAIR: { colorVar: '--ck-grade-fair', label: '合格' },
+  WARNING: { colorVar: '--ck-grade-warning', label: '警告' },
+  POOR: { colorVar: '--ck-grade-poor', label: '不合格' },
+};
 
 /** 国标默认阈值（GB/T 44693.2-2024 §6.3），配置未加载时降级使用 */
 // 0929 口径收敛：档位定义唯一源在 constants/clpm-ui（GRADE_THRESHOLDS）
@@ -56,8 +58,7 @@ export function resolveGrade(
   const sorted = [...effective].toSorted((a, b) => b.minScore - a.minScore);
   const hit = sorted.find((t) => score >= t.minScore) ?? sorted.at(-1);
   if (!hit) return null;
-  const meta =
-    GRADE_META[hit.name as CockpitApi.GradeKey] ?? GRADE_META.POOR;
+  const meta = GRADE_META[hit.name as CockpitApi.GradeKey] ?? GRADE_META.POOR;
   return {
     key: hit.name as CockpitApi.GradeKey,
     label: hit.label ?? meta.label,
@@ -190,7 +191,9 @@ export const MODE_KEY_ORDER: CockpitModeKey[] = [
 ];
 
 /** 回路实时值 → 模式筛选键（无实时值返回 null） */
-export function modeBucket(mode: null | number | undefined): CockpitModeKey | null {
+export function modeBucket(
+  mode: null | number | undefined,
+): CockpitModeKey | null {
   if (mode === null || mode === undefined) return null;
   return MODE_KEY_BY_VALUE[Math.trunc(mode)] ?? null;
 }
@@ -223,6 +226,8 @@ export interface LoopCardModel {
   /** 六维得分（无 KPI 快照为 null） */
   dims: null | SixDimValues;
   grade: GradeInfo | null;
+  /** 最新小时快照，与 score / dims 同源；保留可信度与截止时间 */
+  kpiSummary?: LoopApi.KpiSummary | null;
   /** 实时值引用（PV/SP/OP/MODE 随 WS 实时刷新） */
   live: LoopApi.MonitorCurrentValues;
   loopId: string;
@@ -255,6 +260,7 @@ export function toLoopCardModel(
     live: item.currentValues,
     score,
     grade: resolveGrade(score, thresholds),
+    kpiSummary: item.kpiSummary ?? null,
     dims,
     worst: worstDim(dims),
     mode: modeBucket(modeValue),
@@ -299,7 +305,8 @@ const CHART_VAR_MAP: Record<keyof CockpitChartColors, string> = {
 
 /** 从组件所在 .cockpit-root 容器解析当前主题下的具体色值 */
 export function readCockpitColors(el?: HTMLElement | null): CockpitChartColors {
-  const root = el?.closest('.cockpit-root') ?? document.querySelector('.cockpit-root');
+  const root =
+    el?.closest('.cockpit-root') ?? document.querySelector('.cockpit-root');
   const styles = root ? getComputedStyle(root) : null;
   const out = {} as CockpitChartColors;
   for (const [key, varName] of Object.entries(CHART_VAR_MAP)) {
@@ -315,7 +322,8 @@ export function resolveCssVar(
   varName: string,
   fallback = CHART_COLOR_FALLBACK,
 ): string {
-  const root = el?.closest('.cockpit-root') ?? document.querySelector('.cockpit-root');
+  const root =
+    el?.closest('.cockpit-root') ?? document.querySelector('.cockpit-root');
   if (!root) return fallback;
   return getComputedStyle(root).getPropertyValue(varName).trim() || fallback;
 }
