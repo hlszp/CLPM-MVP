@@ -21,10 +21,23 @@ ACTIVE_KEY = "shadow10:cohort"
 LEASE_KEY = "shadow10:execution"
 COHORT_TTL = 900  # 排队超过 15 分钟的影子步骤作废；不能阻塞正式任务。
 MAX_LOOPS = 24
-_CAS = """
-if redis.call('GET', KEYS[1]) ~= ARGV[1] then return 0 end
-if ARGV[2] == '' then redis.call('DEL', KEYS[1])
-else redis.call('SET', KEYS[1], ARGV[2], 'EX', ARGV[3]) end
+_FENCED = """
+if redis.call('GET', KEYS[1]) ~= ARGV[1]
+or redis.call('GET', KEYS[2]) ~= ARGV[2] then return 0 end
+if ARGV[3] == 'renew' then
+  redis.call('EXPIRE', KEYS[1], ARGV[5])
+  redis.call('EXPIRE', KEYS[2], 60)
+else
+  if ARGV[4] == '' then redis.call('DEL', KEYS[1])
+  else redis.call('SET', KEYS[1], ARGV[4], 'EX', ARGV[5]) end
+  redis.call('DEL', KEYS[2])
+end
+return 1
+"""
+_ABORT_PENDING = """
+if redis.call('GET', KEYS[1]) ~= ARGV[1]
+or redis.call('EXISTS', KEYS[2]) == 1 then return 0 end
+redis.call('DEL', KEYS[1])
 return 1
 """
 
@@ -65,18 +78,40 @@ def save_report(report_id: str, report: dict) -> str:
     path = report_path(report_id)
     _atomic_write(path, lambda f: f.write(canonical_json(report).encode()))
     # 独立影子报告：14 天 / 最多 1000 份，正式不可变输入包不在此目录。
-    files = sorted(path.parent.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True)
+    files = []
+    for old in path.parent.glob("*.json"):
+        try:
+            files.append((old.stat().st_mtime, old))
+        except FileNotFoundError:
+            continue  # 另一进程可能刚完成保留清理。
+    files.sort(reverse=True)
     cutoff = (datetime.now(UTC) - timedelta(days=14)).timestamp()
-    for i, old in enumerate(files):
-        if old != path and (i >= 1000 or old.stat().st_mtime < cutoff):
+    for i, (mtime, old) in enumerate(files):
+        if old != path and (i >= 1000 or mtime < cutoff):
             old.unlink(missing_ok=True)
     return str(path)
 
 
-async def replace_state(redis, old: str, new: dict | None) -> bool:
+async def fenced_step(redis, old, token, new=None, *, renew=False):
+    """租约 token 与 cohort 身份在同一原子操作验证；交接同时解锁。"""
     return bool(
-        await redis.eval(_CAS, 1, ACTIVE_KEY, old, canonical_json(new) if new else "", COHORT_TTL)
+        await redis.eval(
+            _FENCED,
+            2,
+            ACTIVE_KEY,
+            LEASE_KEY,
+            old,
+            token,
+            "renew" if renew else "commit",
+            canonical_json(new) if new else "",
+            COHORT_TTL,
+        )
     )
+
+
+async def abort_pending(redis, raw):
+    """仅回收尚无执行者接手的失败投递，不能清除后继租约。"""
+    return bool(await redis.eval(_ABORT_PENDING, 2, ACTIVE_KEY, LEASE_KEY, raw))
 
 
 async def enqueue(redis, *, loop_ids, start, end, kind, source_task_id=None) -> dict:
@@ -109,7 +144,7 @@ async def enqueue(redis, *, loop_ids, start, end, kind, source_task_id=None) -> 
         save_report(owner, state)
         await asyncio.to_thread(dispatch, owner, 0)
     except (Exception, asyncio.CancelledError):
-        await replace_state(redis, raw, None)
+        await abort_pending(redis, raw)
         raise
     return {"status": "QUEUED", "id": owner, "selected": len(selected)}
 
@@ -121,8 +156,8 @@ def dispatch(owner, cursor):
 
 
 async def after_assessment(loops, results, start, end, *, source, source_task_id):
-    """正式计算资源已收束后，只排一条影子链；影子故障不改变正式结果。"""
-    from app.core.redis import redis_client
+    """正式路径仅提交轻量后台请求，不等待配置查询、租约或报告写盘。"""
+    from app.services.ten_minute_submission import submit
 
     try:
         eligible = [
@@ -130,18 +165,7 @@ async def after_assessment(loops, results, start, end, *, source, source_task_id
             for loop, result in zip(loops, results, strict=True)
             if isinstance(result, dict)
         ]
-        report = await asyncio.wait_for(
-            enqueue(
-                redis_client,
-                loop_ids=eligible,
-                start=start,
-                end=end,
-                kind=f"ASSESS:{source or 'AUTO'}",
-                source_task_id=source_task_id,
-            ),
-            timeout=6,
-        )
-        if report["status"] != "DISABLED":
-            logging.getLogger(__name__).info("10分钟影子派发 %s", report)
+        report = await submit(eligible, start, end, source, source_task_id)
+        logging.getLogger(__name__).info("10分钟影子请求 %s", report)
     except Exception:
         logging.getLogger(__name__).exception("10分钟影子派发失败（正式结果已独立完成）")

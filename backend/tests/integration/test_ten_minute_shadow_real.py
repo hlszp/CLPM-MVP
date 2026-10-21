@@ -41,9 +41,18 @@ class IsolatedRedis:
     async def delete(self, key):
         return await self.client.delete(self.prefix + key)
 
+    async def hget(self, key, field):
+        return await self.client.hget(self.prefix + key, self.prefix + field)
+
+    async def config_get(self, pattern):
+        return await self.client.config_get(pattern)
+
     async def eval(self, script, n, *args):
         keys = [self.prefix + str(key) for key in args[:n]]
-        return await self.client.eval(script, n, *keys, *args[n:])
+        values = list(args[n:])
+        if n == 6:  # head field 同样是带命名空间的 payload prefix。
+            values[4] = self.prefix + values[4]
+        return await self.client.eval(script, n, *keys, *values)
 
     def lock(self, key, **kwargs):
         return self.client.lock(self.prefix + key, **kwargs)
@@ -118,7 +127,7 @@ async def test_native_blocks_backfill_and_atomic_cache_budget(
     assert updated.stats["invalidated"] == 1 and updated.stats["hits"] == 5
     monkeypatch.setattr(blocks, "MAX_BLOCKS", 2)
     await cache.prepare(point, origin + 7 * blocks.BLOCK)
-    assert await isolated_redis.client.zcard(isolated_redis.prefix + "shadow10:block-index") == 2
+    assert await isolated_redis.client.zcard(isolated_redis.prefix + blocks.INDEX_KEY) == 2
     assert (
         len(
             [
@@ -215,10 +224,12 @@ async def test_real_lock_duplicate_continuation_cancel_and_lease_loss(
     monkeypatch.setattr(tasks, "_renew", lost)
     with pytest.raises(LockError, match="injected|租约"):
         await tasks.run_step(owner, 1)
-    assert await isolated_redis.get(control.ACTIVE_KEY) is None
-    assert json.loads(control.report_path(owner).read_text())["status"] == "ERROR"
+    # 同一 cohort 已被新 token 接管，旧任务不得删除状态或覆盖 cohort 报告。
+    assert json.loads(await isolated_redis.get(control.ACTIVE_KEY))["cursor"] == 1
+    assert json.loads(control.report_path(owner).read_text())["status"] == "QUEUED"
     assert await isolated_redis.get(control.LEASE_KEY) == "successor-token"
     await isolated_redis.delete(control.LEASE_KEY)
+    await isolated_redis.delete(control.ACTIVE_KEY)
 
     # 取消后收束工作和租约，不留下可被误报通过的活跃 cohort。
     release.clear()
