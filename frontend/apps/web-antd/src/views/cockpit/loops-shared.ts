@@ -15,6 +15,7 @@ import type { MetricApi } from '#/api/metric';
 import type { CockpitModeKey } from '#/store/cockpit';
 
 import { GRADE_THRESHOLDS } from '#/constants/clpm-ui';
+import { formatLocalTime } from '#/utils/format';
 
 import { CHART_COLOR_FALLBACK } from './composables/use-cockpit-theme';
 
@@ -98,6 +99,21 @@ export function sixDimsFromKpiSummary(
     goodValueRate: kpi.good_value_rate ?? null,
     effectiveAutoRate: kpi.effective_auto_rate ?? null,
   };
+}
+
+/** 展示服务端返回的真实评估窗口，不从截止时间推算起点。 */
+export function kpiWindowLabel(kpi?: LoopApi.KpiSummary | null): string {
+  if (!kpi) return '暂无小时快照';
+  if (!kpi.tsStart || !kpi.tsEnd) {
+    return kpi.calculatedAt
+      ? `截至 ${formatLocalTime(kpi.calculatedAt, 'MM-DD HH:mm')} · 区间未提供`
+      : '评估区间未提供';
+  }
+  const start = formatLocalTime(kpi.tsStart);
+  const end = formatLocalTime(kpi.tsEnd);
+  const endLabel =
+    start.slice(0, 10) === end.slice(0, 10) ? end.slice(11) : end.slice(5);
+  return `${start.slice(5)}–${endLabel}`;
 }
 
 /** 节点快照 / 节点监控快照（camelCase）→ 六维
@@ -226,7 +242,7 @@ export interface LoopCardModel {
   /** 六维得分（无 KPI 快照为 null） */
   dims: null | SixDimValues;
   grade: GradeInfo | null;
-  /** 最新小时快照，与 score / dims 同源；保留可信度与截止时间 */
+  /** 所选小时快照，与 score / dims 同源；保留可信度与实际区间 */
   kpiSummary?: LoopApi.KpiSummary | null;
   /** 实时值引用（PV/SP/OP/MODE 随 WS 实时刷新） */
   live: LoopApi.MonitorCurrentValues;

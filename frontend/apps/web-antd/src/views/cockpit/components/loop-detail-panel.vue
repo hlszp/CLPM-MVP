@@ -35,11 +35,11 @@ import {
   useLoopRealtime,
 } from '#/composables/use-loop-realtime';
 import { useCockpitStore } from '#/store/cockpit';
-import { formatLocalTime } from '#/utils/format';
 import { categoryOrJudgementLabel } from '#/views/diagnosis/components/assessment-labels';
 
 import {
   type GradeInfo,
+  kpiWindowLabel,
   MODE_KEY_ORDER,
   MODE_KEY_ZH,
   modeZhLabel,
@@ -213,10 +213,7 @@ const confidenceLevel = computed(
 const loopDims = computed(() => props.loop?.dims ?? null);
 const snapshotLabel = computed(() => {
   if (!props.loop?.kpiSummary) return '暂无小时快照';
-  const at = props.loop.kpiSummary.calculatedAt;
-  return at
-    ? `最新小时快照 · 截至 ${formatLocalTime(at, 'MM-DD HH:mm')}`
-    : '最新小时快照';
+  return `最近有评分 · ${kpiWindowLabel(props.loop.kpiSummary)}`;
 });
 
 /** 最近闭环记录（最近诊断结论 + 处置状态；均为 null 时隐藏区块） */

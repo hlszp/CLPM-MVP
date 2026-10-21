@@ -117,6 +117,7 @@ export function useLoopWallList(): UseLoopWallListReturn {
           // 第 1 页与静默刷新携带全量聚合（模式分布/树角标口径）；
           // 翻页请求跳过——961+ 回路下是固定全量开销（《04》预算）
           withAggregate: query.page === 1 || silent,
+          latestScoredHour: true,
         });
         if (!isCurrent()) return; // A→B 竞态：迟到的旧响应丢弃
         items.value = res.items ?? [];

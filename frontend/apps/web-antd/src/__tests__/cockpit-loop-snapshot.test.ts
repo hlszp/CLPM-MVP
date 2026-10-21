@@ -53,6 +53,7 @@ vi.mock('../views/cockpit/wb-comps/use-drill', () => ({
   wb360DrillQuery: vi.fn(),
 }));
 
+import LoopCard from '../views/cockpit/components/loop-card.vue';
 import LoopDetailPanel from '../views/cockpit/components/loop-detail-panel.vue';
 import { toLoopCardModel } from '../views/cockpit/loops-shared';
 
@@ -83,6 +84,8 @@ function snapshot(
     saturation_rate: 0,
     status: 'SUCCESS',
     steady_rate: 37.22,
+    tsStart: '2026-10-21T01:00:00',
+    tsEnd: '2026-10-21T02:00:00',
     ...overrides,
   };
 }
@@ -162,9 +165,9 @@ describe('驾驶舱回路详情的小时评估快照', () => {
       score: 7.18,
     });
     expect(wrapper.find('.ldp__grid').text()).toContain('可信度A');
-    expect(wrapper.text()).toContain('最新小时快照');
+    expect(wrapper.text()).toContain('最近有评分');
     // naive UTC 必须转成本地时间，不能直接按浏览器本地时区解析。
-    expect(wrapper.text()).toContain('10-21 10:00');
+    expect(wrapper.text()).toContain('10-21 09:00–10:00');
   });
 
   it('同一回路刷新小时快照时同步更新分项、评分及截止时间', async () => {
@@ -176,6 +179,8 @@ describe('驾驶舱回路详情的小时评估快照', () => {
         listItem(
           snapshot({
             calculatedAt: '2026-10-21T03:00:00Z',
+            tsStart: '2026-10-21T02:00:00Z',
+            tsEnd: '2026-10-21T03:00:00Z',
             composite_score: 88,
             confidence_level: 'C',
             effective_auto_rate: 90,
@@ -191,7 +196,7 @@ describe('驾驶舱回路详情的小时评估快照', () => {
       score: 88,
     });
     expect(wrapper.find('.ldp__grid').text()).toContain('可信度C');
-    expect(wrapper.text()).toContain('10-21 11:00');
+    expect(wrapper.text()).toContain('10-21 10:00–11:00');
   });
 
   it('趋势读取失败时保留已有小时评估', async () => {
@@ -215,5 +220,63 @@ describe('驾驶舱回路详情的小时评估快照', () => {
     expect(wrapper.findComponent(RadarProbe).props('dims')).toBeNull();
     expect(wrapper.find('.ldp__grid').text()).toContain('可信度—');
     expect(wrapper.text()).toContain('暂无小时快照');
+  });
+
+  it('卡片直接展示评分对应的小时区间，跨日时保留两端日期', () => {
+    const wrapper = mount(LoopCard, {
+      props: {
+        loop: toLoopCardModel(
+          listItem(
+            snapshot({
+              tsStart: '2026-10-20T15:00:00Z',
+              tsEnd: '2026-10-20T16:00:00Z',
+            }),
+          ),
+        ),
+      },
+    });
+    try {
+      expect(wrapper.text()).toContain('10-20 23:00–10-21 00:00');
+      expect(wrapper.text()).toContain('7.18');
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it('旧接口缺少起始时间时明确标记未知区间，不推算小时起点', () => {
+    const wrapper = mount(LoopCard, {
+      props: {
+        loop: toLoopCardModel(
+          listItem(
+            snapshot({
+              tsStart: undefined,
+              tsEnd: undefined,
+            }),
+          ),
+        ),
+      },
+    });
+    try {
+      expect(wrapper.text()).toContain('10-21 10:00');
+      expect(wrapper.text()).toContain('区间未提供');
+      expect(wrapper.text()).not.toContain('09:00');
+    } finally {
+      wrapper.unmount();
+    }
+  });
+
+  it('无评估快照的卡片不显示“六维正常”', () => {
+    const wrapper = mount(LoopCard, {
+      props: {
+        loop: { ...toLoopCardModel(listItem()), score: null, grade: null },
+      },
+    });
+    try {
+      expect(wrapper.text()).toContain('暂无小时快照');
+      expect(wrapper.text()).toContain('未评估');
+      expect(wrapper.text()).not.toContain('六维正常');
+    } finally {
+      wrapper.unmount();
+    }
   });
 });
