@@ -1,14 +1,20 @@
 {
   "version": "full-1047",
-  "builtAt": "2026-10-21T23:30:00+08:00",
-  "note": "frontend-only resilience: dynamic-import reload, request timeout 30s, post-login nav error toast. backend stays full-1046.",
+  "builtAt": "2026-10-22T07:38:00+08:00",
+  "note": "Dual image. (1) frontend resilience: dynamic-import reload, request timeout 30s, post-login nav error toast, guard keeps session on transient fetchUserInfo errors. (2) loop-eval counts: exclude monitor-disabled/non-eval loops outside loop config; show INCONCLUSIVE grade card so grade sum equals total (961 vs 1209).",
+  "sourceRevision": "23a8953192b0b0bab1f4db96e326d02fc9c16c71",
   "sourceBranch": "macbook",
+  "archive": "clpm-images-1047-full.tar.gz",
+  "sha256": "38bdbef6397f514b56d5a1f939b8191e82dcbb396a4fce107099d49f39953493",
   "images": [
     {
+      "name": "clpm-backend:full-1047",
+      "id": "sha256:1436d560fd1b437a31275bb3a8acfe1467e631c902396b08145a337b60ac5ff3",
+      "platform": "linux/amd64"
+    },
+    {
       "name": "clpm-frontend:full-1047",
-      "archive": "clpm-frontend-1047.tar.gz",
-      "sha256": "022a0b7bbe0e95b26e3217b1d7a4daf17849b2be1170e18b9cb4fc515e443804",
-      "id": "sha256:5d01d845b0b6e636eafa1d1efa3ff307da76ddcbf9e379ecd82b963c0393564b",
+      "id": "sha256:de66e39ef2781c4c0fb769c06cfc68f6418d3560246dd6b5e3c4c0e8c7d6db67",
       "platform": "linux/amd64"
     }
   ],
