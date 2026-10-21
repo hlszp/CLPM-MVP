@@ -523,11 +523,15 @@ async def list_loop_monitor_endpoint(
         description="是否返回全量聚合统计 aggregate（分页不受影响）；"
         "监视页微型卡已删不消费聚合，可传 false 跳过全量计算提速",
     ),
+    latestScoredHour: bool = Query(
+        False,
+        description="选择最近有评分的 1h 快照（驾驶舱）；分项、筛选、排序和聚合使用同一口径",
+    ),
     sortBy: str = Query(
         "score",
         description="排序字段：score/tagName/scoreDelta。scoreDelta=劣化排序，"
         "取 workbench_loop_latest 5min 周期预计算列（score - prev_score，NULL 恒排最后）；"
-        "卡片显示的 delta 徽标为行内实时计算值，与排序键存在 ≤5min 窗口差（如实声明）",
+        "默认与行内 delta 存在 ≤5min 窗口差；latestScoredHour=true 时直接使用所选小时快照",
     ),
     sortOrder: str = Query("asc", description="排序方向：asc/desc"),
     page: int = Query(1, ge=1),
@@ -545,7 +549,8 @@ async def list_loop_monitor_endpoint(
     （5min Celery 全量重算），卡片 delta 徽标为行内实时计算——二者存在
     ≤5min 窗口差；且预计算以刷新时刻 is_active 为基数，覆盖外回路（如本
     周期内重新投用的参评回路）徽标仍显行内值，但排序按预计算列 NULL 置底
-    （NULLS LAST）。
+    （NULLS LAST）。latestScoredHour=true 为驾驶舱按最近有分值的小时快照
+    统一取数、筛选和排序，跳过上述预计算排序路径。
     """
     data = await list_loop_monitor(
         db=db,
@@ -563,6 +568,7 @@ async def list_loop_monitor_endpoint(
         modes=modes,
         focus_loop_id=focusLoopId,
         with_aggregate=withAggregate,
+        latest_scored_hour=latestScoredHour,
         sort_by=sortBy,
         sort_order=sortOrder,
         page=page,
