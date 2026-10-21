@@ -623,7 +623,9 @@ async def list_subscriptions(
     if rule_id:
         stmt = stmt.where(AlertRuleSubscription.rule_id == rule_id)
     if loop_id:
-        stmt = stmt.where(AlertRuleSubscription.loop_id == loop_id)
+        # 与 list_events 同口径：loopId 传位号 tag_name，不用 UUID
+        tag_cond = func.lower(LoopLedger.tag_name) == loop_id.strip().lower()
+        stmt = stmt.where(AlertRuleSubscription.loop_id.in_(select(LoopLedger.id).where(tag_cond)))
     stmt = stmt.order_by(AlertRuleSubscription.created_at.desc())
     result = await db.execute(stmt)
     return [_subscription_to_dict(s) for s in result.scalars()]
@@ -698,8 +700,14 @@ async def list_events(
         )
 
     if loop_id:
-        stmt = stmt.where(AlertEvent.loop_id == loop_id)
-        count_stmt = count_stmt.where(AlertEvent.loop_id == loop_id)
+        # 用户口径（2026-10-22）：预警事件按**位号**筛选，不用 UUID。
+        # 历史 query 名 loopId 保留，值为 tag_name（精确匹配，忽略大小写）。
+        # 历史调用若误传 UUID 会静默无匹配而不是 500（UUID 列直接等值比较
+        # 对非法 UUID 会炸 PG）。
+        loop_tag = loop_id.strip()
+        tag_cond = func.lower(LoopLedger.tag_name) == loop_tag.lower()
+        stmt = stmt.where(tag_cond)
+        count_stmt = count_stmt.where(AlertEvent.loop_id.in_(select(LoopLedger.id).where(tag_cond)))
     if rule_id:
         stmt = stmt.where(AlertEvent.rule_id == rule_id)
         count_stmt = count_stmt.where(AlertEvent.rule_id == rule_id)

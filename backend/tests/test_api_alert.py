@@ -472,6 +472,23 @@ class TestEventQuery:
         assert kwargs["status_filter"] == ["ACKNOWLEDGED", "RESOLVED", "ARCHIVED"]
         assert kwargs["plant_node_id"] == "node-001"
 
+    def test_list_events_loop_tag_name_not_uuid(self, client, mock_db, fake_redis) -> None:
+        """loopId 传位号（非 UUID）透传服务层；历史上按 UUID 等值比较会 500。"""
+        with (
+            patch(
+                "app.api.v1.endpoints.alert.alert_service.list_events",
+                new_callable=AsyncMock,
+                return_value={"total": 0, "items": []},
+            ) as m,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            resp = client.get(
+                "/api/v1/alert/events?status=ACTIVE&loopId=80LIC31601_PIDA&limit=20&offset=0",
+                headers={"Authorization": "Bearer fake"},
+            )
+        assert resp.status_code == 200
+        assert m.call_args.kwargs["loop_id"] == "80LIC31601_PIDA"
+
     def test_get_event_detail(self, client, mock_db, fake_redis) -> None:
         with (
             patch(
@@ -953,3 +970,48 @@ class TestDryRun:
         assert resp.json()["data"]["confidenceLevel"] == "D"
         call_kwargs = m.call_args.kwargs
         assert call_kwargs["confidence_level"] == "D"
+
+
+class TestListEventsLoopTagFilter:
+    """loopId 按位号过滤（禁用 UUID 等值比较，防 PG uuid cast 500）。"""
+
+    def test_loop_filter_uses_tag_name_not_uuid_equality(self) -> None:
+        from sqlalchemy.dialects import postgresql
+
+        from app.services.alert_rule_engine.service import list_events
+
+        captured: list = []
+
+        class _Result:
+            def all(self):
+                return []
+
+            def scalars(self):
+                return self
+
+            def first(self):
+                return 0
+
+            def one(self):
+                return 0
+
+            def scalar(self):
+                return 0
+
+            def __iter__(self):
+                return iter([])
+
+        class _Db:
+            async def execute(self, stmt):
+                captured.append(stmt)
+                return _Result()
+
+        import anyio
+
+        anyio.run(list_events, _Db(), "80LIC31601_PIDA")
+        assert captured, "list_events 应发出查询"
+        sql = str(captured[0].compile(dialect=postgresql.dialect()))
+        assert "tag_name" in sql
+        assert "loop_ledger.id" in sql.lower() or "loop_id" in sql.lower()
+        # 不应把位号直接绑到 loop_id UUID 等值比较上
+        assert "loop_id = " not in sql.replace("\n", " ") or "tag_name" in sql

@@ -759,12 +759,12 @@ onMounted(() => {
           style="width: 280px"
         />
       </FormItem>
-      <FormItem label="回路ID" class="!mb-0">
+      <FormItem label="回路位号" class="!mb-0">
         <Input
           v-model:value="query.loopId"
           allow-clear
-          placeholder="回路 ID"
-          style="width: 200px"
+          placeholder="位号，如 80LIC31601_PIDA"
+          style="width: 220px"
           @press-enter="handleSearch"
         />
       </FormItem>
