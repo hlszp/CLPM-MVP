@@ -17,7 +17,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, or_, select, update
 
 from app.models.point_history import (
     HistoryCoverageSegment,
@@ -556,9 +556,16 @@ async def applicable_anchors_batch(
             (
                 await own.execute(
                     select(PointStateAnchor)
-                    .where(PointStateAnchor.point_id.in_(point_ids))
-                    # 现有循环只检查每点第一行；用 PG 原生 DISTINCT ON
-                    # 保留同一行，避免读取全部锚点历史后在 Python 丢弃。
+                    .where(
+                        PointStateAnchor.point_id.in_(point_ids),
+                        PointStateAnchor.anchor_ts <= ws,
+                        or_(
+                            PointStateAnchor.coverage_until.is_(None),
+                            PointStateAnchor.coverage_until > ws,
+                        ),
+                    )
+                    # 必须先筛适用性，再选每点最新行；未来/已过期的新锚点
+                    # 不能遮蔽历史窗口仍有效的旧锚点。覆盖右端为半开边界。
                     .distinct(PointStateAnchor.point_id)
                     .order_by(PointStateAnchor.point_id, PointStateAnchor.anchor_ts.desc())
                 )

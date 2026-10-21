@@ -179,7 +179,7 @@ async def test_batch_timings_include_commit_close_and_run_identity(monkeypatch, 
     assert "commit p50=" in caplog.text and "close p50=" in caplog.text
 
 
-async def test_anchor_batch_selects_latest_in_postgres_before_validation(monkeypatch):
+async def test_anchor_batch_filters_applicability_before_selecting_latest(monkeypatch):
     start = datetime(2026, 10, 21, tzinfo=UTC)
     rows = [
         SimpleNamespace(point_id="valid", anchor_ts=start, coverage_until=None),
@@ -207,4 +207,6 @@ async def test_anchor_batch_selects_latest_in_postgres_before_validation(monkeyp
     assert result == {"valid": rows[0]}
     sql = str(execute.call_args.args[0].compile(dialect=postgresql.dialect()))
     assert "DISTINCT ON (point_state_anchor.point_id)" in sql
+    assert "point_state_anchor.anchor_ts <=" in sql
+    assert "point_state_anchor.coverage_until IS NULL OR point_state_anchor.coverage_until >" in sql
     assert "ORDER BY point_state_anchor.point_id, point_state_anchor.anchor_ts DESC" in sql
