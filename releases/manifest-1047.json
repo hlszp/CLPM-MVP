@@ -1,20 +1,20 @@
 {
   "version": "full-1047",
   "builtAt": "2026-10-22T07:38:00+08:00",
-  "note": "Dual image. (1) frontend resilience: dynamic-import reload, request timeout 30s, post-login nav error toast, guard keeps session on transient fetchUserInfo errors. (2) loop-eval counts: exclude monitor-disabled/non-eval loops outside loop config; show INCONCLUSIVE grade card so grade sum equals total (961 vs 1209). Frontend also forces \u5168\u90e8=1~5+\u4e0d\u786e\u5b9a identity (residual\u2192\u4e0d\u786e\u5b9a).",
-  "sourceRevision": "baa90a0fec93fb262e7aa45b4ca48cc08cf04c2d",
+  "note": "Dual image. (1) frontend resilience: dynamic-import reload, request timeout 30s, post-login nav error toast, guard keeps session on transient fetchUserInfo errors. (2) loop-eval counts: exclude monitor-disabled/non-eval loops outside loop config; show INCONCLUSIVE grade card so grade sum equals total (961 vs 1209). Frontend also forces \u5168\u90e8=1~5+\u4e0d\u786e\u5b9a identity (residual\u2192\u4e0d\u786e\u5b9a). Alert events loop filter by tag_name (\u4f4d\u53f7), not UUID.",
+  "sourceRevision": "1c175933b2e7dbe53acf734da15574d2d0cfb1c8",
   "sourceBranch": "macbook",
   "archive": "clpm-images-1047-full.tar.gz",
-  "sha256": "ea864a0cbb0cf52d46135c2122a7c3ca2e36b65af81ca5dd08a8ea4a155d656e",
+  "sha256": "41e77494a76a2c615cd6dcd2b5c4465bd07aedd9aeea1e0788f5c788014ff411",
   "images": [
     {
       "name": "clpm-backend:full-1047",
-      "id": "sha256:1436d560fd1b437a31275bb3a8acfe1467e631c902396b08145a337b60ac5ff3",
+      "id": "sha256:a2c9c343b83813ce7f219d7fb52ba135c38d6c5a6297a5a14b227e7aff8d8e8b",
       "platform": "linux/amd64"
     },
     {
       "name": "clpm-frontend:full-1047",
-      "id": "sha256:9dd554e72d3c57924f217ab0653d6ec80670458672f8b56ca0076d79bd28739c",
+      "id": "sha256:ddea0d84eb993c37a0879807ec1be85ccf5d04007111d4e52e3f09c34d916d5a",
       "platform": "linux/amd64"
     }
   ],

@@ -3,7 +3,7 @@
 日期：2026-10-22。**双镜像全量包**，源码 `23a8953192b0b0bab1f4db96e326d02fc9c16c71`（macbook）。
 
 包：`clpm-images-1047-full.tar.gz`  
-sha256 `ea864a0cbb0cf52d46135c2122a7c3ca2e36b65af81ca5dd08a8ea4a155d656e`（242M，linux/amd64）
+sha256 `41e77494a76a2c615cd6dcd2b5c4465bd07aedd9aeea1e0788f5c788014ff411`（242M，linux/amd64）
 
 ## 修复内容
 
@@ -13,6 +13,10 @@ sha256 `ea864a0cbb0cf52d46135c2122a7c3ca2e36b65af81ca5dd08a8ea4a155d656e`（242M
 
 1. 快照列表 / 自定义快照 / 批量删除：无条件过滤 `is_active=True` 且 `include_in_evaluation=True`（此前列表 `include_inactive=True` 含停用回路 → 列表 1209，等级卡片 961）。
 2. 前端等级卡片增加「不确定（INCONCLUSIVE）」并入累加与饼图，保证 **全部 = 1~5 级 + 不确定**。
+
+### B1. 预警事件按位号筛选
+
+7. `GET /alert/events?loopId=` 改为按 **位号 tag_name** 过滤（不再用 UUID）；传 `80LIC31601_PIDA` 不再 500。前端筛选文案改为「回路位号」。
 
 ### B. 登录/静态资源韧性
 
@@ -48,7 +52,7 @@ sudo -s
 ```
 
 ```bash
-printf '%s  %s\n' 'ea864a0cbb0cf52d46135c2122a7c3ca2e36b65af81ca5dd08a8ea4a155d656e' '/tmp/clpm-images-1047-full.tar.gz' | sha256sum -c -
+printf '%s  %s\n' '41e77494a76a2c615cd6dcd2b5c4465bd07aedd9aeea1e0788f5c788014ff411' '/tmp/clpm-images-1047-full.tar.gz' | sha256sum -c -
 ```
 
 ```bash
