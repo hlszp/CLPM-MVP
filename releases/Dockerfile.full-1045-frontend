@@ -1,0 +1,6 @@
+# 本次没有前端改动；保留 full-1044 已验证的全部静态资源和 nginx 配置。
+FROM clpm-frontend:full-1044
+ARG SOURCE_REVISION
+ENV APP_VERSION=v7.5.6-1045-full
+LABEL org.opencontainers.image.revision=${SOURCE_REVISION}
+LABEL org.opencontainers.image.version=v7.5.6-1045-full
