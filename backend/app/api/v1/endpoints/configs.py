@@ -1,16 +1,16 @@
-"""批量配置接口 (IDS v3.2 §2.8/§2.9).
+"""诊断配置批量读写与版本管理接口.
 
-提供指标配置与诊断配置的批量读写能力，便于前端配置界面一次性加载/保存
-全部指标配置（3+1+8 三段式结构）与全部 8 类诊断标签配置。批量保存时
-后端事务化处理，任一项校验失败则全部回滚。
+提供诊断标签配置 CRUD、历史快照及回滚；批量保存使用同一事务。
+旧 GET/PUT /configs/metrics 已退役，指标配置由现役指标定义、权重及
+算法参数接口承担。
 
 路由清单：
-- GET /api/v1/configs/metrics     — 批量获取指标配置
-- PUT /api/v1/configs/metrics     — 批量更新指标配置（事务性）
 - GET /api/v1/configs/diagnosis   — 批量获取诊断配置
 - PUT /api/v1/configs/diagnosis   — 批量更新诊断配置（事务性）
 - POST /api/v1/configs/diagnosis  — 新增诊断配置（2026-08-19 诊断配置页 CRUD）
 - DELETE /api/v1/configs/diagnosis/{diag_id} — 删除诊断配置（写审计）
+- GET /api/v1/configs/diagnosis/history — 读取历史版本
+- POST /api/v1/configs/diagnosis/{version}/rollback — 回滚并生成新版本
 
 设计依据：IDS §2.8.1/§2.8.2/§2.9.1/§2.9.2 + 诊断配置页 CRUD 扩展
 """
@@ -32,7 +32,6 @@ from app.core.exceptions import BizError
 from app.core.modules import require_module
 from app.models.audit import SysAuditLog
 from app.models.diagnosis import DiagnosisConfig
-from app.models.metric import MetricConfig
 from app.models.sys_user import SysUser
 from app.schemas.common import ApiResponse, success
 from app.schemas.config import (
@@ -41,7 +40,6 @@ from app.schemas.config import (
     DiagnosisConfigCreateRequest,
     DiagnosisConfigItem,
     DiagnosisConfigUpdateItem,
-    MetricConfigUpdateItem,
 )
 
 logger = logging.getLogger(__name__)
@@ -229,56 +227,6 @@ async def _snapshot_diagnosis_version(
     return new_version
 
 
-# v4.0 指标体系 3+1+8 结构（对齐 IDS §2.8）
-# 3 核心指标（参与权重校验）
-_CORE_METRIC_CODES: tuple[str, ...] = (
-    "accuracy_rate",
-    "fast_rate",
-    "steady_rate",
-)
-# 1 投用指标（折扣因子）
-_COMMISSIONING_METRIC_CODE = "effective_auto_rate"
-# 8 辅助诊断指标
-_AUXILIARY_METRIC_CODES: tuple[str, ...] = (
-    "good_value_rate",
-    "oscillation_rate",
-    "saturation_rate",
-    "stiction_index",
-    "overaggressive_index",
-    "overconservative_index",
-    "disturbance_index",
-    "quality_abnormal_rate",
-)
-
-# 各辅助诊断指标对应的算法版本（对齐 IDS §2.8.1）
-_AUX_ALGORITHM_VERSIONS: dict[str, str] = {
-    "good_value_rate": "KPI_CALC_v1.0",
-    "oscillation_rate": "KPI_CALC_v1.0",
-    "saturation_rate": "KPI_CALC_v1.0",
-    "stiction_index": "STICTION_CH_v1.0",
-    "overaggressive_index": "OVERAGGRESSIVE_PID_v1.0",
-    "overconservative_index": "OVERCONSERVATIVE_PID_v1.0",
-    "disturbance_index": "DISTURBANCE_SPEC_v1.0",
-    "quality_abnormal_rate": "QUALITY_CHECK_v1.0",
-}
-
-# 各指标中文名（用于响应默认值）
-_METRIC_NAMES: dict[str, str] = {
-    "accuracy_rate": "准确率",
-    "fast_rate": "快速率",
-    "steady_rate": "稳定率",
-    "effective_auto_rate": "有效自控率",
-    "good_value_rate": "好值率",
-    "oscillation_rate": "振荡率",
-    "saturation_rate": "饱和率",
-    "stiction_index": "粘滞指数",
-    "overaggressive_index": "过激指数",
-    "overconservative_index": "过保守指数",
-    "disturbance_index": "外扰指数",
-    "quality_abnormal_rate": "质量异常率",
-}
-
-
 # ---------------------------------------------------------------------------
 # 辅助函数
 # ---------------------------------------------------------------------------
@@ -287,44 +235,6 @@ _METRIC_NAMES: dict[str, str] = {
 def _now_naive() -> datetime:
     """当前 UTC naive datetime（对齐 ORM 字段无时区）."""
     return datetime.now(UTC).replace(tzinfo=None)
-
-
-def _metric_category(metric_code: str) -> str | None:
-    """根据 metric_code 判定类别（CORE/COMMISSIONING/AUXILIARY_DIAGNOSTIC）."""
-    if metric_code in _CORE_METRIC_CODES:
-        return "CORE"
-    if metric_code == _COMMISSIONING_METRIC_CODE:
-        return "COMMISSIONING"
-    if metric_code in _AUXILIARY_METRIC_CODES:
-        return "AUXILIARY_DIAGNOSTIC"
-    return None
-
-
-def _metric_to_response_dict(c: MetricConfig) -> dict[str, Any]:
-    """将 MetricConfig ORM 转为响应字典（含 category/isDiscountFactor）。
-
-    v5.3 P3-T10：formula 字段已标注废弃（算法已固化在代码中），
-    Schema 层通过 deprecated=True 在 OpenAPI 文档中体现。
-    """
-    category = _metric_category(c.metric_code)
-    is_discount = c.metric_code == _COMMISSIONING_METRIC_CODE
-    return {
-        "metricId": str(c.id),
-        "metricKey": c.metric_code,
-        "metricName": c.metric_name,
-        "category": category,
-        "isDiscountFactor": is_discount if is_discount else None,
-        # v5.3 P3-T10：formula 已废弃，保留返回值用于历史追溯
-        "formula": c.formula,
-        "weight": float(c.weight) if c.weight is not None else None,
-        "threshold": c.threshold,
-        "controlType": c.control_type,
-        "isEnabled": bool(c.is_enabled) if c.is_enabled is not None else True,
-        "description": None,
-        "algorithmVersion": _AUX_ALGORITHM_VERSIONS.get(c.metric_code, "KPI_CALC_v1.0"),
-        "updatedAt": c.updated_at.isoformat() if c.updated_at else None,
-        "updatedBy": c.updated_by,
-    }
 
 
 def _diagnosis_to_response_dict(c: DiagnosisConfig) -> dict[str, Any]:
@@ -366,32 +276,6 @@ async def _write_audit(
         operated_at=_now_naive(),
     )
     db.add(log)
-
-
-async def _apply_metric_update(
-    db: AsyncSession,
-    config: MetricConfig,
-    item: MetricConfigUpdateItem,
-    operator: str,
-) -> None:
-    """将单个更新项应用到 ORM 对象（不提交事务）."""
-    if item.formula is not None:
-        config.formula = item.formula
-    if item.threshold is not None:
-        config.threshold = item.threshold
-    if item.controlType is not None:
-        config.control_type = item.controlType
-    if item.isEnabled is not None:
-        config.is_enabled = item.isEnabled
-    if item.description is not None:
-        # description 字段不存在于 MetricConfig，仅在响应中保留
-        pass
-    # weight 仅对核心指标生效；投用/辅助诊断指标的 weight 固定为 None
-    if item.weight is not None and config.metric_code in _CORE_METRIC_CODES:
-        config.weight = item.weight
-    config.updated_by = operator
-    config.updated_at = _now_naive()
-    config.version = (config.version or 1) + 1
 
 
 async def _apply_diagnosis_update(

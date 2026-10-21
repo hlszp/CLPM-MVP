@@ -473,38 +473,6 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
     )
 
 
-async def _count_active_custom_tasks(user_id: str | None = None) -> int:
-    """统计活跃的自定义任务数.
-
-    遍历任务索引，统计状态为 PENDING/RUNNING 的自定义任务（CUSTOM + BACKFILL，
-    BACKFILL 计入同一并发池）。若指定 user_id，仅统计该用户的活跃任务。
-
-    Args:
-        user_id: 用户 ID；None 表示统计全系统
-
-    Returns:
-        活跃任务数
-    """
-    task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)
-    count = 0
-    for tid in task_ids:
-        data = await _get_task(tid)
-        if not data:
-            continue
-        # 统计 CUSTOM 和 BACKFILL 任务（BACKFILL 计入同一并发池）
-        if data.get("task_type") not in (
-            TaskType.CUSTOM.value,
-            TaskType.BACKFILL.value,
-        ):
-            continue
-        if data.get("status") not in _ACTIVE_STATUSES:
-            continue
-        if user_id is not None and data.get("created_by_id") != str(user_id):
-            continue
-        count += 1
-    return count
-
-
 async def _active_custom_task_details(user_id: str | None = None) -> list[dict[str, Any]]:
     """Return active custom/backfill tasks with the fields needed for troubleshooting."""
     task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)

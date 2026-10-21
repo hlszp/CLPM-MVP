@@ -59,7 +59,7 @@ async def _loops_by_importance(level: int | None) -> list[str]:
 
 
 async def _fitness_blocked_ids(loop_ids: list[str]) -> set[str]:
-    """fitness 门禁（裁决 3）：返回 L0/L1 回路集合；快照缺失/查询失败不拦。"""
+    """fitness 门禁（裁决 3）：仅返回 L0 回路集合；快照缺失/查询失败不拦。"""
     if not loop_ids:
         return set()
     try:
@@ -69,7 +69,7 @@ async def _fitness_blocked_ids(loop_ids: list[str]) -> set[str]:
             latest = await get_latest_fitness_per_loop(db, loop_ids)
         return {lid for lid, f in latest.items() if f.level == "L0"}
     except Exception as exc:  # noqa: BLE001
-        logger.warning("调度 fitness 门禁查询失败（本轮不拦 L0/L1）: %s", exc)
+        logger.warning("调度 fitness 门禁查询失败（本轮不拦 L0）: %s", exc)
         return set()
 
 
@@ -230,7 +230,7 @@ async def _run_scheduled(level: int, window: timedelta) -> dict:
                 "triggered_by": "schedule",
                 "trigger_type": "SCHEDULED",
             },
-            # P5-02：夜间/定时批量走夜间优先级（Redis 队列分桶：事件9>人工5>夜间1）
+            # Redis 数值越小越优先：事件 0、人工 3、夜间/定时 9。
             priority=PRIORITY_NIGHTLY,
         )
         await set_celery_task_ids(task_id, [celery_result.id])
