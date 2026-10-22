@@ -3,7 +3,7 @@
 日期：2026-10-22。**双镜像全量包**，源码 `23a8953192b0b0bab1f4db96e326d02fc9c16c71`（macbook）。
 
 包：`clpm-images-1047-full.tar.gz`  
-sha256 `41e77494a76a2c615cd6dcd2b5c4465bd07aedd9aeea1e0788f5c788014ff411`（242M，linux/amd64）
+sha256 `c6b075572140679f622bd7a92d83552958f2af47569d2252967f586cfdc62cb8`（242M，linux/amd64）
 
 ## 修复内容
 
@@ -17,6 +17,14 @@ sha256 `41e77494a76a2c615cd6dcd2b5c4465bd07aedd9aeea1e0788f5c788014ff411`（242M
 ### B1. 预警事件按位号筛选
 
 7. `GET /alert/events?loopId=` 改为按 **位号 tag_name** 过滤（不再用 UUID）；传 `80LIC31601_PIDA` 不再 500。前端筛选文案改为「回路位号」。
+
+### A2. 诊断现象全未命中 → 正常
+
+8. 诊断主分类为 NO_SYMPTOM（门禁通过、零阳性）时科学结论=VALID_NEGATIVE，展示为「**正常**」；不再显示「不可判定（证据不足）」。
+
+### A3. 回路配置删除可见
+
+9. 行内编辑/删除不再 hover 才显示（常显）；操作列加宽。批量删除入口保留（ADMIN）。
 
 ### B. 登录/静态资源韧性
 
@@ -52,7 +60,7 @@ sudo -s
 ```
 
 ```bash
-printf '%s  %s\n' '41e77494a76a2c615cd6dcd2b5c4465bd07aedd9aeea1e0788f5c788014ff411' '/tmp/clpm-images-1047-full.tar.gz' | sha256sum -c -
+printf '%s  %s\n' 'c6b075572140679f622bd7a92d83552958f2af47569d2252967f586cfdc62cb8' '/tmp/clpm-images-1047-full.tar.gz' | sha256sum -c -
 ```
 
 ```bash
