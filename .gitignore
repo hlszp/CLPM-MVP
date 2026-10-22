@@ -9,6 +9,7 @@ coverage/
 .gstack/
 .omc/
 .backups/
+.archify/
 .trae/documents/
 test-results/
 playwright-report/
