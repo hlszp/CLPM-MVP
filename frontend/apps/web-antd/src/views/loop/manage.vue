@@ -406,7 +406,7 @@ const dynamicColumns = computed<TableColumnsType>(() => {
     return [
       ...baseCols,
       { title: 'Tag 关联详情', key: 'tagDetail', width: 320 },
-      { title: '操作', key: 'action', width: 100, fixed: 'right' },
+      { title: '操作', key: 'action', width: 130, fixed: 'right' },
     ];
   }
 
@@ -477,7 +477,7 @@ const dynamicColumns = computed<TableColumnsType>(() => {
       width: 70,
       align: 'center',
     },
-    { title: '操作', key: 'action', width: 100, fixed: 'right' },
+    { title: '操作', key: 'action', width: 130, fixed: 'right' },
   ];
 });
 
@@ -2294,21 +2294,8 @@ watch(
 
 .loop-action-cell__more {
   display: inline-flex;
-  visibility: hidden;
   gap: 2px;
   align-items: center;
-  opacity: 0;
-  transition:
-    opacity 0.15s ease,
-    visibility 0.15s ease;
-}
-
-/* hover 行时显示更多操作 */
-.ant-table-row:hover .loop-action-cell__more,
-.loop-action-cell:hover .loop-action-cell__more,
-.loop-action-cell:focus-within .loop-action-cell__more {
-  visibility: visible;
-  opacity: 1;
 }
 
 /* 操作按钮统一样式 */

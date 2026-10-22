@@ -140,8 +140,25 @@ def build_assessment_meta(
     elif selected and all(r.get("assessmentState") == ASSESSMENT_NEGATIVE for r in selected):
         # 全部合格阴性（执行无异常、前提成立）→ 范围内有效阴性
         judgement = JUDGEMENT_VALID_NEGATIVE
+    elif (
+        gate_passed
+        and cov["positive"] == 0
+        and cov["negative"] > 0
+        and all(
+            r.get("assessmentState")
+            in (ASSESSMENT_NEGATIVE, ASSESSMENT_NOT_APPLICABLE)
+            for r in selected
+        )
+    ):
+        # 2026-10-22 用户裁决：故障现象全未命中（零阳性）且至少一条合格阴性，
+        # N/A 混排不降级为「不可判定」——分类归「正常」。
+        judgement = JUDGEMENT_VALID_NEGATIVE
+    elif gate_passed and primary_category == NO_SYMPTOM and cov["positive"] == 0:
+        # 2026-10-22 用户裁决：分类层 NO_SYMPTOM（门禁通过、全部故障现象
+        # 未命中）→ 「正常」。不再因个别算子 N/A/缺数据报「不可判定」。
+        judgement = JUDGEMENT_VALID_NEGATIVE
     else:
-        # 混合：阴性+不适用 / 缺数据 / 错误 / 未运行 → 不可判定
+        # 有阳性外的缺数据/错误/未运行混排且分类层非 NO_SYMPTOM → 不可判定
         judgement = JUDGEMENT_INCONCLUSIVE
 
     # L0 门禁阻断：primary=DATA_INSUFFICIENT 时科学结论必为 INCONCLUSIVE

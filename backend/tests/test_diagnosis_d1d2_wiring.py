@@ -518,14 +518,16 @@ class TestBuildAssessmentMeta:
         )
 
     def test_negative_with_error_inconclusive_partial(self) -> None:
-        """仅有阴性 + 必需检查 ERROR → INCONCLUSIVE + PARTIAL（不发布范围
-        有效阴性）。"""
+        """阴性 + ERROR，分类层 NO_SYMPTOM：2026-10-22 裁决现象全未命中→正常.
+
+        执行态仍为 PARTIAL（有算子出错），科学结论 VALID_NEGATIVE。
+        """
         results = {
             "a": _mk_result("a", ASSESSMENT_NEGATIVE),
             "b": _mk_result("b", ASSESSMENT_ERROR, executed=False, error="x"),
         }
         meta = self._meta(results, primary="NO_SYMPTOM")
-        assert meta["judgementStatus"] == JUDGEMENT_INCONCLUSIVE
+        assert meta["judgementStatus"] == JUDGEMENT_VALID_NEGATIVE
         assert (
             derive_run_status(op_results=results, gate_passed=True, selected_is_empty=False)
             == "PARTIAL"
@@ -545,10 +547,13 @@ class TestBuildAssessmentMeta:
         )
 
     def test_all_not_applicable_success_inconclusive(self) -> None:
-        """全部 NOT_APPLICABLE → SUCCESS + INCONCLUSIVE（不得计有效阴性）。"""
+        """全部 NOT_APPLICABLE + NO_SYMPTOM：2026-10-22 裁决现象未命中→正常.
+
+        无阳性即不报「不可判定」；执行态仍为 SUCCESS。
+        """
         results = {"a": _mk_result("a", ASSESSMENT_NOT_APPLICABLE)}
         meta = self._meta(results, primary="NO_SYMPTOM")
-        assert meta["judgementStatus"] == JUDGEMENT_INCONCLUSIVE
+        assert meta["judgementStatus"] == JUDGEMENT_VALID_NEGATIVE
         assert (
             derive_run_status(op_results=results, gate_passed=True, selected_is_empty=False)
             == "SUCCESS"
@@ -803,10 +808,6 @@ async def test_run_operator_results_no_symptom_keeps_null_but_valid_negative() -
     assert run.status == "SUCCESS"
     assert run.primary_category is None  # NO_SYMPTOM → NULL（既有映射保留）
     meta = run.assessment_meta
-    # 平稳窗口：无 POSITIVE → 不是 SYMPTOM_DETECTED；科学结论非健康冒充
-    assert meta["judgementStatus"] in {JUDGEMENT_VALID_NEGATIVE, JUDGEMENT_INCONCLUSIVE}
-    if meta["judgementStatus"] == JUDGEMENT_VALID_NEGATIVE:
-        # 有效阴性只在全部 selected 合格阴性时成立（NOT_APPLICABLE 存在则为
-        # INCONCLUSIVE——组合决定表行 4）
-        cov = meta["coverage"]
-        assert cov["notApplicable"] == 0 and cov["insufficient"] == 0
+    # 平稳窗口：无 POSITIVE → 不是 SYMPTOM_DETECTED；2026-10-22 裁决
+    # 现象全未命中（NO_SYMPTOM）→ 正常（VALID_NEGATIVE），不再报不可判定
+    assert meta["judgementStatus"] == JUDGEMENT_VALID_NEGATIVE

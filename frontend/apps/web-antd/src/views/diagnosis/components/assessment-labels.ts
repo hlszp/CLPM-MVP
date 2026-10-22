@@ -29,7 +29,8 @@ export interface DiagnosisAssessmentMeta {
 /** judgementStatus → 中文标签（科学结论，非执行状态） */
 export const JUDGEMENT_LABELS: Record<JudgementStatus, string> = {
   SYMPTOM_DETECTED: '检出症状',
-  VALID_NEGATIVE: '有效阴性（范围内正常）',
+  // 2026-10-22 用户口径：现象全未命中分类注明「正常」（原「有效阴性」过学术）
+  VALID_NEGATIVE: '正常',
   INCONCLUSIVE: '不可判定（证据不足）',
   NOT_ASSESSED: '未评估',
   LEGACY_UNVERIFIABLE: '历史覆盖未验证',
