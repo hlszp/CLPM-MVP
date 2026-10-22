@@ -225,7 +225,7 @@ describe('cockpit/buildScoreRankTree 综合评分排名树', () => {
         rank: 1,
         score: 57.16,
         sparkline: [],
-        status: 'WARNING',
+        status: 'POOR',
       },
     ];
     const units: WorkbenchApi.UnitRow[] = [
@@ -234,7 +234,7 @@ describe('cockpit/buildScoreRankTree 综合评分排名树', () => {
         metrics: {},
         name: '2EH',
         score: 42.23,
-        status: 'WARNING',
+        status: 'POOR',
       },
     ];
     const rows = buildScoreRankTree(tree, plants, units);
