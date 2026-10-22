@@ -145,8 +145,7 @@ def build_assessment_meta(
         and cov["positive"] == 0
         and cov["negative"] > 0
         and all(
-            r.get("assessmentState")
-            in (ASSESSMENT_NEGATIVE, ASSESSMENT_NOT_APPLICABLE)
+            r.get("assessmentState") in (ASSESSMENT_NEGATIVE, ASSESSMENT_NOT_APPLICABLE)
             for r in selected
         )
     ):
