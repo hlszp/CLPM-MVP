@@ -1,20 +1,20 @@
 {
   "version": "full-1047",
   "builtAt": "2026-10-22T07:38:00+08:00",
-  "note": "Dual image. (1) frontend resilience: dynamic-import reload, request timeout 30s, post-login nav error toast, guard keeps session on transient fetchUserInfo errors. (2) loop-eval counts: exclude monitor-disabled/non-eval loops outside loop config; show INCONCLUSIVE grade card so grade sum equals total (961 vs 1209). Frontend also forces \u5168\u90e8=1~5+\u4e0d\u786e\u5b9a identity (residual\u2192\u4e0d\u786e\u5b9a). Alert events loop filter by tag_name (\u4f4d\u53f7), not UUID. Diagnosis no-symptom\u2192\u6b63\u5e38; loop config delete always visible; tuning matrix BizError surfaced.",
-  "sourceRevision": "6cf022d3e5d7cab329d9c9614b4d5013e556082d",
+  "note": "Dual image. (1) frontend resilience: dynamic-import reload, request timeout 30s, post-login nav error toast, guard keeps session on transient fetchUserInfo errors. (2) loop-eval counts: exclude monitor-disabled/non-eval loops outside loop config; show INCONCLUSIVE grade card so grade sum equals total (961 vs 1209). Frontend also forces \u5168\u90e8=1~5+\u4e0d\u786e\u5b9a identity (residual\u2192\u4e0d\u786e\u5b9a). Alert events loop filter by tag_name (\u4f4d\u53f7), not UUID. Diagnosis no-symptom\u2192\u6b63\u5e38; tuning matrix BizError surfaced.",
+  "sourceRevision": "1e1fddbdb",
   "sourceBranch": "macbook",
   "archive": "clpm-images-1047-full.tar.gz",
-  "sha256": "c6b075572140679f622bd7a92d83552958f2af47569d2252967f586cfdc62cb8",
+  "sha256": "83db3dcc2decfeec3a38c89ae78d419f2219284a5a1309d0b899402f9da2ea1d",
   "images": [
     {
       "name": "clpm-backend:full-1047",
-      "id": "sha256:3d3798fb6fb6513850d857ae5db6e14b149f6496a478ed28f938b65aa42f4861",
+      "id": "sha256:c77e690cbc74ec7214ffff8f51dc833ea69f7e4ad4d7dd8e2863e158eb974d35",
       "platform": "linux/amd64"
     },
     {
       "name": "clpm-frontend:full-1047",
-      "id": "sha256:895788d27d882d983130a457c15ce334fb27675680c2473c15c051b414a94e40",
+      "id": "sha256:199e112befaad4f838108989b2d8d4cda50e8975e71fb26668cd9eedd8390280",
       "platform": "linux/amd64"
     }
   ],
