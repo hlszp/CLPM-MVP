@@ -258,7 +258,8 @@ const METRIC_OPTIONS: MetricMeta[] = [
   {
     sortKey: 'fast_rate',
     field: 'fastRate',
-    nodeField: 'fastResponseRate',
+    // v5.3 后端已统一为 fastRate（fastResponseRate 会被 response_model 丢弃）
+    nodeField: 'fastRate',
     label: '快速率',
     help: '扰动恢复速度指标，越低越差。',
     max: 100,

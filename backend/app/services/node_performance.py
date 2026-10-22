@@ -1365,13 +1365,17 @@ async def get_node_ranking(
     if node_type:
         stmt = stmt.where(PlantNode.type == node_type)
 
-    # 排序
+    # 排序（指标分析按任一 KPI 横切；缺键回退 score）
     sort_field_map = {
         "score": base.c.score,
         "steady_rate": base.c.steady_rate,
         "auto_loop_ratio": base.c.auto_loop_ratio,
         "effective_auto_rate": base.c.effective_auto_rate,
         "realtime_auto_rate": base.c.realtime_auto_rate,
+        "fast_rate": base.c.fast_rate,
+        "accuracy_rate": base.c.accuracy_rate,
+        "auto_mode_rate": base.c.auto_mode_rate,
+        "good_value_rate": base.c.good_value_rate,
     }
     sort_col = sort_field_map.get(sort_by, base.c.score)
     if sort_order.lower() == "asc":

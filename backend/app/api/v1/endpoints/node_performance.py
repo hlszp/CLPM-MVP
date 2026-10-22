@@ -160,7 +160,9 @@ async def get_node_ranking_endpoint(
     endTime: str | None = Query(None, description="自定义窗口结束（ISO 8601，custom 时必填）"),
     nodeType: str | None = Query(None, description="节点类型筛选：FACTORY/UNIT/EQUIPMENT"),
     sortBy: str = Query(
-        "score", description="排序字段：score/steady_rate/auto_loop_ratio/effective_auto_rate"
+        "score",
+        description="排序字段：score/steady_rate/fast_rate/accuracy_rate/auto_mode_rate/"
+        "good_value_rate/effective_auto_rate/auto_loop_ratio/realtime_auto_rate",
     ),
     sortOrder: str = Query("desc", description="排序方向：asc/desc"),
     limit: int = Query(50, ge=1, le=200, description="返回条数"),
