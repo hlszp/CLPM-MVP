@@ -182,4 +182,65 @@ describe('cockpit/buildScoreRankTree 综合评分排名树', () => {
     ];
     expect(buildScoreRankTree(emptyTree, [], [])).toEqual([]);
   });
+
+  it('生产 source_node_id=NULL：树 id=null 时按名称命中 CRC32 回退 scope_id 的单元分', () => {
+    // 生产 plant_node.source_node_id 为 NULL → node-tree.id=null；
+    // workbench units.id = node_scope_id() 的 UUID CRC32 回退整数。
+    // 此前只按 id: 建索引导致单元评分全为 —（装置靠 name 仍有分）。
+    const tree: CockpitApi.NodeTreeNode[] = [
+      {
+        id: 100,
+        name: '全厂',
+        nodeId: 'factory-1',
+        type: 'FACTORY',
+        loopCount: 961,
+        children: [
+          {
+            id: 1,
+            name: '生产装置',
+            nodeId: 'area-prod',
+            type: 'AREA',
+            loopCount: 938,
+            children: [
+              {
+                id: null as unknown as number,
+                name: '2EH',
+                nodeId: 'unit-2eh',
+                type: 'UNIT',
+                loopCount: 203,
+              },
+            ],
+          },
+        ],
+      },
+    ];
+    const plants: WorkbenchApi.PlantRow[] = [
+      {
+        alarm_count: 0,
+        id: 1,
+        lose_factors: [],
+        loop_count: 938,
+        name: '生产装置',
+        overdue_tasks: 0,
+        rank: 1,
+        score: 57.16,
+        sparkline: [],
+        status: 'WARNING',
+      },
+    ];
+    const units: WorkbenchApi.UnitRow[] = [
+      {
+        id: 0x4000_0001,
+        metrics: {},
+        name: '2EH',
+        score: 42.23,
+        status: 'WARNING',
+      },
+    ];
+    const rows = buildScoreRankTree(tree, plants, units);
+    expect(rows[0]!.score).toBe(57.16);
+    expect(rows[0]!.units[0]!.name).toBe('2EH');
+    expect(rows[0]!.units[0]!.score).toBe(42.23);
+    expect(rows[0]!.units[0]!.rank).toBe(1);
+  });
 });

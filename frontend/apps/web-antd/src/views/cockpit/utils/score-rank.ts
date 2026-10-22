@@ -110,12 +110,22 @@ export function buildScoreRankTree(
   walk(tree ?? []);
 
   const plantByName = new Map((plants ?? []).map((p) => [p.name, p]));
+  // 单元必须同时按 id 与 name 建索引：生产 UNIT 的 plant_node.source_node_id
+  // 为 NULL 时，node-tree.id=null，而 workbench units.id 是 node_scope_id()
+  // 的 UUID CRC32 回退值——只按 id: 键会匹配失败，导致单元评分全为 —。
   const unitByKey = new Map<string, WorkbenchApi.UnitRow>();
   for (const u of units ?? []) {
-    unitByKey.set(u.id !== null && u.id !== undefined ? `id:${u.id}` : `name:${u.name}`, u);
+    if (u.id !== null && u.id !== undefined) {
+      unitByKey.set(`id:${u.id}`, u);
+    }
+    if (u.name) {
+      unitByKey.set(`name:${u.name}`, u);
+    }
   }
   const matchUnit = (n: CockpitApi.NodeTreeNode): undefined | WorkbenchApi.UnitRow =>
-    unitByKey.get(n.id !== null && n.id !== undefined ? `id:${n.id}` : `name:${n.name}`) ??
+    (n.id !== null && n.id !== undefined
+      ? unitByKey.get(`id:${n.id}`)
+      : undefined) ??
     unitByKey.get(`name:${n.name}`);
 
   const out: ScoreRankPlant[] = areaNodes.map((area) => {
