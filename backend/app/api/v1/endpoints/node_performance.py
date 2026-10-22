@@ -52,6 +52,8 @@ def _parse_time_window(
     if time_window == "custom" and start_dt is not None and end_dt is not None:
         return start_dt, end_dt
     now = datetime.now(UTC).replace(tzinfo=None)
+    if time_window == "last_1_hour":
+        return now - timedelta(hours=1), now
     if time_window == "last_8_hours":
         return now - timedelta(hours=8), now
     if time_window == "last_24_hours":

@@ -79,6 +79,7 @@ KPI_NAME_MAP = {
 TIME_WINDOWS: dict[str, timedelta] = {
     "today": timedelta(days=1),
     "yesterday": timedelta(days=1),
+    "last_1_hour": timedelta(hours=1),
     "last_8_hours": timedelta(hours=8),
     "last_24_hours": timedelta(hours=24),
     "last_72_hours": timedelta(hours=72),

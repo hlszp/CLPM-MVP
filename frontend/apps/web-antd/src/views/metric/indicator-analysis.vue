@@ -337,6 +337,7 @@ function formatNumber(val: null | number | undefined, suffix = ''): string {
 // ===== 控制条状态（深链真相源）=====
 
 const timeWindowOptions = [
+  { label: '近1小时', value: 'last_1_hour' },
   { label: '近8小时', value: 'last_8_hours' },
   { label: '24小时', value: 'today' },
   { label: '168小时', value: 'last_7_days' },
@@ -348,6 +349,7 @@ const WINDOW_DURATIONS_MS: Record<string, number> = {
   last_30_days: 30 * 24 * 3_600_000,
   last_7_days: 7 * 24 * 3_600_000,
   last_8_hours: 8 * 3_600_000,
+  last_1_hour: 3_600_000,
   today: 24 * 3_600_000,
 };
 
@@ -365,7 +367,8 @@ function prevWindowRange(
 }
 
 const selectedMetricKey = ref('auto_mode_rate');
-const timeWindow = ref('today');
+/** 2026-10-22 用户口径：默认最近 1 小时（对齐整点评估结果） */
+const timeWindow = ref('last_1_hour');
 /** 02b：深链精确窗（tsStart/tsEnd/tz 消费）；激活时优先于 timeWindow 预设 */
 const customWindow = ref<IndicatorCustomWindow | null>(null);
 /** 02b：深链来源（from 消费；返回按钮恢复来源页筛选现场） */
@@ -809,14 +812,51 @@ const windowSelectValue = computed({
       if (!v && customWindow.value) {
         // allow-clear 单项清除：仅移除精确窗，回退用户原预设，其余筛选不动
         customWindow.value = null;
+        hourSelectValue.value = undefined;
         onControlChange();
       }
       return;
     }
     customWindow.value = null;
+    hourSelectValue.value = undefined;
     timeWindow.value = v;
     onControlChange();
   },
+});
+
+/** 整点小时槽（近 48h）：value=ISO 小时起点；选中 → customWindow=[H, H+1h) */
+const hourSelectOptions = computed(() => {
+  const out: { label: string; value: string }[] = [];
+  const now = new Date();
+  now.setMinutes(0, 0, 0);
+  for (let i = 0; i < 48; i++) {
+    const start = new Date(now.getTime() - i * 3_600_000);
+    const end = new Date(start.getTime() + 3_600_000);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const label = `${pad(start.getMonth() + 1)}-${pad(start.getDate())} ${pad(start.getHours())}:00`;
+    out.push({ label, value: start.toISOString() });
+    void end;
+  }
+  return out;
+});
+
+const hourSelectValue = ref<string | undefined>(undefined);
+watch(hourSelectValue, (v) => {
+  if (!v) {
+    if (customWindow.value) {
+      customWindow.value = null;
+      onControlChange();
+    }
+    return;
+  }
+  const start = new Date(v);
+  const end = new Date(start.getTime() + 3_600_000);
+  customWindow.value = {
+    start: start.toISOString(),
+    end: end.toISOString(),
+    timezone: 'local-hour',
+  };
+  onControlChange();
 });
 
 /** 02b：返回来源页（from 消费；来源 query 原样恢复其筛选现场） */
@@ -1232,6 +1272,14 @@ onMounted(() => {
             :options="windowSelectOptions"
             :allow-clear="!!customWindow"
             style="min-width: 120px"
+          />
+          <!-- 按整点小时筛选：选中即 customWindow=[H, H+1h)，可清空回预设窗 -->
+          <Select
+            v-model:value="hourSelectValue"
+            :options="hourSelectOptions"
+            :allow-clear="true"
+            placeholder="按小时"
+            style="min-width: 150px"
           />
           <Button size="small" @click="treeDrawerOpen = true">
             <template #icon>
