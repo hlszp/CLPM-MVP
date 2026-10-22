@@ -1,0 +1,42 @@
+{
+  "recordedAt": "2026-10-21T07:27:44.738512+00:00",
+  "sourceRevision": "67b0e9d3fdabc4d36131dbde08dfecc747c2cee7",
+  "targetedUnit": "57 passed",
+  "nativeIntegration": "19 passed in 10.92s",
+  "backendFull": "7368 passed, 335 skipped, 205 deselected, 12 xfailed, 4 xpassed in 206.45s",
+  "pushGateSeconds": 215.82,
+  "nativeCases": {
+    "publicationFence": 8,
+    "cacheAtomicBudget": 4,
+    "anchorApplicability": 4,
+    "fullWindowBackfillLease": 3
+  },
+  "regressionBeforeFix": {
+    "publicationFence": "four original real-Redis counterexamples failed",
+    "anchorApplicability": "two PostgreSQL counterexamples failed"
+  },
+  "capacitySynthetic": {
+    "24x4Points": {
+      "blocks": 576,
+      "warmCompleteBlockHits": 576,
+      "inclusiveTailQueries": 96
+    },
+    "24x7Points": {
+      "blocks": 1008,
+      "warmCompleteBlockHits": 1008,
+      "inclusiveTailQueries": 168
+    }
+  },
+  "realRedisPolicyReadOnly": "noeviction",
+  "sourceLogs": {
+    "pushGate": ".gstack/shadow-1045-push.log",
+    "native": ".gstack/shadow-1045-native.log"
+  },
+  "imageSmoke": {
+    "reportVolume": "uid1001 writes; second container reads (earlier smoke passed before frontend wrong-port retry)",
+    "frontendIndexSha256": "b7c17fa763d82c13c4b6550058b3f84b7cf6df68d474a3c26e27a70d9015cfbd",
+    "frontend": "HTTP200; full1044 unchanged assets; container listens7141"
+  },
+  "archiveSha256": "3d97d0d13e6f24b7f8fcea94d2e089babaaca4ebcfeac2ee62ab907bf0e6d4cd",
+  "productionValidation": false
+}

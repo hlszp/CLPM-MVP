@@ -3,10 +3,10 @@
 供 monitor.py / 其他需要趋势数据的页面复用。
 
 核心逻辑：
-1. 根据时间范围动态计算采样间隔（固定目标点数 ~3600）
-2. 并行查询 PV/SP/OP/MODE 四个 tag
+1. 根据时间范围及 target_points 动态计算采样间隔（默认目标 1800 点）
+2. 点表原生分桶 / 本地逻辑宽表读取 PV/SP/OP/MODE
 3. 时间戳对齐 + 质量码归一化
-4. 超过 target_points 时触发 LTTB 降采样
+4. 超过 LTTB_THRESHOLD（5000）时按 target_points 同轴降采样
 
 用法::
 
@@ -33,6 +33,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.timeparse import parse_iso_datetime, to_naive_utc
 from app.models.loop import LoopTagMapping
 from app.models.tag import TagRegistry
+from app.services.waveform import lttb_downsample_multi_series
 
 logger = logging.getLogger(__name__)
 
@@ -40,93 +41,6 @@ logger = logging.getLogger(__name__)
 #: 趋势显示网格上限（2026-09-19 用户口径：窗口最大 1800 点，超出按间隔取
 #: 数确保刷新及时；builder 网格步长 = 窗口/该值，72h → 144s 步长）
 DEFAULT_TARGET_POINTS = 1800
-
-
-def lttb_downsample_multi_series(
-    timestamps: list[int],
-    series_map: dict[str, list[Any]],
-    target_points: int,
-) -> tuple[list[int], dict[str, list[Any]]]:
-    """LTTB 降采样（多序列共享时间戳）。
-
-    使用 PV 序列作为参考序列进行降采样，其他序列按相同索引采样。
-
-    Args:
-        timestamps: 时间戳数组（毫秒）
-        series_map: {series_name: values} 字典
-        target_points: 目标点数
-
-    Returns:
-        (降采样后的 timestamps, 降采样后的 series_map)
-    """
-    n = len(timestamps)
-    if n <= target_points or n <= 2:
-        return timestamps, series_map
-
-    # 选择参考序列（优先 PV，否则第一个非空序列）
-    ref_key = "pv"
-    if ref_key not in series_map or not any(v is not None for v in series_map[ref_key]):
-        for k, vals in series_map.items():
-            if any(v is not None for v in vals):
-                ref_key = k
-                break
-
-    ref_values = series_map.get(ref_key, [0.0] * n)
-    # 将 None 替换为 0 用于计算
-    ref_numeric = [v if v is not None else 0.0 for v in ref_values]
-    ts_numeric = [float(t) for t in timestamps]
-
-    sampled_indices: list[int] = [0]
-    bucket_size = (n - 2) / (target_points - 2)
-    a = 0
-
-    for i in range(target_points - 2):
-        bucket_start = int((i + 1) * bucket_size) + 1
-        bucket_end = min(int((i + 2) * bucket_size) + 1, n)
-        next_bucket_start = bucket_end
-        next_bucket_end = min(int((i + 3) * bucket_size) + 1, n)
-
-        # 计算下一个桶的平均点
-        avg_x = 0.0
-        avg_y = 0.0
-        avg_count = 0
-        for j in range(next_bucket_start, next_bucket_end):
-            avg_x += ts_numeric[j]
-            avg_y += ref_numeric[j]
-            avg_count += 1
-        if avg_count > 0:
-            avg_x /= avg_count
-            avg_y /= avg_count
-
-        # 在当前桶中找到与三角形面积最大的点
-        max_area = -1.0
-        max_area_idx = bucket_start
-        point_a_x = ts_numeric[a]
-        point_a_y = ref_numeric[a]
-
-        for j in range(bucket_start, bucket_end):
-            area = (
-                abs(
-                    (point_a_x - avg_x) * (ref_numeric[j] - point_a_y)
-                    - (point_a_x - ts_numeric[j]) * (avg_y - point_a_y)
-                )
-                * 0.5
-            )
-            if area > max_area:
-                max_area = area
-                max_area_idx = j
-
-        sampled_indices.append(max_area_idx)
-        a = max_area_idx
-
-    sampled_indices.append(n - 1)
-
-    new_timestamps = [timestamps[i] for i in sampled_indices]
-    new_series_map: dict[str, list[Any]] = {}
-    for k, vals in series_map.items():
-        new_series_map[k] = [vals[i] for i in sampled_indices]
-
-    return new_timestamps, new_series_map
 
 
 # LTTB 降采样阈值（超过此值才触发降采样）

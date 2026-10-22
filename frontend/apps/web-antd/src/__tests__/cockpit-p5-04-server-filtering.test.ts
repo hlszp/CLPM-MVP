@@ -157,6 +157,7 @@ describe('P5-04 useLoopWallList（服务端分页列表）', () => {
         grades: 'GOOD,POOR',
         modes: 'AUTO,CAS',
         focusLoopId: 'sel-1',
+        latestScoredHour: true,
       }),
     );
   });

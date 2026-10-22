@@ -1,0 +1,15 @@
+# 与既有生产 compose 合并，不单独启动，也不更换 Worker/Beat 命令。
+services:
+  backend:
+    environment:
+      CLPM_KPI_SHADOW_REPORT_DIR: /app/shadow-reports
+    volumes:
+      - shadow-reports:/app/shadow-reports
+  celery-worker:
+    environment:
+      CLPM_KPI_SHADOW_REPORT_DIR: /app/shadow-reports
+    volumes:
+      - shadow-reports:/app/shadow-reports
+volumes:
+  shadow-reports:
+    name: clpm-shadow-reports

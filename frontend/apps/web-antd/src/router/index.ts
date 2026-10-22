@@ -35,3 +35,26 @@ const resetRoutes = () => resetStaticRoutes(router, routes);
 createRouterGuard(router);
 
 export { resetRoutes, router };
+
+// 公网路径间歇 503/传输中断会让路由懒加载 chunk 失败，Vue Router 会静默
+// 中止导航（登录成功后停在登录页、工作台打不开）。捕获后整页重载目标路由，
+// 用 sessionStorage 短窗防死循环。
+const CHUNK_RELOAD_KEY = 'clpm_chunk_reload_at';
+router.onError((error, to) => {
+  const msg = String((error as Error)?.message || error);
+  if (!msg.includes('dynamically imported module')) {
+    return;
+  }
+  const now = Date.now();
+  const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) || 0);
+  if (now - last < 15_000) {
+    return;
+  }
+  sessionStorage.setItem(CHUNK_RELOAD_KEY, String(now));
+  const target = to?.fullPath;
+  if (target && target !== '/' && !target.startsWith('/auth')) {
+    window.location.replace(target);
+  } else {
+    window.location.reload();
+  }
+});

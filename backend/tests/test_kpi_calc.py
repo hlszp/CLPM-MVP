@@ -3013,9 +3013,7 @@ class TestExtractMetricsDetail:
 class TestPersistSnapshotConfidenceLatest:
     """_persist_snapshot 小时路径同步 UPSERT loop_confidence_latest。
 
-    P1-05 结果账本后 execute 序列（小时路径，账本 SELECT 未命中时）：
-    0) 账本 SELECT 1) 账本 INSERT 2) kpi_snapshot_hourly UPSERT
-    3) latest 迟到守卫 SELECT 4) loop_confidence_latest UPSERT
+    新记录小时路径 execute 序列：账本 INSERT → hourly UPSERT → latest 原子 UPSERT。
     """
 
     @staticmethod
@@ -3036,10 +3034,8 @@ class TestPersistSnapshotConfidenceLatest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),  # 账本 SELECT：未命中
                 _make_scalar_one_or_none_mock(self._ledger_record_mock()),  # 账本 INSERT
                 _make_returning_id_result_mock("snap-1"),  # hourly UPSERT RETURNING
-                _make_scalar_one_or_none_mock(None),  # latest 守卫：无现存投影
                 _make_scalar_one_or_none_mock(None),  # latest UPSERT
             ]
         )
@@ -3063,7 +3059,7 @@ class TestPersistSnapshotConfidenceLatest:
 
         assert result["status"] == "SUCCESS"
 
-        stmt = self._confidence_stmt(db, 4)
+        stmt = self._confidence_stmt(db, 2)
         assert stmt.table.name == "loop_confidence_latest"
         compiled = str(stmt.compile(dialect=postgresql.dialect()))
         assert "ON CONFLICT (loop_id) DO UPDATE" in compiled
@@ -3074,8 +3070,8 @@ class TestPersistSnapshotConfidenceLatest:
         assert set_values["valid_rate"] == 0.95  # Decimal → float
         assert set_values["confidence_level"] == "A"
         assert set_values["metrics"] == metrics_detail
-        assert set_values["data_ts_start"] == ts_start
-        assert set_values["data_ts_end"] == ts_end
+        assert set_values["data_ts_start"] == ts_start.replace(tzinfo=None)
+        assert set_values["data_ts_end"] == ts_end.replace(tzinfo=None)
         assert set_values["algorithm_version"] == ALGORITHM_VERSION
         assert set_values["result_record_id"] == "rec-ledger-1"  # P1-05 投影指针
         assert "eval_time" in set_values
@@ -3090,17 +3086,12 @@ class TestPersistSnapshotConfidenceLatest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                # 第一次写入：账本 SELECT/INSERT + hourly + 守卫(无现存) + latest
-                _make_scalar_one_or_none_mock(None),
+                # 每次写入：账本 INSERT + hourly + 原子 latest。
                 _make_scalar_one_or_none_mock(self._ledger_record_mock()),
                 _make_returning_id_result_mock("snap-1"),
                 _make_scalar_one_or_none_mock(None),
-                _make_scalar_one_or_none_mock(None),
-                # 第二次写入（同窗重评）：账本 SELECT/INSERT + hourly + 守卫(同窗) + latest
-                _make_scalar_one_or_none_mock(None),
                 _make_scalar_one_or_none_mock(self._ledger_record_mock()),
                 _make_returning_id_result_mock("snap-1"),
-                _make_scalar_one_or_none_mock(datetime(2026, 7, 4, 9, 0, 0)),
                 _make_scalar_one_or_none_mock(None),
             ]
         )
@@ -3121,8 +3112,7 @@ class TestPersistSnapshotConfidenceLatest:
         kwargs["metrics_detail"] = {"accuracy_rate": {"value": 95.0, "confidence": "A"}}
         await _persist_snapshot(**kwargs)
 
-        # 最后一次（第二次写入的第 5 条 execute）为最新值
-        stmt = self._confidence_stmt(db, 9)
+        stmt = self._confidence_stmt(db, 5)
         assert stmt.table.name == "loop_confidence_latest"
         set_values = _extract_upsert_set_values(stmt)
         assert set_values["score"] == Decimal("95.00")
@@ -3135,10 +3125,8 @@ class TestPersistSnapshotConfidenceLatest:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
                 _make_scalar_one_or_none_mock(self._ledger_record_mock()),  # 账本 INSERT
                 _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
-                _make_scalar_one_or_none_mock(None),  # latest 守卫
                 RuntimeError("boom"),  # latest UPSERT 失败
             ]
         )
@@ -3153,7 +3141,7 @@ class TestPersistSnapshotConfidenceLatest:
         )
 
         assert result["snapshotId"] == "snap-1"
-        assert db.execute.await_count == 5
+        assert db.execute.await_count == 3
 
     @pytest.mark.asyncio
     async def test_custom_path_skips_confidence_latest(self) -> None:
@@ -3173,10 +3161,10 @@ class TestPersistSnapshotConfidenceLatest:
             metrics_detail={"accuracy_rate": {"value": 1.0, "confidence": "A"}},
         )
 
-        # 账本 SELECT + INSERT + 冲突回读（mock 均返回 None）+ custom select 共 4 次，
+        # 账本 INSERT + 冲突回读（mock 均返回 None）+ custom select 共 3 次，
         # 且全程无 loop_confidence_latest 表语句
         stmts = [c.args[0] for c in db.execute.await_args_list]
-        assert db.execute.await_count == 4
+        assert db.execute.await_count == 3
         assert all("loop_confidence_latest" not in str(s) for s in stmts)
 
 
@@ -3191,10 +3179,8 @@ class TestPersistSnapshotInconclusiveConfidenceE:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
                 _make_scalar_one_or_none_mock(ledger_rec),  # 账本 INSERT
                 _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
-                _make_scalar_one_or_none_mock(None),  # latest 守卫
                 _make_scalar_one_or_none_mock(None),  # latest UPSERT
             ]
         )
@@ -3207,11 +3193,11 @@ class TestPersistSnapshotInconclusiveConfidenceE:
             status="INCONCLUSIVE",
         )
 
-        assert db.execute.await_count == 5
-        snapshot_stmt = db.execute.await_args_list[2].args[0]
+        assert db.execute.await_count == 3
+        snapshot_stmt = db.execute.await_args_list[1].args[0]
         assert snapshot_stmt.table.name == "kpi_snapshot_hourly"
         assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] == "E"
-        confidence_stmt = db.execute.await_args_list[4].args[0]
+        confidence_stmt = db.execute.await_args_list[2].args[0]
         assert confidence_stmt.table.name == "loop_confidence_latest"
         assert _extract_upsert_set_values(confidence_stmt)["confidence_level"] == "E"
 
@@ -3223,10 +3209,8 @@ class TestPersistSnapshotInconclusiveConfidenceE:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
                 _make_scalar_one_or_none_mock(ledger_rec),  # 账本 INSERT
                 _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
-                _make_scalar_one_or_none_mock(None),  # latest 守卫
                 _make_scalar_one_or_none_mock(None),  # latest UPSERT
             ]
         )
@@ -3240,7 +3224,8 @@ class TestPersistSnapshotInconclusiveConfidenceE:
             confidence_level="D",
         )
 
-        snapshot_stmt = db.execute.await_args_list[2].args[0]
+        snapshot_stmt = db.execute.await_args_list[1].args[0]
+        assert snapshot_stmt.table.name == "kpi_snapshot_hourly"
         assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] == "D"
 
     @pytest.mark.asyncio
@@ -3272,10 +3257,8 @@ class TestPersistSnapshotInconclusiveConfidenceE:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                _make_scalar_one_or_none_mock(None),  # 账本 SELECT
                 _make_scalar_one_or_none_mock(ledger_rec),  # 账本 INSERT
                 _make_returning_id_result_mock("snap-1"),  # hourly UPSERT
-                _make_scalar_one_or_none_mock(None),  # latest 守卫
                 _make_scalar_one_or_none_mock(None),  # latest UPSERT
             ]
         )
@@ -3289,7 +3272,8 @@ class TestPersistSnapshotInconclusiveConfidenceE:
             score=Decimal("50.00"),
         )
 
-        snapshot_stmt = db.execute.await_args_list[2].args[0]
+        snapshot_stmt = db.execute.await_args_list[1].args[0]
+        assert snapshot_stmt.table.name == "kpi_snapshot_hourly"
         assert _extract_upsert_set_values(snapshot_stmt)["confidence_level"] is None
 
     @pytest.mark.asyncio

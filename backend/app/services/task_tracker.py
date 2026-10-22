@@ -63,6 +63,12 @@ for index = 2, #ARGV, 2 do
     if current == nil or incoming == nil or incoming >= current then
       redis.call('HSET', task_key, field, value)
     end
+  elseif field == 'started_at' or field == 'finished_at' then
+    -- 重试/并发读端同步不得重置首个真实开始时间或已固定的终结时间。
+    local current = redis.call('HGET', task_key, field)
+    if not current or current == '' then
+      redis.call('HSET', task_key, field, value)
+    end
   else
     redis.call('HSET', task_key, field, value)
   end

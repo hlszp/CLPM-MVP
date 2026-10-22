@@ -15,7 +15,7 @@ from unittest.mock import patch
 
 import pytest
 
-from app.tasks.celery_app import celery_app
+from app.tasks.celery_app import PRIORITY_NIGHTLY, celery_app
 from app.tasks.dead_letter import record
 
 # ===========================================================================
@@ -152,6 +152,7 @@ class TestOnFailureIntegration:
                 "app.tasks.dead_letter.record",
                 args=["task-fail-001", "app.tasks.test_failure_task", "测试异常", (), {}],
                 queue="dead_letter",
+                priority=PRIORITY_NIGHTLY,
             )
 
     def test_on_failure_send_exception_does_not_raise(self) -> None:

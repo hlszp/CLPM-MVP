@@ -31,7 +31,7 @@ from app.models.loop import LoopLedger
 from app.models.plant_node import PlantNode
 from app.models.report import ReportRecord
 from app.models.report_config import ReportConfig
-from app.tasks.celery_app import AsyncTask, celery_app
+from app.tasks.celery_app import PRIORITY_MANUAL, AsyncTask, celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -236,6 +236,7 @@ def _parse_content_template(value: str | None) -> dict | None:
     name="app.tasks.report_generator.export_diagnosis_statistics",
     bind=True,
     base=AsyncTask,
+    priority=PRIORITY_MANUAL,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 3, "countdown": 60},
     retry_backoff=True,
@@ -684,6 +685,7 @@ _REPORT_ARTIFACT_TTL_SEC = 7 * 24 * 3600
     name="app.tasks.report_generator.generate_diagnosis_pdf_task",
     bind=True,
     base=AsyncTask,
+    priority=PRIORITY_MANUAL,
     autoretry_for=(Exception,),
     retry_kwargs={"max_retries": 2, "countdown": 30},
     retry_backoff=True,

@@ -1,0 +1,104 @@
+{
+  "date": "2026-10-21",
+  "baselineRevision": "c5e3279235ba0ae8716da8e806148349c3ccf69a",
+  "implementationRevisions": ["722a318b3", "c42ca6c87"],
+  "scope": "Local read-only builder/provider comparison and isolated PostgreSQL regressions; not production 961-loop acceptance or streaming implementation",
+  "pointReadProbe": {
+    "source": "local PostgreSQL and TDengine 3.3.6.6",
+    "windowStartUtc": "2026-10-20T05:00:00Z",
+    "windowEndUtc": "2026-10-20T06:00:00Z",
+    "groups": [
+      {"roles": ["pv", "sp", "op", "mode"], "intervalSeconds": 5},
+      {"roles": ["mode"], "intervalSeconds": 1},
+      {"roles": ["pv_quality"], "intervalSeconds": 1},
+      {"roles": ["pv", "op"], "intervalSeconds": 1},
+      {"roles": ["op"], "intervalSeconds": 1}
+    ],
+    "method": "Load baseline logical_wide_builder from git into a temporary module; alternate baseline and optimized build_logical_wide three times for each loop; invoke five explicit parallel provider queries with a fresh request scope, no cross-task cache; count actual repository TD and anchor calls. Hash sorted-key JSON of dataclasses.asdict for all five RawTimeSeries. Temporary module removed after probe.",
+    "countsEachSample": {
+      "baseline": {"tdQueries": 8, "anchorQueries": 4},
+      "optimized": {"tdQueries": 5, "anchorQueries": 1}
+    },
+    "samples": [
+      {
+        "tag": "41LIC40309_PIDA",
+        "controlType": "STABLE",
+        "baselineMedianMs": 174.25,
+        "optimizedMedianMs": 125.73,
+        "rawSeriesEqual": true,
+        "rawSeriesSha256": "56bf535873e292af31613322b8e20c1e7889d15c5744895a487291c841cb8884"
+      },
+      {
+        "tag": "41PIC40306_PIDA",
+        "controlType": "FAST",
+        "baselineMedianMs": 169.37,
+        "optimizedMedianMs": 125.25,
+        "rawSeriesEqual": true,
+        "rawSeriesSha256": "a7fa1ff06fddf1b83df41b1099a5a63a98a0b9c01681200e401974cda4515778"
+      },
+      {
+        "tag": "80FIC11906_PIDA",
+        "controlType": "FAST",
+        "baselineMedianMs": 171.90,
+        "optimizedMedianMs": 122.99,
+        "rawSeriesEqual": true,
+        "rawSeriesSha256": "40f554402245da48e696e06e19dfdc1f35f72f01379d06a08bf8efc7445a74c9"
+      },
+      {
+        "tag": "80TIC10402_PIDA",
+        "controlType": "STABLE",
+        "baselineMedianMs": 198.67,
+        "optimizedMedianMs": 121.80,
+        "rawSeriesEqual": true,
+        "rawSeriesSha256": "c446cc5d3ebf6d37fe61d234f95cf1bd7f70ce6f81b5af9cff2978dc6bb46aec"
+      }
+    ]
+  },
+  "tdNativeProbe": {
+    "serverVersion": "3.3.6.6",
+    "mode": "local read-only; existing point subtable, fixed 1h interval; first 20 rows for aggregate comparison; not KPI equivalence",
+    "windowStartUtc": "2026-09-04T04:00:00Z",
+    "windowEndUtc": "2026-09-04T05:00:00Z",
+    "count": 20,
+    "average": 29.8955,
+    "populationStddev": 0.047863869464492725,
+    "populationVariance": 0.002290950000113999,
+    "min": 29.812,
+    "max": 29.966,
+    "sum": 597.91,
+    "twa": 29.894736842105264,
+    "pythonMeanAndPopulationStdEqual": true,
+    "statecountRows": 3,
+    "statedurationRows": 3,
+    "tenMinuteIntervalRows": 6,
+    "limitationsObserved": [
+      "value identifier requires backtick quoting",
+      "mixing STATECOUNT and STATEDURATION with ts in one SELECT rejected with 0x264f; separate function queries passed"
+    ],
+    "streamsCreated": 0,
+    "tsmaCreated": 0
+  },
+  "persistence": {
+    "newStandardResultSqlBefore": 5,
+    "newStandardResultSqlAfter": 3,
+    "excludes": "commit, close, custom snapshot paths and conflict/retry readback",
+    "existingLedgerRetrySqlBefore": 1,
+    "existingLedgerRetrySqlAfter": 2,
+    "postgresConcurrencyRegression": {
+      "test": "tests/integration/test_loop_confidence_latest_pg.py::TestPersistSnapshotConfidenceLatestPg::test_older_writer_cannot_overwrite_concurrent_newer_commit",
+      "baselineFunctionFails": true,
+      "baselineFinalWindowEndUtc": "2026-10-21T02:00:00Z",
+      "expectedWindowEndUtc": "2026-10-21T03:00:00Z",
+      "fixedFunctionPasses": true
+    },
+    "immutableLedgerConcurrentRetryReusesOriginalPayload": true
+  },
+  "validation": {
+    "targetedUnitTests": {"passed": 241, "failed": 0},
+    "postgresIntegrationTests": {"passed": 7, "skipped": 0, "failed": 0},
+    "ruffAndFormat": "passed",
+    "alembicCheck": "No new upgrade operations detected",
+    "fullPrePushGate": "See this delivery push log; not inferred from targeted tests",
+    "productionRetest": "not performed"
+  }
+}

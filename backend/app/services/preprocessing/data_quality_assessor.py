@@ -34,7 +34,7 @@ from app.contracts.data_types import (
     QualitySummary,
     RawTimeSeries,
 )
-from app.services.preprocessing.outlier_detection import OutlierDetector
+from app.services.preprocessing.outlier_detection import OutlierDetector, detect_ts_anomaly
 from app.services.preprocessing.quality_code import map_quality_code
 from app.services.preprocessing.quality_summary import (
     compute_consecutive_segments,
@@ -224,12 +224,14 @@ class DataQualityAssessor:
             return 0.0
 
         # 求核心 tag 交集
-        valid_count = 0
-        for i in range(point_count):
-            if all(i < len(arr) and arr[i] for arr in core_arrays):
-                valid_count += 1
+        import numpy as np
 
-        return valid_count / point_count
+        common = np.ones(point_count, dtype=bool)
+        for arr in core_arrays:
+            size = min(point_count, len(arr))
+            common[:size] &= np.asarray(arr[:size], dtype=bool)
+            common[size:] = False
+        return int(np.count_nonzero(common)) / point_count
 
     # ------------------------------------------------------------------
     # 内部步骤（与 PreprocessingPipeline 的 step1/2/4 等价，原始值检测）
@@ -258,6 +260,10 @@ class DataQualityAssessor:
         设计依据：算法说明 §3.4.2 步骤④, §3.4.3
         """
         result: dict[str, dict[int, list[OutlierReason]]] = {}
+        # 各信号共用时间轴，重复扫描不会增加判据信息。
+        timestamp_anomalies = detect_ts_anomaly(
+            raw.timestamps, float(self.threshold.base_sampling_freq)
+        )
         for tag_name, values in raw.signals.items():
             qc_key = f"{tag_name}_quality"
             quality_codes = raw.quality_codes.get(qc_key)
@@ -278,6 +284,7 @@ class DataQualityAssessor:
                 quality_codes=quality_codes,
                 is_normalized=False,
                 skip_frozen=skip_frozen,
+                timestamp_anomalies=timestamp_anomalies,
             )
             result[tag_name] = reasons
         return result
@@ -316,10 +323,9 @@ class DataQualityAssessor:
             for idx, reasons in tag_outliers.items():
                 if idx >= n:
                     continue
-                for reason in reasons:
-                    reasons_arr[idx].append(reason.value)
-                    if OutlierDetector.should_invalidate([reason]):
-                        valid_arr[idx] = False
+                reasons_arr[idx].extend(reason.value for reason in reasons)
+                if OutlierDetector.should_invalidate(reasons):
+                    valid_arr[idx] = False
 
             validity[f"{tag_name}_valid"] = valid_arr
             outlier_reasons[tag_name] = reasons_arr
@@ -329,8 +335,10 @@ class DataQualityAssessor:
     @staticmethod
     def _compute_all_valid(validity: dict[str, list[bool]], n: int) -> list[bool]:
         """计算所有信号 valid 的交集（该时间戳是否全有效）."""
-        all_valid = [True] * n
+        import numpy as np
+
+        all_valid = np.ones(n, dtype=bool)
         for arr in validity.values():
-            for i in range(min(n, len(arr))):
-                all_valid[i] = all_valid[i] and arr[i]
-        return all_valid
+            size = min(n, len(arr))
+            all_valid[:size] &= np.asarray(arr[:size], dtype=bool)
+        return all_valid.tolist()

@@ -79,18 +79,10 @@ _REDIS_CACHE_EDGE_TOLERANCE_S = 60.0
 
 
 class TDengineProvider:
-    """TDengine 数据源提供者（宽表 + taosrest）.
+    """TDengine 数据源提供者（测点点表 + taosrest）。"""
 
-    Phase 2 改造：
-    - make_query_fn 从窄表 7 次查询改为宽表 1 次查询
-    - query_trend_data 保留窄表查询（兼容波形展示路径）
-    """
-
-    def make_query_fn(self, db: Any) -> QueryFn:
-        """构造 TDengine 查询函数（宽表查询）。
-
-        替代原 make_dataplanner_query_fn 的 7 次窄表并行查询，
-        改为宽表 1 次查询（一次查 7 列 + 质量码）。
+    def make_query_fn(self, db: Any, *, event_reader=None) -> QueryFn:
+        """构造点表查询闭包，同窗并发 TagGroup 复用相同只读 IO。
 
         Args:
             db: 异步数据库会话（查询回路-Tag 映射）
@@ -99,11 +91,12 @@ class TDengineProvider:
             DataPlanner 兼容的查询闭包
         """
         from app.contracts.data_types import RawTimeSeries
+        from app.services.data_source.point_read_scope import PointReadScopes
 
-        # DataPlanner 会并发执行多个 tagGroup 查询；这些查询共享同一个
-        # AsyncSession。SQLAlchemy 明确不允许同一 AsyncSession 并发 execute，
-        # 因此先串行解析并缓存回路宽表名，后续 TDengine 查询仍可并发执行。
-        # 解析结果缓存于模块级 TTL 缓存（见文件头设计说明），跨闭包共享。
+        read_scopes = PointReadScopes()
+
+        # 元数据仍使用独立短会话；只复用物化查询结果，不共享 AsyncSession。
+        # 最后一个同窗读者退出即释放，后续任务/窗口重新读取当前源。
         async def _query_fn_point(
             loop_id: str,
             tag_roles: list[str],
@@ -124,10 +117,19 @@ class TDengineProvider:
             if isinstance(start_dt, datetime) and isinstance(end_dt, datetime):
                 # db=None：布局解析用独立短会话，绝不触碰共享 AsyncSession
                 # （并发 query_fn 共享 session 是既有红线）
-                layouts = await resolve_window_layouts(None, loop_id, start_dt, end_dt)
-                return await _point_or_mixed_query(
-                    db, loop_id, tag_roles, start_dt, end_dt, interval_s, layouts
-                )
+                async with read_scopes.use(loop_id, start_dt, end_dt) as read_scope:
+                    layouts = await resolve_window_layouts(None, loop_id, start_dt, end_dt)
+                    return await _point_or_mixed_query(
+                        db,
+                        loop_id,
+                        tag_roles,
+                        start_dt,
+                        end_dt,
+                        interval_s,
+                        layouts,
+                        read_scope=read_scope,
+                        **({"event_reader": event_reader} if event_reader is not None else {}),
+                    )
             logger.warning("查询时间边界非法（返回空序列）: loop=%s start=%r", loop_id, start)
             return RawTimeSeries(
                 timestamps=[], signals={r.lower(): [] for r in tag_roles}, quality_codes={}
@@ -170,6 +172,9 @@ async def _point_or_mixed_query(
     end_dt: datetime,
     interval_s: int,
     layouts: list,
+    *,
+    read_scope=None,
+    event_reader=None,
 ) -> Any:
     """测点点表查询：逐分片走 LogicalWideBuilder（2026-09-25 宽表退役）.
 
@@ -199,16 +204,40 @@ async def _point_or_mixed_query(
     point_context = None
 
     for part in layouts:
-        raw = await build_logical_wide(db, loop_id, tag_roles, part.start, part.end, interval_s)
+        scope_kwargs = {"read_scope": read_scope} if read_scope is not None else {}
+        if event_reader is not None:
+            scope_kwargs["event_reader"] = event_reader
+        raw = await build_logical_wide(
+            db, loop_id, tag_roles, part.start, part.end, interval_s, **scope_kwargs
+        )
         if raw.series_context is not None:
             point_context = raw.series_context
+        # 缺列兜底只构造一次，禁止在逐点循环中反复分配整窗数组。
+        columns = {
+            role: raw.signals.get(role) or [None] * len(raw.timestamps) for role in roles_lower
+        }
+        qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
+        # builder 的单片严格升序网格不需要再逐列复制、排序和去重。
+        # 非标准/重叠输入仍走下方通用合并路径，保留后段覆盖语义。
+        if (
+            len(layouts) == 1
+            and all(len(values) == len(raw.timestamps) for values in columns.values())
+            and (not wants_pv_quality or len(qc) == len(raw.timestamps))
+            and all(
+                raw.timestamps[i - 1] < raw.timestamps[i] for i in range(1, len(raw.timestamps))
+            )
+        ):
+            return RawTimeSeries(
+                timestamps=raw.timestamps,
+                signals=columns,
+                quality_codes={"pv_quality": qc} if wants_pv_quality else {},
+                series_context=point_context,
+            )
         for i, ts in enumerate(raw.timestamps):
             merged_ts.append(ts)
             for role in roles_lower:
-                sig = raw.signals.get(role) or [None] * len(raw.timestamps)
-                merged_signals[role].append(sig[i])
+                merged_signals[role].append(columns[role][i])
             if wants_pv_quality:
-                qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
                 merged_pv_q.append(qc[i])
 
     # 排序 + 边界去重（同 ts 保留后段——边界 T 处 point 覆盖 legacy）

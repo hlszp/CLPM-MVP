@@ -108,7 +108,25 @@ function setupAccessGuard(router: Router) {
     let userInfo;
     try {
       userInfo = await authStore.fetchUserInfo();
-    } catch {
+    } catch (error) {
+      // 仅认证失效才清会话；网络超时/503/断连属于瞬态故障，清 token 会把
+      // 「一次抖动」放大成「无法登录」。瞬态错误保留会话并中止本次导航。
+      const err = error as {
+        code?: string;
+        response?: { data?: { code?: string }; status?: number };
+      };
+      const status = err?.response?.status;
+      const code = err?.response?.data?.code ?? err?.code;
+      const isAuthFailure =
+        status === 401 ||
+        code === 'ERR_TOKEN_INVALID' ||
+        code === 'ERR_TOKEN_EXPIRED' ||
+        code === 'ERR_UNAUTHORIZED' ||
+        code === 'ERR_INVALID_TOKEN';
+      if (!isAuthFailure) {
+        console.error('fetchUserInfo transient failure, keep session', error);
+        return false;
+      }
       // token 无效或过期，清空并跳转登录页
       accessStore.setAccessToken(null);
       accessStore.setRefreshToken(null);

@@ -1,0 +1,250 @@
+{
+  "date": "2026-10-21",
+  "baselineRevision": "d1cecbe4aa45d0e482a81ed0a6dc831c922aca31",
+  "implementationRevision": "7abb99ccf",
+  "productionVersion": "v7.5.6-1043-full",
+  "scope": "Local point-layout read/encode comparisons, not a production 961-loop throughput acceptance",
+  "productionLogSource": "User supplied terminal output; observations are before the new optimization",
+  "productionObservations": [
+    {
+      "timestamp": "2026-10-21T03:25:19.570375+00:00",
+      "level": "INFO",
+      "logger": "app.tasks.kpi_calc",
+      "message": "[批量计时] 窗口=10-21 02:00 回路=961/961 | read p50=16.47s p95=22.16s max=24.39s sum=14618.0s | compute p50=0.12s p95=0.33s max=0.89s sum=130.1s | persist p50=2.99s p95=5.69s max=9.05s sum=2947.3s"
+    },
+    {
+      "timestamp": "2026-10-21T03:25:19.570894+00:00",
+      "level": "INFO",
+      "logger": "app.tasks.kpi_calc",
+      "message": "并发计算完成: loops=961, concurrency=12, elapsed=1519.281s, avg=1.581s/loop"
+    },
+    {
+      "timestamp": "2026-10-21T04:25:00.222038+00:00",
+      "level": "INFO",
+      "logger": "app.tasks.kpi_calc",
+      "message": "[批量计时] 窗口=10-21 03:00 回路=961/961 | read p50=15.96s p95=21.74s max=24.33s sum=14223.0s | compute p50=0.12s p95=0.39s max=0.81s sum=137.8s | persist p50=2.98s p95=6.09s max=8.90s sum=3105.7s"
+    },
+    {
+      "timestamp": "2026-10-21T04:25:00.222447+00:00",
+      "level": "INFO",
+      "logger": "app.tasks.kpi_calc",
+      "message": "并发计算完成: loops=961, concurrency=12, elapsed=1499.770s, avg=1.561s/loop"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:58.442839+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=6b3a39ac-767b-41c6-8545-b1ffefb159e6, tagGroup=QUALITY_HF, points=3601, query=7.142s, preprocess=0.272s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:58.696173+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=4e8a085d-fc87-41b2-bfc9-800f19297e21, tagGroup=PVOP_HF, points=3601, query=7.167s, preprocess=0.480s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:58.704441+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=6b3a39ac-767b-41c6-8545-b1ffefb159e6, tagGroup=MODE_HF, points=3601, query=6.930s, preprocess=0.749s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.197972+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=4e8a085d-fc87-41b2-bfc9-800f19297e21, tagGroup=BASE, points=721, query=7.680s, preprocess=0.474s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.231073+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=4e8a085d-fc87-41b2-bfc9-800f19297e21, tagGroup=QUALITY_HF, points=3601, query=7.702s, preprocess=0.479s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.233296+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=4e8a085d-fc87-41b2-bfc9-800f19297e21, tagGroup=OP_HF, points=3601, query=8.072s, preprocess=0.114s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.289352+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=6b3a39ac-767b-41c6-8545-b1ffefb159e6, tagGroup=OP_HF, points=3601, query=8.170s, preprocess=0.093s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.357400+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=6b3a39ac-767b-41c6-8545-b1ffefb159e6, tagGroup=PVOP_HF, points=3601, query=8.130s, preprocess=0.200s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.363059+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=4e8a085d-fc87-41b2-bfc9-800f19297e21, tagGroup=MODE_HF, points=3601, query=7.773s, preprocess=0.544s"
+    },
+    {
+      "timestamp": "2026-10-21T04:24:59.512786+00:00",
+      "level": "INFO",
+      "logger": "app.services.data_planner",
+      "message": "DataPlanner 取数+预处理: loop=2f54fc24-d63c-49d4-beb0-66c697b75b84, tagGroup=BASE, points=3601, query=7.844s, preprocess=0.626s"
+    }
+  ],
+  "readScopeComparison": [
+    {
+      "source": "local-point-TDengine",
+      "loop": "80FIC11906_PIDA",
+      "type": "FLOW",
+      "unshared_ms": 174.23,
+      "scoped_ms": 153.73,
+      "speedup": 1.13,
+      "queries": {
+        "unshared": {
+          "td_queries": 5,
+          "pg_metadata": 2,
+          "anchor_stage_awaits": 1
+        },
+        "scoped": {
+          "td_queries": 5,
+          "pg_metadata": 2,
+          "anchor_stage_awaits": 1
+        }
+      },
+      "package_and_metrics_equal": true
+    },
+    {
+      "source": "local-point-TDengine",
+      "loop": "41LIC40309_PIDA",
+      "type": "LEVEL",
+      "unshared_ms": 487.67,
+      "scoped_ms": 278.83,
+      "speedup": 1.75,
+      "queries": {
+        "unshared": {
+          "td_queries": 16,
+          "pg_metadata": 10,
+          "anchor_stage_awaits": 5
+        },
+        "scoped": {
+          "td_queries": 8,
+          "pg_metadata": 2,
+          "anchor_stage_awaits": 5
+        }
+      },
+      "package_and_metrics_equal": true
+    },
+    {
+      "source": "local-point-TDengine",
+      "loop": "41PIC40306_PIDA",
+      "type": "PRESSURE",
+      "unshared_ms": 485.3,
+      "scoped_ms": 311.57,
+      "speedup": 1.56,
+      "queries": {
+        "unshared": {
+          "td_queries": 16,
+          "pg_metadata": 10,
+          "anchor_stage_awaits": 5
+        },
+        "scoped": {
+          "td_queries": 8,
+          "pg_metadata": 2,
+          "anchor_stage_awaits": 5
+        }
+      },
+      "package_and_metrics_equal": true
+    },
+    {
+      "source": "local-point-TDengine",
+      "loop": "80TIC10402_PIDA",
+      "type": "TEMPERATURE",
+      "unshared_ms": 483.05,
+      "scoped_ms": 316.58,
+      "speedup": 1.53,
+      "queries": {
+        "unshared": {
+          "td_queries": 16,
+          "pg_metadata": 10,
+          "anchor_stage_awaits": 5
+        },
+        "scoped": {
+          "td_queries": 8,
+          "pg_metadata": 2,
+          "anchor_stage_awaits": 5
+        }
+      },
+      "package_and_metrics_equal": true
+    }
+  ],
+  "readScopeMethod": "Four alternating unshared/scoped runs per loop; same local PG/TDengine data; L1/L2 disabled; no KPI/result writes. Medians include real point queries, preprocessing and bundle assembly. Anchor stage awaits include reuse and are not SQL counts.",
+  "inputEncodingComparison": [
+    {
+      "source": "local-point-TDengine",
+      "loop": "41FIC20051_PIDA",
+      "type": "FLOW",
+      "window_start": "2026-10-20 05:00:00",
+      "window_end": "2026-10-20 06:00:00",
+      "bundles": 25,
+      "unique_blocks": 5,
+      "before_ms": 270.287,
+      "after_ms": 87.869,
+      "speedup": 3.08,
+      "package_equal": true,
+      "input_hash": "b0a321bbce9cf1366eddce18a4e84eb2342ee12c2aa2991551d776dfa14db8d0"
+    },
+    {
+      "source": "local-point-TDengine",
+      "loop": "41LIC40201_PIDA",
+      "type": "LEVEL",
+      "window_start": "2026-10-20 05:00:00",
+      "window_end": "2026-10-20 06:00:00",
+      "bundles": 25,
+      "unique_blocks": 5,
+      "before_ms": 152.089,
+      "after_ms": 55.979,
+      "speedup": 2.72,
+      "package_equal": true,
+      "input_hash": "3df849842d0d05ad03cbbd53f488bcafe73801fcbf96499ddecb20814ab0d249"
+    },
+    {
+      "source": "local-point-TDengine",
+      "loop": "41PIC40320_PIDA",
+      "type": "PRESSURE",
+      "window_start": "2026-10-20 05:00:00",
+      "window_end": "2026-10-20 06:00:00",
+      "bundles": 25,
+      "unique_blocks": 5,
+      "before_ms": 191.063,
+      "after_ms": 62.469,
+      "speedup": 3.06,
+      "package_equal": true,
+      "input_hash": "b6488fa007f344c92dcfd2536000259b199f3217847422e9286cc0dc4b581b13"
+    },
+    {
+      "source": "local-point-TDengine",
+      "loop": "41TIC20006_PIDA",
+      "type": "TEMPERATURE",
+      "window_start": "2026-10-20 05:00:00",
+      "window_end": "2026-10-20 06:00:00",
+      "bundles": 25,
+      "unique_blocks": 5,
+      "before_ms": 147.931,
+      "after_ms": 58.208,
+      "speedup": 2.54,
+      "package_equal": true,
+      "input_hash": "218e5bb237e68546d63f2343b5ffd5933ae5d47ef3920230cf88af73ba7c569c"
+    }
+  ],
+  "inputEncodingMethod": "Ten alternating baseline/current encodes per loop; medians; complete array keys/dtypes/shapes/bytes, metadata and inputHash equality asserted.",
+  "anchorPostgresCheck": {
+    "database": "local PostgreSQL",
+    "table": "transaction-scoped temporary table only",
+    "before_rows": 7,
+    "after_rows": 3,
+    "same_latest_and_validity": true,
+    "future_and_expired_remain_excluded": true,
+    "rolled_back": true
+  },
+  "productionAfterOptimization": null
+}

@@ -92,7 +92,7 @@ const judgementView = computed(() => {
   if (js === 'VALID_NEGATIVE')
     return {
       color: '#10b981',
-      title: '正常（有效阴性）',
+      title: '正常',
       desc: '检查范围内全部诊断算子为合格阴性——正常结论仅覆盖所检查范围，不代表检查范围之外的设备状态。',
     };
   if (js === 'INCONCLUSIVE')

@@ -12,6 +12,8 @@ import type { MetricSeriesPoint } from '#/api/metric';
 
 import { computed } from 'vue';
 
+import { kpiWindowLabel } from '../loops-shared';
+
 defineOptions({ name: 'CockpitLoopCard' });
 
 const props = withDefaults(
@@ -31,11 +33,16 @@ const gradeVar = computed(() => props.loop.grade?.colorVar ?? '--ck-border-2');
 const scoreText = computed(() =>
   props.loop.score === null ? '—' : props.loop.score.toFixed(2),
 );
+const windowLabel = computed(() => kpiWindowLabel(props.loop.kpiSummary));
+const normalDimsLabel = computed(() => {
+  if (!props.loop.dims) return '未评估';
+  return Object.values(props.loop.dims).includes(null)
+    ? '分项不完整'
+    : '六维正常';
+});
 
 function fmt(v: null | number | undefined): string {
-  return v === null || v === undefined || Number.isNaN(v)
-    ? '—'
-    : v.toFixed(2);
+  return v === null || v === undefined || Number.isNaN(v) ? '—' : v.toFixed(2);
 }
 
 // ---------------------------------------------------------------------------
@@ -86,6 +93,10 @@ const sparkPath = computed<null | string>(() => {
       </span>
     </div>
 
+    <div class="lcard__window" :title="`评估窗口：${windowLabel}`">
+      {{ windowLabel }}
+    </div>
+
     <!-- 行2：PV/SP 实时值 + 模式标签 -->
     <div class="lcard__mid">
       <span class="lcard__kv">
@@ -94,7 +105,9 @@ const sparkPath = computed<null | string>(() => {
       <span class="lcard__kv">
         SP <b>{{ fmt(loop.live.sp) }}</b>
       </span>
-      <span v-if="loop.live.unit" class="lcard__unit">{{ loop.live.unit }}</span>
+      <span v-if="loop.live.unit" class="lcard__unit">{{
+        loop.live.unit
+      }}</span>
       <span
         class="lcard__mode"
         :class="{ manual: loop.mode === 'MANUAL' }"
@@ -110,8 +123,18 @@ const sparkPath = computed<null | string>(() => {
         v-if="loop.worst"
         class="lcard__worst"
         title="评估窗口六维指标中最差的一项（统计口径）；与行 2 实时模式标签口径不同"
-      >{{ loop.worst }}</span>
-      <span v-else class="lcard__worst lcard__worst--ok" title="评估窗口六维指标均 ≥60">六维正常</span>
+        >{{ loop.worst }}</span
+      >
+      <span
+        v-else
+        class="lcard__worst lcard__worst--ok"
+        :title="
+          normalDimsLabel === '六维正常'
+            ? '评估窗口六维指标均 ≥60'
+            : normalDimsLabel
+        "
+        >{{ normalDimsLabel }}</span
+      >
       <svg
         v-if="sparkPath"
         class="lcard__spark"
@@ -138,10 +161,10 @@ const sparkPath = computed<null | string>(() => {
 .lcard {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 4px;
   justify-content: space-between;
   height: 118px;
-  padding: 10px 12px;
+  padding: 8px 12px;
   overflow: hidden;
   text-align: left;
   cursor: pointer;
@@ -196,6 +219,15 @@ const sparkPath = computed<null | string>(() => {
   line-height: 1;
 }
 
+.lcard__window {
+  flex: none;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  line-height: 12px;
+  color: var(--ck-text-3);
+  overflow-wrap: anywhere;
+}
+
 .lcard__mid {
   display: flex;
   flex: none;
@@ -236,14 +268,20 @@ const sparkPath = computed<null | string>(() => {
 .lcard__bottom {
   display: flex;
   flex: none;
+  gap: 4px;
   align-items: center;
   justify-content: space-between;
 }
 
 .lcard__worst {
+  flex: none;
+  max-width: 100%;
   padding: 1px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   font-size: 11px;
   color: var(--ck-grade-warning);
+  white-space: nowrap;
   background: var(--ck-panel-3);
   border-radius: 4px;
 }
@@ -253,7 +291,8 @@ const sparkPath = computed<null | string>(() => {
 }
 
 .lcard__spark {
-  flex: none;
+  flex: 0 1 96px;
+  min-width: 0;
 }
 
 .lcard__spark--empty {

@@ -1765,17 +1765,15 @@ async def _build_snapshot_conditions(
         KpiSnapshotHourly.ts_start <= end,
     ]
     if not include_inactive:
-        # 2026-10-10 停用口径：仅统计活跃回路（子查询 IN，不依赖 join）。
-        # include_inactive=True（历史快照列表）：历史记录完整呈现，停用回路
-        # 禁用前的快照不隐藏（当前态统计/榜单仍走默认过滤口径）。
+        # 2026-10-21 口径收紧：监控停用/不参评回路除回路配置页外一律不统计
+        # 不展示（此前 include_inactive=True 曾让历史列表保留停用回路快照，
+        # 造成列表 total 与等级分布 total 不一致）。include_inactive=True
+        # 仅保留给确需完整历史归档的受控场景，默认全关。
         conditions.append(
             KpiSnapshotHourly.loop_id.in_(
                 select(LoopLedger.id).where(LoopLedger.is_active.is_(True))
             )
         )
-        # 2026-10-10 参评口径统一：当前态统计/榜单仅计参评回路（不参评回路
-        # 不再产出评估快照，其停用前/退出参评前的旧快照不得继续计入）；
-        # 历史模式（include_inactive=True）同样完整呈现，不滤参评。
         conditions.append(
             KpiSnapshotHourly.loop_id.in_(
                 select(LoopLedger.id).where(LoopLedger.include_in_evaluation.is_(True))
@@ -2165,8 +2163,16 @@ async def list_custom_snapshots(
     口径：kpi_snapshot_custom 按 ts_start DESC 分页；支持按任务（taskId）、
     回路、装置、时间窗、状态过滤。行结构与 hourly 同构（KpiSnapshotCustom
     实体），端点侧复用同一 item 组装。
+
+    2026-10-21：无条件排除监控停用/不参评回路（与 hourly 列表、
+    grade-distribution 同口径）。
     """
-    conditions = []
+    # 停用/不参评回路除回路配置页外不展示（2026-10-21 用户口径）
+    active_loop_ids = select(LoopLedger.id).where(
+        LoopLedger.is_active.is_(True),
+        LoopLedger.include_in_evaluation.is_(True),
+    )
+    conditions = [KpiSnapshotCustom.loop_id.in_(active_loop_ids)]
     if task_id:
         conditions.append(KpiSnapshotCustom.task_id == task_id)
     if loop_ids:
@@ -2185,23 +2191,19 @@ async def list_custom_snapshots(
     if status_filter:
         conditions.append(KpiSnapshotCustom.status.in_(status_filter.split(",")))
 
-    base = select(KpiSnapshotCustom, LoopLedger.tag_name).outerjoin(
+    base = (
+        select(KpiSnapshotCustom, LoopLedger.tag_name)
+        .outerjoin(LoopLedger, KpiSnapshotCustom.loop_id == LoopLedger.id)
+        .where(*conditions)
+    )
+
+    # count 与列表同条件；装置过滤依赖 LoopLedger，count 子查询需带 join
+    count_inner = select(KpiSnapshotCustom.id).outerjoin(
         LoopLedger, KpiSnapshotCustom.loop_id == LoopLedger.id
     )
     if conditions:
-        base = base.where(*conditions)
-
-    count_stmt = select(func.count()).select_from(KpiSnapshotCustom)
-    if task_id:
-        count_stmt = count_stmt.where(KpiSnapshotCustom.task_id == task_id)
-    if loop_ids:
-        count_stmt = count_stmt.where(KpiSnapshotCustom.loop_id.in_(loop_ids))
-    if start is not None:
-        count_stmt = count_stmt.where(KpiSnapshotCustom.ts_start >= start)
-    if end is not None:
-        count_stmt = count_stmt.where(KpiSnapshotCustom.ts_start <= end)
-    if status_filter:
-        count_stmt = count_stmt.where(KpiSnapshotCustom.status.in_(status_filter.split(",")))
+        count_inner = count_inner.where(*conditions)
+    count_stmt = select(func.count()).select_from(count_inner.subquery())
     total = int((await db.execute(count_stmt)).scalar() or 0)
 
     stmt = (
@@ -2279,7 +2281,10 @@ async def list_loop_snapshots(
         status_filter=status_filter if not latest_only else None,
         confidence_level=confidence_level if not latest_only else None,
         loop_tag_name=loop_tag_name,
-        include_inactive=True,
+        # 2026-10-21 口径收紧：监控停用（is_active=False）/不参评回路除回路
+        # 配置页外一律不统计不展示——列表与 /grade-distribution 统一走默认
+        # 活跃+参评过滤，避免「卡片 961、列表 1209」两套数。
+        include_inactive=False,
     )
     # G3-R02：latestOnly 模式的代表后置筛选（status/confidence/grade 同级）
     representative_filters: list = []
@@ -2445,8 +2450,8 @@ async def batch_delete_snapshots(
     """按筛选条件批量删除历史快照（2026-10-10；与列表查询同口径）。
 
     安全约束：loop_ids / plant_node_id / 时间范围 至少一项（否则拒删）；
-    dry_run=True 仅计数。include_inactive=True 与列表一致——列表看得到
-    的才能删到（停用回路的历史快照同口径可删）。
+    dry_run=True 仅计数。与列表同口径（include_inactive=False）——
+    列表看得到的才能删到。
     """
     from app.models.metric import KpiSnapshotHourly
 
@@ -2460,7 +2465,8 @@ async def batch_delete_snapshots(
         start=start,
         end=end,
         status_filter=status,
-        include_inactive=True,
+        # 与列表同口径：停用/不参评回路快照不在列表出现，也就不在批量删除范围
+        include_inactive=False,
     )
     if source:
         sources = [x.strip() for x in source.split(",") if x.strip()]
@@ -2500,7 +2506,7 @@ async def window_agg_snapshots(
     任意 ≥1h 窗口的"最新"都是同一条——矩阵页切换 8h/24h/168h 统计值不变
     的根因。本函数给出窗口代表值口径：每回路窗口内**均值**（AVG 跳过
     NULL，INCONCLUSIVE 缺值自然不计入），与列表同筛选口径
-    （include_inactive=True）。
+    （include_inactive=False：停用/不参评回路不参与统计）。
     """
     from app.models.metric import KpiSnapshotHourly
 
@@ -2524,7 +2530,7 @@ async def window_agg_snapshots(
         plant_node_ids=plant_node_ids,
         start=start,
         end=end,
-        include_inactive=True,
+        include_inactive=False,
     )
     stmt = (
         select(

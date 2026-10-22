@@ -509,6 +509,8 @@ export namespace LoopApi {
      * 传 false 跳过服务端全量统计——961 回路下是每页请求的固定全量开销）
      */
     withAggregate?: boolean;
+    /** 驾驶舱：最近有评分的 1h 快照，分项、筛选、排序及聚合保持同源 */
+    latestScoredHour?: boolean;
     /** 排序字段（默认 score：评分升序，最差在前；scoreDelta=P5-04 劣化排序，NULL 恒排最后） */
     sortBy?: 'score' | 'scoreDelta' | 'tagName';
     /** 排序方向（默认 asc） */
@@ -582,6 +584,9 @@ export namespace LoopApi {
     status: KpiStatus;
     algorithm_version: string;
     calculatedAt: string;
+    /** 列表小时评估快照的实际窗口（naive UTC）；旧接口可能不提供 */
+    tsStart?: null | string;
+    tsEnd?: null | string;
     /**
      * 回路级可信度等级（A/B/C/D/E），由后端 _aggregate_kpi_snapshots 返回。
      * 可信度统一 Phase 2：detail 页可信度徽章统一用此字段，不再前端推导。

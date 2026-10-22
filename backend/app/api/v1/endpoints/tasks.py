@@ -473,38 +473,6 @@ def _task_to_response(data: dict[str, Any]) -> TaskResponse:
     )
 
 
-async def _count_active_custom_tasks(user_id: str | None = None) -> int:
-    """统计活跃的自定义任务数.
-
-    遍历任务索引，统计状态为 PENDING/RUNNING 的自定义任务（CUSTOM + BACKFILL，
-    BACKFILL 计入同一并发池）。若指定 user_id，仅统计该用户的活跃任务。
-
-    Args:
-        user_id: 用户 ID；None 表示统计全系统
-
-    Returns:
-        活跃任务数
-    """
-    task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)
-    count = 0
-    for tid in task_ids:
-        data = await _get_task(tid)
-        if not data:
-            continue
-        # 统计 CUSTOM 和 BACKFILL 任务（BACKFILL 计入同一并发池）
-        if data.get("task_type") not in (
-            TaskType.CUSTOM.value,
-            TaskType.BACKFILL.value,
-        ):
-            continue
-        if data.get("status") not in _ACTIVE_STATUSES:
-            continue
-        if user_id is not None and data.get("created_by_id") != str(user_id):
-            continue
-        count += 1
-    return count
-
-
 async def _active_custom_task_details(user_id: str | None = None) -> list[dict[str, Any]]:
     """Return active custom/backfill tasks with the fields needed for troubleshooting."""
     task_ids = await redis_client.zrange(_TASK_INDEX_KEY, 0, -1)
@@ -666,17 +634,26 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
     total = len(celery_ids)
     done = 0
     failed = 0
+    started = False
+    finished_times: list[datetime] = []
     for cid in celery_ids:
         result = AsyncResult(cid, app=celery_app)
         celery_state = result.state
+        if celery_state == "STARTED":
+            started = True
         if celery_state == "SUCCESS":
             done += 1
         elif celery_state in ("FAILURE", "REVOKED"):
             failed += 1
+        if celery_state in ("SUCCESS", "FAILURE", "REVOKED"):
+            date_done = getattr(result, "date_done", None)
+            if isinstance(date_done, datetime):
+                finished_times.append(
+                    date_done if date_done.tzinfo else date_done.replace(tzinfo=UTC)
+                )
 
     # 判断是否所有子任务都已到达终态
     all_finished = (done + failed) == total
-    has_running = done == 0 and failed == 0
 
     # 仅在所有子任务完成时计算最终进度，避免覆盖 Celery 任务自身
     # 通过 _update_task_progress 写入的中间进度值（progress/loops_done/current_stage）。
@@ -688,22 +665,19 @@ async def _sync_task_status(task_id: str, data: dict[str, Any]) -> None:
         updates["progress"] = str(round(progress, 4))
         if done == total:
             updates["status"] = TaskStatus.SUCCESS.value
-            updates["finished_at"] = _now_iso()
             updates["progress"] = "1.0"
         elif failed > 0:
             updates["status"] = TaskStatus.FAILED.value
-            updates["finished_at"] = _now_iso()
             updates["error_message"] = f"{failed}/{total} 子任务失败"
-    elif has_running:
-        # 所有子任务仍在运行，仅确保状态为 RUNNING（不覆盖 progress）
+        # 使用 Worker 结果时间，不能把首次查询时刻当完成时刻。
+        # REVOKED 等状态可能没有 date_done：保留未知，不编造执行时长。
+        updates["finished_at"] = (
+            max(finished_times).isoformat() if len(finished_times) == total else ""
+        )
+    elif started or done or failed:
+        # PENDING / RECEIVED / RETRY 只说明排队/重试；STARTED 或部分完成
+        # 才能证明批次已经开始，真实 started_at 由执行任务写入。
         updates["status"] = TaskStatus.RUNNING.value
-        if not data.get("started_at"):
-            updates["started_at"] = _now_iso()
-    else:
-        # 部分完成部分运行，仅确保状态为 RUNNING（不覆盖 progress）
-        updates["status"] = TaskStatus.RUNNING.value
-        if not data.get("started_at"):
-            updates["started_at"] = _now_iso()
 
     if updates:
         from app.services import task_tracker

@@ -39,12 +39,12 @@ import { categoryOrJudgementLabel } from '#/views/diagnosis/components/assessmen
 
 import {
   type GradeInfo,
+  kpiWindowLabel,
   MODE_KEY_ORDER,
   MODE_KEY_ZH,
   modeZhLabel,
   readCockpitColors,
   resolveGrade,
-  sixDimsFromKpiSummary,
   sixDimsFromNodeSnapshot,
   type SixDimValues,
 } from '../loops-shared';
@@ -206,8 +206,15 @@ const liveDetail = reactive<LoopRealtimeValues>({
   readAt: null,
 });
 
-const confidenceLevel = ref<null | string>(null);
-const loopDims = ref<null | SixDimValues>(null);
+// 小时评分、分项与可信度必须同源；详情接口的 KPI 是近 24h 汇总，不能混用。
+const confidenceLevel = computed(
+  () => props.loop?.kpiSummary?.confidence_level ?? null,
+);
+const loopDims = computed(() => props.loop?.dims ?? null);
+const snapshotLabel = computed(() => {
+  if (!props.loop?.kpiSummary) return '暂无小时快照';
+  return `最近有评分 · ${kpiWindowLabel(props.loop.kpiSummary)}`;
+});
 
 /** 最近闭环记录（最近诊断结论 + 处置状态；均为 null 时隐藏区块） */
 const closure = ref<null | {
@@ -233,9 +240,7 @@ const modeText = computed(() =>
 );
 
 function fmt(v: null | number | undefined): string {
-  return v === null || v === undefined || Number.isNaN(v)
-    ? '—'
-    : v.toFixed(2);
+  return v === null || v === undefined || Number.isNaN(v) ? '—' : v.toFixed(2);
 }
 
 function fmtTime(iso: null | string | undefined): string {
@@ -334,8 +339,6 @@ async function loadLoopDetail(loopId: string) {
     liveDetail.pidI = detail.runtimeParams?.pidI ?? null;
     liveDetail.pidD = detail.runtimeParams?.pidD ?? null;
 
-    confidenceLevel.value = detail.kpiSummary?.confidence_level ?? null;
-    loopDims.value = sixDimsFromKpiSummary(detail.kpiSummary);
     lastTrend = detail.trend ?? null;
     refreshTrend();
 
@@ -358,7 +361,6 @@ async function loadLoopDetail(loopId: string) {
     }
   } catch {
     if (props.loop?.loopId === loopId) {
-      loopDims.value = null;
       lastTrend = null;
     }
   } finally {
@@ -367,7 +369,7 @@ async function loadLoopDetail(loopId: string) {
 }
 
 watch(
-  () => [props.view, props.loop?.loopId],
+  [() => props.view, () => props.loop?.loopId],
   () => {
     if (props.view === 'loop' && props.loop?.loopId) {
       void loadLoopDetail(props.loop.loopId);
@@ -473,7 +475,9 @@ function openInWorkbench() {
         <span class="sub">{{ nodeName }}（聚合）</span>
       </div>
       <div class="ldp__body">
-        <div class="ldp__section-title" :title="scopeTitle">{{ scopeTitle }}</div>
+        <div class="ldp__section-title" :title="scopeTitle">
+          {{ scopeTitle }}
+        </div>
         <div class="ldp__modebar">
           <EchartsUI ref="modeBarRef" height="64px" />
         </div>
@@ -493,7 +497,9 @@ function openInWorkbench() {
         <span
           class="ldp__badge"
           :style="{
-            color: loop.grade ? `var(${loop.grade.colorVar})` : 'var(--ck-text-3)',
+            color: loop.grade
+              ? `var(${loop.grade.colorVar})`
+              : 'var(--ck-text-3)',
             borderColor: loop.grade
               ? `var(${loop.grade.colorVar})`
               : 'var(--ck-border-2)',
@@ -502,7 +508,10 @@ function openInWorkbench() {
           {{ loop.grade?.label ?? '无评分' }}
         </span>
         <div class="ldp__loophead">
-          <div class="ldp__looptitle" :title="`${loop.tagName} ${loop.description}`">
+          <div
+            class="ldp__looptitle"
+            :title="`${loop.tagName} ${loop.description}`"
+          >
             {{ loop.tagName }} · {{ loop.description || loop.unitName }}
           </div>
           <div class="ldp__loopsub">
@@ -545,7 +554,9 @@ function openInWorkbench() {
           >
             ›
           </button>
-          <button type="button" title="取消选择" @click="emit('close')">×</button>
+          <button type="button" title="取消选择" @click="emit('close')">
+            ×
+          </button>
         </div>
       </div>
 
@@ -556,7 +567,9 @@ function openInWorkbench() {
             <span class="ldp__k">
               <i
                 class="ldp__dot"
-                :class="{ online: realtime.connectionStatus.value === 'online' }"
+                :class="{
+                  online: realtime.connectionStatus.value === 'online',
+                }"
               ></i>
               PV
             </span>
@@ -581,7 +594,8 @@ function openInWorkbench() {
             <span class="ldp__k">D</span><b>{{ fmt(liveDetail.pidD) }}</b>
           </div>
           <div class="ldp__cell">
-            <span class="ldp__k">可信度</span><b>{{ confidenceLevel ?? '—' }}</b>
+            <span class="ldp__k">可信度</span
+            ><b>{{ confidenceLevel ?? '—' }}</b>
           </div>
         </div>
 
@@ -593,6 +607,7 @@ function openInWorkbench() {
         </div>
 
         <!-- 六维雷达（flex 弹性） -->
+        <div class="ldp__section-title">性能评估 · {{ snapshotLabel }}</div>
         <div class="ldp__radar">
           <CockpitRadar
             :dims="loopDims"

@@ -251,7 +251,7 @@ async def delete_subscription_endpoint(
 
 @router.get("/events", response_model=ApiResponse[AlertEventListData])
 async def list_events_endpoint(
-    loopId: str | None = Query(None),
+    loopId: str | None = Query(None, description="回路位号 tag_name（不用 UUID）"),
     ruleId: str | None = Query(None),
     severity: str | None = Query(None),
     status: list[str] | None = Query(None, description="事件状态（多值：?status=A&status=B）"),

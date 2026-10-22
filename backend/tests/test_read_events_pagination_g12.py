@@ -15,6 +15,7 @@ read_events 按 7 天分片，每片只发一条带 LIMIT READ_CHUNK_ROWS 的 SQ
 from __future__ import annotations
 
 import asyncio
+import re
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -66,14 +67,39 @@ class TestReadEventsPagination:
         assert len(calls) == 2, f"满批未触发翻页：实际 {len(calls)} 次查询"
         assert len(out[_PID]) == 5, f"结果被截断：实际 {len(out[_PID])} 行，期望 5"
 
-    def test_cursor_uses_last_ts_exclusive(self, monkeypatch) -> None:
-        """第二页必须以首末条 ts 为界且改为开区间（避免重复取边界行）。"""
+    def test_cursor_reloads_boundary_without_duplicate_rows(self, monkeypatch) -> None:
+        """第二页重读末条 ts，应用层按点去重，避免漏掉同 ts 的其他点。"""
         pages = [[_row(0), _row(1), _row(2)], [_row(3)]]
         _, calls = _run(monkeypatch, pages)
         assert len(calls) == 2
         second = calls[1]
-        assert "> " in second, "翻页应使用开区间游标（ts > last_ts）"
+        assert ">= " in second, "翻页必须保留边界时间戳"
         assert repo.format_ts_utc(_row(2)["ts"]) in second
+
+    async def test_page_boundary_keeps_all_points_at_same_timestamp(self, monkeypatch) -> None:
+        other = "00000000-0000-0000-0000-0000000000cc"
+        rows = [
+            _row(0),
+            {**_row(0), "point_id": other},
+            _row(1),
+            {**_row(1), "point_id": other},
+            _row(2),
+            {**_row(2), "point_id": other},
+        ]
+        monkeypatch.setattr(repo, "READ_CHUNK_ROWS", 3)
+        calls = []
+
+        async def query(sql):
+            calls.append(sql)
+            match = re.search(r"ts >= '([^']+)'", sql)
+            cursor = datetime.fromisoformat(match[1].replace("Z", "+00:00"))
+            return [row for row in rows if row["ts"] >= cursor][:3]
+
+        monkeypatch.setattr(repo, "execute_native", query)
+        out = await repo.read_events([_PID, other], _T0, _T0 + timedelta(hours=1))
+        assert [event["value"] for event in out[_PID]] == [0, 1, 2]
+        assert [event["value"] for event in out[other]] == [0, 1, 2]
+        assert len(calls) == 3
 
     def test_partial_batch_stops(self, monkeypatch) -> None:
         """不足上限 → 立即停止（不额外查询）。"""

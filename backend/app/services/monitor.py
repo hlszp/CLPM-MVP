@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BizError
@@ -29,6 +29,54 @@ from app.services.confidence_evaluator import ALGORITHM_VERSION
 from app.services.data_source.realtime_subscriber import get_subscriber
 
 logger = logging.getLogger(__name__)
+
+# 列表只投影所需标量，避免读取快照中的大 JSONB 列。
+_MONITOR_SNAPSHOT_COLUMNS = (
+    KpiSnapshotHourly.loop_id,
+    KpiSnapshotHourly.score,
+    KpiSnapshotHourly.status,
+    KpiSnapshotHourly.confidence_level,
+    KpiSnapshotHourly.effective_auto_rate,
+    KpiSnapshotHourly.auto_mode_rate,
+    KpiSnapshotHourly.steady_rate,
+    KpiSnapshotHourly.accuracy_rate,
+    KpiSnapshotHourly.fast_rate,
+    KpiSnapshotHourly.oscillation_rate,
+    KpiSnapshotHourly.saturation_rate,
+    KpiSnapshotHourly.good_value_rate,
+    KpiSnapshotHourly.valid_rate,
+    KpiSnapshotHourly.ts_start,
+    KpiSnapshotHourly.ts_end,
+    KpiSnapshotHourly.fitness_level,
+    KpiSnapshotHourly.fitness_tags,
+    KpiSnapshotHourly.tune_level,
+)
+
+
+def _latest_scored_hour_snapshots(name: str, *, before_today: bool = False):
+    """每个参评回路最近一个有分值的 1h 快照，零分有效。
+
+    LATERAL + LIMIT 1 让优化器使用既有回路索引逐回路点查，
+    避免为卡片窗口选择重新扫描整张历史表或逐回路发出网络查询。
+    """
+    latest = select(*_MONITOR_SNAPSHOT_COLUMNS).where(
+        KpiSnapshotHourly.loop_id == LoopLedger.id,
+        KpiSnapshotHourly.score.is_not(None),
+        KpiSnapshotHourly.ts_end == KpiSnapshotHourly.ts_start + timedelta(hours=1),
+    )
+    if before_today:
+        latest = latest.where(KpiSnapshotHourly.ts_end < func.date_trunc("day", func.now()))
+    row = latest.order_by(KpiSnapshotHourly.ts_end.desc()).limit(1).correlate(LoopLedger).lateral()
+    return (
+        # 外层 loop_id 来自主表，分页后的 ID 条件可直接下推到回路索引；
+        # 若投影内层 row.loop_id，优化器可能先执行所有回路的 LATERAL。
+        select(LoopLedger.id.label("loop_id"), *(col for col in row.c if col.key != "loop_id"))
+        .select_from(LoopLedger)
+        .join(row, true())
+        .where(LoopLedger.include_in_evaluation.is_(True))
+        .where(LoopLedger.is_active.is_(True))
+        .subquery(name)
+    )
 
 
 def _eval_participant_ids():
@@ -444,6 +492,7 @@ async def _build_loop_monitor_aggregate(
     db: AsyncSession,
     conditions: list,
     type_facet_exclude: Any = None,
+    latest_scored_hour: bool = False,
 ) -> dict[str, Any]:
     """回路监控列表聚合统计（E-1）。
 
@@ -487,7 +536,13 @@ async def _build_loop_monitor_aggregate(
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         .subquery("agg_latest_snap")
     )
-    ls_result = await db.execute(select(latest_snap_sq.c.loop_id, latest_snap_sq.c.score))
+    if latest_scored_hour:
+        latest_snap_sq = _latest_scored_hour_snapshots("agg_latest_snap")
+    ls_result = await db.execute(
+        select(latest_snap_sq.c.loop_id, latest_snap_sq.c.score).where(
+            latest_snap_sq.c.loop_id.in_(all_loop_ids)
+        )
+    )
     score_map: dict[str, float | None] = {}
     for loop_id, score_val in ls_result.all():
         score_map[str(loop_id)] = float(score_val) if score_val is not None else None
@@ -502,7 +557,13 @@ async def _build_loop_monitor_aggregate(
         .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         .subquery("agg_prev_snap")
     )
-    ps_result = await db.execute(select(prev_snap_sq.c.loop_id, prev_snap_sq.c.score))
+    if latest_scored_hour:
+        prev_snap_sq = _latest_scored_hour_snapshots("agg_prev_snap", before_today=True)
+    ps_result = await db.execute(
+        select(prev_snap_sq.c.loop_id, prev_snap_sq.c.score).where(
+            prev_snap_sq.c.loop_id.in_(all_loop_ids)
+        )
+    )
     prev_score_map: dict[str, float | None] = {}
     for loop_id, score_val in ps_result.all():
         prev_score_map[str(loop_id)] = float(score_val) if score_val is not None else None
@@ -780,6 +841,7 @@ async def list_loop_monitor(
     sort_order: str = "asc",
     page: int = 1,
     page_size: int = 20,
+    latest_scored_hour: bool = False,
 ) -> dict:
     """回路监控列表（含实时 PV/SP/OP/MODE 值、质量码、评分）。
 
@@ -796,9 +858,12 @@ async def list_loop_monitor(
     0-based / ``focus_page``，不在结果集内为 null）——供前端筛选变化后
     "跳到选中回路所在页"。
     ``with_aggregate=False`` 跳过全量聚合（P1 改版监视页不消费 aggregate）。
+    ``latest_scored_hour=True`` 为驾驶舱选择最近有分值的 1h 快照；评分、分项、
+    筛选、排序及聚合均使用该窗口，返回实际 tsStart/tsEnd，不重新计算评分。
     ``sort_by`` 支持 score / tagName / scoreDelta（P5-04：劣化排序，
     ``score_delta`` 升序=劣化最多在前，NULL 恒排最后；预计算列，
-    与行内实时 scoreDelta 存在 ≤5min 窗口差，同 score 排序既有口径）。
+    与行内实时 scoreDelta 存在 ≤5min 窗口差，同 score 排序既有口径；
+    latest_scored_hour 模式则直接按所选小时快照排序）。
     """
     _ALLOWED_SORT_BY = {"score", "tagName", "scoreDelta"}
     if sort_by not in _ALLOWED_SORT_BY:
@@ -964,6 +1029,15 @@ async def list_loop_monitor(
             }
         conditions.append(LoopLedger.id.in_(matched_ids))
 
+    scored_latest = (
+        _latest_scored_hour_snapshots("scored_hour_latest") if latest_scored_hour else None
+    )
+    scored_previous = (
+        _latest_scored_hour_snapshots("scored_hour_previous", before_today=True)
+        if latest_scored_hour
+        else None
+    )
+
     # 评分等级筛选（回路监视页改版 P1-1）：按最新快照 score 半开区间 [min, max)
     # 过滤；unscored 只看无快照回路。SQL 子查询下推，count/aggregate/分页同口径。
     # 2026-10-10 参评口径统一：等级子查询仅计参评回路——不参评回路不匹配任何
@@ -976,6 +1050,8 @@ async def list_loop_monitor(
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
             .subquery("grade_snap")
         )
+        if scored_latest is not None:
+            grade_snap_sq = scored_latest
         grade_conds = []
         if min_score is not None:
             grade_conds.append(grade_snap_sq.c.score >= min_score)
@@ -1008,6 +1084,8 @@ async def list_loop_monitor(
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
             .subquery("grade_snap")
         )
+        if scored_latest is not None:
+            grade_snap_sq = scored_latest
         range_conds = []
         for lo, hi in ranges:
             parts = []
@@ -1029,13 +1107,18 @@ async def list_loop_monitor(
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
             .subquery("grade_snap")
         )
+        if scored_latest is not None:
+            grade_snap_sq = scored_latest
+        all_snapshot_ids = (
+            select(KpiSnapshotHourly.loop_id)
+            .distinct()
+            .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
+        )
+        if scored_latest is not None:
+            all_snapshot_ids = select(scored_latest.c.loop_id)
         conditions.append(
             or_(
-                ~LoopLedger.id.in_(
-                    select(KpiSnapshotHourly.loop_id)
-                    .distinct()
-                    .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
-                ),
+                ~LoopLedger.id.in_(all_snapshot_ids),
                 LoopLedger.id.in_(
                     select(grade_snap_sq.c.loop_id).where(grade_snap_sq.c.score.is_(None))
                 ),
@@ -1058,7 +1141,10 @@ async def list_loop_monitor(
     if with_aggregate and total > 0 and not loop_id:
         # 深链接精确查询（loop_id）场景下不计算 aggregate（前端不需要）
         aggregate = await _build_loop_monitor_aggregate(
-            db, conditions, type_facet_exclude=loop_type_condition
+            db,
+            conditions,
+            type_facet_exclude=loop_type_condition,
+            latest_scored_hour=latest_scored_hour,
         )
 
     # C1-1 增量巡检：默认排序"最需关注"优先——最新快照评分升序（差回路在前），
@@ -1077,6 +1163,16 @@ async def list_loop_monitor(
         # P5-04：劣化排序键（预计算列，见迁移 p504srvflt01）
         WorkbenchLoopLatest.score_delta,
     ).subquery("wll_latest")
+    if scored_latest is not None and scored_previous is not None:
+        wll_sq = (
+            select(
+                scored_latest.c.loop_id,
+                scored_latest.c.score,
+                (scored_latest.c.score - scored_previous.c.score).label("score_delta"),
+            )
+            .outerjoin(scored_previous, scored_previous.c.loop_id == scored_latest.c.loop_id)
+            .subquery("wll_latest")
+        )
 
     def _order_columns() -> tuple[list, bool]:
         """排序键列表 + 是否需要 wll 外连接（tagName 不需要，其余需要）。
@@ -1155,35 +1251,18 @@ async def list_loop_monitor(
     # 不消费，生产 1209 回路逐行 TOAST 解压是每页秒级延迟的主来源）
     # 2026-10-10 参评口径统一：快照取数仅计参评回路（不参评回路不再产出
     # 评估快照，旧快照不得以旧值展示——评分显示"—"、等级计未评估）
-    _SNAP_COLS = (
-        KpiSnapshotHourly.loop_id,
-        KpiSnapshotHourly.score,
-        KpiSnapshotHourly.status,
-        KpiSnapshotHourly.confidence_level,
-        KpiSnapshotHourly.effective_auto_rate,
-        KpiSnapshotHourly.auto_mode_rate,
-        KpiSnapshotHourly.steady_rate,
-        KpiSnapshotHourly.accuracy_rate,
-        KpiSnapshotHourly.fast_rate,
-        KpiSnapshotHourly.oscillation_rate,
-        KpiSnapshotHourly.saturation_rate,
-        KpiSnapshotHourly.good_value_rate,
-        KpiSnapshotHourly.valid_rate,
-        KpiSnapshotHourly.ts_end,
-        KpiSnapshotHourly.fitness_level,
-        KpiSnapshotHourly.fitness_tags,
-        KpiSnapshotHourly.tune_level,
-    )
     snapshot_map: dict[str, Any] = {}
     if loop_ids:
         # PostgreSQL DISTINCT ON：按 loop_id 取 ts_end 最大的一条（仅参评回路）
         s_stmt = (
-            select(*_SNAP_COLS)
+            select(*_MONITOR_SNAPSHOT_COLUMNS)
             .where(KpiSnapshotHourly.loop_id.in_(loop_ids))
             .where(KpiSnapshotHourly.loop_id.in_(_eval_participant_ids()))
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
+        if scored_latest is not None:
+            s_stmt = select(*scored_latest.c).where(scored_latest.c.loop_id.in_(loop_ids))
         s_result = await db.execute(s_stmt)
         for row in s_result.all():
             snapshot_map[str(row.loop_id)] = row
@@ -1200,6 +1279,10 @@ async def list_loop_monitor(
             .distinct(KpiSnapshotHourly.loop_id)
             .order_by(KpiSnapshotHourly.loop_id, KpiSnapshotHourly.ts_end.desc())
         )
+        if scored_previous is not None:
+            p_stmt = select(scored_previous.c.loop_id, scored_previous.c.score).where(
+                scored_previous.c.loop_id.in_(loop_ids)
+            )
         p_result = await db.execute(p_stmt)
         for row in p_result.all():
             prev_snapshot_map[str(row.loop_id)] = row
@@ -1296,6 +1379,8 @@ async def list_loop_monitor(
                 "confidence_level": snap.confidence_level,
                 "status": snap.status,
                 "calculatedAt": snap.ts_end.isoformat() if snap.ts_end else None,
+                "tsStart": snap.ts_start.isoformat() if snap.ts_start else None,
+                "tsEnd": snap.ts_end.isoformat() if snap.ts_end else None,
             }
             list_score = _rate(snap.score)
             list_status = snap.status

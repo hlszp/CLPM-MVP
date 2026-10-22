@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -43,6 +44,31 @@ def _window(minutes_ago: int, span_minutes: int = 60) -> dict[str, object]:
 
 class TestImportWindowEndpointGuard:
     """POST /loops/data-import/start 的窗口背压。"""
+
+    def test_manual_import_keeps_manual_queue_priority(self, client, fake_redis, monkeypatch):
+        """后台默认优先级降低后，用户手动导入仍应走人工桶。"""
+        from app.core.config import settings
+        from app.tasks.celery_app import PRIORITY_MANUAL
+
+        monkeypatch.setattr(settings, "HISTORY_DATA_API_URL", "http://history.invalid")
+        body = _window(minutes_ago=60)
+        with (
+            patch("app.tasks.kpi_calc.import_history_data") as task,
+            mock_current_user(TEST_USERS["admin"]),
+        ):
+            task.apply_async.return_value = MagicMock(id="import-priority-child")
+            response = client.post(
+                "/api/v1/loops/data-import/start",
+                headers={"Authorization": "Bearer fake-token"},
+                json=body,
+            )
+        assert response.status_code == 200, response.text
+        assert task.apply_async.call_args.kwargs["priority"] == PRIORITY_MANUAL
+        kwargs = task.apply_async.call_args.kwargs["kwargs"]
+        assert kwargs["task_id"] == response.json()["data"]["taskId"]
+        assert kwargs["loop_ids"] == body["loopIds"]
+        assert kwargs["ts_start"] == body["tsStart"]
+        task.delay.assert_not_called()
 
     def test_recent_window_rejected(self, client, mock_db, fake_redis) -> None:
         """tsEnd = 现在 → 400 ERR_IMPORT_WINDOW_TOO_RECENT。"""

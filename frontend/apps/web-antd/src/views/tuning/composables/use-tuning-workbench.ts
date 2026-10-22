@@ -56,7 +56,8 @@ export interface IdentifyOutcome {
 function outcomeModelSource(
   outcome: Pick<IdentifyOutcome, 'dataSource' | 'recordId'>,
 ): TuningApi.ModelSource {
-  if (!outcome.recordId) return 'MANUAL';
+  const rid = outcome.recordId;
+  if (!rid) return 'MANUAL';
   return outcome.dataSource === 'HISTORY'
     ? 'IDENTIFICATION_RECORD'
     : 'STEP_EXPERIMENT';
@@ -432,12 +433,13 @@ export function useTuningWorkbench() {
 
   function matrixRequestBase(riskConfirmed: boolean) {
     const o = state.outcome!;
+    const rid = o.recordId;
     return {
       modelType: o.modelType,
       modelParams: o.params,
       currentPid: state.currentPid,
       loopId: state.loopId,
-      sourceRecordId: o.recordId ?? undefined,
+      sourceRecordId: rid || undefined,
       // 来源声明经 outcomeModelSource 单源推导（fallback_step 按 STEP_EXPERIMENT）
       modelSource: outcomeModelSource(o),
       riskConfirmed,
@@ -476,7 +478,12 @@ export function useTuningWorkbench() {
         limitations: null,
       });
     } catch (error: any) {
-      state.matrixError = error?.message || '矩阵计算失败';
+      // 透出后端 BizError message/code（400 门禁：fitness/来源/风险确认等）
+      const bizMsg =
+        error?.response?.data?.message ?? error?.data?.message ?? error?.message;
+      const bizCode =
+        error?.response?.data?.code ?? error?.data?.code ?? error?.code ?? '';
+      state.matrixError = bizCode ? `${bizMsg}（${bizCode}）` : bizMsg || '矩阵计算失败';
     } finally {
       state.matrixLoading = false;
     }

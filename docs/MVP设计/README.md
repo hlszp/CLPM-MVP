@@ -4,13 +4,14 @@
 
 本目录是 CLPM-MVP 项目（自 CLPM v6.2 派生）的**设计事实来源**，记录 MVP 精简改造与"监控-评估-诊断-整定/处置"闭环重建的全部设计决策。
 
-**演进历史（三阶段）**：
+**演进历史**：
 
 1. **精简阶段（2026-08 初）**：从原 CLPM v6.2（6 大模块）派生，最初目标为仅保留监控、评估、配置、系统四模块，屏蔽诊断、整定及流程闭环内容。
 2. **方向调整（2026-08-16 起）**：确立新纪律——**不删除诊断/整定专属前后端文件**，按新设计方案重建诊断与整定，并新建处置模块。
 3. **闭环重建（2026-08-16 ~ 08-19，已落地）**：完成"监控 → 评估 → 诊断 → 整定 → 处置"全链路闭环构建。
 4. **工作台 v2.0 与体验升级（2026-08-24 ~ 08-26，M2 主体落地）**：新建单屏工作台驾驶舱（`/workbench` 5 Tab，order=0）；监控菜单重排 + 列表页标杆 v2.0；指标分析页；预警预设规则/三级阈值；评估任务统一重构。
 5. **驾驶舱整合与工作台规整（2026-10-04 ~ 10-05，已落地）**：驾驶舱扩 6 页签满屏 `/cockpit/*`（总览/回路/性能/诊断/整定/处置），原运维工作台 4 Tab 迁 `views/cockpit/wb-comps/` 后退役（`/workbench` redirect）；回路工作台 `/loop/workbench360` 升一级菜单（order=1）；诊断三页式（概览/记录/任务）、整定三页式（总览/记录/验证）。
+6. **诊断、导入与调度优化（2026-10-20 ~ 10-21）**：full-1042 修复巡检重叠及 Redis 优先级，full-1043 修复同窗复诊结果归属并优化历史读取与质量预处理；[验证报告](../过程文档/full-1043-性能修复与验证-2026-10-21.md) 区分本机证据与待完成的现场验收。后续增加[10 分钟影子验证](../过程文档/10分钟影子预计算-实现与验收-2026-10-21.md)，默认关闭，正式评估不消费新块，现场混合负载验收待完成。
 
 **当前模块状态（与前端路由 `frontend/apps/web-antd/src/router/routes/modules/` 一致，2026-10-05 驾驶舱整合后）**：
 
@@ -28,6 +29,8 @@
 | 旧运维工作台 | `clpm.ts` | **已退役**（仅剩 `/workbench` redirect → `/cockpit` 兼容层，2026-10-05 D5/D6） |
 
 ## 文档索引
+
+下表保留各方案形成时的实施登记；现行菜单以上表及路由为准。近期实现与保留边界见 [文档对齐与冗余核查](../过程文档/文档对齐与冗余代码核查-2026-10-21.md)，历史状态不自动升级为当前验收结论。
 
 | 文档 | 内容 |
 |---|---|
@@ -54,7 +57,7 @@
 1. **不删除诊断/整定文件**（2026-08-16 纪律）：诊断/整定专属的前后端文件一律保留，通过新设计方案重建模块，构建完整闭环
 2. **保留模块功能完整**：监控、评估、配置、系统四个模块的功能不受影响，种子数据和链路配置全部保留
 3. **基础设施完整保留**：PostgreSQL + TDengine + Redis + Celery 全部保留，端口隔离运行（后端 17101 / 前端 15666，容器 `clpm-mvp-*`）
-4. **数据库 schema 不改动**：ORM 模型和 Alembic 迁移脚本保持原样，避免数据迁移风险
+4. **数据库变更配套迁移**：最初精简阶段保持 schema；后续闭环重建已有迁移，现行规则为模型与迁移同批、先迁移再启用代码。full-1043 无新迁移，head 为 `p703report01`
 
 ## 已知残留（待处理）
 
@@ -64,10 +67,10 @@
 
 **整定模块 2026-10-04 系统性优化批次的死代码/架空登记**（不删，待下周期集中清理）：
 
-- `backend/app/tasks/tuning.py` 的 `tune_and_simulate_task` 为死代码（全仓仅测试引用）；它曾是唯一完整落库 current_pid/rollback_pid/risk_assessment 的路径，该职责已由 `create_tuning_task` 活路径承担。
-- `backend/app/api/v1/endpoints/handling.py` 的 `_kpi_summary` 私有副本无调用方（B2 口径统一后由共享 `kpi_snapshot.window_avg_summary` 取代）。
+- `backend/app/tasks/tuning.py` 的 `tune_and_simulate_task` 未发现现役应用派发方，但仍是注册的 Celery 兼容任务，不能按私有死函数删除；current_pid/rollback_pid/risk_assessment 的现役落库职责由 `create_tuning_task` 承担。
+- `backend/app/api/v1/endpoints/handling.py` 的 `_kpi_summary` 私有副本已清理，现行代码复用 `kpi_snapshot.window_avg_summary`（2026-10-21 复核）；不再列为待删除项。
 - `tuning_batch` 仍无生产写入方（仅 seed 灌数）；`tuning_record` 的 DRAFT/PENDING/COMPLETED 三态生产代码零写入（APPLIED/VERIFIED/ROLLED_BACK 自 2026-10-04 起经处置工单关联可达）。
-- tracker 自动验证的 `_aggregate_kpi_window`（SQL 均值）与 `kpi_snapshot.window_avg_summary`（Python 均值）语义等价、实现并存，待收敛为单实现。
+- tracker 自动验证的 `_aggregate_kpi_window`（SQL 均值）与 `kpi_snapshot.window_avg_summary`（Python 均值）同类实现并存；收敛前需验证窗口边界、NULL、质量筛选与时区，不以都叫“均值”认定可互换。
 
 ## 使用场景
 

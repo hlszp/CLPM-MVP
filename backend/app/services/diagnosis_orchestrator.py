@@ -1538,22 +1538,25 @@ async def run_diagnosis_for_loop(
             await db.commit()  # 仅审计行提交（不发布结果/模型）
             raise
 
-    # 防重复：同回路同时间窗已有 SUCCESS 结论时不再落第二条 run
-    # （双任务/双触发同窗会产出完全相同的结论行，污染「一回路一条最新」与记录列表）
-    existing_same_window = (
-        await db.execute(
-            select(DiagnosisRun.id).where(
-                DiagnosisRun.loop_id == str(loop_id),
-                DiagnosisRun.time_window_start == start,
-                DiagnosisRun.time_window_end == end,
-                DiagnosisRun.status == "SUCCESS",
+    # 幂等只限同一个任务。独立复诊即使窗口相同，也必须保留自己的结果、
+    # 配置和证据；复用其他任务的行会导致新任务 SUCCESS 却查不到结果。
+    existing_same_window = None
+    if task_id:
+        existing_same_window = (
+            await db.execute(
+                select(DiagnosisRun.id).where(
+                    DiagnosisRun.loop_id == str(loop_id),
+                    DiagnosisRun.time_window_start == start,
+                    DiagnosisRun.time_window_end == end,
+                    DiagnosisRun.status == "SUCCESS",
+                    DiagnosisRun.task_id == task_id,
+                )
             )
-        )
-    ).scalar_one_or_none()
+        ).scalar_one_or_none()
     # 仅在真正取到 run id（str）时跳过，避免 mock/异常返回值误触发短路
-    if isinstance(existing_same_window, str) and existing_same_window:
+    if task_id and isinstance(existing_same_window, str) and existing_same_window:
         logger.info(
-            "跳过重复诊断落库 回路=%s 窗=%s~%s 已有 SUCCESS run=%s",
+            "跳过同任务重复诊断落库 回路=%s 窗=%s~%s 已有 SUCCESS run=%s",
             loop.tag_name,
             start,
             end,

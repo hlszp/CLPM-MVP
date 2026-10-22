@@ -1,19 +1,18 @@
-"""历史数据导入服务 — 从远端 HTTP API 拉取历史数据写入本地 TDengine 宽表.
+"""历史数据导入服务 — 远端 HTTP 历史数据直写本地 TDengine 点表.
 
 流程：
-1. 查询回路信息 + tag 映射
+1. 批量预加载回路与位号映射
 2. 对每个回路：
    a. 按小时分块从远端 HTTP API 拉取历史数据
-   b. 转换为宽表格式 (ts, pv, sp, op, mode, pid_p, pid_i, pid_d, pv_quality)
-   c. 批量写入 TDengine（统一 UPSERT：同子表同 ts 行覆盖，落库唯一）
-3. 更新导入进度（Redis）
+   b. 同一分块一次拉取全部角色，按位号解析值与原始质量码
+   c. PV/OP 保留样本，慢变量按值/质量 COV 去重，5000 行一批写入点子表
+3. 登记成功写入的覆盖段，更新 Redis 进度、取消和终态
 4. (可选) 触发 KPI 回算
 
 幂等口径（2026-09-07 导入策略收敛）：
-- 不设 overwrite/skip 选择，统一按"回路号（子表） + 时间戳（ts）"幂等导入；
-  TDengine 同子表同 ts 的 INSERT 即 UPSERT（覆盖写），保证一个落库数据在
-  时间点上是唯一的，同时无需 DELETE 前置步骤、无数据缺口风险。
-- gap backfill 复用本函数，同样走 UPSERT（原 skip 语义天然一致）。
+- 按 point_id 子表 + ts 使用 TDengine UPSERT，不执行前置 DELETE。
+- 空值不落壳行，保留已有因果填充语义；失败分块和部分写入显式计入结果。
+- 手工导入及启用后的断点回填复用本服务，窗口结束须早于当前 5 分钟。
 
 设计依据：data-architecture-optimization-spec §5.3.2
 """
@@ -208,24 +207,10 @@ _RETRYABLE_STATUS_CODES = frozenset({502, 503, 504, 429})  # 可重试的 HTTP �
 _RETRYABLE_HTTPX_EXCS = (httpx.TimeoutException, httpx.NetworkError)  # 可重试的网络异常
 
 # ---------------------------------------------------------------------------
-# 导入算法 v2（2026-09-09）：按角色信号频率分层拉取/写入
-#
-# 信号特征（zpdev 生产实测）：PV/OP 随工况连续变化（回路级 0.3~0.8Hz COV），
-# SP/MODE/PID_P/I/D 为阶跃信号（分钟~小时级才变化一次）。旧算法 7 角色按同一
-# interval 全量拉取+落库，低频角色被高频网格放大数倍冗余（PID 一周 60 万行里
-# 99%+ 是重复值），是 shadow 双写下点表暴涨与导入缓慢的主因之一。
-#
-# 分层策略：
-# - 高频流（PV/OP）：按用户 interval 分块拉取（沿用 1~3h 动态分块），逐点落库；
-# - 低频流（SP/MODE/PID_*）：按粗粒度（默认 60s）大块（24h）拉取，本地 COV
-#   去重（变化点 + 周期锚点 + 窗口末点）后稀疏写入点表——与实时 COV 写入口径
-#   一致；宽表行由阶跃前向填充还原（读取侧本就按 COV 前向填充展开低频列，
-#   见 tdengine_provider._legacy_query §6.5 与 LogicalWideBuilder，稀疏存储
-#   天然兼容）。
+# v2 纯函数兼容辅助：质量/时间契约回归仍使用，非现役导入调度链路。
+# 现役 v3 在 _import_single_loop 中单相拉取并交给 _write_points_bulk。
 # ---------------------------------------------------------------------------
 _HIGH_FREQ_ROLES = frozenset({"PV", "OP"})
-_LOW_FREQ_FETCH_INTERVAL = 60  # 低频拉取粒度（秒）；变化时刻定位精度与此对齐
-_LOW_FREQ_CHUNK_HOURS = 24  # 低频分块（载荷小，用大块减少请求次数）
 _LOW_FREQ_ANCHOR_SECONDS = 600.0  # 锚点间隔：值未变也周期落点，前向填充有界
 
 _SENTINEL = object()  # COV 变性判定哨兵：与任何值（含 None）比较均不等
@@ -234,7 +219,7 @@ _SENTINEL = object()  # COV 变性判定哨兵：与任何值（含 None）比�
 def _split_role_frequencies(
     role_tag_map: dict[str, str],
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """角色按信号频率分层：返回 (高频, 低频)。未知角色按高频处理."""
+    """返回 (PV/OP 高频角色, 其他低频角色)，供旧契约回归使用."""
     high = {r: t for r, t in role_tag_map.items() if r in _HIGH_FREQ_ROLES}
     low = {r: t for r, t in role_tag_map.items() if r not in _HIGH_FREQ_ROLES}
     return high, low
@@ -284,125 +269,6 @@ class _StepFill:
         while self._i + 1 < len(s) and s[self._i + 1][0] <= ts:
             self._i += 1
         return s[self._i][1]
-
-
-async def _fetch_low_freq_points(
-    role_tag_map_low: dict[str, str],
-    start_dt: datetime,
-    end_dt: datetime,
-    base_interval: int,
-    task_id: str | None,
-    on_chunk_complete: callable | None,
-) -> tuple[dict[str, list[tuple]], list[dict[str, str]], list[tuple[datetime, datetime]], bool]:
-    """低频角色 COV 扫描（算法 v2 Phase A）.
-
-    按 24h 大块、粗粒度（max(interval, 60s)）拉取，逐角色 COV 去重为
-    变化/锚点样本。请求经共享守卫（限流/熔断/重试与高频流一致）。
-
-    Returns:
-        (samples_by_role, failed_windows, ok_windows, was_cancelled)
-        samples 升序、已去重；(ts 为 aware UTC datetime)
-    """
-    from app.services.data_source.point_history_writer import (
-        decode_history_quality,
-        parse_source_ts,
-    )
-
-    interval = max(base_interval, _LOW_FREQ_FETCH_INTERVAL)
-    samples_by_role: dict[str, list[tuple]] = {role: [] for role in role_tag_map_low}
-    failed_windows: list[dict[str, str]] = []
-    ok_windows: list[tuple[datetime, datetime]] = []
-    cur = start_dt
-    while cur < end_dt:
-        if task_id and await _is_task_cancelled(task_id):
-            return samples_by_role, failed_windows, ok_windows, True
-        chunk_end = min(cur + timedelta(hours=_LOW_FREQ_CHUNK_HOURS), end_dt)
-        try:
-            raw = await _fetch_remote_history(
-                list(role_tag_map_low.values()),
-                cur.isoformat(),
-                chunk_end.isoformat(),
-                interval,
-            )
-            if raw and raw[0]:
-                ts_list, series_map = raw
-                ts_parsed = [parse_source_ts(t) for t in ts_list]
-                for role, tag in role_tag_map_low.items():
-                    series = series_map.get(tag) or series_map.get(tag.lower())
-                    if not series:
-                        continue
-                    values = series.get("values", [])
-                    qualities = series.get("qualities", [])
-                    pts: list[tuple] = []
-                    for i, ts in enumerate(ts_parsed):
-                        if ts is None:
-                            continue
-                        v = _parse_float_val(values[i]) if i < len(values) else None
-                        qc, qr = decode_history_quality(
-                            qualities[i] if i < len(qualities) else None
-                        )
-                        pts.append((ts, v, qc, qr))
-                    samples_by_role[role].extend(_cov_dedup_points(pts))
-                ok_windows.append((cur, chunk_end))
-        except Exception as exc:  # noqa: BLE001 — 分块级容错，与高频流口径一致
-            failed_windows.append(
-                {"start": cur.isoformat(), "end": chunk_end.isoformat(), "error": str(exc)[:200]}
-            )
-            logger.warning(
-                "低频分块拉取失败（继续后续分块）: 窗口=%s ~ %s, err=%s",
-                cur.isoformat(),
-                chunk_end.isoformat(),
-                exc,
-            )
-        if on_chunk_complete:
-            await on_chunk_complete()
-        cur = chunk_end
-    return samples_by_role, failed_windows, ok_windows, False
-
-
-async def _write_sparse_point_events(
-    role_point_map_low: dict[str, tuple[str, str]],
-    samples_by_role: dict[str, list[tuple]],
-    *,
-    source_task: str,
-) -> int:
-    """低频 COV 样本 → 点表稀疏点事件（shadow/point 布局）.
-
-    与实时 COV 写入口径一致（阶跃信号只落变化点+锚点）；计数按去重后
-    时间槽数（各角色 ts 并集），与 _write_point_events 的槽口径对齐。
-    """
-    from app.services.data_source.point_history_repository import (
-        QSCHEMA_AAS,
-        SOURCE_KIND_REMOTE_GRID,
-        PointEvent,
-        write_events,
-    )
-
-    events: list[PointEvent] = []
-    for role, entry in role_point_map_low.items():
-        _tag_name, point_id = entry
-        if not point_id:
-            continue
-        for ts, v, qc, qr in samples_by_role.get(role) or []:
-            events.append(
-                PointEvent(
-                    point_id=point_id,
-                    ts=ts,
-                    value=v,
-                    quality_class=qc,
-                    quality_raw=qr,
-                    quality_schema=QSCHEMA_AAS,
-                    source_kind=SOURCE_KIND_REMOTE_GRID,
-                    received_at=datetime.now(UTC),
-                    source_id=f"import:{source_task[:32]}",
-                )
-            )
-    if not events:
-        return 0
-    result = await write_events(events, source_task=source_task or None)
-    if result.failed:
-        raise HistoryDataSourceError(f"点事件写入失败: {result.error}")
-    return len({e.ts for e in events})
 
 
 # 角色列名映射（与 tdengine.py 保持一致）
@@ -1382,27 +1248,6 @@ async def _import_single_loop(
                 {"start": start_dt.isoformat(), "end": end_dt.isoformat(), "error": str(exc)[:200]}
             )
     return total_count, failed_windows, was_cancelled
-
-
-async def _get_loop_tag_mapping(db: Any, loop_id: str) -> dict[str, str]:
-    """查询回路的 tag 映射（role → tag_name）."""
-    m_result = await db.execute(select(LoopTagMapping).where(LoopTagMapping.loop_id == loop_id))
-    mappings = {m.tag_role.upper(): m for m in m_result.scalars().all()}
-
-    tag_ids = [str(m.tag_id) for m in mappings.values()]
-    if not tag_ids:
-        return {}
-
-    t_result = await db.execute(select(TagRegistry).where(TagRegistry.id.in_(tag_ids)))
-    tags_map = {str(t.id): t for t in t_result.scalars().all()}
-
-    role_tag_map: dict[str, str] = {}
-    for role_upper, mapping in mappings.items():
-        tag = tags_map.get(str(mapping.tag_id))
-        if tag and tag.tag_name:
-            role_tag_map[role_upper] = tag.tag_name
-
-    return role_tag_map
 
 
 # ---------------------------------------------------------------------------

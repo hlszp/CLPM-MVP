@@ -36,8 +36,9 @@ from app.services.cache import l2_bundle
 from app.services.cache.l1_datablock import L1DataBlockCache
 from app.services.cache.l2_bundle import L2BundleCache
 from app.services.cache.l3_feature import L3FeatureCache
-from app.services.data_planner import DataPlanner
+from app.services.data_planner import DataPlanner, resolve_data_version
 from app.services.metric_data_bundle import MetricDataBundleAssembler
+from app.services.preprocessing.pipeline import PREPROCESS_VERSION
 from tests.test_data_planner.conftest import (
     FakeCacheRedis,
     build_data_block,
@@ -777,9 +778,6 @@ class TestDataPlannerL2Integration:
 
         # 预写 L2 缓存（模拟命中，cfg_version 与 config_loader 一致）
         bundles = _make_bundles()
-        # P3-08b：planner 的 data_version 追加时间/质量契约策略分量
-        from app.services.metric_calculator.time_axis import TIME_QUALITY_POLICY_VERSION
-
         l2_key = L2BundleCache.build_key(
             loop_id="TC101",
             metrics=["accuracy_rate", "output_trip_index"],
@@ -787,7 +785,7 @@ class TestDataPlannerL2Integration:
             time_window_end=_time_window().end,
             control_type=ControlType.TEMPERATURE.value,
             cfg_version="cfg_1000",
-            data_version=f"legacy-v1:{TIME_QUALITY_POLICY_VERSION}",
+            data_version=await resolve_data_version(),
         )
         await l2_cache.set(l2_key, bundles)
 
@@ -829,6 +827,33 @@ class TestDataPlannerL2Integration:
             bundle_cache=l2_cache,
         )
 
+        # full-1045 的两层缓存即使仍在 TTL 内，也不能绕过修复后的预处理。
+        old_data_version = (await resolve_data_version()).replace(f":{PREPROCESS_VERSION}", "")
+        old_l2_key = L2BundleCache.build_key(
+            loop_id="TC101",
+            metrics=["accuracy_rate"],
+            time_window_start=_time_window().start,
+            time_window_end=_time_window().end,
+            control_type=ControlType.TEMPERATURE.value,
+            cfg_version="cfg_1000",
+            data_version=old_data_version,
+        )
+        await l2_cache.set(old_l2_key, _make_bundles())
+        old_block = build_data_block(loop_id="TC101", tag_group=TagGroup.BASE)
+        old_block.preprocess_version = "pre_v2"
+        old_l1_key = L1DataBlockCache.build_key(
+            loop_id="TC101",
+            tag_group="BASE",
+            time_window_start=_time_window().start,
+            time_window_end=_time_window().end,
+            sampling_freq="5s",
+            quality_policy="KEEP_ALL_WITH_VALIDITY",
+            pre_version="pre_v2",
+            cfg_version="cfg_1000",
+            data_version=old_data_version,
+        )
+        await l1_cache.set(old_block, key=old_l1_key)
+
         result = await planner.request_bundles(
             loop_id="TC101",
             metrics=["accuracy_rate"],
@@ -844,7 +869,7 @@ class TestDataPlannerL2Integration:
 
         # L2 缓存应被写入（Key 前缀 pdb_l2）
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
-        assert len(l2_keys) == 1
+        assert len(l2_keys) == 2  # 旧键保留至 TTL 到期，新版本使用独立键
         # 第二次请求应命中 L2
         query_log.clear()
         result2 = await planner.request_bundles(
@@ -971,7 +996,7 @@ class TestDataPlannerL2Integration:
         assert len(l2_keys) == 1
         # P3-08b：key 末尾追加时间/质量契约策略分量（data_version）；
         # P3-09c 翻 tqpv2；R1(2026-10-12) 翻 tqpv3（held 阈值角色分层）
-        assert ":cfg_1000:" in l2_keys[0] and l2_keys[0].endswith(":tqpv3")
+        assert ":cfg_1000:" in l2_keys[0] and l2_keys[0].endswith(f":{PREPROCESS_VERSION}")
 
         # 相同配置版本：L2 命中，不查 TDengine
         await _planner("cfg_1000").request_bundles(
@@ -992,4 +1017,4 @@ class TestDataPlannerL2Integration:
         assert len(query_log) == 2
         l2_keys = [k for k in redis.keys if k.startswith("pdb_l2:")]
         assert len(l2_keys) == 2
-        assert any(":cfg_2000:" in k and k.endswith(":tqpv3") for k in l2_keys)
+        assert any(":cfg_2000:" in k and k.endswith(f":{PREPROCESS_VERSION}") for k in l2_keys)

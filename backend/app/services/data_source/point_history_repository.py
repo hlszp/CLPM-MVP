@@ -251,6 +251,7 @@ async def read_events(
         chunk_op = end_op if chunk_inclusive else "<"
         cursor = chunk_start
         cursor_inclusive = True
+        boundary_points: set[str] = set()
         for _page in range(_READ_MAX_PAGES_PER_CHUNK):
             lower_op = ">=" if cursor_inclusive else ">"
             sql = (
@@ -264,6 +265,10 @@ async def read_events(
             for row in rows:
                 pid = row.get("point_id")
                 if pid in results:
+                    # 多点同 ts 可能跨页。重读边界时只跳过已输出的点，
+                    # 禁止用 ts > cursor 静默漏掉同一时刻的其他测点。
+                    if row.get("ts") == cursor and pid in boundary_points:
+                        continue
                     results[pid].append(_row_to_event(row))
             if len(rows) < READ_CHUNK_ROWS:
                 break
@@ -276,7 +281,10 @@ async def read_events(
                     f"chunk=[{chunk_start}, {chunk_end}] last_ts={last_ts!r}"
                 )
             cursor = last_ts
-            cursor_inclusive = False
+            boundary_points = {
+                row["point_id"] for row in rows if row.get("ts") == last_ts and row.get("point_id")
+            }
+            cursor_inclusive = True
         else:
             raise RuntimeError(
                 "read_events 单分片翻页超过上限 "

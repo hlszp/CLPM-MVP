@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "appVersion": "v7.5.6-1044-full",
+  "builtAt": "2026-10-21T06:47:56.788507+00:00",
+  "sourceRevision": "35aad58caac1d55014bd29f7658524898559e7d8",
+  "branch": "macbook",
+  "platform": "linux/amd64",
+  "archive": "clpm-images-1044-full.tar.gz",
+  "sizeBytes": 236388996,
+  "sha256": "543766ba57e5b7f0762b5eb463cb17fb136f97786836d8d963cddffcef260d26",
+  "images": [
+    {
+      "tags": [
+        "clpm-backend:full-1044"
+      ],
+      "id": "sha256:c858194974099a84dbf8136269f5842daf90bbb10d75563b3ad29831407dc743",
+      "architecture": "amd64",
+      "revision": "35aad58caac1d55014bd29f7658524898559e7d8"
+    },
+    {
+      "tags": [
+        "clpm-frontend:full-1044"
+      ],
+      "id": "sha256:f8b40525079380370007ccd76695c281f554710e2edc9d0c17ce62fd2437ae27",
+      "architecture": "amd64",
+      "revision": "35aad58caac1d55014bd29f7658524898559e7d8"
+    }
+  ],
+  "databaseHead": "p703report01",
+  "newMigration": false,
+  "runtimeBase": {
+    "backend": "clpm-backend:full-1043",
+    "frontend": "clpm-frontend:full-1043",
+    "dependenciesChanged": false
+  },
+  "frontendBuild": "current tracked source; turbo --force, 0 cached tasks; dist index hash verified in nginx",
+  "frontendIndexSha256": "b7c17fa763d82c13c4b6550058b3f84b7cf6df68d474a3c26e27a70d9015cfbd",
+  "shadow": {
+    "enabledByDefault": false,
+    "maxLoopAllowlist": 24,
+    "maxWindowSeconds": 3600,
+    "nativeStreamOrTSMA": false,
+    "formalResultConsumption": false,
+    "reportVolume": "clpm-shadow-reports",
+    "composeOverride": "deploy/docker-compose.shadow.yml"
+  },
+  "validation": {
+    "backendUnit": "7347 passed, 335 skipped, 189 deselected, 12 xfailed, 4 xpassed",
+    "frontendUnit": "1023 passed in 107 files",
+    "nativeIntegration": "3 passed (local PG/TDengine/Redis)",
+    "frontendBuild": "11 successful, 0 cached",
+    "imageSmoke": [
+      "CLI help",
+      "uid1001 volume write + second container read",
+      "nginx HTTP200 + matching index hash"
+    ],
+    "archive": [
+      "gzip -t",
+      "docker load",
+      "manifest OS/architecture/revision/layer presence"
+    ],
+    "compose": "manual generated overlay merged: 7 services, correct image versions, shared volume",
+    "pushGate": "ruff/format, full pytest, schema drift, frontend typecheck, API contract, hex whitelist all passed"
+  },
+  "productionDeployed": false,
+  "productionMixedLoadValidated": false
+}

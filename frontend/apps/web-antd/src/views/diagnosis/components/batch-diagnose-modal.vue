@@ -2,8 +2,8 @@
 /**
  * 批量诊断发起弹窗（2026-10-05 1009：诊断任务页新增）
  *
- * 后端 POST /diagnosis/trigger 原生支持 loopIds 数组；本弹窗补齐前端入口：
- * 左侧装置树（单选节点=范围）→ 右侧该范围回路多选（默认全选，可搜索）+
+ * 后端 POST /diagnosis/run 支持 loopIds 数组（单次最多 50 个）：
+ * 左侧装置树（单选节点=范围）→ 右侧该范围回路多选（默认不选，可搜索）+
  * 时间窗预设 + 算子组（快速组/全部），提交后提示受理数（含 L2 条件警告数）。
  *
  * 操作权限：回路工作台剖面四角色（D1）；SPONSOR 无入口（页面层控制）。
@@ -13,7 +13,15 @@ import type { PlantNodeApi } from '#/api/plant-node';
 
 import { computed, ref, watch } from 'vue';
 
-import { Alert, Checkbox, Input, message, Modal, Spin, Tree } from 'ant-design-vue';
+import {
+  Alert,
+  Checkbox,
+  Input,
+  message,
+  Modal,
+  Spin,
+  Tree,
+} from 'ant-design-vue';
 
 import { triggerDiagnosisApi } from '#/api/diagnosis';
 import { getLoopListApi } from '#/api/loop';
@@ -35,9 +43,7 @@ const plantTreeExpandedKeys = ref<string[]>([]);
 const plantTreeSelectedKeys = ref<string[]>([]);
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 
-function buildTreeNodes(
-  nodes: PlantNodeApi.PlantNode[],
-): PlantTreeNode[] {
+function buildTreeNodes(nodes: PlantNodeApi.PlantNode[]): PlantTreeNode[] {
   return nodes.map((n) => ({
     key: n.id,
     title: n.name,
@@ -45,7 +51,10 @@ function buildTreeNodes(
   }));
 }
 
-function collectExpandableKeys(nodes: PlantTreeNode[], acc: string[] = []): string[] {
+function collectExpandableKeys(
+  nodes: PlantTreeNode[],
+  acc: string[] = [],
+): string[] {
   for (const n of nodes) {
     if (n.children?.length) {
       acc.push(n.key);
@@ -68,7 +77,10 @@ async function loadPlantTree(): Promise<void> {
   }
 }
 
-// ===== 回路多选（所选节点范围，默认全选） =====
+// 与后端 POST /diagnosis/run 的批量上限一致；超限不自动截断或拆单。
+const MAX_BATCH_LOOPS = 50;
+
+// ===== 回路多选（所选节点范围，默认不选） =====
 interface LoopOption {
   description: null | string;
   loopId: string;
@@ -103,7 +115,6 @@ async function loadLoops(): Promise<void> {
       page += 1;
     } while ((page - 1) * 100 < total);
     loopOptions.value = all;
-    checkedIds.value = all.map((l) => l.loopId); // 默认全选
   } catch {
     loopOptions.value = [];
   } finally {
@@ -127,6 +138,26 @@ const allVisibleChecked = computed(
     filteredLoopOptions.value.every((l) => checkedIds.value.includes(l.loopId)),
 );
 
+const hiddenSelectedCount = computed(() => {
+  const visible = new Set(filteredLoopOptions.value.map((l) => l.loopId));
+  return checkedIds.value.filter((id) => !visible.has(id)).length;
+});
+
+function clearSelection(): void {
+  checkedIds.value = [];
+}
+
+function toggleLoop(loopId: string, checked: boolean): void {
+  const selected = new Set(checkedIds.value);
+  if (checked) selected.add(loopId);
+  else selected.delete(loopId);
+  if (selected.size > MAX_BATCH_LOOPS) {
+    message.warning(`单次诊断最多 ${MAX_BATCH_LOOPS} 个回路，请减少已选数量`);
+    return;
+  }
+  checkedIds.value = [...selected];
+}
+
 function toggleCheckAll(): void {
   const visibleIds = filteredLoopOptions.value.map((l) => l.loopId);
   if (allVisibleChecked.value) {
@@ -135,6 +166,12 @@ function toggleCheckAll(): void {
     );
   } else {
     const merged = new Set([...checkedIds.value, ...visibleIds]);
+    if (merged.size > MAX_BATCH_LOOPS) {
+      message.warning(
+        `单次诊断最多 ${MAX_BATCH_LOOPS} 个回路，请缩小范围或逐个勾选`,
+      );
+      return;
+    }
     // 保持 loopOptions 原始顺序，稳定展示
     checkedIds.value = loopOptions.value
       .map((l) => l.loopId)
@@ -153,7 +190,10 @@ function handlePlantTreeSelect(keys: (number | string)[]): void {
 const preset = ref<DiagnosisApi.TimeWindowPreset>('last_24h');
 const operatorGroup = ref<DiagnosisApi.OperatorGroup>('full');
 
-const presetOptions: Array<{ key: DiagnosisApi.TimeWindowPreset; label: string }> = [
+const presetOptions: Array<{
+  key: DiagnosisApi.TimeWindowPreset;
+  label: string;
+}> = [
   { key: 'last_24h', label: '近 24 小时' },
   { key: 'last_7d', label: '近 7 天' },
   { key: 'last_30d', label: '近 30 天' },
@@ -167,6 +207,11 @@ async function submit(): Promise<void> {
     message.warning('请至少勾选一个回路');
     return;
   }
+  if (checkedIds.value.length > MAX_BATCH_LOOPS) {
+    message.warning(`单次诊断最多 ${MAX_BATCH_LOOPS} 个回路，请减少已选数量`);
+    return;
+  }
+  if (submitting.value || loopLoading.value) return;
   submitting.value = true;
   try {
     const res = await triggerDiagnosisApi({
@@ -177,7 +222,9 @@ async function submit(): Promise<void> {
     const warnCount = res.conditionWarning?.length ?? 0;
     message.success(
       `批量诊断已提交：受理 ${res.accepted ?? checkedIds.value.length} 个回路` +
-        (warnCount > 0 ? `（${warnCount} 个回路存在 L2 条件警告，详见任务执行）` : ''),
+        (warnCount > 0
+          ? `（${warnCount} 个回路存在 L2 条件警告，详见任务执行）`
+          : ''),
       5,
     );
     open.value = false;
@@ -193,6 +240,10 @@ async function submit(): Promise<void> {
 }
 
 watch(open, (v) => {
+  if (v) {
+    clearSelection();
+    loopKeyword.value = '';
+  }
   if (v && plantTreeData.value.length === 0) void loadPlantTree();
   if (v && loopOptions.value.length === 0) void loadLoops();
 });
@@ -202,7 +253,12 @@ watch(open, (v) => {
   <Modal
     v-model:open="open"
     :confirm-loading="submitting"
-    :ok-button-props="{ disabled: checkedIds.length === 0 }"
+    :ok-button-props="{
+      disabled:
+        loopLoading ||
+        checkedIds.length === 0 ||
+        checkedIds.length > MAX_BATCH_LOOPS,
+    }"
     ok-text="发起批量诊断"
     title="发起批量诊断"
     width="760px"
@@ -247,8 +303,16 @@ watch(open, (v) => {
             全选（当前列表）
           </Checkbox>
           <span class="text-xs text-neutral-400">
-            已选 {{ checkedIds.length }}/{{ loopOptions.length }}
+            已选 {{ checkedIds.length }}/{{ loopOptions.length }}，单次最多
+            {{ MAX_BATCH_LOOPS }} 个
           </span>
+          <button
+            v-if="checkedIds.length > 0"
+            type="button"
+            @click="clearSelection"
+          >
+            清空已选
+          </button>
         </div>
         <Input
           v-model:value="loopKeyword"
@@ -256,18 +320,33 @@ watch(open, (v) => {
           placeholder="搜索位号/描述..."
           size="small"
         />
+        <div v-if="hiddenSelectedCount" class="text-xs text-amber-600">
+          另有
+          {{ hiddenSelectedCount }}
+          个已选回路不在搜索结果中；提交包含全部已选回路。
+        </div>
+        <Alert
+          v-if="checkedIds.length > MAX_BATCH_LOOPS"
+          type="warning"
+          :message="`已超出单次 ${MAX_BATCH_LOOPS} 个回路上限，请减少选择后提交。`"
+        />
         <Spin :spinning="loopLoading" size="small">
           <div class="batch-diag-loops__list">
-            <Checkbox.Group v-model:value="checkedIds" class="batch-diag-loops__group">
+            <div class="batch-diag-loops__group">
               <Checkbox
                 v-for="l in filteredLoopOptions"
                 :key="l.loopId"
-                :value="l.loopId"
+                :checked="checkedIds.includes(l.loopId)"
+                :disabled="
+                  checkedIds.length >= MAX_BATCH_LOOPS &&
+                  !checkedIds.includes(l.loopId)
+                "
                 :title="l.description ?? l.tagName"
+                @change="toggleLoop(l.loopId, $event.target.checked)"
               >
                 {{ l.tagName }}
               </Checkbox>
-            </Checkbox.Group>
+            </div>
             <div
               v-if="!loopLoading && filteredLoopOptions.length === 0"
               class="batch-diag-tree__empty"
@@ -300,14 +379,18 @@ watch(open, (v) => {
         <div class="batch-diag-opts__seg">
           <button
             class="batch-diag-opts__btn"
-            :class="{ 'batch-diag-opts__btn--active': operatorGroup === 'fast' }"
+            :class="{
+              'batch-diag-opts__btn--active': operatorGroup === 'fast',
+            }"
             @click="operatorGroup = 'fast'"
           >
             快速组
           </button>
           <button
             class="batch-diag-opts__btn"
-            :class="{ 'batch-diag-opts__btn--active': operatorGroup === 'full' }"
+            :class="{
+              'batch-diag-opts__btn--active': operatorGroup === 'full',
+            }"
             @click="operatorGroup = 'full'"
           >
             全部算子
@@ -317,7 +400,7 @@ watch(open, (v) => {
       <Alert
         type="info"
         show-icon
-        :message="`将按整点回算口径对已选 ${checkedIds.length} 个回路发起诊断；全档位可发起，L0（数据严重不足）回路将带警告执行（结论可能为「数据不足」）。`"
+        :message="`将按所选时间窗对已选 ${checkedIds.length} 个回路发起诊断；全档位可发起，L0（数据严重不足）回路将带警告执行（结论可能为「数据不足」）。`"
       />
     </div>
   </Modal>

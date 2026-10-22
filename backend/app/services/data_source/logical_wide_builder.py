@@ -38,6 +38,7 @@ from app.core import g5_trace
 from app.core.async_tasks import gather_settled
 from app.services.data_source import point_history_metadata as meta
 from app.services.data_source import point_history_repository as repo
+from app.services.data_source.point_read_scope import PointReadScope, scoped_point_read, scoped_read
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,9 @@ async def _held_limits_s(step_s: int) -> dict[str, float]:
 
     now = time.monotonic()
     if _held_cfg_cache and now - _held_cfg_read_at < _HELD_CFG_TTL_S:
-        return _held_cfg_cache
+        # 缓存配置原值，步长相关钳制每次重算；不同 TagGroup/降采样步长
+        # 不能复用上一次查询的 3×step_s 结果。
+        return {key: max(3.0 * step_s, value) for key, value in _held_cfg_cache.items()}
     fast, slow = DEFAULT_HELD_FAST_S, DEFAULT_HELD_SLOW_S
     try:
         from sqlalchemy import select
@@ -117,7 +120,7 @@ async def _held_limits_s(step_s: int) -> dict[str, float]:
         "slow": max(3.0 * step_s, slow),
     }
     _held_cfg_cache.clear()
-    _held_cfg_cache.update(limits)
+    _held_cfg_cache.update({"fast": fast, "slow": slow})
     _held_cfg_read_at = now
     return limits
 
@@ -219,31 +222,32 @@ async def _resolve_role_segments(
     roles: list[str],
     grid_start: datetime,
     grid_end: datetime,
+    read_scope: PointReadScope | None = None,
 ) -> dict[str, list[_BindingSegment]]:
     """解析各角色绑定分段（有历史按历史；无历史回退当前映射单段）."""
     from app.models.loop import LoopTagMapping
     from app.models.point_history import LoopTagBindingHistory
 
-    rows = (
-        await _metadata_execute(
-            select(
-                LoopTagBindingHistory.tag_role,
-                LoopTagBindingHistory.tag_id,
-                LoopTagBindingHistory.valid_from,
-                LoopTagBindingHistory.valid_to,
-            ).where(LoopTagBindingHistory.loop_id == loop_id)
-        )
-    ).all()
+    rows = await _metadata_rows(
+        select(
+            LoopTagBindingHistory.tag_role,
+            LoopTagBindingHistory.tag_id,
+            LoopTagBindingHistory.valid_from,
+            LoopTagBindingHistory.valid_to,
+        ).where(LoopTagBindingHistory.loop_id == loop_id),
+        read_scope,
+        ("bindings", loop_id),
+    )
     # 内部统一大写角色键（绑定历史/映射存大写；调用方传小写）
     out: dict[str, list[_BindingSegment]] = {r.upper(): [] for r in roles}
     if not rows:
-        mappings = (
-            await _metadata_execute(
-                select(LoopTagMapping.tag_role, LoopTagMapping.tag_id).where(
-                    LoopTagMapping.loop_id == loop_id
-                )
-            )
-        ).all()
+        mappings = await _metadata_rows(
+            select(LoopTagMapping.tag_role, LoopTagMapping.tag_id).where(
+                LoopTagMapping.loop_id == loop_id
+            ),
+            read_scope,
+            ("mappings", loop_id),
+        )
         by_role = {str(m[0]).upper(): str(m[1]) for m in mappings}
         for role in out:
             pid = by_role.get(role)
@@ -269,6 +273,14 @@ async def _resolve_role_segments(
     return out
 
 
+async def _metadata_rows(stmt, read_scope: PointReadScope | None, key: tuple):
+    async def load():
+        # Result.all() 会消费结果；只复用物化行，禁止共享 Result/AsyncSession。
+        return (await _metadata_execute(stmt)).all()
+
+    return await scoped_read(read_scope, key, load)
+
+
 @g5_trace.traced("builder.total")
 async def build_logical_wide(
     db: Any,
@@ -277,6 +289,9 @@ async def build_logical_wide(
     start: datetime,
     end: datetime,
     interval_s: int = 1,
+    *,
+    read_scope: PointReadScope | None = None,
+    event_reader=None,
 ) -> RawTimeSeries:
     """构建窗口的逻辑宽表（设计 §5.2；按调用方周期，默认 1s）。"""
     grid_start = _ceil_second(start)
@@ -294,7 +309,10 @@ async def build_logical_wide(
     if grid_end < grid_start:
         return RawTimeSeries(timestamps=[], signals={r: [] for r in requested}, quality_codes={})
 
-    segments = await _resolve_role_segments(db, loop_id, internal_roles, grid_start, grid_end)
+    scope_kwargs = {"read_scope": read_scope} if read_scope is not None else {}
+    segments = await _resolve_role_segments(
+        db, loop_id, internal_roles, grid_start, grid_end, **scope_kwargs
+    )
 
     # 点集合与分段初值探测
     initial_probes: dict[tuple[str, datetime], None] = {}
@@ -311,41 +329,77 @@ async def build_logical_wide(
         # 多子表合并大查询）；>16 点退回单条批量 IN 查询（SQL 次数仍有界）。
         # 最小列集（ts/value/quality_class——减小 TD 响应体量）。
         sorted_points = sorted(all_points)
-        if 1 < len(sorted_points) <= 16:
-            # F02：一条点查询失败也须等待兄弟查询收束，再交给外层重试。
-            per_point = await gather_settled(
-                *[
-                    g5_trace.awaited(
-                        "builder.events",
-                        repo.read_events([pid], grid_start, grid_end, full_columns=False),
-                        pointId=pid,
-                    )
-                    for pid in sorted_points
-                ]
+
+        read_events = event_reader or repo.read_events
+
+        async def _window_events():
+            if 1 < len(sorted_points) <= 16:
+                # F02：一条点查询失败也须等待兄弟查询收束，再交给外层重试。
+                per_point = await gather_settled(
+                    *[
+                        g5_trace.awaited(
+                            "builder.events",
+                            scoped_read(
+                                read_scope,
+                                ("events", (pid,), grid_start, grid_end),
+                                lambda pid=pid: read_events(
+                                    [pid], grid_start, grid_end, full_columns=False
+                                ),
+                            ),
+                            pointId=pid,
+                        )
+                        for pid in sorted_points
+                    ]
+                )
+                return {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
+            else:
+                return await g5_trace.awaited(
+                    "builder.events",
+                    scoped_read(
+                        read_scope,
+                        ("events", tuple(sorted_points), grid_start, grid_end),
+                        lambda: read_events(
+                            sorted_points, grid_start, grid_end, full_columns=False
+                        ),
+                    ),
+                )
+
+        async def _initial_states():
+            by_before: dict[datetime, list[str]] = {}
+            for pid, before in initial_probes:
+                by_before.setdefault(before, []).append(pid)
+            initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
+            for before, pids in by_before.items():
+                states = await g5_trace.awaited(
+                    "builder.initial_state",
+                    scoped_point_read(
+                        read_scope,
+                        ("initial", before),
+                        pids,
+                        lambda points, before=before: repo.read_last_states_before(points, before),
+                    ),
+                )
+                for pid, st in states.items():
+                    initial_states[(pid, before)] = st
+            return initial_states
+
+        async def _anchors():
+            return await g5_trace.awaited(
+                "builder.anchors",
+                scoped_point_read(
+                    read_scope,
+                    ("anchors", grid_start),
+                    sorted_points,
+                    lambda points: meta.applicable_anchors_batch(
+                        db, point_ids=points, window_start=grid_start
+                    ),
+                ),
             )
-            events_map = {pid: m[pid] for m, pid in zip(per_point, sorted_points, strict=True)}
-        else:
-            events_map = await g5_trace.awaited(
-                "builder.events",
-                repo.read_events(sorted_points, grid_start, grid_end, full_columns=False),
-            )
-        # 各探测时刻的窗口前最后状态（batch per 时刻）
-        by_before: dict[datetime, list[str]] = {}
-        for pid, before in initial_probes:
-            by_before.setdefault(before, []).append(pid)
-        initial_states: dict[tuple[str, datetime], dict[str, Any] | None] = {}
-        for before, pids in by_before.items():
-            states = await g5_trace.awaited(
-                "builder.initial_state", repo.read_last_states_before(pids, before)
-            )
-            for pid, st in states.items():
-                initial_states[(pid, before)] = st
-        # 锚点（批量单查询；作为虚拟事件按其 sourceTime 生效）
-        anchors = await g5_trace.awaited(
-            "builder.anchors",
-            meta.applicable_anchors_batch(
-                db, point_ids=sorted(all_points), window_start=grid_start
-            ),
+
+        # 三者没有数据依赖，同时提交以合并兄弟组的初值/锚点集合。
+        # 全部收束后再继续，失败不遗留在途查询。
+        events_map, initial_states, anchors = await gather_settled(
+            _window_events(), _initial_states(), _anchors()
         )
         # 组装每点因果流
         for pid in all_points:
@@ -374,7 +428,11 @@ async def build_logical_wide(
     # 13,000+ 碎片段曾使逐槽 _in_gap 线性扫描成为 KPI 取数主瓶颈
     # （1s 网格 3601 槽 × N 角色 × 全量段数 ≈ 1.5 亿次比较/回路 ≈ 20s，
     # 实测吻合；基线 200-300ms/回路是宽表路径无此扫描）。合并后二分查。
-    gap_windows_raw = await _load_gap_windows(db)
+    gap_windows_raw = await scoped_read(
+        read_scope,
+        ("gaps", grid_start, grid_end),
+        lambda: _load_gap_windows(db, grid_start, grid_end),
+    )
     merged: list[list[datetime]] = []
     for gs, ge in sorted(gap_windows_raw):
         if merged and gs <= merged[-1][1]:
@@ -669,13 +727,19 @@ def _in_gap(ts: datetime, gap_windows: list[tuple[datetime, datetime]]) -> bool:
 
 
 @g5_trace.traced("builder.gaps")
-async def _load_gap_windows(db: Any) -> list[tuple[datetime, datetime]]:
+async def _load_gap_windows(
+    db: Any, grid_start: datetime, grid_end: datetime
+) -> list[tuple[datetime, datetime]]:
     from app.models.point_history import HistoryCoverageSegment
 
     rows = (
         await _metadata_execute(
             select(HistoryCoverageSegment.seg_start, HistoryCoverageSegment.seg_end).where(
-                HistoryCoverageSegment.status == "gap"
+                HistoryCoverageSegment.status == "gap",
+                # gap 为半开区间；网格含尾点，因此 start==grid_end 仍须保留。
+                # 与窗口不相交的历史缺口无需传输、合并和逐回路反复处理。
+                HistoryCoverageSegment.seg_end > grid_start,
+                HistoryCoverageSegment.seg_start <= grid_end,
             )
         )
     ).all()

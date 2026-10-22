@@ -96,11 +96,11 @@ class TestAppendResultRecordIdempotent:
     """同唯一键重试幂等：冲突即复用既有 record，不重复建。"""
 
     @pytest.mark.asyncio
-    async def test_existing_record_reused_without_insert(self) -> None:
-        """SELECT 命中既有 record → 直接复用，不再 INSERT。"""
+    async def test_existing_record_reused_after_conflict(self) -> None:
+        """唯一键冲突后读取原记录，不更新其 payload。"""
         db = AsyncMock()
         existing = _record_stub("rec-existing")
-        db.execute = AsyncMock(return_value=_scalar_result(existing))
+        db.execute = AsyncMock(side_effect=[_scalar_result(None), _scalar_result(existing)])
 
         record = await result_ledger.append_result_record(
             db,
@@ -111,19 +111,20 @@ class TestAppendResultRecordIdempotent:
             ts_end=_TS1,
             algorithm_version=ALGORITHM_VERSION,
             config_revision="digest:abc",
-            payload={"score": 80},
+            payload={"score": 99},
         )
 
         assert record is existing
-        # 仅 1 次 execute（SELECT），无 INSERT
-        assert db.execute.await_count == 1
+        assert record.payload == {"score": 80.0}
+        assert db.execute.await_count == 2
+        assert "DO NOTHING" in str(db.execute.await_args_list[0].args[0])
 
     @pytest.mark.asyncio
     async def test_insert_when_missing(self) -> None:
-        """SELECT 未命中 → INSERT RETURNING 新 record。"""
+        """新记录直接 INSERT RETURNING，不前置 SELECT。"""
         db = AsyncMock()
         inserted = _record_stub("rec-new")
-        db.execute = AsyncMock(side_effect=[_scalar_result(None), _scalar_result(inserted)])
+        db.execute = AsyncMock(return_value=_scalar_result(inserted))
 
         record = await result_ledger.append_result_record(
             db,
@@ -138,17 +139,15 @@ class TestAppendResultRecordIdempotent:
         )
 
         assert record is inserted
-        assert db.execute.await_count == 2  # SELECT + INSERT
+        assert db.execute.await_count == 1
 
     @pytest.mark.asyncio
     async def test_concurrent_conflict_rereads_existing(self) -> None:
         """并发竞态（ON CONFLICT DO NOTHING 返回空）→ 回读复用既有 record。"""
         db = AsyncMock()
         existing = _record_stub("rec-raced")
-        # SELECT(None) → INSERT(冲突返回 None) → 回读(existing)
-        db.execute = AsyncMock(
-            side_effect=[_scalar_result(None), _scalar_result(None), _scalar_result(existing)]
-        )
+        # INSERT(冲突返回 None) → 单独 SELECT 回读(existing)
+        db.execute = AsyncMock(side_effect=[_scalar_result(None), _scalar_result(existing)])
 
         record = await result_ledger.append_result_record(
             db,
@@ -163,7 +162,7 @@ class TestAppendResultRecordIdempotent:
         )
 
         assert record is existing
-        assert db.execute.await_count == 3
+        assert db.execute.await_count == 2
 
     @pytest.mark.asyncio
     async def test_dual_logical_run_ids_coexist(self) -> None:
@@ -171,15 +170,7 @@ class TestAppendResultRecordIdempotent:
         db = AsyncMock()
         v1 = _record_stub("rec-v1")
         v2 = _record_stub("rec-v2")
-        # 每次调用：SELECT(None) + INSERT(record)
-        db.execute = AsyncMock(
-            side_effect=[
-                _scalar_result(None),
-                _scalar_result(v1),
-                _scalar_result(None),
-                _scalar_result(v2),
-            ]
-        )
+        db.execute = AsyncMock(side_effect=[_scalar_result(v1), _scalar_result(v2)])
 
         common = {
             "object_kind": "LOOP",
@@ -195,7 +186,7 @@ class TestAppendResultRecordIdempotent:
 
         assert r1 is v1
         assert r2 is v2
-        assert db.execute.await_count == 4  # 两次完整 SELECT+INSERT，无复用
+        assert db.execute.await_count == 2  # 不同 logicalRunId 各自追加
 
     @pytest.mark.asyncio
     async def test_aware_datetimes_normalized_to_naive_utc(self) -> None:
@@ -216,9 +207,8 @@ class TestAppendResultRecordIdempotent:
         )
         stmt = db.execute.await_args_list[0].args[0]
         params = stmt.compile().params
-        # 账本唯一键 SELECT 的窗口绑定值为 naive UTC（SELECT 参数名带序号后缀）
-        assert any(v == _TS0 for v in params.values())
-        assert any(v == _TS1 for v in params.values())
+        assert params["ts_start"] == _TS0
+        assert params["ts_end"] == _TS1
 
 
 # ---------------------------------------------------------------------------
@@ -287,13 +277,11 @@ class TestPersistSnapshotRecordFirst:
 
         db = AsyncMock()
         record = _record_stub("rec-persist-1")
-        # 1) 账本 SELECT 2) 账本 INSERT 3) hourly UPSERT 4) latest 守卫 SELECT 5) latest UPSERT
+        # 新记录热路径：账本 INSERT → hourly UPSERT → latest 原子 UPSERT。
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(None),
                 _scalar_result(record),
                 _returning_first_result("snap-1"),
-                _scalar_result(None),
                 _scalar_result(None),
             ]
         )
@@ -310,17 +298,15 @@ class TestPersistSnapshotRecordFirst:
 
         assert result["snapshotId"] == "snap-1"
         stmts = [c.args[0] for c in db.execute.await_args_list]
-        # 顺序：账本 SELECT → 账本 INSERT → hourly UPSERT → latest 守卫 → latest UPSERT
+        assert len(stmts) == 3
         assert _stmt_tables(stmts[0]) == ["calculation_result_record"]
-        assert _stmt_tables(stmts[1]) == ["calculation_result_record"]
-        assert _stmt_tables(stmts[2]) == ["kpi_snapshot_hourly"]
-        assert _stmt_tables(stmts[3]) == ["loop_confidence_latest"]
-        assert _stmt_tables(stmts[4]) == ["loop_confidence_latest"]
+        assert _stmt_tables(stmts[1]) == ["kpi_snapshot_hourly"]
+        assert _stmt_tables(stmts[2]) == ["loop_confidence_latest"]
         # 投影 UPSERT 的 set_ 带 result_record_id（指向先行追加的 record）
-        set_values = _extract_upsert_set_values(stmts[2])
+        set_values = _extract_upsert_set_values(stmts[1])
         assert set_values["result_record_id"] == "rec-persist-1"
         # 账本 INSERT 的 payload 含完整快照字段与业务状态
-        insert_params = stmts[1].compile().params
+        insert_params = stmts[0].compile().params
         assert insert_params["algorithm_version"] == ALGORITHM_VERSION
         assert insert_params["config_revision"] == CONFIG_REVISION_UNVERSIONED
         assert insert_params["status"] == "COMPLETED"
@@ -330,10 +316,9 @@ class TestPersistSnapshotRecordFirst:
         db = AsyncMock()
         record = _record_stub("rec-custom-1")
         db.add = MagicMock()
-        # 1) 账本 SELECT 2) 账本 INSERT 3) custom select-then-add（SELECT→None）
+        # 账本 INSERT → custom select-then-add（SELECT→None）。
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(None),
                 _scalar_result(record),
                 _scalar_result(None),
             ]
@@ -359,9 +344,8 @@ class TestPersistSnapshotRecordFirst:
         db = AsyncMock()
         db.execute = AsyncMock(
             side_effect=[
-                RuntimeError("ledger down"),  # 账本 SELECT 即失败
+                RuntimeError("ledger down"),  # 账本 INSERT 即失败
                 _returning_first_result("snap-ok"),  # hourly UPSERT
-                _scalar_result(None),  # latest 守卫 SELECT
                 _scalar_result(None),  # latest UPSERT
             ]
         )
@@ -377,22 +361,20 @@ class TestPersistSnapshotRecordFirst:
 
     @pytest.mark.asyncio
     async def test_same_logical_run_id_reuse_in_persist(self) -> None:
-        """同 logicalRunId 二次写入：账本 SELECT 命中复用，无第二次 INSERT。"""
+        """同 logicalRunId 二次写入：INSERT 冲突回读，仍指向原账本。"""
         from tests.test_kpi_calc import _extract_upsert_set_values
 
         db = AsyncMock()
         record = _record_stub("rec-reused")
-        # 第一次：SELECT(None)+INSERT+UPSERT+守卫+latest；第二次：SELECT(命中)+UPSERT+守卫+latest
+        # 首次直接追加；重试冲突后回读原 record，两次投影都指向它。
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(None),
                 _scalar_result(record),
                 _returning_first_result("snap-1"),
                 _scalar_result(None),
                 _scalar_result(None),
                 _scalar_result(record),
                 _returning_first_result("snap-1"),
-                _scalar_result(_TS1),  # 守卫：现存投影窗=同窗 → 允许覆盖
                 _scalar_result(None),
             ]
         )
@@ -412,8 +394,7 @@ class TestPersistSnapshotRecordFirst:
         ledger_tables = [
             t for s in stmts for t in _stmt_tables(s) if t == "calculation_result_record"
         ]
-        # 第二次仅 1 次账本 SELECT（复用），无第二次 INSERT
-        assert ledger_tables.count("calculation_result_record") == 3  # SELECT+INSERT+SELECT
+        assert ledger_tables.count("calculation_result_record") == 3  # INSERT+INSERT+SELECT
         both_upserts = [
             s for s in stmts if _stmt_tables(s) == ["kpi_snapshot_hourly"] and hasattr(s, "table")
         ]
@@ -430,8 +411,8 @@ class TestConfidenceLatestLateArrivalGuard:
     """迟到历史写入只追加 record，不反向覆盖 loop_confidence_latest。"""
 
     @pytest.mark.asyncio
-    async def test_late_window_skips_latest_upsert(self) -> None:
-        """incoming ts_end 早于现存投影 data_ts_end → 不 UPSERT。"""
+    async def test_window_guard_is_part_of_atomic_upsert(self) -> None:
+        """窗口比较与写入必须在同一条 UPSERT 中，避免 SELECT/写入竞态。"""
         db = AsyncMock()
         db.execute = AsyncMock(return_value=_scalar_result(_TS1))  # 现存投影窗终点
 
@@ -443,9 +424,14 @@ class TestConfidenceLatestLateArrivalGuard:
             status="SUCCESS",
         )
 
-        assert db.execute.await_count == 1  # 仅守卫 SELECT，无 UPSERT
+        assert db.execute.await_count == 1
         guard_stmt = db.execute.await_args_list[0].args[0]
         assert _stmt_tables(guard_stmt) == ["loop_confidence_latest"]
+        assert "DO UPDATE" in str(guard_stmt)
+        assert str(guard_stmt._post_values_clause.update_whereclause) == (
+            "loop_confidence_latest.data_ts_end IS NULL OR "
+            "loop_confidence_latest.data_ts_end <= excluded.data_ts_end"
+        )
 
     @pytest.mark.asyncio
     async def test_same_window_still_updates(self) -> None:
@@ -461,7 +447,7 @@ class TestConfidenceLatestLateArrivalGuard:
             status="SUCCESS",
             result_record_id="rec-1",
         )
-        assert db.execute.await_count == 2  # 守卫 SELECT + UPSERT
+        assert db.execute.await_count == 1
 
     @pytest.mark.asyncio
     async def test_newer_window_updates(self) -> None:
@@ -476,7 +462,7 @@ class TestConfidenceLatestLateArrivalGuard:
             ts_end=_TS1,
             status="SUCCESS",
         )
-        assert db.execute.await_count == 2
+        assert db.execute.await_count == 1
 
     @pytest.mark.asyncio
     async def test_no_existing_row_updates(self) -> None:
@@ -491,7 +477,7 @@ class TestConfidenceLatestLateArrivalGuard:
             ts_end=_TS1,
             status="SUCCESS",
         )
-        assert db.execute.await_count == 2
+        assert db.execute.await_count == 1
 
     @pytest.mark.asyncio
     async def test_result_record_id_written_to_latest(self) -> None:
@@ -508,7 +494,7 @@ class TestConfidenceLatestLateArrivalGuard:
             status="SUCCESS",
             result_record_id="rec-latest-1",
         )
-        stmt = db.execute.await_args_list[1].args[0]
+        stmt = db.execute.await_args_list[0].args[0]
         assert _stmt_tables(stmt) == ["loop_confidence_latest"]
         assert _extract_upsert_set_values(stmt)["result_record_id"] == "rec-latest-1"
 
@@ -573,11 +559,9 @@ class TestSaveNodeSnapshotLedger:
         db.flush = AsyncMock()
         db.add = MagicMock()
         node_record = _record_stub("rec-node-1", object_kind="NODE", object_id="node-001")
-        # 1) 账本 SELECT 2) 账本 INSERT 3) 节点表 SELECT（不存在）
-        # 4) UnitKpiSummary SELECT（不存在）
+        # 账本 INSERT → 节点表 SELECT → UnitKpiSummary SELECT。
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(None),
                 _scalar_result(node_record),
                 _scalar_result(None),
                 _scalar_result(None),
@@ -592,7 +576,7 @@ class TestSaveNodeSnapshotLedger:
         node_snap_obj = db.add.call_args_list[0].args[0]
         assert node_snap_obj.result_record_id == "rec-node-1"
         # 账本 INSERT 的 payload 含 loopRecordIds 与各指标分母
-        ledger_insert = db.execute.await_args_list[1].args[0]
+        ledger_insert = db.execute.await_args_list[0].args[0]
         payload = ledger_insert.compile().params["payload"]
         assert payload["loopRecordIds"] == [
             {"loopId": "loop-1", "recordId": "rec-loop-1"},
@@ -610,10 +594,9 @@ class TestSaveNodeSnapshotLedger:
         existing = MagicMock()
         existing.result_record_id = None
         node_record = _record_stub("rec-node-2", object_kind="NODE")
-        # 1) 账本 SELECT 2) 账本 INSERT 3) 节点表 SELECT（存在）4) Unit SELECT（存在）
+        # 账本 INSERT → 节点表 SELECT → Unit SELECT。
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(None),
                 _scalar_result(node_record),
                 _scalar_result(existing),
                 _scalar_result(MagicMock()),
@@ -625,17 +608,16 @@ class TestSaveNodeSnapshotLedger:
 
     @pytest.mark.asyncio
     async def test_node_record_content_addressed_idempotent(self) -> None:
-        """同输入重跑：内容寻址 → 账本 SELECT 命中复用（无第二次 INSERT）。"""
+        """同输入重跑：内容寻址 → 唯一键冲突回读复用。"""
         from app.services.node_performance import save_node_snapshot
 
         db = AsyncMock()
         db.flush = AsyncMock()
         db.add = MagicMock()
         node_record = _record_stub("rec-node-stable", object_kind="NODE")
-        # 第一次：SELECT(None)+INSERT+节点 SELECT(None)+Unit SELECT(None)
+        # 第一次：INSERT+节点 SELECT(None)+Unit SELECT(None)。
         db.execute = AsyncMock(
             side_effect=[
-                _scalar_result(None),
                 _scalar_result(node_record),
                 _scalar_result(None),
                 _scalar_result(None),
@@ -644,9 +626,10 @@ class TestSaveNodeSnapshotLedger:
         await save_node_snapshot(db, _node_snap_data())
         first_tables = [t for c in db.execute.await_args_list for t in _stmt_tables(c.args[0])]
 
-        # 第二次（同输入）：账本 SELECT 命中 → 复用
+        # 第二次：INSERT 冲突后 SELECT 复用。
         db.execute = AsyncMock(
             side_effect=[
+                _scalar_result(None),
                 _scalar_result(node_record),
                 _scalar_result(None),
                 _scalar_result(None),
@@ -655,8 +638,8 @@ class TestSaveNodeSnapshotLedger:
         await save_node_snapshot(db, _node_snap_data())
         second_tables = [t for c in db.execute.await_args_list for t in _stmt_tables(c.args[0])]
 
-        assert first_tables.count("calculation_result_record") == 2  # SELECT+INSERT
-        assert second_tables.count("calculation_result_record") == 1  # 仅 SELECT 复用
+        assert first_tables.count("calculation_result_record") == 1
+        assert second_tables.count("calculation_result_record") == 2
 
 
 # ---------------------------------------------------------------------------
