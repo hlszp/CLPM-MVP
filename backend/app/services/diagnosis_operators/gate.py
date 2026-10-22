@@ -44,7 +44,12 @@ def evaluate_gate(
     valid_rate: float,
     confidence_level: str,
 ) -> GateResult:
-    """门禁三条件：点数充足 / 可信度非 E 级 / 断点比例 ≤30%。"""
+    """门禁：点数 / 断点比例；conf=E 仅在 valid_rate 亦不足时拦截。
+
+    2026-10-22 用户裁决：MODE 等 COV 角色不进硬门禁（交集只算 pv/op 后
+    conf 与 valid_rate 对齐）。E 不单独拦——综合评分在 E 时本身为 None；
+    仅当 valid_rate<0.2 且 E 时视为真缺数，才输出 DATA_INSUFFICIENT。
+    """
 
     gap_ratio = 1.0 - (point_count / expected_points) if expected_points > 0 else 1.0
     gap_ratio = max(0.0, min(1.0, gap_ratio))
@@ -61,11 +66,11 @@ def evaluate_gate(
     if point_count < MIN_DATA_POINTS:
         result.passed = False
         result.reason = f"有效数据点 {point_count} 不足（门槛 {MIN_DATA_POINTS} 点）"
-    elif confidence_level == "E":
-        result.passed = False
-        result.reason = f"数据可信度 E 级（valid_rate={valid_rate:.2%}），不足以支撑诊断"
     elif gap_ratio > MAX_GAP_RATIO:
         result.passed = False
         result.reason = f"断点比例 {gap_ratio:.0%} 超过 {MAX_GAP_RATIO:.0%} 门槛"
+    elif confidence_level == "E" and valid_rate < 0.2:
+        result.passed = False
+        result.reason = f"数据可信度 E 级（valid_rate={valid_rate:.2%}），不足以支撑诊断"
 
     return result

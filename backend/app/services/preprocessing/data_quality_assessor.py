@@ -46,7 +46,14 @@ from app.services.preprocessing.thresholds import get_threshold
 logger = logging.getLogger(__name__)
 
 #: 参与回路级 valid_rate 的核心评估 tag（决策 D1：pv/sp/op/mode 架构模式）
+#: 评估关注的核心角色（完整性诊断/日志用，含稀疏 COV 角色）
 CORE_TAGS: tuple[str, ...] = ("pv", "sp", "op", "mode")
+#: 回路级 valid_rate / 门禁交集：仅高频连续角色（pv/op）。
+#: 2026-10-22 用户裁决：SP/MODE/PID 为 COV 稀疏（可长期不变），不得按
+#: 1s 网格裸点数/交集硬卡；MODE 自身进有效自控率 R 折扣，不重复当门禁。
+#: COV 角色经 ZOH/时间保持参与指标计算，其「通信中断」由 received_at
+#: 新鲜度截断（见 logical_wide_builder held 语义），不靠点数下限。
+GATE_CORE_TAGS: tuple[str, ...] = ("pv", "op")
 
 #: 默认跳过冻结值检测的信号（与 PreprocessingPipeline 一致：稳态时变化小
 #: 或常态为常量的信号，冻结检测易误报；真冻结由 instrument_fault_rate 复合判据识别）
@@ -192,22 +199,21 @@ class DataQualityAssessor:
     def compute_loop_valid_rate(
         validity: dict[str, list[bool]],
         point_count: int,
-        core_tags: tuple[str, ...] = CORE_TAGS,
+        core_tags: tuple[str, ...] = GATE_CORE_TAGS,
     ) -> float:
-        """计算回路级 valid_rate（核心 tag 交集 / point_count）.
+        """计算回路级 valid_rate（高频核心 tag 交集 / point_count）.
 
-        核心 tag（pv/sp/op/mode）同时有效的点占比，作为可信度判定的唯一输入。
+        默认只交 **pv/op**（2026-10-22）：sp/mode 为 COV 稀疏，进交集会把
+        正常工况打成 E/未计算；MODE 只作有效自控率折扣因子。
         缺失的 tag 跳过（不参与交集），避免 tagGroup 不全时误判。
 
         Args:
             validity: 有效性标记字典，key 为 ``{tag}_valid``
             point_count: 数据点数
-            core_tags: 参与回路级评估的核心 tag，默认 :data:`CORE_TAGS`
+            core_tags: 参与回路级评估的核心 tag，默认 :data:`GATE_CORE_TAGS`
 
         Returns:
             回路级 valid_rate ∈ [0.0, 1.0]；point_count=0 时返回 0.0
-
-        设计依据：可信度统一改进方案 §4.3（决策 D1：pv/sp/op/mode）
         """
         if point_count <= 0:
             return 0.0

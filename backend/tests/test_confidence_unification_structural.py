@@ -51,8 +51,11 @@ class TestThreeLinkValidRateUnification:
         assert "compute_loop_valid_rate" in source
 
     def test_core_tags_are_pv_sp_op_mode(self) -> None:
-        """核心 tag 集合为 pv/sp/op/mode（决策 D1）."""
+        """诊断核心角色仍为 pv/sp/op/mode；门禁交集只算 pv/op（COV 不硬卡）."""
         assert CORE_TAGS == ("pv", "sp", "op", "mode")
+        from app.services.preprocessing.data_quality_assessor import GATE_CORE_TAGS
+
+        assert GATE_CORE_TAGS == ("pv", "op")
 
 
 # ===========================================================================
@@ -89,27 +92,40 @@ class TestLoopValidRateConsistency:
     """验证 compute_loop_valid_rate 在不同 tag 组合下口径一致。"""
 
     def test_full_core_tags_intersection(self) -> None:
-        """4 核心 tag 全在场 → 交集 / point_count."""
+        """门禁交集默认仅 pv/op（sp/mode COV 不硬卡）→ 交集 / point_count."""
         validity = {
             "pv_valid": [True, True, False, True],
             "sp_valid": [True, False, True, True],
             "op_valid": [True, True, True, False],
             "mode_valid": [True, True, True, True],
         }
-        # 交集：[T,F,F,F] → 1/4
+        # pv∧op = [T,T,F,F] → 2/4（sp/mode 不再拉低）
         vr = DataQualityAssessor.compute_loop_valid_rate(validity, 4)
-        assert vr == 0.25
+        assert vr == 0.5
 
     def test_partial_core_tags_skip_missing(self) -> None:
-        """缺失 tag 跳过（HF 组语义退化缓解：不因 tagGroup 缺 tag 而误判）."""
+        """缺失 tag 跳过；非门禁角色（sp）不参与默认交集."""
         validity = {
             "pv_valid": [True, True, False, True],
             "sp_valid": [True, True, True, True],
             # op_valid / mode_valid 缺失 → 跳过
         }
-        # 交集：pv∧sp = [T,T,F,T] → 3/4
+        # 仅 pv 在场：[T,T,F,T] → 3/4
         vr = DataQualityAssessor.compute_loop_valid_rate(validity, 4)
         assert vr == 0.75
+
+    def test_explicit_core_tags_override(self) -> None:
+        """显式传 core_tags 可恢复四角色交集（诊断/审计仍可用）."""
+        validity = {
+            "pv_valid": [True, True, False, True],
+            "sp_valid": [True, False, True, True],
+            "op_valid": [True, True, True, False],
+            "mode_valid": [True, True, True, True],
+        }
+        vr = DataQualityAssessor.compute_loop_valid_rate(
+            validity, 4, core_tags=("pv", "sp", "op", "mode")
+        )
+        assert vr == 0.25
 
     def test_zero_point_count_returns_zero(self) -> None:
         """point_count=0 → 0.0."""

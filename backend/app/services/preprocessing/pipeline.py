@@ -28,7 +28,10 @@ from app.contracts.data_types import (
 )
 from app.services.confidence_evaluator import ConfidenceEvaluator
 from app.services.metric_calculator.time_axis import to_half_open, utc
-from app.services.preprocessing.data_quality_assessor import CORE_TAGS, DataQualityAssessor
+from app.services.preprocessing.data_quality_assessor import (
+    GATE_CORE_TAGS,
+    DataQualityAssessor,
+)
 from app.services.preprocessing.outlier_detection import OutlierDetector, detect_ts_anomaly
 from app.services.preprocessing.quality_code import (
     is_nan_or_inf,
@@ -207,10 +210,11 @@ class PreprocessingPipeline:
         # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
         confidence_validity = validity
         if _ctx is not None and _ctx.role_coverage:
-            known_mask = self._stitchable_mask(raw, [True] * n, roles=CORE_TAGS)
+            # 仅高频角色（pv/op）做可拼接掩码；sp/mode COV 不进交集（GATE_CORE_TAGS）
+            known_mask = self._stitchable_mask(raw, [True] * n, roles=GATE_CORE_TAGS)
             confidence_validity = {
                 key: [valid and known_mask[i] for i, valid in enumerate(validity[key])]
-                for tag in CORE_TAGS
+                for tag in GATE_CORE_TAGS
                 if (key := f"{tag}_valid") in validity
             }
         raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(confidence_validity, n)
