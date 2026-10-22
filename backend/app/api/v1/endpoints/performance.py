@@ -515,6 +515,77 @@ async def get_grade_distribution_endpoint(
     return success(data=data)
 
 
+def _parse_time_window(
+    time_window: str,
+    start_dt: datetime | None = None,
+    end_dt: datetime | None = None,
+) -> tuple[datetime, datetime]:
+    """时间窗字符串 → (start, end)；custom 时使用给定起止（naive UTC）。"""
+    if time_window == "custom" and start_dt is not None and end_dt is not None:
+        return start_dt, end_dt
+    now = datetime.now(UTC).replace(tzinfo=None)
+    if time_window == "last_8_hours":
+        return now - timedelta(hours=8), now
+    if time_window == "last_24_hours":
+        return now - timedelta(hours=24), now
+    if time_window == "last_72_hours":
+        return now - timedelta(hours=72), now
+    if time_window == "last_168_hours":
+        return now - timedelta(hours=168), now
+    if time_window == "yesterday":
+        end = now - timedelta(days=1)
+        return end - timedelta(days=1), end
+    if time_window == "last_7_days":
+        return now - timedelta(days=7), now
+    if time_window == "last_30_days":
+        return now - timedelta(days=30), now
+    return now - timedelta(hours=24), now
+
+
+@router.get(
+    "/indicator-stats",
+    response_model=ApiResponse[dict],
+    dependencies=[Depends(require_perms("metric:view"))],
+)
+async def get_indicator_stats_endpoint(
+    metric: str = Query(..., description="指标键：score/auto_mode_rate/fast_rate/..."),
+    plantNodeId: str | None = Query(None, description="装置 UUID（递归子树）"),
+    timeWindow: str = Query("today", description="时间窗（同 ranking）"),
+    startTime: str | None = Query(None, description="custom 起始 ISO"),
+    endTime: str | None = Query(None, description="custom 结束 ISO"),
+    fitnessFilter: bool = Query(False, description="是否剔除 L0/L1"),
+    db: AsyncSession = Depends(get_db),
+    _: SysUser = Depends(require_perms("metric:view")),
+    scope: ScopeContext = Depends(get_scope_ctx),
+) -> dict:
+    """单指标全量统计（指标分析概览卡；不受 ranking limit=100 截断）.
+
+    参评回路 = is_active + include_in_evaluation（可再剔 L0/L1）且窗口内有快照；
+    有效 = 其中该指标非 NULL；avg/belowAlert/fullScore 只在有效集上计算。
+    """
+    from app.services.performance import get_indicator_stats as _stats
+
+    plant_node_ids = None
+    if plantNodeId:
+        pid = _parse_uuid_arg(plantNodeId, field="plantNodeId")
+        pid = scoped_plant_node_id(scope, pid)
+        plant_node_ids = [pid] if pid else []
+    start, end = _parse_time_window(
+        timeWindow,
+        start_dt=_parse_dt(startTime),
+        end_dt=_parse_dt(endTime),
+    )
+    data = await _stats(
+        db,
+        metric,
+        plant_node_ids=plant_node_ids,
+        start=start,
+        end=end,
+        exclude_unfit=fitnessFilter,
+    )
+    return success(data=data)
+
+
 @router.get(
     "/valve-alerts",
     response_model=ApiResponse[dict],

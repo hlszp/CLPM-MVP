@@ -1898,6 +1898,34 @@ export function getGradeDistributionApi(params: GradeDistributionQueryParams) {
   );
 }
 
+/** 单指标全量统计（概览卡；不受 ranking limit=100 截断） */
+export interface IndicatorStatsResult {
+  metric: string;
+  /** 参评回路数（活跃+参评，可再剔 L0/L1，窗口内有快照） */
+  participating: number;
+  /** 有效：该指标非 NULL */
+  withValue: number;
+  uncomputed: number;
+  avg: null | number;
+  belowAlert: number;
+  alert: null | number;
+  fullScore: number;
+  max: number;
+}
+
+export function getIndicatorStatsApi(params: {
+  endTime?: string;
+  fitnessFilter?: boolean;
+  metric: string;
+  plantNodeId?: string;
+  startTime?: string;
+  timeWindow?: string;
+}) {
+  return requestClient.get<IndicatorStatsResult>(`${BASE}/indicator-stats`, {
+    params,
+  });
+}
+
 // ===========================================================================
 // 回路最新可信度评估记录 — GET /loops/{loopId}/confidence-latest
 // ===========================================================================

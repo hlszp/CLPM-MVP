@@ -199,7 +199,11 @@ import {
   Tooltip,
 } from 'ant-design-vue';
 
-import { getNodeRankingApi, getRankingApi } from '#/api/metric';
+import {
+  getIndicatorStatsApi,
+  getNodeRankingApi,
+  getRankingApi,
+} from '#/api/metric';
 import {
   ClpmDataCanvas,
   ClpmPageToolbar,
@@ -386,6 +390,15 @@ const metricMeta = computed(
 
 const rankingItems = ref<MetricApi.RankingItem[]>([]);
 const prevRankingItems = ref<MetricApi.RankingItem[]>([]);
+/** 全量指标统计（参评/有效/低位；非榜单 100 条样本） */
+const indicatorStats = ref<null | {
+  alert: null | number;
+  belowAlert: number;
+  fullScore: number;
+  participating: number;
+  uncomputed: number;
+  withValue: number;
+}>(null);
 /** E5（2026-10-01）：上窗拉取失败显式标记（区别于"真无上窗数据"） */
 const prevLoadFailed = ref(false);
 const nodeItems = ref<MetricApi.NodeRankingItem[]>([]);
@@ -461,6 +474,34 @@ async function loadAll() {
           })
         : Promise.resolve([] as MetricApi.RankingItem[]),
     ]);
+    // 全量参评/有效/低位（与榜单样本分离，避免"参评=100"误读）
+    getIndicatorStatsApi({
+      metric: metricMeta.value.sortKey,
+      timeWindow: windowApiParams.value.timeWindow === 'custom' ? 'custom' : windowApiParams.value.timeWindow,
+      ...(windowApiParams.value.timeWindow === 'custom'
+        ? {
+            startTime: (windowApiParams.value as { startTime: string }).startTime,
+            endTime: (windowApiParams.value as { endTime: string }).endTime,
+          }
+        : {}),
+      fitnessFilter: fitnessFilter.value,
+      ...(selectedPlantNodeId.value
+        ? { plantNodeId: selectedPlantNodeId.value }
+        : {}),
+    })
+      .then((s) => {
+        indicatorStats.value = {
+          alert: s.alert ?? null,
+          belowAlert: s.belowAlert ?? 0,
+          fullScore: s.fullScore ?? 0,
+          participating: s.participating ?? 0,
+          uncomputed: s.uncomputed ?? 0,
+          withValue: s.withValue ?? 0,
+        };
+      })
+      .catch(() => {
+        indicatorStats.value = null;
+      });
     rankingItems.value = ranking;
     nodeItems.value = nodes;
     prevRankingItems.value = prev;
@@ -506,45 +547,11 @@ const curValues = computed(() =>
     .map((it) => it[metricMeta.value.field] as null | number)
     .filter((v): v is number => v != null),
 );
-
-/**
- * R03-4（P3-D6b）：统计基数对账——"共 M 条"= 参评口径（includeInEvaluation
- * + 适用性过滤）下的回路数；"有效 N 条"= 其中该指标有值的回路。null 不作 0
- * 参与统计（均值/中位数/分布桶均只算有效值），未计算条数显式展示。
- */
-const participationBaseItems = computed(() =>
-  rankingItems.value.filter((it) => {
-    if (it.includeInEvaluation === false) return false;
-    if (
-      fitnessFilter.value &&
-      (it.fitnessLevel === 'L0' || it.fitnessLevel === 'L1')
-    ) {
-      return false;
-    }
-    return true;
-  }),
-);
-const uncomputedCount = computed(
-  () => participationBaseItems.value.length - curValues.value.length,
-);
-
 const avgValue = computed(() => {
   const vals = curValues.value;
   if (vals.length === 0) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 });
-
-/** 中位数（比均值更抗极端值，治理场景常看；入参已剔除 null） */
-function medianOf(vals: number[]): null | number {
-  if (vals.length === 0) return null;
-  const sorted = [...vals].toSorted((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 1
-    ? sorted[mid]!
-    : (sorted[mid - 1]! + sorted[mid]!) / 2;
-}
-
-const medianValue = computed(() => medianOf(curValues.value));
 
 // ===== 环比（上一等长滚动窗口，口径与当前一致的同套过滤）=====
 
@@ -572,7 +579,6 @@ const prevAvg = computed(() =>
     ? prevValues.value.reduce((a, b) => a + b, 0) / prevValues.value.length
     : null,
 );
-const prevMedian = computed(() => medianOf(prevValues.value));
 const hasPrevData = computed(() => prevValues.value.length > 0);
 
 /** 环比 Δ（正值=改善，6 指标均为越高越好）；无上窗数据时 null（不作 0） */
@@ -583,28 +589,20 @@ const avgDelta = computed(() =>
     ? avgValue.value - prevAvg.value
     : null,
 );
-const medianDelta = computed(() =>
-  hasPrevData.value &&
-  medianValue.value != null &&
-  prevMedian.value != null
-    ? medianValue.value - prevMedian.value
-    : null,
-);
 const countDelta = computed(() =>
   hasPrevData.value
     ? filteredItems.value.length - prevFilteredItems.value.length
     : null,
 );
 
-/** 满分回路（该指标达满值，如自控率 100%；治理健康度信号） */
-const fullScoreCount = computed(
-  () => curValues.value.filter((v) => v >= metricMeta.value.max - 1e-9).length,
+/** 满分回路（该指标达满值；优先全量统计，回退榜单样本） */
+const fullScoreCount = computed(() =>
+  indicatorStats.value ? indicatorStats.value.fullScore : curValues.value.filter((v) => v >= metricMeta.value.max - 1e-9).length,
 );
-const fullScorePct = computed(() =>
-  curValues.value.length > 0
-    ? (fullScoreCount.value / curValues.value.length) * 100
-    : null,
-);
+const fullScorePct = computed(() => {
+  const total = indicatorStats.value?.withValue ?? curValues.value.length;
+  return total > 0 ? (fullScoreCount.value / total) * 100 : null;
+});
 
 /** 环比恶化最多回路（当前窗口 vs 上窗同回路；无恶化/无上窗数据时 undefined） */
 const worstDecline = computed(() => {
@@ -1324,39 +1322,22 @@ onMounted(() => {
               <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
             </Card>
             <Card :body-style="{ padding: '12px 16px' }">
-              <div class="text-xs text-gray-500">
-                {{ selectedPlantNodeName }}{{ metricMeta.label }}中位数
-              </div>
-              <div class="mt-1 text-2xl font-semibold">
-                {{
-                  formatNumber(medianValue, metricMeta.max === 100 ? '%' : '')
-                }}
-              </div>
-              <div
-                v-if="medianDelta != null"
-                class="mt-0.5 flex items-center gap-1 text-xs font-medium"
-                :class="
-                  medianDelta > 0
-                    ? 'text-emerald-600'
-                    : medianDelta < 0
-                      ? 'text-red-600'
-                      : 'text-gray-400'
-                "
+              <Tooltip
+                title="低于该指标告警阈值的回路数（全量参评口径，非榜单 100 条样本）"
               >
-                <IconifyIcon
-                  :icon="
-                    medianDelta > 0
-                      ? 'lucide:trending-up'
-                      : medianDelta < 0
-                        ? 'lucide:trending-down'
-                        : 'lucide:minus'
-                  "
-                  class="size-3.5"
-                />
-                {{ formatDelta(medianDelta) }}
-                <span class="font-normal text-gray-400">环比</span>
+                <div class="text-xs text-gray-500">低位回路数</div>
+              </Tooltip>
+              <div class="mt-1 text-2xl font-semibold">
+                {{ indicatorStats?.belowAlert ?? '—'
+                }}<span class="text-sm font-normal text-gray-400">条</span>
               </div>
-              <div v-else class="mt-0.5 text-xs text-gray-400">—</div>
+              <div class="mt-0.5 text-xs text-gray-400">
+                <template v-if="indicatorStats?.alert != null">
+                  阈值 &lt; {{ indicatorStats.alert
+                  }}{{ metricMeta.max === 100 ? '%' : '' }}
+                </template>
+                <template v-else>—</template>
+              </div>
             </Card>
             <Card :body-style="{ padding: '12px 16px' }">
               <Tooltip
@@ -1377,18 +1358,19 @@ onMounted(() => {
               </div>
             </Card>
             <Card :body-style="{ padding: '12px 16px' }">
-              <div class="text-xs text-gray-500">参评回路数</div>
+              <Tooltip
+                title="参评=配置「参与评估」且监控中、窗口内有快照；有效=其中该指标有值。全量口径，不是榜单 100 条"
+              >
+                <div class="text-xs text-gray-500">参评回路数</div>
+              </Tooltip>
               <div class="mt-1 text-2xl font-semibold">
-                {{ filteredItems.length }}
+                {{ indicatorStats?.participating ?? '—' }}
               </div>
-              <!-- R03-4：null 剔除出统计并显式对账——均值/中位数/分布桶
-                   只统计有效值行，未计算行不冒充 0 分参与统计 -->
               <div class="mt-0.5 text-xs text-gray-400">
-                有效 {{ curValues.length }} 条（共
-                {{ participationBaseItems.length }} 条<template
-                  v-if="uncomputedCount > 0"
-                  >，{{ uncomputedCount }} 条未计算</template
-                >）
+                有效 {{ indicatorStats?.withValue ?? 0 }} 条<template
+                  v-if="(indicatorStats?.uncomputed ?? 0) > 0"
+                  >，{{ indicatorStats?.uncomputed }} 条未计算</template
+                >
               </div>
               <div
                 v-if="countDelta != null"

@@ -2416,6 +2416,140 @@ async def list_loop_snapshots(
     return rows, total
 
 
+async def get_indicator_stats(
+    db: AsyncSession,
+    metric: str,
+    *,
+    plant_node_ids: list[str] | None = None,
+    start: datetime | None = None,
+    end: datetime | None = None,
+    exclude_unfit: bool = False,
+) -> dict[str, Any]:
+    """单指标全量统计（指标分析概览卡；**不受 ranking limit=100 截断**）.
+
+    Returns:
+        {
+          "metric": ...,
+          "participating": 参评回路数（is_active+include_in_evaluation，可再剔 L0/L1）,
+          "withValue": 窗口内该指标有值的回路数（"有效"）,
+          "uncomputed": participating - withValue,
+          "avg": 有值均值,
+          "belowAlert": 低于告警阈值的有值回路数,
+          "alert": 告警阈值,
+          "fullScore": 达 max（默认 100）的有值回路数,
+        }
+    """
+    col_name = {
+        "auto_mode_rate": "auto_mode_rate",
+        "effective_auto_rate": "effective_auto_rate",
+        "accuracy_rate": "accuracy_rate",
+        "fast_rate": "fast_rate",
+        "steady_rate": "steady_rate",
+        "good_value_rate": "good_value_rate",
+        "score": "score",
+    }.get(metric)
+    if not col_name:
+        raise BizError(
+            code="ERR_INVALID_METRIC",
+            message=f"不支持的指标: {metric}",
+            status_code=400,
+        )
+    col = getattr(KpiSnapshotHourly, col_name)
+
+    conditions, need_loop_join = await _build_snapshot_conditions(
+        db,
+        plant_node_ids=plant_node_ids,
+        start=start,
+        end=end,
+    )
+    # 参评名册：活跃 + 参评（_build_snapshot_conditions 默认已滤）；
+    # 可选再剔 L0/L1（与前端适用性过滤一致）
+    roster_conditions = list(conditions)
+    if exclude_unfit:
+        roster_conditions.append(
+            or_(
+                KpiSnapshotHourly.fitness_level.is_(None),
+                KpiSnapshotHourly.fitness_level.notin_(("L0", "L1")),
+            )
+        )
+
+    rn_col = (
+        func.row_number()
+        .over(
+            partition_by=KpiSnapshotHourly.loop_id,
+            order_by=[KpiSnapshotHourly.ts_start.desc(), KpiSnapshotHourly.id.desc()],
+        )
+        .label("rn")
+    )
+    subq_stmt = select(
+        KpiSnapshotHourly.loop_id.label("loop_id"),
+        col.label("v"),
+        KpiSnapshotHourly.fitness_level.label("fit"),
+        rn_col,
+    )
+    if need_loop_join:
+        subq_stmt = subq_stmt.outerjoin(LoopLedger, KpiSnapshotHourly.loop_id == LoopLedger.id)
+    latest = subq_stmt.where(*roster_conditions).subquery()
+
+    # 参评名册行数 = 窗口内有快照的可统计回路（与列表 latestOnly 同域）
+    participating = int(
+        (
+            await db.execute(select(func.count()).select_from(latest).where(latest.c.rn == 1))
+        ).scalar()
+        or 0
+    )
+    row = (
+        await db.execute(
+            select(
+                func.count().filter(latest.c.v.isnot(None)).label("with_value"),
+                func.avg(latest.c.v).label("avg_v"),
+            ).where(latest.c.rn == 1)
+        )
+    ).one()
+    with_value = int(row.with_value or 0)
+    avg = _to_float(row.avg_v)
+
+    th = _default_threshold(metric)
+    alert = th.get("alert")
+    max_v = th.get("max", 100)
+    below_alert = 0
+    full_score = 0
+    if with_value:
+        if alert is not None:
+            below_alert = int(
+                (
+                    await db.execute(
+                        select(func.count())
+                        .select_from(latest)
+                        .where(latest.c.rn == 1, latest.c.v.isnot(None), latest.c.v < float(alert))
+                    )
+                ).scalar()
+                or 0
+            )
+        full_score = int(
+            (
+                await db.execute(
+                    select(func.count())
+                    .select_from(latest)
+                    .where(latest.c.rn == 1, latest.c.v.isnot(None), latest.c.v >= float(max_v))
+                )
+            ).scalar()
+            or 0
+        )
+
+    return {
+        "metric": metric,
+        "participating": participating,
+        "withValue": with_value,
+        "uncomputed": max(0, participating - with_value),
+        "avg": avg,
+        "belowAlert": below_alert,
+        "alert": alert,
+        "fullScore": full_score,
+        "max": max_v,
+    }
+
+
 __all__ = [
     "ALGORITHM_VERSION",
     "DASHBOARD_CACHE_TTL",
@@ -2427,6 +2561,7 @@ __all__ = [
     "get_analytics",
     "get_board",
     "get_grade_distribution",
+    "get_indicator_stats",
     "get_ranking",
     "list_engine_rules",
     "list_loop_snapshots",
