@@ -371,7 +371,8 @@ const queryNotices = ref<string[]>([]);
 const fitnessRaw = ref('');
 const selectedPlantNodeId = ref<string | undefined>(undefined);
 const selectedPlantNodeName = ref('全厂');
-const fitnessFilter = ref(true);
+/** 2026-10-22 用户裁决：评估默认不做适用性过滤（L0/L1 不默认剔除） */
+const fitnessFilter = ref(false);
 const treeDrawerOpen = ref(false);
 
 const metricMeta = computed(
