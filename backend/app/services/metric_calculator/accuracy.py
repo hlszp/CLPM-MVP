@@ -60,7 +60,18 @@ class AccuracyRateCalculator(MetricCalculatorBase):
         Returns:
             MetricResult：value 为准确率 0~100，数据不足时 INCONCLUSIVE
         """
-        pairs = self._get_masked_pair(bundle, "pv", "sp")
+        # 2026-10-23：时间视图可用时剔除所需角色覆盖 UNKNOWN 的槽（真实
+        # gap/无初值等保留的 COV 陈值不当观测；正常 COV 保持=HELD 保留），
+        # 与 R/Auto/Sat 的"未知不进分子不缩分母"口径对齐；legacy 不变。
+        known_idx = self._known_slot_indices(bundle, ("pv", "sp"))
+        if known_idx is not None:
+            sig_pv = bundle.data_block.signals.get("pv", [])
+            sig_sp = bundle.data_block.signals.get("sp", [])
+            pairs = [
+                (sig_pv[i], sig_sp[i]) for i in known_idx if i < len(sig_pv) and i < len(sig_sp)
+            ]
+        else:
+            pairs = self._get_masked_pair(bundle, "pv", "sp")
         n = len(pairs)
 
         logger.debug("[准确率] 输入: masked_points=%d", n)

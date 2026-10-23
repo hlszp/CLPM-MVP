@@ -31,6 +31,7 @@ def compute_quality_summary(
     unknown_slot_count: int | None = None,
     window_seconds: float | None = None,
     unknown_seconds: float | None = None,
+    known_slots: list[bool] | None = None,
 ) -> QualitySummary:
     """生成数据质量摘要（算法说明 §3.4.2 步骤⑧）.
 
@@ -42,8 +43,8 @@ def compute_quality_summary(
 
         可信度判定由**回路级 valid_rate** 负责（可信度统一 Phase 1）：
         由 :meth:`DataQualityAssessor.compute_loop_valid_rate` 计算核心 tag
-        （pv/sp/op/mode）交集 / point_count，KPI/诊断/整定三链路共享。
-        详见可信度统一改进方案 §4.3。
+        （pv/sp/op/mode）交集 / point_count，KPI/诊断/整定三链路共享同一
+        口径。详见可信度统一改进方案 §4.3。
 
     Args:
         validity: 有效性标记字典，key 为 ``{tag}_valid``
@@ -56,6 +57,9 @@ def compute_quality_summary(
             质量摘要与比率类指标分母可对账）
         unknown_seconds: 无依据区间秒数（六因+窗口未覆盖；不补时不缩分母；
             None=未记录）
+        known_slots: PV 覆盖已知槽掩码（point 路径；None=legacy 全槽口径）。
+            提供时 good_value_rate/usable_rate 仅在已知槽上计算（真实 gap
+            内保持的旧 Good 值不得计入好值时长；全窗未知 → None=不可判定）
 
     Returns:
         QualitySummary 质量摘要（审计用）
@@ -100,22 +104,45 @@ def compute_quality_summary(
     # 不变；expected>total 时数值不变。
     missing_rate = missing_count / expected_count if expected_count > 0 else 0.0
 
-    # 好值率（仅当有质量码时计算）
+    # 好值率（仅当有质量码时计算）。known_slots 提供时只在已知槽上算
+    # （分子/分母同口径剔除 UNKNOWN——真实 gap 内保持的旧 Good 值不算
+    # 好值时长）；已知槽数为 0（全窗未知）→ None=不可判定，不冒充 0/100。
     good_value_rate: float | None = None
     if quality_codes is not None and len(quality_codes) > 0:
-        good_count = sum(1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD)
-        good_value_rate = good_count / len(quality_codes)
+        if known_slots is not None and len(known_slots) == len(quality_codes):
+            known_total = sum(1 for k in known_slots if k)
+            if known_total > 0:
+                good_count = sum(
+                    1
+                    for qc, k in zip(quality_codes, known_slots, strict=False)
+                    if k and map_quality_code(qc) == QualityStatus.GOOD
+                )
+                good_value_rate = good_count / known_total
+        else:
+            good_count = sum(
+                1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD
+            )
+            good_value_rate = good_count / len(quality_codes)
 
     # PV 数值可用比例（P3-10a，10§3.4 Good 行：QC Good 与 usable 分开，
     # C04-EA3）：``pv_valid`` 口径——越限/坏质量等预处理数值资格判定的交。
     # good_value_rate 反映**来源质量码**（缺质量码=None 不可判定，不用本值
     # 冒充）；usable_rate 反映**数值可用性**（含越限，QC Good 但 PV 越界的
     # 点 usable=False）。无 pv_valid 标记时 None（未记录，不猜测）。
+    # known_slots 提供时同口径剔除 UNKNOWN 槽（gap 内的保持值不是可用观测）。
     pv_valid = validity.get("pv_valid")
     usable_rate: float | None = None
     if pv_valid and total > 0:
-        usable_count = sum(1 for v in pv_valid[:total] if v)
-        usable_rate = usable_count / total
+        if known_slots is not None and len(known_slots) == total:
+            known_total = sum(1 for k in known_slots if k)
+            if known_total > 0:
+                usable_count = sum(
+                    1 for v, k in zip(pv_valid[:total], known_slots, strict=False) if v and k
+                )
+                usable_rate = usable_count / known_total
+        else:
+            usable_count = sum(1 for v in pv_valid[:total] if v)
+            usable_rate = usable_count / total
 
     summary = QualitySummary(
         total_count=total,

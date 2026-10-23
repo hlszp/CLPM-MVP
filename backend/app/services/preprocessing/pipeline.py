@@ -60,8 +60,10 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
 #     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
 _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
 
-# pre_v3：MODE 按标准离散域校验；失效曾误用 PV 量程生成的 L1/L2 数据块。
-PREPROCESS_VERSION = "pre_v3"
+# pre_v4：COV 已展开槽逐槽核验，含窗前初值与 HELD 质量；失效 1052 旧缓存。
+# pre_v5：{role}_quality 全角色透传（此前仅 PV，其余角色坏质量在取数链
+# 丢失被当 Good）；validity 数组语义变化，失效 pre_v4 旧缓存块。
+PREPROCESS_VERSION = "pre_v5"
 
 # R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
 # 日志用于定位"数据窗口缺口"型低可信度的根因）
@@ -180,6 +182,20 @@ class PreprocessingPipeline:
         # P3-08b：时间口径摘要（window/unknown 秒数，与 R/Auto/Sat 分母可对账；
         # 窗口不可得（无查询窗且无上下文）→ 两字段 None=未记录）
         _window_seconds, _unknown_seconds = self._time_quality_seconds(raw, window)
+        # PV 覆盖已知槽掩码（point 路径）：好值率/可用率只在已知槽上算，
+        # 真实 gap 内保持的旧 Good 值不得计入好值时长（P1-3）。
+        pv_known_slots: list[bool] | None = None
+        if (
+            _ctx is not None
+            and getattr(_ctx, "role_coverage", None)
+            and pv_quality_codes
+            and len(pv_quality_codes) == n
+        ):
+            pv_cov = (_ctx.role_coverage or {}).get("pv")
+            if pv_cov is not None:
+                from app.services.metric_calculator.time_axis import classify_coverage, utc
+
+                pv_known_slots = [classify_coverage(pv_cov, utc(t))[0] for t in raw.timestamps]
         quality_summary = compute_quality_summary(
             validity=validity,
             timestamps=raw.timestamps,
@@ -191,10 +207,11 @@ class PreprocessingPipeline:
             ),
             window_seconds=_window_seconds,
             unknown_seconds=_unknown_seconds,
+            known_slots=pv_known_slots,
         )
 
         # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
-        # loop_valid_rate = 核心 tag（pv/sp/op/mode）交集 / point_count，
+        # loop_valid_rate = 核心 tag（pv/op）交集 / point_count，
         # 由共享内核 compute_loop_valid_rate 统一计算（缺失 tag 跳过）。
         # loop_confidence_level 一次算出，所有指标经 _make_result 直接读取。
         #
@@ -202,20 +219,28 @@ class PreprocessingPipeline:
         # 契约采样间隔 threshold.base_sampling_freq 计）折入可信度判定：
         # 有效可信度 = 回路级 valid_rate × 时间覆盖率（语义 = 有效点数/期望点数）。
         # 120 个 Good 点 / 30s 间隔 / 跨 1 小时（coverage≈3.3%）不再获得
-        # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
-        # （INCONCLUSIVE 兼容口径）处理。
+        # A 可信度。point/COV 路径在 builder 中已展开完整网格，coverage≈1；
+        # 此处保留对 legacy 稀疏输入及真实窗口头尾缺失的保护。
         # point/mixed 的 UNKNOWN 槽可能保留 Good 原值，数值 validity 不能
         # 代替覆盖依据。复用连续性逐槽 known 判定，但不以最短连续段门禁
         # 过滤有效点；只扣核心角色，PID 等非评估信号不拉低回路有效率。
         # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
+        sample_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
         confidence_validity = validity
         if _ctx is not None and getattr(_ctx, "role_coverage", None):
-            # 2026-10-23：核心角色（含稀疏 OP）按 ZOH 时间保持计有效，
-            # 不得用「仅采样点 valid」做交集——OP 84 点/24h 会把交集打成 0 → E。
+            # builder 已按 ZOH 展开数值/质量。这里逐槽叠加覆盖证据，不能再
+            # 只从 OBSERVED 事件保持布尔值，否则丢窗前初值且会洗白 HELD 坏质量。
             confidence_validity = {}
             for tag in GATE_CORE_TAGS:
                 key = f"{tag}_valid"
                 arr = validity.get(key)
+                if arr is None and tag == "pv":
+                    # QUALITY_HF 伪角色块：PV 不在输出信号集（仅 pv_quality 伪
+                    # 信号）→ pv_valid 缺失 → 回路级有效率恒 0 → conf 恒 E，
+                    # 而 good_value_rate 数值有据（P0-1：值对等级错）。以 PV
+                    # 质量码本身作为该块的数据依据（Good=有效；-1/Bad=无效），
+                    # 再经下方覆盖合并给出诚实可信度，不编造。
+                    arr = self._quality_code_validity(raw)
                 if arr is None:
                     continue
                 cov = (_ctx.role_coverage or {}).get(tag)
@@ -232,6 +257,24 @@ class PreprocessingPipeline:
         )
         loop_valid_rate = raw_loop_valid_rate * time_coverage
         loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
+
+        logger.info(
+            "[Pipeline][ZOH] loop=%s tagGroup=%s window=(%s,%s) points=%d "
+            "coverage_roles=%s raw_valid_rate=%.6f zoh_valid_rate=%.6f "
+            "time_coverage=%.6f effective_valid_rate=%.6f conf=%s unknown_reasons=%s",
+            loop_id,
+            tag_group.value,
+            window_start,
+            window_end,
+            n,
+            sorted((_ctx.role_coverage or {}).keys()) if _ctx is not None else [],
+            sample_valid_rate,
+            raw_loop_valid_rate,
+            time_coverage,
+            loop_valid_rate,
+            loop_confidence_level,
+            getattr(_ctx, "unknown_reasons", None),
+        )
 
         if time_coverage < _LOW_COVERAGE_WARN_THRESHOLD:
             logger.warning(
@@ -590,27 +633,31 @@ class PreprocessingPipeline:
         timestamps: list[Any],
         coverage: Any,
     ) -> list[bool]:
-        """COV 角色：按时间保持（ZOH）把采样点 valid 前向展开到网格.
+        """在 builder 已 ZOH 展开的网格上，合并当前槽有效性与覆盖依据.
 
-        与 logical_wide_builder.state_at 同语义：OBSERVED 槽取当点 valid；
-        HELD 槽沿用最近一次观测的 valid；UNKNOWN 槽为 False。
-        不得用「仅采样点 valid」参与交集——稀疏 COV（如 OP 84 点/24h）
-        会把回路级有效率打成 0 → conf=E → 未计算。
+        窗前初值在首槽即有合法 HELD 值；当前槽 validity 已含所保持的质量
+        和当前异常判定。再次保持布尔值会丢掉初值、跨改绑或覆盖坏质量。
+        UNKNOWN 仍无效，不用旧 Good 值填补真实 gap。
         """
         from app.services.metric_calculator.time_axis import classify_coverage, utc
 
         out: list[bool] = []
-        last_valid = False
         for i, ts in enumerate(timestamps):
-            known, observed, _ = classify_coverage(coverage, utc(ts))
-            if not known:
-                out.append(False)
-                continue
-            if observed:
-                last_valid = bool(validity[i]) if i < len(validity) else False
-            # HELD：保持 last_valid（前向展开）
-            out.append(last_valid)
+            known, _, _ = classify_coverage(coverage, utc(ts))
+            out.append(known and i < len(validity) and bool(validity[i]))
         return out
+
+    @staticmethod
+    def _quality_code_validity(raw: RawTimeSeries) -> list[bool] | None:
+        """PV 质量码 → 逐槽有效性（QUALITY_HF 伪角色块的 conf 数据依据）.
+
+        Good → True；Bad/Unknown（含 -1 未知槽）→ False。无质量码 → None
+        （不编造，维持 conf=E 的既有表达）。
+        """
+        codes = raw.quality_codes.get("pv_quality")
+        if not codes:
+            return None
+        return [map_quality_code(c) == QualityStatus.GOOD for c in codes]
 
     def _stitchable_mask(
         self, raw: RawTimeSeries, all_valid: list[bool], roles: tuple[str, ...] | None = None

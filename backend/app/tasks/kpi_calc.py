@@ -3161,6 +3161,11 @@ def _build_config_bundle(
         validity={},
         quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
         point_count=1,
+        # CONFIG 值来自配置/手工指定（确定性来源，非数据观测）：可信度按
+        # A/1.0——此前落 DataBlock 默认 "E"，ideal_settling_time 在
+        # metricsSemantic 中恒 E（值真实存在却标 INCONCLUSIVE，自相矛盾）
+        loop_confidence_level="A",
+        loop_valid_rate=1.0,
     )
     return MetricDataBundle(
         metric_code="ideal_settling_time",
@@ -4960,7 +4965,9 @@ def _backfill_window_batch(
                 )
             except Exception as exc:  # noqa: BLE001
                 agg["failed_windows"].append(w.isoformat())
-                agg["failed"] += len(loops)
+                # 失败计数按本窗实际待算回路（skip_existing 模式下 todo ⊂ loops，
+                # 按 loops 计会把已跳过回路虚报为失败）
+                agg["failed"] += len(todo_loops)
                 logger.exception(
                     "[子任务] 窗口 %d/%d %s 失败: %s",
                     w_idx,

@@ -90,7 +90,22 @@ class StabilityRateCalculator(MetricCalculatorBase):
             MetricResult：value 为稳定率 0~100，
             oscillation_rate 从 dependencies 读取
         """
-        pairs = self._get_masked_pair(bundle, "pv", "sp")
+        # 2026-10-23：时间视图可用时剔除 pv/sp 覆盖 UNKNOWN 的槽（真实 gap
+        # 的保持陈值不进 σ/带内率；正常 COV 保持=HELD 保留），与 R/Auto/Sat
+        # 口径对齐；legacy 不变。视图在下方 durations 处复用，避免重复构建。
+        view = view_or_none(bundle, ("pv", "sp"))
+        known_idx = self._known_slot_indices(bundle, ("pv", "sp"), view=view)
+        if known_idx is not None:
+            sig_pv = bundle.data_block.signals.get("pv", [])
+            sig_sp = bundle.data_block.signals.get("sp", [])
+            pairs = [
+                (sig_pv[i], sig_sp[i]) for i in known_idx if i < len(sig_pv) and i < len(sig_sp)
+            ]
+            all_ts = bundle.data_block.timestamps
+            ts = [all_ts[i] for i in known_idx if i < len(all_ts)]
+        else:
+            pairs = self._get_masked_pair(bundle, "pv", "sp")
+            ts = self._get_masked_timestamps(bundle)
         n = len(pairs)
 
         logger.debug("[稳定率] 输入: masked_points=%d", n)
@@ -116,10 +131,11 @@ class StabilityRateCalculator(MetricCalculatorBase):
         # 本体，σ/振荡修正/带内公式不动）：时间视图可用时，逐点时长取**半开
         # 槽秒数**（末槽截到窗口 end，不复制上一段时长越窗——C04-EA1）；
         # 视图不可得（legacy/手工 bundle）→ 原 _point_durations 口径不变。
-        ts = self._get_masked_timestamps(bundle)
-        view = view_or_none(bundle, ("pv", "sp"))
+        # 2026-10-23：known_idx 过滤后时长与过滤点集对齐（ts 已按同索引过滤）。
         if view is not None and len(view.indices) >= 2 and len(ts) == n:
-            durations = view.masked_slot_seconds(bundle.masked_indices)
+            durations = view.masked_slot_seconds(
+                known_idx if known_idx is not None else bundle.masked_indices
+            )
         else:
             durations = self._point_durations(ts) if len(ts) == n else []
 

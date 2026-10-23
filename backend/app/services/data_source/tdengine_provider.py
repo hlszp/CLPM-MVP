@@ -190,17 +190,13 @@ async def _point_or_mixed_query(
 
     merged_ts: list[datetime] = []
     merged_signals: dict[str, list[Any]] = {r.lower(): [] for r in tag_roles}
-    merged_pv_q: list[int] = []
+    merged_qc: dict[str, list[int]] = {}
     roles_lower = [r.lower() for r in tag_roles]
-    # G5 前置立卡项2 返工（2026-10-13 验收 B③）：质量码透传条件与 builder 层
-    # 修复同构。QUALITY_HF 独立 1s 查询（BASE>1s 控制类型）的 tag_roles 实为
-    # ["pv_quality"]（伪角色，clpm_metric_data_requirement 实查口径），
-    # ``"pv" in roles_lower`` 为 False → builder 已输出的质量码在本合并层被
-    # 整体丢弃（qc_len=0）→ DataBlock good_value_rate=None → 非 FLOW 回路
-    # 快照 PARTIAL。PV 显式在请求集，或伪角色 pv_quality 在请求集
-    # （QUALITY_HF，与 builder 的 pseudo_quality 同口径：lower 化请求集），
-    # 都需要收集并透传 PV 质量码。
-    wants_pv_quality = "pv" in roles_lower or "pv_quality" in roles_lower
+    # 质量码透传（2026-10-23 全角色）：builder 按请求角色输出
+    # ``{role}_quality``（含 QUALITY_HF 伪角色 ``pv_quality``），本合并层
+    # 整体透传，不再只挑 PV。此前 G5 立卡项2 曾因按 pv 角色挑选条件
+    # 丢弃伪角色请求的质量码（非 FLOW 回路快照 PARTIAL）；透传口径下
+    # builder 键 ⊆ 请求角色集，无需再按角色过滤。
     point_context = None
 
     for part in layouts:
@@ -216,13 +212,18 @@ async def _point_or_mixed_query(
         columns = {
             role: raw.signals.get(role) or [None] * len(raw.timestamps) for role in roles_lower
         }
-        qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
+        part_qc: dict[str, list[int]] = {
+            key: codes
+            if len(codes) == len(raw.timestamps)
+            # 长度异常的质量列按 -1（未知）补齐，不静默丢弃该角色质量
+            else [-1] * len(raw.timestamps)
+            for key, codes in raw.quality_codes.items()
+        }
         # builder 的单片严格升序网格不需要再逐列复制、排序和去重。
         # 非标准/重叠输入仍走下方通用合并路径，保留后段覆盖语义。
         if (
             len(layouts) == 1
             and all(len(values) == len(raw.timestamps) for values in columns.values())
-            and (not wants_pv_quality or len(qc) == len(raw.timestamps))
             and all(
                 raw.timestamps[i - 1] < raw.timestamps[i] for i in range(1, len(raw.timestamps))
             )
@@ -230,34 +231,34 @@ async def _point_or_mixed_query(
             return RawTimeSeries(
                 timestamps=raw.timestamps,
                 signals=columns,
-                quality_codes={"pv_quality": qc} if wants_pv_quality else {},
+                quality_codes=part_qc,
                 series_context=point_context,
             )
         for i, ts in enumerate(raw.timestamps):
             merged_ts.append(ts)
             for role in roles_lower:
                 merged_signals[role].append(columns[role][i])
-            if wants_pv_quality:
-                merged_pv_q.append(qc[i])
+            for key, codes in part_qc.items():
+                merged_qc.setdefault(key, []).append(codes[i])
 
     # 排序 + 边界去重（同 ts 保留后段——边界 T 处 point 覆盖 legacy）
     order = sorted(range(len(merged_ts)), key=lambda i: merged_ts[i])
     out_ts: list[datetime] = []
     out_signals: dict[str, list[Any]] = {r: [] for r in roles_lower}
-    out_q: list[int] = []
+    out_qc: dict[str, list[int]] = {key: [] for key in merged_qc}
     last_ts: datetime | None = None
     for i in order:
         if last_ts is not None and merged_ts[i] == last_ts:
             for role in roles_lower:
                 out_signals[role][-1] = merged_signals[role][i]
-            if wants_pv_quality:
-                out_q[-1] = merged_pv_q[i]
+            for key in out_qc:
+                out_qc[key][-1] = merged_qc[key][i]
             continue
         out_ts.append(merged_ts[i])
         for role in roles_lower:
             out_signals[role].append(merged_signals[role][i])
-        if wants_pv_quality:
-            out_q.append(merged_pv_q[i])
+        for key in out_qc:
+            out_qc[key].append(merged_qc[key][i])
         last_ts = merged_ts[i]
 
     if point_context is not None and len(layouts) > 1:
@@ -265,13 +266,10 @@ async def _point_or_mixed_query(
 
         point_context.layout = sc.LAYOUT_MIXED
 
-    quality_codes: dict[str, list[int]] = {}
-    if wants_pv_quality:
-        quality_codes["pv_quality"] = out_q
     return RawTimeSeries(
         timestamps=out_ts,
         signals=out_signals,
-        quality_codes=quality_codes,
+        quality_codes=out_qc,
         series_context=point_context,
     )
 

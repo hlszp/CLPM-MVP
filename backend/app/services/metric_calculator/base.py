@@ -374,6 +374,46 @@ class MetricCalculatorBase(MetricCalculator):
         )
 
     # ------------------------------------------------------------------
+    # 覆盖已知槽过滤（2026-10-23：UNKNOWN 槽不当观测）
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _known_slot_indices(
+        bundle: MetricDataBundle,
+        roles: tuple[str, ...],
+        view: Any | None = None,
+    ) -> list[int] | None:
+        """masked_indices 中所需角色覆盖已知（OBSERVED/HELD）的槽索引.
+
+        时间视图不可得（legacy/旧缓存/手工 bundle）→ None=不筛选（legacy
+        口径完全不变）。视图可用 → 返回 ``masked_indices ∩ 已知槽``。
+
+        依据（契约 §2.1 与 R/Auto/Sat 同口径）：builder 对真实 gap/无初值/
+        锚点到期/改绑的槽保留 COV 值（审计）但覆盖为 UNKNOWN——无状态依据
+        的槽不得作为观测计入均值/σ（未知不进分子、不缩分母）。正常 COV
+        保持（HELD）是合法观测，**不**在本过滤之列。
+        """
+        from app.services.metric_calculator.time_axis import SlotState, view_or_none
+
+        v = view if view is not None else view_or_none(bundle, roles)
+        if v is None:
+            return None
+        masked = set(bundle.masked_indices)
+        out: list[int] = []
+        for slot_i, orig_i in enumerate(v.indices):
+            if orig_i not in masked:
+                continue
+            known = True
+            for r in roles:
+                states = v.role_states.get(r)
+                if states is None or slot_i >= len(states) or states[slot_i] is SlotState.UNKNOWN:
+                    known = False
+                    break
+            if known:
+                out.append(orig_i)
+        return out
+
+    # ------------------------------------------------------------------
     # 时长计算辅助
     # ------------------------------------------------------------------
 

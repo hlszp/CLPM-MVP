@@ -52,7 +52,11 @@ logger = logging.getLogger(__name__)
 #: （快角色 pv/op 维持 max(3×步长,60s)；慢角色 mode/sp/pid_* 下限 7200s，
 #: sys_config data.held_too_long_*_seconds 可配）——known/unknown 游程随之
 #: 变化，L1/L2 缓存全量自然失效，旧缓存块不与新分层混算。
-TIME_QUALITY_POLICY_VERSION = "tqpv3"
+#: tqpv4（2026-10-23）：全角色 COV 正常保持不再由事件年龄推断缺口，
+#: 真实 gap/无初值/改绑等 UNKNOWN 保留；失效旧阈值生成的覆盖与指标缓存。
+#: tqpv5（2026-10-23）：锚点 coverage_until 半开有效终点生效（到期后不再
+#: 无限保持，不回退更旧状态）；覆盖游程语义变化，失效 tqpv4 缓存。
+TIME_QUALITY_POLICY_VERSION = "tqpv5"
 
 #: 契约覆盖的网格周期（秒）
 SUPPORTED_GRID_PERIODS: frozenset[float] = frozenset({1.0, 2.0, 5.0, 10.0})

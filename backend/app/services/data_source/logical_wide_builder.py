@@ -5,8 +5,9 @@
 定位：
 - **唯一**从 ``st_point_data_v1`` 组装算法数据的实现；算法/endpoints 不直接
   访问测点子表（设计 §5）；
-- 输出契约与 legacy 宽表路径一致：``RawTimeSeries``（角色小写键、
-  ``pv_quality`` 质量键、naive UTC 时间戳）——下游预处理/DataPlanner 零改动。
+- 输出契约：``RawTimeSeries``（角色小写键、naive UTC 时间戳），质量码
+  ``{role}_quality`` 逐角色输出（2026-10-23 起全角色透传，此前仅
+  ``pv_quality``）——下游预处理/DataPlanner 泛型消费 ``{tag}_quality``。
 
 语义规则（作为等价性差分的预期固定）：
 1. 网格 = 窗口内全部 **UTC 整秒**（含两端；非整秒窗口不扩大——首点向上
@@ -45,6 +46,11 @@ logger = logging.getLogger(__name__)
 _ROLE_INT = frozenset({"mode"})  # 整数语义角色（legacy 宽表 TINYINT 对齐）
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
+# ---------------------------------------------------------------------------
+# 2026-10-23 用户裁决：点表全部按 COV 存储，无变化不代表通信中断。
+# builder 不再以 PV/OP 的 60s 或慢角色的 7200s 事件年龄把保持段标 UNKNOWN；
+# 只据真实 gap、绑定及初值判断覆盖，质量随最近状态保持。以下旧阈值解析
+# 保留供历史排障兼容，不再参与点表构建；不修改 sys_config。
 # ---------------------------------------------------------------------------
 # R1（2026-10-12 界面审核修复批）：held_too_long 阈值按角色分层
 #
@@ -185,7 +191,14 @@ class _PointStream:
         i = bisect.bisect_right(self._ts, at)
         if i == 0:
             return None
-        return self._states[i - 1]
+        st = self._states[i - 1]
+        # 锚点状态带明确有效上界（coverage_until，半开）：到期后该状态无
+        # 依据，返回 None（未知），不得回退更旧状态越过到期边界（设计 §4.2
+        # 「锚点可用到该时刻」）；普通 COV 事件无上界，保持不变。
+        until = st.get("valid_until")
+        if until is not None and at >= until:
+            return None
+        return st
 
 
 @g5_trace.traced("builder.pg_metadata")
@@ -416,6 +429,10 @@ async def build_logical_wide(
                         "quality_class": anchor.quality_class,
                         "quality_raw": anchor.quality_raw,
                         "ts": _to_utc(anchor.anchor_ts),
+                        # 半开有效终点：锚点覆盖依据只到该时刻（§4.2 coverage_until）
+                        "valid_until": (
+                            _to_utc(anchor.coverage_until) if anchor.coverage_until else None
+                        ),
                     },
                 )
             for (apid, _before), st in initial_states.items():
@@ -428,10 +445,17 @@ async def build_logical_wide(
     # 13,000+ 碎片段曾使逐槽 _in_gap 线性扫描成为 KPI 取数主瓶颈
     # （1s 网格 3601 槽 × N 角色 × 全量段数 ≈ 1.5 亿次比较/回路 ≈ 20s，
     # 实测吻合；基线 200-300ms/回路是宽表路径无此扫描）。合并后二分查。
+    # COV 初值可早于查询窗。追溯该初值后的真实 gap，避免窗前断流被窗口
+    # 截掉，随后把断流前的旧值当成已恢复状态。只使用实际候选初值作下界。
+    gap_query_start = grid_start
+    for stream in streams.values():
+        initial = stream.state_at(grid_start)
+        if initial is not None and initial.get("ts") is not None:
+            gap_query_start = min(gap_query_start, _to_utc(initial["ts"]))
     gap_windows_raw = await scoped_read(
         read_scope,
-        ("gaps", grid_start, grid_end),
-        lambda: _load_gap_windows(db, grid_start, grid_end),
+        ("gaps", gap_query_start, grid_end),
+        lambda: _load_gap_windows(db, gap_query_start, grid_end),
     )
     merged: list[list[datetime]] = []
     for gs, ge in sorted(gap_windows_raw):
@@ -446,7 +470,10 @@ async def build_logical_wide(
     # 网格
     grid: list[datetime] = []
     signals: dict[str, list[Any]] = {r: [] for r in roles}
-    pv_quality: list[int] = []
+    # 逐角色质量三态（与值同状态保持：BAD 不被跳过沿用旧 Good，V04）；
+    # 2026-10-23 全链透传：每个请求角色输出 ``{role}_quality``（此前仅 PV，
+    # 其余角色坏质量在取数链丢失 → 下游恒视为 Good）
+    role_quality: dict[str, list[int]] = {r: [] for r in internal_roles}
     # 整改 G12（降采样部分）：网格步长改用调用方传入的 interval_s。
     # 此前该参数标注 ARG001 恒被忽略，网格固定 1s —— 30 天窗口即 259 万槽
     # × 7 角色，纯 Python 逐槽循环 + 线性扫段/扫 gap，内存与 CPU 都不可行，
@@ -454,8 +481,6 @@ async def build_logical_wide(
     # 调用方 tdengine_provider 早已在传该参数（data_planner 的查询任务本就
     # 带采样间隔），只是此处被丢弃。
     step_s = max(1, int(interval_s))
-    # R1：held 容忍按角色分层（快/慢两档下限，sys_config 可配；见模块头注释）
-    held_limits = await _held_limits_s(step_s)
     t = grid_start
     while t <= grid_end:
         grid.append(t)
@@ -472,9 +497,6 @@ async def build_logical_wide(
         col: list[Any] = []
         status: list[tuple[bool, str | None]] = []
         segs = segments[role.upper()]
-        # R1：慢角色（COV 稀疏离散/组态量）用分层后的慢档容忍；
-        # 快角色（pv/op）维持 R2 原快档（冻结/缺口反例不放松）
-        held_limit_s = held_limits["slow"] if role in SLOW_HELD_ROLES else held_limits["fast"]
         first_event_seen = False
         active_pid: str | None = None
         # 预计算该角色网格内的改绑边界索引集（避免逐槽列表扫描）
@@ -500,8 +522,7 @@ async def build_logical_wide(
             if seg is None:
                 status.append((False, sc.UNKNOWN_REASON_UNBOUND, False))
                 col.append(None)
-                if role == "pv":
-                    pv_quality.append(-1)
+                role_quality[role].append(-1)
                 continue
             # 二分查合并后的 gap 段（取代逐段线性扫 _in_gap）
             #
@@ -521,32 +542,23 @@ async def build_logical_wide(
                 value = ev.get("value")
                 if role in _ROLE_INT and value is not None:
                     value = int(round(float(value)))
-                if role == "pv":
-                    pv_quality.append(int(ev.get("quality_class", -1)))
+                role_quality[role].append(int(ev.get("quality_class", -1)))
                 col.append(value)
-                # R2（2026-09-25）：HELD 超过阈值不得计入 known。
-                # state_at 返回"最近一次 <= ts 的事件"，事件很旧时该槽其实是
-                # 保持值而非新观测；数据缺口期间正是这种形态，却被当成观测数据
-                # （曾导致 sensor_fault 把缺口误报为"传感器冻结 33%"）。
-                # 阈值按【时间】而非点数（G12 起网格步长可变 interval_s）：
-                #   max(3 x 网格步长, <角色档位下限>)
-                # R1（2026-10-12）阈值分层：快角色（pv/op）下限 60s（3 倍步长
-                # 容忍常规采样抖动，冻结/缺口反例不放松）；慢角色（mode/sp/
-                # pid_*，COV 稀疏离散量）下限 7200s——"无变化=保持"是其正常
-                # 语义，60s 会把全部正常保持段误标 unknown（实测自控率崩至
-                # 8.33%）。依据与可配键见模块头注释。
-                # 注意：只改"是否暴露为 unknown"，value 照旧保留（显示不变）。
+                # COV：事件年龄只区分 OBSERVED/HELD，不证明断流。
+                # 通信/采集缺口由登记的 gap 判定；保持值不冒充新观测，
+                # sensor_fault 等动态分析仍通过 observed_mask 排除保持段。
                 ev_ts = ev.get("ts")
                 try:
                     hold_s = (ts - ev_ts).total_seconds() if ev_ts is not None else 0.0
                 except TypeError:  # naive/aware 混用时不得因此丢槽
                     hold_s = 0.0
-                if in_gap:
+                # gap 结束本身不证明本点已恢复；需该点在 gap 结束后有新
+                # 状态依据。旧值保留给审计，但不得跨 gap 自动恢复为 HELD。
+                before_recovery = _gi >= 0 and ev_ts is not None and _to_utc(ev_ts) < gap_ends[_gi]
+                if in_gap or before_recovery:
                     # 已登记的缺口优先标记（比"保持过久"更明确的原因），
                     # 但 value/quality 已在上面保留 —— 见 P0 说明。
                     status.append((False, sc.UNKNOWN_REASON_GAP, False))
-                elif hold_s > held_limit_s:
-                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG, False))
                 else:
                     # P3-08b 三态细分：事件新鲜度 ≤ 网格周期 = OBSERVED
                     # （本槽时长内的新观测），更早事件的状态保持 = HELD
@@ -558,8 +570,7 @@ async def build_logical_wide(
                 # 原因归为 gap 而不是 no_initial（对下游更准确）。
                 status.append((False, sc.UNKNOWN_REASON_GAP, False))
                 col.append(None)
-                if role == "pv":
-                    pv_quality.append(-1)
+                role_quality[role].append(-1)
             else:
                 # 无状态归因：首事件前=无初值；改绑后新点无事件=rebind；
                 # 段内事件后状态耗尽（锚点 coverage_until 边界后）=no_initial
@@ -573,20 +584,20 @@ async def build_logical_wide(
                     )
                 status.append((False, reason, False))
                 col.append(None)
-                if role == "pv":
-                    pv_quality.append(-1)
+                role_quality[role].append(-1)
         signals[role] = col
         slot_status[role] = status
 
-    # pv_quality 仅在 PV 角色遍历时逐点追加（n 恰等于网格点数）
+    # pv_quality 伪角色信号 = PV 质量三态数组（与 legacy 宽表列语义一致；
+    # PV 角色遍历时逐点追加，n 恰等于网格点数）
     timestamps_naive = [ts.replace(tzinfo=None) for ts in grid]
     if pseudo_quality:
-        # 伪角色信号 = PV 质量三态数组（与 legacy 宽表列语义一致）
-        assert len(pv_quality) == n
-        signals["pv_quality"] = list(pv_quality)
+        assert len(role_quality["pv"]) == n
+        signals["pv_quality"] = list(role_quality["pv"])
     # 输出仅含请求角色（内部补入的 PV 在未请求时移除）
     signals = {r: signals[r] for r in requested if r in signals}
-    quality_codes: dict[str, list[int]] = {}
+    # 质量码：每个请求角色输出 ``{role}_quality``（2026-10-23 全链透传，
+    # 与值同网格同状态保持；下游 ``_step1_identify_quality`` 泛型消费）。
     # G5 前置立卡项2（2026-10-13）：伪角色请求（PV_QUALITY，QUALITY_HF 独立
     # 1s 查询——粗 BASE 禁止派生的控制类型走此路径）此前条件为 ``"pv" in
     # roles``，而伪角色请求的 roles 已剔除 pv_quality → quality_codes 恒空，
@@ -595,9 +606,16 @@ async def build_logical_wide(
     # 生产实测非 FLOW 控制类型（BASE>1s 独立 HF 查询）全量 PARTIAL、FLOW
     # （BASE=1s 走派生路径带 BASE 质量摘要）全量 SUCCESS 即此因。伪角色
     # 请求同样输出质量码（内部恒含 PV，逐网格点恰好追加一次）。
-    if "pv" in roles or pseudo_quality:
-        assert len(pv_quality) == n  # PV 角色逐网格点恰好追加一次
-        quality_codes["pv_quality"] = pv_quality
+    quality_codes: dict[str, list[int]] = {}
+    for r in roles:
+        arr = role_quality.get(r)
+        if arr is not None:
+            assert len(arr) == n
+            quality_codes[f"{r}_quality"] = arr
+    if pseudo_quality:
+        arr = role_quality["pv"]
+        assert len(arr) == n
+        quality_codes.setdefault("pv_quality", list(arr))
 
     context = _build_context(
         loop_id=loop_id,
@@ -606,7 +624,7 @@ async def build_logical_wide(
         slot_status=slot_status,
         rebind_boundaries=rebind_boundaries,
         segments=segments,
-        gap_windows=[(gs, ge) for gs, ge in merged],
+        gap_windows=[(gs, ge) for gs, ge in merged if ge > grid_start],
         step_s=step_s,
     )
     return RawTimeSeries(
