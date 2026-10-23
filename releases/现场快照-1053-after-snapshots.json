@@ -1,0 +1,196 @@
+{
+  "status": "SNAPSHOTS_ONLY",
+  "phase": "snapshot_read",
+  "read_only": true,
+  "generated_at_utc": "2026-10-23T07:56:03.549886+00:00",
+  "preprocess_version": "pre_v4",
+  "time_quality_policy_version": "tqpv4",
+  "notice": "快照是已落库结果；fresh_preprocessing 是绕过缓存的只读复算，不写评分。",
+  "postgres_transaction_read_only": "on",
+  "loop": {
+    "id": "037c3ed1-ff2e-483a-aee3-a6958928df75",
+    "tag": "41LIC20130_PIDA",
+    "loop_type": "LEVEL",
+    "sampling_control_type": "LC",
+    "response_category": "STABLE"
+  },
+  "point_mapping": [
+    {
+      "tag_role": "MODE",
+      "point_id": "2d103351-4e91-4a34-995b-9825dd55e9a0",
+      "tag_name": "41LIC20130_PIDA_MODE",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "OP",
+      "point_id": "a3e4213d-e79b-448d-911d-1a3e80618af9",
+      "tag_name": "41LIC20130_PIDA_OP",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PID_D",
+      "point_id": "9dad7587-e661-4bc4-9404-58790e2e3f59",
+      "tag_name": "41LIC20130_PIDA_TD",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PID_I",
+      "point_id": "a8427325-dcf1-4d2d-8d2f-c3fe548ce50e",
+      "tag_name": "41LIC20130_PIDA_TI",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PID_P",
+      "point_id": "4964eb5e-fb22-4ce9-b0c5-ebd485efa090",
+      "tag_name": "41LIC20130_PIDA_KP",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PV",
+      "point_id": "2850a808-4221-4342-846b-6ff849cfe85a",
+      "tag_name": "41LIC20130_PIDA_PV",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "SP",
+      "point_id": "4aa70c77-48d6-4bb3-a748-0a0207844825",
+      "tag_name": "41LIC20130_PIDA_SP",
+      "range_min": 0.0,
+      "range_max": 100.0
+    }
+  ],
+  "snapshots": {
+    "kpi_snapshot_hourly": {
+      "total_matching": 1,
+      "shown": 1,
+      "rows": [
+        {
+          "snapshot_id": "654c2370-be8c-4ffa-ab10-519be9a1f916",
+          "ts_start": "2026-10-23T06:00:00+00:00",
+          "ts_end": "2026-10-23T07:00:00+00:00",
+          "status": "SUCCESS",
+          "valid_rate": 1.0,
+          "confidence_level": "A",
+          "score": 0.01,
+          "algorithm_version": "KPI_CALC_v2.0",
+          "data_lineage": {
+            "tag_group": "BASE",
+            "valid_rate": 1.0,
+            "sampling_freq": "5s",
+            "data_block_ids": [
+              "db_037c3ed1-ff2e-483a-aee3-a6958928df75_BASE_5s"
+            ],
+            "quality_policy": "KEEP_ALL_WITH_VALIDITY",
+            "algorithm_version": "KPI_CALC_v2.0",
+            "aggregation_policy": "LAST",
+            "data_policy_version": "pre_v4"
+          },
+          "effective_auto_rate": 8.16,
+          "auto_mode_rate": 100.0,
+          "accuracy_rate": 0.0,
+          "fast_rate": 0.4,
+          "steady_rate": 0.0,
+          "composite_semantic": {
+            "value": 0.01,
+            "details": {
+              "weights": {
+                "a": 0.375,
+                "f": 0.25,
+                "s": 0.375
+              },
+              "base_score": 0.1,
+              "effective_auto_rate": 8.16
+            },
+            "assessmentState": null,
+            "confidenceLevel": "A"
+          },
+          "effective_auto_semantic": {
+            "value": 8.16,
+            "details": {
+              "e_max": 5.0,
+              "op_low": 0.0,
+              "epsilon": 0.01,
+              "op_high": 100.0,
+              "time_basis": "half_open_window",
+              "knownSeconds": 3601.0,
+              "coverageRatio": 1.0,
+              "possibleRange": [
+                8.16,
+                8.16
+              ],
+              "unknownSeconds": 0.0,
+              "auto_duration_s": 3601.0,
+              "deviation_check": "applied",
+              "denominatorBasis": "FULL_REQUEST_WINDOW",
+              "numeratorSeconds": 294.0,
+              "total_duration_s": 3601.0,
+              "bad_quality_points": 0,
+              "denominatorSeconds": 3601.0,
+              "effective_duration_s": 294.0,
+              "deviation_unknown_points": 0
+            },
+            "assessmentState": null,
+            "confidenceLevel": "A"
+          },
+          "auto_mode_semantic": {
+            "value": 100.0,
+            "details": {
+              "time_basis": "half_open_window",
+              "knownSeconds": 3601.0,
+              "sample_count": 3601,
+              "coverageRatio": 1.0,
+              "possibleRange": [
+                100.0,
+                100.0
+              ],
+              "unknownSeconds": 0.0,
+              "auto_duration_s": 3601.0,
+              "denominatorBasis": "FULL_REQUEST_WINDOW",
+              "numeratorSeconds": 3601.0,
+              "total_duration_s": 3601.0,
+              "denominatorSeconds": 3601.0
+            },
+            "assessmentState": null,
+            "confidenceLevel": "A"
+          },
+          "score_metrics_detail": {
+            "fast_rate": {
+              "value": 0.4
+            },
+            "steady_rate": {
+              "value": 0.0
+            },
+            "accuracy_rate": {
+              "value": 0.0
+            },
+            "auto_mode_rate": {
+              "value": 100.0
+            },
+            "effective_auto_rate": {
+              "value": 8.16
+            }
+          },
+          "source": "BACKFILL",
+          "task_id": null,
+          "row_created_at": null,
+          "result_record_id": "0bc8acfa-a4b8-408a-9446-3de742f9471b",
+          "record_created_at": "2026-10-23T07:55:00.503146+00:00",
+          "logical_run_id": "e8b91422-eff1-5fda-88ad-c0b68984b507",
+          "evidence_written_at": "2026-10-23T07:55:00.503146+00:00",
+          "total_matching": 1
+        }
+      ]
+    },
+    "kpi_snapshot_custom": {
+      "total_matching": 0,
+      "shown": 0,
+      "rows": []
+    }
+  }
+}

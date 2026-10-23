@@ -1,0 +1,549 @@
+root@clpm:/home/clpm# if bash -o pipefail -c 'docker exec clpm-celery-worker python -m scripts.verify_cov_zoh --tag 41LIC20130_PIDA --start 2026-10-23T14:00:00+08:00 --end 2026-10-23T15:00:00+08:00 | tee /opt/clpm-src-1053/after-zoh.json'; then
+intf 'P>   printf 'Probe completed.\n'
+> else
+>   CLPM_PROBE_RC=$?
+>   printf 'Probe failed: exit=%s\n' "$CLPM_PROBE_RC"
+> fi
+[Pipeline] loop_confidence=E: loop=037c3ed1-ff2e-483a-aee3-a6958928df75, tagGroup=QUALITY_HF, points=3601, loop_valid_rate=0.0000, core_tag_valid={pv=MISSING, sp=MISSING, op=MISSING, mode=MISSING}, validity_keys=['pv_quality_valid'], signals_keys=['pv_quality'], zero_valid_reasons={}
+{
+  "status": "COMPLETE",
+  "phase": "complete",
+  "read_only": true,
+  "generated_at_utc": "2026-10-23T07:51:17.764820+00:00",
+  "preprocess_version": "pre_v4",
+  "time_quality_policy_version": "tqpv4",
+  "notice": "快照是已落库结果；fresh_preprocessing 是绕过缓存的只读复算，不写评分。",
+  "postgres_transaction_read_only": "on",
+  "loop": {
+    "id": "037c3ed1-ff2e-483a-aee3-a6958928df75",
+    "tag": "41LIC20130_PIDA",
+    "loop_type": "LEVEL",
+    "sampling_control_type": "LC",
+    "response_category": "STABLE"
+  },
+  "point_mapping": [
+    {
+      "tag_role": "MODE",
+      "point_id": "2d103351-4e91-4a34-995b-9825dd55e9a0",
+      "tag_name": "41LIC20130_PIDA_MODE",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "OP",
+      "point_id": "a3e4213d-e79b-448d-911d-1a3e80618af9",
+      "tag_name": "41LIC20130_PIDA_OP",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PID_D",
+      "point_id": "9dad7587-e661-4bc4-9404-58790e2e3f59",
+      "tag_name": "41LIC20130_PIDA_TD",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PID_I",
+      "point_id": "a8427325-dcf1-4d2d-8d2f-c3fe548ce50e",
+      "tag_name": "41LIC20130_PIDA_TI",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PID_P",
+      "point_id": "4964eb5e-fb22-4ce9-b0c5-ebd485efa090",
+      "tag_name": "41LIC20130_PIDA_KP",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "PV",
+      "point_id": "2850a808-4221-4342-846b-6ff849cfe85a",
+      "tag_name": "41LIC20130_PIDA_PV",
+      "range_min": 0.0,
+      "range_max": 100.0
+    },
+    {
+      "tag_role": "SP",
+      "point_id": "4aa70c77-48d6-4bb3-a748-0a0207844825",
+      "tag_name": "41LIC20130_PIDA_SP",
+      "range_min": 0.0,
+      "range_max": 100.0
+    }
+  ],
+  "snapshots": {
+    "kpi_snapshot_hourly": {
+      "total_matching": 1,
+      "shown": 1,
+      "rows": [
+        {
+          "snapshot_id": "654c2370-be8c-4ffa-ab10-519be9a1f916",
+          "ts_start": "2026-10-23T06:00:00+00:00",
+          "ts_end": "2026-10-23T07:00:00+00:00",
+          "status": "INCONCLUSIVE",
+          "valid_rate": 1.0,
+          "confidence_level": "E",
+          "score": null,
+          "algorithm_version": "KPI_CALC_v2.0",
+          "data_lineage": {
+            "tag_group": "BASE",
+            "valid_rate": 1.0,
+            "sampling_freq": "5s",
+            "data_block_ids": [
+              "db_037c3ed1-ff2e-483a-aee3-a6958928df75_BASE_5s"
+            ],
+            "quality_policy": "KEEP_ALL_WITH_VALIDITY",
+            "algorithm_version": "KPI_CALC_v2.0",
+            "aggregation_policy": "LAST",
+            "data_policy_version": "pre_v3"
+          },
+          "effective_auto_rate": null,
+          "auto_mode_rate": null,
+          "accuracy_rate": null,
+          "fast_rate": null,
+          "steady_rate": null,
+          "composite_semantic": {
+            "value": null,
+            "details": {
+              "reason": "effective_auto_rate INCONCLUSIVE"
+            },
+            "assessmentState": null,
+            "confidenceLevel": "E"
+          },
+          "effective_auto_semantic": {
+            "value": 0.0,
+            "details": {
+              "e_max": 5.0,
+              "op_low": 0.0,
+              "epsilon": 0.01,
+              "op_high": 100.0,
+              "time_basis": "half_open_window",
+              "knownSeconds": 130.0,
+              "coverageRatio": 0.0361,
+              "possibleRange": [
+                0.0,
+                96.39
+              ],
+              "unknownSeconds": 3471.0,
+              "auto_duration_s": 130.0,
+              "deviation_check": "applied",
+              "denominatorBasis": "FULL_REQUEST_WINDOW",
+              "numeratorSeconds": 0.0,
+              "total_duration_s": 3601.0,
+              "bad_quality_points": 0,
+              "denominatorSeconds": 3601.0,
+              "effective_duration_s": 0.0,
+              "deviation_unknown_points": 0
+            },
+            "assessmentState": null,
+            "confidenceLevel": "E"
+          },
+          "auto_mode_semantic": {
+            "value": 100.0,
+            "details": {
+              "time_basis": "half_open_window",
+              "knownSeconds": 3601.0,
+              "sample_count": 3601,
+              "coverageRatio": 1.0,
+              "possibleRange": [
+                100.0,
+                100.0
+              ],
+              "unknownSeconds": 0.0,
+              "auto_duration_s": 3601.0,
+              "denominatorBasis": "FULL_REQUEST_WINDOW",
+              "numeratorSeconds": 3601.0,
+              "total_duration_s": 3601.0,
+              "denominatorSeconds": 3601.0
+            },
+            "assessmentState": null,
+            "confidenceLevel": "E"
+          },
+          "score_metrics_detail": {
+            "fast_rate": {
+              "value": 0.4
+            },
+            "steady_rate": {
+              "value": 0.0
+            },
+            "accuracy_rate": {
+              "value": 0.0
+            },
+            "auto_mode_rate": {
+              "value": 100.0
+            },
+            "effective_auto_rate": {
+              "value": 0.0
+            }
+          },
+          "source": "SCHEDULED",
+          "task_id": "9584a847-90f7-47e5-9724-3facaad86df1",
+          "row_created_at": null,
+          "result_record_id": "963e4d66-5447-435a-b0dd-3628bacf0d6d",
+          "record_created_at": "2026-10-23T07:10:43.923219+00:00",
+          "logical_run_id": "2565a54e-03cc-4f19-a809-59f94dbbc74e",
+          "evidence_written_at": "2026-10-23T07:10:43.923219+00:00",
+          "total_matching": 1
+        }
+      ]
+    },
+    "kpi_snapshot_custom": {
+      "total_matching": 0,
+      "shown": 0,
+      "rows": []
+    }
+  },
+  "window": {
+    "start_utc": "2026-10-23T06:00:00+00:00",
+    "end_utc": "2026-10-23T07:00:00+00:00",
+    "selection": "explicit_cli"
+  },
+  "provider": "TDengineProvider",
+  "query_plan": [
+    {
+      "tag_group": "BASE",
+      "roles": [
+        "pv",
+        "sp"
+      ],
+      "interval_s": 5,
+      "reused_from": null
+    },
+    {
+      "tag_group": "MODE_HF",
+      "roles": [
+        "mode",
+        "op",
+        "pv",
+        "sp"
+      ],
+      "interval_s": 1,
+      "reused_from": null
+    },
+    {
+      "tag_group": "OP_HF",
+      "roles": [
+        "op"
+      ],
+      "interval_s": 1,
+      "reused_from": null
+    },
+    {
+      "tag_group": "PVOP_HF",
+      "roles": [
+        "op",
+        "pv"
+      ],
+      "interval_s": 1,
+      "reused_from": null
+    },
+    {
+      "tag_group": "QUALITY_HF",
+      "roles": [
+        "pv_quality"
+      ],
+      "interval_s": 1,
+      "reused_from": null
+    }
+  ],
+  "fresh_preprocessing": [
+    {
+      "tag_group": "BASE",
+      "requested_roles": [
+        "pv",
+        "sp"
+      ],
+      "requested_interval_s": 5,
+      "points": 721,
+      "first_ts": "2026-10-23T06:00:00+00:00",
+      "last_ts": "2026-10-23T07:00:00+00:00",
+      "context_layout": "point",
+      "coverage_present": true,
+      "grid_period_s": 5.0,
+      "expected_slots": 721,
+      "context_unknown_reasons": {},
+      "gate_core_tags": [
+        "pv",
+        "op"
+      ],
+      "raw_valid_rate": 1.0,
+      "zoh_helper_present": true,
+      "zoh_valid_rate": 1.0,
+      "time_coverage": 1.0,
+      "zoh_times_coverage": 1.0,
+      "actual_pipeline_effective_valid_rate": 1.0,
+      "actual_pipeline_confidence": "A",
+      "roles": {
+        "pv": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 711,
+            "held": 10
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 721,
+          "raw_valid_count": 721,
+          "zoh_valid_count": 721,
+          "outlier_reason_counts": {
+            "FROZEN": 721
+          }
+        },
+        "sp": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3,
+            "held": 718
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 721,
+          "raw_valid_count": 721,
+          "zoh_valid_count": 721,
+          "outlier_reason_counts": {}
+        }
+      }
+    },
+    {
+      "tag_group": "MODE_HF",
+      "requested_roles": [
+        "mode",
+        "op",
+        "pv",
+        "sp"
+      ],
+      "requested_interval_s": 1,
+      "points": 3601,
+      "first_ts": "2026-10-23T06:00:00+00:00",
+      "last_ts": "2026-10-23T07:00:00+00:00",
+      "context_layout": "point",
+      "coverage_present": true,
+      "grid_period_s": 1.0,
+      "expected_slots": 3601,
+      "context_unknown_reasons": {},
+      "gate_core_tags": [
+        "pv",
+        "op"
+      ],
+      "raw_valid_rate": 1.0,
+      "zoh_helper_present": true,
+      "zoh_valid_rate": 1.0,
+      "time_coverage": 1.0,
+      "zoh_times_coverage": 1.0,
+      "actual_pipeline_effective_valid_rate": 1.0,
+      "actual_pipeline_confidence": "A",
+      "roles": {
+        "mode": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3,
+            "held": 3598
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {}
+        },
+        "op": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "held": 3589,
+            "observed": 12
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {}
+        },
+        "pv": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3453,
+            "held": 148
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {
+            "FROZEN": 3601
+          }
+        },
+        "sp": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3,
+            "held": 3598
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {}
+        }
+      }
+    },
+    {
+      "tag_group": "OP_HF",
+      "requested_roles": [
+        "op"
+      ],
+      "requested_interval_s": 1,
+      "points": 3601,
+      "first_ts": "2026-10-23T06:00:00+00:00",
+      "last_ts": "2026-10-23T07:00:00+00:00",
+      "context_layout": "point",
+      "coverage_present": true,
+      "grid_period_s": 1.0,
+      "expected_slots": 3601,
+      "context_unknown_reasons": {},
+      "gate_core_tags": [
+        "pv",
+        "op"
+      ],
+      "raw_valid_rate": 1.0,
+      "zoh_helper_present": true,
+      "zoh_valid_rate": 1.0,
+      "time_coverage": 1.0,
+      "zoh_times_coverage": 1.0,
+      "actual_pipeline_effective_valid_rate": 1.0,
+      "actual_pipeline_confidence": "A",
+      "roles": {
+        "op": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "held": 3589,
+            "observed": 12
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {}
+        },
+        "pv": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3453,
+            "held": 148
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 0,
+          "raw_valid_count": 0,
+          "zoh_valid_count": 0,
+          "outlier_reason_counts": {}
+        }
+      }
+    },
+    {
+      "tag_group": "PVOP_HF",
+      "requested_roles": [
+        "op",
+        "pv"
+      ],
+      "requested_interval_s": 1,
+      "points": 3601,
+      "first_ts": "2026-10-23T06:00:00+00:00",
+      "last_ts": "2026-10-23T07:00:00+00:00",
+      "context_layout": "point",
+      "coverage_present": true,
+      "grid_period_s": 1.0,
+      "expected_slots": 3601,
+      "context_unknown_reasons": {},
+      "gate_core_tags": [
+        "pv",
+        "op"
+      ],
+      "raw_valid_rate": 1.0,
+      "zoh_helper_present": true,
+      "zoh_valid_rate": 1.0,
+      "time_coverage": 1.0,
+      "zoh_times_coverage": 1.0,
+      "actual_pipeline_effective_valid_rate": 1.0,
+      "actual_pipeline_confidence": "A",
+      "roles": {
+        "op": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "held": 3589,
+            "observed": 12
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {}
+        },
+        "pv": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3453,
+            "held": 148
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": 3601,
+          "outlier_reason_counts": {
+            "FROZEN": 3601
+          }
+        }
+      }
+    },
+    {
+      "tag_group": "QUALITY_HF",
+      "requested_roles": [
+        "pv_quality"
+      ],
+      "requested_interval_s": 1,
+      "points": 3601,
+      "first_ts": "2026-10-23T06:00:00+00:00",
+      "last_ts": "2026-10-23T07:00:00+00:00",
+      "context_layout": "point",
+      "coverage_present": true,
+      "grid_period_s": 1.0,
+      "expected_slots": 3601,
+      "context_unknown_reasons": {},
+      "gate_core_tags": [
+        "pv",
+        "op"
+      ],
+      "raw_valid_rate": 0.0,
+      "zoh_helper_present": true,
+      "zoh_valid_rate": 0.0,
+      "time_coverage": 1.0,
+      "zoh_times_coverage": 0.0,
+      "actual_pipeline_effective_valid_rate": 0.0,
+      "actual_pipeline_confidence": "E",
+      "roles": {
+        "pv": {
+          "coverage_present": true,
+          "coverage_slots": {
+            "observed": 3453,
+            "held": 148
+          },
+          "unknown_reason_slots": {},
+          "non_null_values": 0,
+          "raw_valid_count": 0,
+          "zoh_valid_count": 0,
+          "outlier_reason_counts": {}
+        },
+        "pv_quality": {
+          "coverage_present": false,
+          "coverage_slots": {},
+          "unknown_reason_slots": {},
+          "non_null_values": 3601,
+          "raw_valid_count": 3601,
+          "zoh_valid_count": null,
+          "outlier_reason_counts": {
+            "FROZEN": 3601
+          }
+        }
+      }
+    }
+  ]
+}
+Probe completed.
+root@clpm:/home/clpm# ^C
+root@clpm:/home/clpm#

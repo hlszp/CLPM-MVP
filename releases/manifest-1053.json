@@ -1,0 +1,16 @@
+{
+  "release": "v7.5.6-1053-full",
+  "base_image": "clpm-backend:full-1052",
+  "base_git_head": "3f6dee798d5e8977e94f8b4f841c13409a242d23",
+  "working_tree_patch": "fix-1053-cov-zoh.patch",
+  "preprocess_version": "pre_v4",
+  "time_quality_policy_version": "tqpv4",
+  "scope": "backend source overlay; frontend and dependencies inherited unchanged",
+  "deployment_status": "NOT_DEPLOYED_BY_CODEX",
+  "files": {
+    "app/services/data_source/logical_wide_builder.py": "4087afdb4e353dab74214b567356c7e813b7aa8d3dd0c5b1c673af86eb6d4b69",
+    "app/services/preprocessing/pipeline.py": "2a901aed0905bac16e3ab56098d3a09a7d65034b5f545f9e964d0fb76ad0c364",
+    "app/services/metric_calculator/time_axis.py": "b1ee5a7a5f9093e9f6e93f53041aad8b8802447527fa39a3d044e2fb4ccaa516",
+    "scripts/verify_cov_zoh.py": "eb9231d6c0d17cfa765cbe49b6733f3a5ebe78b007da79518f2fce91f22914e1"
+  }
+}

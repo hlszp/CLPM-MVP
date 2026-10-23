@@ -1,0 +1,220 @@
+diff --git a/backend/app/services/data_source/logical_wide_builder.py b/backend/app/services/data_source/logical_wide_builder.py
+index 6d1d7cb70..261d5cc01 100644
+--- a/backend/app/services/data_source/logical_wide_builder.py
++++ b/backend/app/services/data_source/logical_wide_builder.py
+@@ -45,6 +45,11 @@ logger = logging.getLogger(__name__)
+ _ROLE_INT = frozenset({"mode"})  # 整数语义角色（legacy 宽表 TINYINT 对齐）
+ _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
+ 
++# ---------------------------------------------------------------------------
++# 2026-10-23 用户裁决：点表全部按 COV 存储，无变化不代表通信中断。
++# builder 不再以 PV/OP 的 60s 或慢角色的 7200s 事件年龄把保持段标 UNKNOWN；
++# 只据真实 gap、绑定及初值判断覆盖，质量随最近状态保持。以下旧阈值解析
++# 保留供历史排障兼容，不再参与点表构建；不修改 sys_config。
+ # ---------------------------------------------------------------------------
+ # R1（2026-10-12 界面审核修复批）：held_too_long 阈值按角色分层
+ #
+@@ -428,10 +433,17 @@ async def build_logical_wide(
+     # 13,000+ 碎片段曾使逐槽 _in_gap 线性扫描成为 KPI 取数主瓶颈
+     # （1s 网格 3601 槽 × N 角色 × 全量段数 ≈ 1.5 亿次比较/回路 ≈ 20s，
+     # 实测吻合；基线 200-300ms/回路是宽表路径无此扫描）。合并后二分查。
++    # COV 初值可早于查询窗。追溯该初值后的真实 gap，避免窗前断流被窗口
++    # 截掉，随后把断流前的旧值当成已恢复状态。只使用实际候选初值作下界。
++    gap_query_start = grid_start
++    for stream in streams.values():
++        initial = stream.state_at(grid_start)
++        if initial is not None and initial.get("ts") is not None:
++            gap_query_start = min(gap_query_start, _to_utc(initial["ts"]))
+     gap_windows_raw = await scoped_read(
+         read_scope,
+-        ("gaps", grid_start, grid_end),
+-        lambda: _load_gap_windows(db, grid_start, grid_end),
++        ("gaps", gap_query_start, grid_end),
++        lambda: _load_gap_windows(db, gap_query_start, grid_end),
+     )
+     merged: list[list[datetime]] = []
+     for gs, ge in sorted(gap_windows_raw):
+@@ -454,8 +466,6 @@ async def build_logical_wide(
+     # 调用方 tdengine_provider 早已在传该参数（data_planner 的查询任务本就
+     # 带采样间隔），只是此处被丢弃。
+     step_s = max(1, int(interval_s))
+-    # R1：held 容忍按角色分层（快/慢两档下限，sys_config 可配；见模块头注释）
+-    held_limits = await _held_limits_s(step_s)
+     t = grid_start
+     while t <= grid_end:
+         grid.append(t)
+@@ -472,9 +482,6 @@ async def build_logical_wide(
+         col: list[Any] = []
+         status: list[tuple[bool, str | None]] = []
+         segs = segments[role.upper()]
+-        # R1：慢角色（COV 稀疏离散/组态量）用分层后的慢档容忍；
+-        # 快角色（pv/op）维持 R2 原快档（冻结/缺口反例不放松）
+-        held_limit_s = held_limits["slow"] if role in SLOW_HELD_ROLES else held_limits["fast"]
+         first_event_seen = False
+         active_pid: str | None = None
+         # 预计算该角色网格内的改绑边界索引集（避免逐槽列表扫描）
+@@ -524,29 +531,21 @@ async def build_logical_wide(
+                 if role == "pv":
+                     pv_quality.append(int(ev.get("quality_class", -1)))
+                 col.append(value)
+-                # R2（2026-09-25）：HELD 超过阈值不得计入 known。
+-                # state_at 返回"最近一次 <= ts 的事件"，事件很旧时该槽其实是
+-                # 保持值而非新观测；数据缺口期间正是这种形态，却被当成观测数据
+-                # （曾导致 sensor_fault 把缺口误报为"传感器冻结 33%"）。
+-                # 阈值按【时间】而非点数（G12 起网格步长可变 interval_s）：
+-                #   max(3 x 网格步长, <角色档位下限>)
+-                # R1（2026-10-12）阈值分层：快角色（pv/op）下限 60s（3 倍步长
+-                # 容忍常规采样抖动，冻结/缺口反例不放松）；慢角色（mode/sp/
+-                # pid_*，COV 稀疏离散量）下限 7200s——"无变化=保持"是其正常
+-                # 语义，60s 会把全部正常保持段误标 unknown（实测自控率崩至
+-                # 8.33%）。依据与可配键见模块头注释。
+-                # 注意：只改"是否暴露为 unknown"，value 照旧保留（显示不变）。
++                # COV：事件年龄只区分 OBSERVED/HELD，不证明断流。
++                # 通信/采集缺口由登记的 gap 判定；保持值不冒充新观测，
++                # sensor_fault 等动态分析仍通过 observed_mask 排除保持段。
+                 ev_ts = ev.get("ts")
+                 try:
+                     hold_s = (ts - ev_ts).total_seconds() if ev_ts is not None else 0.0
+                 except TypeError:  # naive/aware 混用时不得因此丢槽
+                     hold_s = 0.0
+-                if in_gap:
++                # gap 结束本身不证明本点已恢复；需该点在 gap 结束后有新
++                # 状态依据。旧值保留给审计，但不得跨 gap 自动恢复为 HELD。
++                before_recovery = _gi >= 0 and ev_ts is not None and _to_utc(ev_ts) < gap_ends[_gi]
++                if in_gap or before_recovery:
+                     # 已登记的缺口优先标记（比"保持过久"更明确的原因），
+                     # 但 value/quality 已在上面保留 —— 见 P0 说明。
+                     status.append((False, sc.UNKNOWN_REASON_GAP, False))
+-                elif hold_s > held_limit_s:
+-                    status.append((False, sc.UNKNOWN_REASON_HELD_TOO_LONG, False))
+                 else:
+                     # P3-08b 三态细分：事件新鲜度 ≤ 网格周期 = OBSERVED
+                     # （本槽时长内的新观测），更早事件的状态保持 = HELD
+@@ -606,7 +605,7 @@ async def build_logical_wide(
+         slot_status=slot_status,
+         rebind_boundaries=rebind_boundaries,
+         segments=segments,
+-        gap_windows=[(gs, ge) for gs, ge in merged],
++        gap_windows=[(gs, ge) for gs, ge in merged if ge > grid_start],
+         step_s=step_s,
+     )
+     return RawTimeSeries(
+diff --git a/backend/app/services/metric_calculator/time_axis.py b/backend/app/services/metric_calculator/time_axis.py
+index 4c19951b1..4c8cdeebf 100644
+--- a/backend/app/services/metric_calculator/time_axis.py
++++ b/backend/app/services/metric_calculator/time_axis.py
+@@ -52,7 +52,9 @@ logger = logging.getLogger(__name__)
+ #: （快角色 pv/op 维持 max(3×步长,60s)；慢角色 mode/sp/pid_* 下限 7200s，
+ #: sys_config data.held_too_long_*_seconds 可配）——known/unknown 游程随之
+ #: 变化，L1/L2 缓存全量自然失效，旧缓存块不与新分层混算。
+-TIME_QUALITY_POLICY_VERSION = "tqpv3"
++#: tqpv4（2026-10-23）：全角色 COV 正常保持不再由事件年龄推断缺口，
++#: 真实 gap/无初值/改绑等 UNKNOWN 保留；失效旧阈值生成的覆盖与指标缓存。
++TIME_QUALITY_POLICY_VERSION = "tqpv4"
+ 
+ #: 契约覆盖的网格周期（秒）
+ SUPPORTED_GRID_PERIODS: frozenset[float] = frozenset({1.0, 2.0, 5.0, 10.0})
+diff --git a/backend/app/services/preprocessing/pipeline.py b/backend/app/services/preprocessing/pipeline.py
+index ee4eaea70..2c55b10d0 100644
+--- a/backend/app/services/preprocessing/pipeline.py
++++ b/backend/app/services/preprocessing/pipeline.py
+@@ -60,8 +60,8 @@ _NORMALIZABLE_SIGNALS: frozenset[str] = frozenset({"pv", "sp", "op"})
+ #     阀门粘滞由 stiction_index 指标单独检测，OP 饱和由 saturation_rate 单独检测
+ _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
+ 
+-# pre_v3：MODE 按标准离散域校验；失效曾误用 PV 量程生成的 L1/L2 数据块。
+-PREPROCESS_VERSION = "pre_v3"
++# pre_v4：COV 已展开槽逐槽核验，含窗前初值与 HELD 质量；失效 1052 旧缓存。
++PREPROCESS_VERSION = "pre_v4"
+ 
+ # R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
+ # 日志用于定位"数据窗口缺口"型低可信度的根因）
+@@ -194,7 +194,7 @@ class PreprocessingPipeline:
+         )
+ 
+         # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
+-        # loop_valid_rate = 核心 tag（pv/sp/op/mode）交集 / point_count，
++        # loop_valid_rate = 核心 tag（pv/op）交集 / point_count，
+         # 由共享内核 compute_loop_valid_rate 统一计算（缺失 tag 跳过）。
+         # loop_confidence_level 一次算出，所有指标经 _make_result 直接读取。
+         #
+@@ -202,16 +202,17 @@ class PreprocessingPipeline:
+         # 契约采样间隔 threshold.base_sampling_freq 计）折入可信度判定：
+         # 有效可信度 = 回路级 valid_rate × 时间覆盖率（语义 = 有效点数/期望点数）。
+         # 120 个 Good 点 / 30s 间隔 / 跨 1 小时（coverage≈3.3%）不再获得
+-        # A 可信度——有效点比例 ≠ 时间覆盖率，稀疏 COV 数据按 E 级
+-        # （INCONCLUSIVE 兼容口径）处理。
++        # A 可信度。point/COV 路径在 builder 中已展开完整网格，coverage≈1；
++        # 此处保留对 legacy 稀疏输入及真实窗口头尾缺失的保护。
+         # point/mixed 的 UNKNOWN 槽可能保留 Good 原值，数值 validity 不能
+         # 代替覆盖依据。复用连续性逐槽 known 判定，但不以最短连续段门禁
+         # 过滤有效点；只扣核心角色，PID 等非评估信号不拉低回路有效率。
+         # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
++        sample_valid_rate = DataQualityAssessor.compute_loop_valid_rate(validity, n)
+         confidence_validity = validity
+         if _ctx is not None and getattr(_ctx, "role_coverage", None):
+-            # 2026-10-23：核心角色（含稀疏 OP）按 ZOH 时间保持计有效，
+-            # 不得用「仅采样点 valid」做交集——OP 84 点/24h 会把交集打成 0 → E。
++            # builder 已按 ZOH 展开数值/质量。这里逐槽叠加覆盖证据，不能再
++            # 只从 OBSERVED 事件保持布尔值，否则丢窗前初值且会洗白 HELD 坏质量。
+             confidence_validity = {}
+             for tag in GATE_CORE_TAGS:
+                 key = f"{tag}_valid"
+@@ -233,6 +234,24 @@ class PreprocessingPipeline:
+         loop_valid_rate = raw_loop_valid_rate * time_coverage
+         loop_confidence_level = ConfidenceEvaluator.evaluate(loop_valid_rate).value
+ 
++        logger.info(
++            "[Pipeline][ZOH] loop=%s tagGroup=%s window=(%s,%s) points=%d "
++            "coverage_roles=%s raw_valid_rate=%.6f zoh_valid_rate=%.6f "
++            "time_coverage=%.6f effective_valid_rate=%.6f conf=%s unknown_reasons=%s",
++            loop_id,
++            tag_group.value,
++            window_start,
++            window_end,
++            n,
++            sorted((_ctx.role_coverage or {}).keys()) if _ctx is not None else [],
++            sample_valid_rate,
++            raw_loop_valid_rate,
++            time_coverage,
++            loop_valid_rate,
++            loop_confidence_level,
++            getattr(_ctx, "unknown_reasons", None),
++        )
++
+         if time_coverage < _LOW_COVERAGE_WARN_THRESHOLD:
+             logger.warning(
+                 "[Pipeline] 时间覆盖率低（已折入可信度）: loop=%s, tagGroup=%s, "
+@@ -590,26 +609,18 @@ class PreprocessingPipeline:
+         timestamps: list[Any],
+         coverage: Any,
+     ) -> list[bool]:
+-        """COV 角色：按时间保持（ZOH）把采样点 valid 前向展开到网格.
++        """在 builder 已 ZOH 展开的网格上，合并当前槽有效性与覆盖依据.
+ 
+-        与 logical_wide_builder.state_at 同语义：OBSERVED 槽取当点 valid；
+-        HELD 槽沿用最近一次观测的 valid；UNKNOWN 槽为 False。
+-        不得用「仅采样点 valid」参与交集——稀疏 COV（如 OP 84 点/24h）
+-        会把回路级有效率打成 0 → conf=E → 未计算。
++        窗前初值在首槽即有合法 HELD 值；当前槽 validity 已含所保持的质量
++        和当前异常判定。再次保持布尔值会丢掉初值、跨改绑或覆盖坏质量。
++        UNKNOWN 仍无效，不用旧 Good 值填补真实 gap。
+         """
+         from app.services.metric_calculator.time_axis import classify_coverage, utc
+ 
+         out: list[bool] = []
+-        last_valid = False
+         for i, ts in enumerate(timestamps):
+-            known, observed, _ = classify_coverage(coverage, utc(ts))
+-            if not known:
+-                out.append(False)
+-                continue
+-            if observed:
+-                last_valid = bool(validity[i]) if i < len(validity) else False
+-            # HELD：保持 last_valid（前向展开）
+-            out.append(last_valid)
++            known, _, _ = classify_coverage(coverage, utc(ts))
++            out.append(known and i < len(validity) and bool(validity[i]))
+         return out
+ 
+     def _stitchable_mask(
