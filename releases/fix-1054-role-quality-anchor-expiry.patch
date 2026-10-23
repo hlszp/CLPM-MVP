@@ -1,0 +1,544 @@
+--- a/backend/app/services/data_source/logical_wide_builder.py
++++ b/backend/app/services/data_source/logical_wide_builder.py
+@@ -5,8 +5,9 @@
+ 定位：
+ - **唯一**从 ``st_point_data_v1`` 组装算法数据的实现；算法/endpoints 不直接
+   访问测点子表（设计 §5）；
+-- 输出契约与 legacy 宽表路径一致：``RawTimeSeries``（角色小写键、
+-  ``pv_quality`` 质量键、naive UTC 时间戳）——下游预处理/DataPlanner 零改动。
++- 输出契约：``RawTimeSeries``（角色小写键、naive UTC 时间戳），质量码
++  ``{role}_quality`` 逐角色输出（2026-10-23 起全角色透传，此前仅
++  ``pv_quality``）——下游预处理/DataPlanner 泛型消费 ``{tag}_quality``。
+ 
+ 语义规则（作为等价性差分的预期固定）：
+ 1. 网格 = 窗口内全部 **UTC 整秒**（含两端；非整秒窗口不扩大——首点向上
+@@ -190,7 +191,14 @@
+         i = bisect.bisect_right(self._ts, at)
+         if i == 0:
+             return None
+-        return self._states[i - 1]
++        st = self._states[i - 1]
++        # 锚点状态带明确有效上界（coverage_until，半开）：到期后该状态无
++        # 依据，返回 None（未知），不得回退更旧状态越过到期边界（设计 §4.2
++        # 「锚点可用到该时刻」）；普通 COV 事件无上界，保持不变。
++        until = st.get("valid_until")
++        if until is not None and at >= until:
++            return None
++        return st
+ 
+ 
+ @g5_trace.traced("builder.pg_metadata")
+@@ -421,6 +429,10 @@
+                         "quality_class": anchor.quality_class,
+                         "quality_raw": anchor.quality_raw,
+                         "ts": _to_utc(anchor.anchor_ts),
++                        # 半开有效终点：锚点覆盖依据只到该时刻（§4.2 coverage_until）
++                        "valid_until": (
++                            _to_utc(anchor.coverage_until) if anchor.coverage_until else None
++                        ),
+                     },
+                 )
+             for (apid, _before), st in initial_states.items():
+@@ -458,7 +470,10 @@
+     # 网格
+     grid: list[datetime] = []
+     signals: dict[str, list[Any]] = {r: [] for r in roles}
+-    pv_quality: list[int] = []
++    # 逐角色质量三态（与值同状态保持：BAD 不被跳过沿用旧 Good，V04）；
++    # 2026-10-23 全链透传：每个请求角色输出 ``{role}_quality``（此前仅 PV，
++    # 其余角色坏质量在取数链丢失 → 下游恒视为 Good）
++    role_quality: dict[str, list[int]] = {r: [] for r in internal_roles}
+     # 整改 G12（降采样部分）：网格步长改用调用方传入的 interval_s。
+     # 此前该参数标注 ARG001 恒被忽略，网格固定 1s —— 30 天窗口即 259 万槽
+     # × 7 角色，纯 Python 逐槽循环 + 线性扫段/扫 gap，内存与 CPU 都不可行，
+@@ -507,8 +522,7 @@
+             if seg is None:
+                 status.append((False, sc.UNKNOWN_REASON_UNBOUND, False))
+                 col.append(None)
+-                if role == "pv":
+-                    pv_quality.append(-1)
++                role_quality[role].append(-1)
+                 continue
+             # 二分查合并后的 gap 段（取代逐段线性扫 _in_gap）
+             #
+@@ -528,8 +542,7 @@
+                 value = ev.get("value")
+                 if role in _ROLE_INT and value is not None:
+                     value = int(round(float(value)))
+-                if role == "pv":
+-                    pv_quality.append(int(ev.get("quality_class", -1)))
++                role_quality[role].append(int(ev.get("quality_class", -1)))
+                 col.append(value)
+                 # COV：事件年龄只区分 OBSERVED/HELD，不证明断流。
+                 # 通信/采集缺口由登记的 gap 判定；保持值不冒充新观测，
+@@ -557,8 +570,7 @@
+                 # 原因归为 gap 而不是 no_initial（对下游更准确）。
+                 status.append((False, sc.UNKNOWN_REASON_GAP, False))
+                 col.append(None)
+-                if role == "pv":
+-                    pv_quality.append(-1)
++                role_quality[role].append(-1)
+             else:
+                 # 无状态归因：首事件前=无初值；改绑后新点无事件=rebind；
+                 # 段内事件后状态耗尽（锚点 coverage_until 边界后）=no_initial
+@@ -572,20 +584,20 @@
+                     )
+                 status.append((False, reason, False))
+                 col.append(None)
+-                if role == "pv":
+-                    pv_quality.append(-1)
++                role_quality[role].append(-1)
+         signals[role] = col
+         slot_status[role] = status
+ 
+-    # pv_quality 仅在 PV 角色遍历时逐点追加（n 恰等于网格点数）
++    # pv_quality 伪角色信号 = PV 质量三态数组（与 legacy 宽表列语义一致；
++    # PV 角色遍历时逐点追加，n 恰等于网格点数）
+     timestamps_naive = [ts.replace(tzinfo=None) for ts in grid]
+     if pseudo_quality:
+-        # 伪角色信号 = PV 质量三态数组（与 legacy 宽表列语义一致）
+-        assert len(pv_quality) == n
+-        signals["pv_quality"] = list(pv_quality)
++        assert len(role_quality["pv"]) == n
++        signals["pv_quality"] = list(role_quality["pv"])
+     # 输出仅含请求角色（内部补入的 PV 在未请求时移除）
+     signals = {r: signals[r] for r in requested if r in signals}
+-    quality_codes: dict[str, list[int]] = {}
++    # 质量码：每个请求角色输出 ``{role}_quality``（2026-10-23 全链透传，
++    # 与值同网格同状态保持；下游 ``_step1_identify_quality`` 泛型消费）。
+     # G5 前置立卡项2（2026-10-13）：伪角色请求（PV_QUALITY，QUALITY_HF 独立
+     # 1s 查询——粗 BASE 禁止派生的控制类型走此路径）此前条件为 ``"pv" in
+     # roles``，而伪角色请求的 roles 已剔除 pv_quality → quality_codes 恒空，
+@@ -594,9 +606,16 @@
+     # 生产实测非 FLOW 控制类型（BASE>1s 独立 HF 查询）全量 PARTIAL、FLOW
+     # （BASE=1s 走派生路径带 BASE 质量摘要）全量 SUCCESS 即此因。伪角色
+     # 请求同样输出质量码（内部恒含 PV，逐网格点恰好追加一次）。
+-    if "pv" in roles or pseudo_quality:
+-        assert len(pv_quality) == n  # PV 角色逐网格点恰好追加一次
+-        quality_codes["pv_quality"] = pv_quality
++    quality_codes: dict[str, list[int]] = {}
++    for r in roles:
++        arr = role_quality.get(r)
++        if arr is not None:
++            assert len(arr) == n
++            quality_codes[f"{r}_quality"] = arr
++    if pseudo_quality:
++        arr = role_quality["pv"]
++        assert len(arr) == n
++        quality_codes.setdefault("pv_quality", list(arr))
+ 
+     context = _build_context(
+         loop_id=loop_id,
+--- a/backend/app/services/data_source/tdengine_provider.py
++++ b/backend/app/services/data_source/tdengine_provider.py
+@@ -190,17 +190,13 @@
+ 
+     merged_ts: list[datetime] = []
+     merged_signals: dict[str, list[Any]] = {r.lower(): [] for r in tag_roles}
+-    merged_pv_q: list[int] = []
++    merged_qc: dict[str, list[int]] = {}
+     roles_lower = [r.lower() for r in tag_roles]
+-    # G5 前置立卡项2 返工（2026-10-13 验收 B③）：质量码透传条件与 builder 层
+-    # 修复同构。QUALITY_HF 独立 1s 查询（BASE>1s 控制类型）的 tag_roles 实为
+-    # ["pv_quality"]（伪角色，clpm_metric_data_requirement 实查口径），
+-    # ``"pv" in roles_lower`` 为 False → builder 已输出的质量码在本合并层被
+-    # 整体丢弃（qc_len=0）→ DataBlock good_value_rate=None → 非 FLOW 回路
+-    # 快照 PARTIAL。PV 显式在请求集，或伪角色 pv_quality 在请求集
+-    # （QUALITY_HF，与 builder 的 pseudo_quality 同口径：lower 化请求集），
+-    # 都需要收集并透传 PV 质量码。
+-    wants_pv_quality = "pv" in roles_lower or "pv_quality" in roles_lower
++    # 质量码透传（2026-10-23 全角色）：builder 按请求角色输出
++    # ``{role}_quality``（含 QUALITY_HF 伪角色 ``pv_quality``），本合并层
++    # 整体透传，不再只挑 PV。此前 G5 立卡项2 曾因按 pv 角色挑选条件
++    # 丢弃伪角色请求的质量码（非 FLOW 回路快照 PARTIAL）；透传口径下
++    # builder 键 ⊆ 请求角色集，无需再按角色过滤。
+     point_context = None
+ 
+     for part in layouts:
+@@ -216,13 +212,18 @@
+         columns = {
+             role: raw.signals.get(role) or [None] * len(raw.timestamps) for role in roles_lower
+         }
+-        qc = raw.quality_codes.get("pv_quality") or [-1] * len(raw.timestamps)
++        part_qc: dict[str, list[int]] = {
++            key: codes
++            if len(codes) == len(raw.timestamps)
++            # 长度异常的质量列按 -1（未知）补齐，不静默丢弃该角色质量
++            else [-1] * len(raw.timestamps)
++            for key, codes in raw.quality_codes.items()
++        }
+         # builder 的单片严格升序网格不需要再逐列复制、排序和去重。
+         # 非标准/重叠输入仍走下方通用合并路径，保留后段覆盖语义。
+         if (
+             len(layouts) == 1
+             and all(len(values) == len(raw.timestamps) for values in columns.values())
+-            and (not wants_pv_quality or len(qc) == len(raw.timestamps))
+             and all(
+                 raw.timestamps[i - 1] < raw.timestamps[i] for i in range(1, len(raw.timestamps))
+             )
+@@ -230,34 +231,34 @@
+             return RawTimeSeries(
+                 timestamps=raw.timestamps,
+                 signals=columns,
+-                quality_codes={"pv_quality": qc} if wants_pv_quality else {},
++                quality_codes=part_qc,
+                 series_context=point_context,
+             )
+         for i, ts in enumerate(raw.timestamps):
+             merged_ts.append(ts)
+             for role in roles_lower:
+                 merged_signals[role].append(columns[role][i])
+-            if wants_pv_quality:
+-                merged_pv_q.append(qc[i])
++            for key, codes in part_qc.items():
++                merged_qc.setdefault(key, []).append(codes[i])
+ 
+     # 排序 + 边界去重（同 ts 保留后段——边界 T 处 point 覆盖 legacy）
+     order = sorted(range(len(merged_ts)), key=lambda i: merged_ts[i])
+     out_ts: list[datetime] = []
+     out_signals: dict[str, list[Any]] = {r: [] for r in roles_lower}
+-    out_q: list[int] = []
++    out_qc: dict[str, list[int]] = {key: [] for key in merged_qc}
+     last_ts: datetime | None = None
+     for i in order:
+         if last_ts is not None and merged_ts[i] == last_ts:
+             for role in roles_lower:
+                 out_signals[role][-1] = merged_signals[role][i]
+-            if wants_pv_quality:
+-                out_q[-1] = merged_pv_q[i]
++            for key in out_qc:
++                out_qc[key][-1] = merged_qc[key][i]
+             continue
+         out_ts.append(merged_ts[i])
+         for role in roles_lower:
+             out_signals[role].append(merged_signals[role][i])
+-        if wants_pv_quality:
+-            out_q.append(merged_pv_q[i])
++        for key in out_qc:
++            out_qc[key].append(merged_qc[key][i])
+         last_ts = merged_ts[i]
+ 
+     if point_context is not None and len(layouts) > 1:
+@@ -265,13 +266,10 @@
+ 
+         point_context.layout = sc.LAYOUT_MIXED
+ 
+-    quality_codes: dict[str, list[int]] = {}
+-    if wants_pv_quality:
+-        quality_codes["pv_quality"] = out_q
+     return RawTimeSeries(
+         timestamps=out_ts,
+         signals=out_signals,
+-        quality_codes=quality_codes,
++        quality_codes=out_qc,
+         series_context=point_context,
+     )
+ 
+--- a/backend/app/services/preprocessing/pipeline.py
++++ b/backend/app/services/preprocessing/pipeline.py
+@@ -61,7 +61,9 @@
+ _SKIP_FROZEN_SIGNALS: frozenset[str] = frozenset({"sp", "op", "mode", "pid_p", "pid_i", "pid_d"})
+ 
+ # pre_v4：COV 已展开槽逐槽核验，含窗前初值与 HELD 质量；失效 1052 旧缓存。
+-PREPROCESS_VERSION = "pre_v4"
++# pre_v5：{role}_quality 全角色透传（此前仅 PV，其余角色坏质量在取数链
++# 丢失被当 Good）；validity 数组语义变化，失效 pre_v4 旧缓存块。
++PREPROCESS_VERSION = "pre_v5"
+ 
+ # R14：时间覆盖率低于该阈值时打 WARN（覆盖率已折入可信度判定，
+ # 日志用于定位"数据窗口缺口"型低可信度的根因）
+@@ -180,6 +182,20 @@
+         # P3-08b：时间口径摘要（window/unknown 秒数，与 R/Auto/Sat 分母可对账；
+         # 窗口不可得（无查询窗且无上下文）→ 两字段 None=未记录）
+         _window_seconds, _unknown_seconds = self._time_quality_seconds(raw, window)
++        # PV 覆盖已知槽掩码（point 路径）：好值率/可用率只在已知槽上算，
++        # 真实 gap 内保持的旧 Good 值不得计入好值时长（P1-3）。
++        pv_known_slots: list[bool] | None = None
++        if (
++            _ctx is not None
++            and getattr(_ctx, "role_coverage", None)
++            and pv_quality_codes
++            and len(pv_quality_codes) == n
++        ):
++            pv_cov = (_ctx.role_coverage or {}).get("pv")
++            if pv_cov is not None:
++                from app.services.metric_calculator.time_axis import classify_coverage, utc
++
++                pv_known_slots = [classify_coverage(pv_cov, utc(t))[0] for t in raw.timestamps]
+         quality_summary = compute_quality_summary(
+             validity=validity,
+             timestamps=raw.timestamps,
+@@ -191,6 +207,7 @@
+             ),
+             window_seconds=_window_seconds,
+             unknown_seconds=_unknown_seconds,
++            known_slots=pv_known_slots,
+         )
+ 
+         # 可信度统一 Phase 2（P2-1）：计算回路级 valid_rate 与可信度等级。
+@@ -217,6 +234,13 @@
+             for tag in GATE_CORE_TAGS:
+                 key = f"{tag}_valid"
+                 arr = validity.get(key)
++                if arr is None and tag == "pv":
++                    # QUALITY_HF 伪角色块：PV 不在输出信号集（仅 pv_quality 伪
++                    # 信号）→ pv_valid 缺失 → 回路级有效率恒 0 → conf 恒 E，
++                    # 而 good_value_rate 数值有据（P0-1：值对等级错）。以 PV
++                    # 质量码本身作为该块的数据依据（Good=有效；-1/Bad=无效），
++                    # 再经下方覆盖合并给出诚实可信度，不编造。
++                    arr = self._quality_code_validity(raw)
+                 if arr is None:
+                     continue
+                 cov = (_ctx.role_coverage or {}).get(tag)
+@@ -623,6 +647,18 @@
+             out.append(known and i < len(validity) and bool(validity[i]))
+         return out
+ 
++    @staticmethod
++    def _quality_code_validity(raw: RawTimeSeries) -> list[bool] | None:
++        """PV 质量码 → 逐槽有效性（QUALITY_HF 伪角色块的 conf 数据依据）.
++
++        Good → True；Bad/Unknown（含 -1 未知槽）→ False。无质量码 → None
++        （不编造，维持 conf=E 的既有表达）。
++        """
++        codes = raw.quality_codes.get("pv_quality")
++        if not codes:
++            return None
++        return [map_quality_code(c) == QualityStatus.GOOD for c in codes]
++
+     def _stitchable_mask(
+         self, raw: RawTimeSeries, all_valid: list[bool], roles: tuple[str, ...] | None = None
+     ) -> list[bool]:
+--- a/backend/app/services/preprocessing/quality_summary.py
++++ b/backend/app/services/preprocessing/quality_summary.py
+@@ -31,6 +31,7 @@
+     unknown_slot_count: int | None = None,
+     window_seconds: float | None = None,
+     unknown_seconds: float | None = None,
++    known_slots: list[bool] | None = None,
+ ) -> QualitySummary:
+     """生成数据质量摘要（算法说明 §3.4.2 步骤⑧）.
+ 
+@@ -42,8 +43,8 @@
+ 
+         可信度判定由**回路级 valid_rate** 负责（可信度统一 Phase 1）：
+         由 :meth:`DataQualityAssessor.compute_loop_valid_rate` 计算核心 tag
+-        （pv/sp/op/mode）交集 / point_count，KPI/诊断/整定三链路共享。
+-        详见可信度统一改进方案 §4.3。
++        （pv/sp/op/mode）交集 / point_count，KPI/诊断/整定三链路共享同一
++        口径。详见可信度统一改进方案 §4.3。
+ 
+     Args:
+         validity: 有效性标记字典，key 为 ``{tag}_valid``
+@@ -56,6 +57,9 @@
+             质量摘要与比率类指标分母可对账）
+         unknown_seconds: 无依据区间秒数（六因+窗口未覆盖；不补时不缩分母；
+             None=未记录）
++        known_slots: PV 覆盖已知槽掩码（point 路径；None=legacy 全槽口径）。
++            提供时 good_value_rate/usable_rate 仅在已知槽上计算（真实 gap
++            内保持的旧 Good 值不得计入好值时长；全窗未知 → None=不可判定）
+ 
+     Returns:
+         QualitySummary 质量摘要（审计用）
+@@ -100,22 +104,45 @@
+     # 不变；expected>total 时数值不变。
+     missing_rate = missing_count / expected_count if expected_count > 0 else 0.0
+ 
+-    # 好值率（仅当有质量码时计算）
++    # 好值率（仅当有质量码时计算）。known_slots 提供时只在已知槽上算
++    # （分子/分母同口径剔除 UNKNOWN——真实 gap 内保持的旧 Good 值不算
++    # 好值时长）；已知槽数为 0（全窗未知）→ None=不可判定，不冒充 0/100。
+     good_value_rate: float | None = None
+     if quality_codes is not None and len(quality_codes) > 0:
+-        good_count = sum(1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD)
+-        good_value_rate = good_count / len(quality_codes)
++        if known_slots is not None and len(known_slots) == len(quality_codes):
++            known_total = sum(1 for k in known_slots if k)
++            if known_total > 0:
++                good_count = sum(
++                    1
++                    for qc, k in zip(quality_codes, known_slots, strict=False)
++                    if k and map_quality_code(qc) == QualityStatus.GOOD
++                )
++                good_value_rate = good_count / known_total
++        else:
++            good_count = sum(
++                1 for qc in quality_codes if map_quality_code(qc) == QualityStatus.GOOD
++            )
++            good_value_rate = good_count / len(quality_codes)
+ 
+     # PV 数值可用比例（P3-10a，10§3.4 Good 行：QC Good 与 usable 分开，
+     # C04-EA3）：``pv_valid`` 口径——越限/坏质量等预处理数值资格判定的交。
+     # good_value_rate 反映**来源质量码**（缺质量码=None 不可判定，不用本值
+     # 冒充）；usable_rate 反映**数值可用性**（含越限，QC Good 但 PV 越界的
+     # 点 usable=False）。无 pv_valid 标记时 None（未记录，不猜测）。
++    # known_slots 提供时同口径剔除 UNKNOWN 槽（gap 内的保持值不是可用观测）。
+     pv_valid = validity.get("pv_valid")
+     usable_rate: float | None = None
+     if pv_valid and total > 0:
+-        usable_count = sum(1 for v in pv_valid[:total] if v)
+-        usable_rate = usable_count / total
++        if known_slots is not None and len(known_slots) == total:
++            known_total = sum(1 for k in known_slots if k)
++            if known_total > 0:
++                usable_count = sum(
++                    1 for v, k in zip(pv_valid[:total], known_slots, strict=False) if v and k
++                )
++                usable_rate = usable_count / known_total
++        else:
++            usable_count = sum(1 for v in pv_valid[:total] if v)
++            usable_rate = usable_count / total
+ 
+     summary = QualitySummary(
+         total_count=total,
+--- a/backend/app/services/metric_calculator/base.py
++++ b/backend/app/services/metric_calculator/base.py
+@@ -372,7 +372,47 @@
+             lineage=lineage,
+             details=detail,
+         )
++
++    # ------------------------------------------------------------------
++    # 覆盖已知槽过滤（2026-10-23：UNKNOWN 槽不当观测）
++    # ------------------------------------------------------------------
++
++    @staticmethod
++    def _known_slot_indices(
++        bundle: MetricDataBundle,
++        roles: tuple[str, ...],
++        view: Any | None = None,
++    ) -> list[int] | None:
++        """masked_indices 中所需角色覆盖已知（OBSERVED/HELD）的槽索引.
++
++        时间视图不可得（legacy/旧缓存/手工 bundle）→ None=不筛选（legacy
++        口径完全不变）。视图可用 → 返回 ``masked_indices ∩ 已知槽``。
++
++        依据（契约 §2.1 与 R/Auto/Sat 同口径）：builder 对真实 gap/无初值/
++        锚点到期/改绑的槽保留 COV 值（审计）但覆盖为 UNKNOWN——无状态依据
++        的槽不得作为观测计入均值/σ（未知不进分子、不缩分母）。正常 COV
++        保持（HELD）是合法观测，**不**在本过滤之列。
++        """
++        from app.services.metric_calculator.time_axis import SlotState, view_or_none
+ 
++        v = view if view is not None else view_or_none(bundle, roles)
++        if v is None:
++            return None
++        masked = set(bundle.masked_indices)
++        out: list[int] = []
++        for slot_i, orig_i in enumerate(v.indices):
++            if orig_i not in masked:
++                continue
++            known = True
++            for r in roles:
++                states = v.role_states.get(r)
++                if states is None or slot_i >= len(states) or states[slot_i] is SlotState.UNKNOWN:
++                    known = False
++                    break
++            if known:
++                out.append(orig_i)
++        return out
++
+     # ------------------------------------------------------------------
+     # 时长计算辅助
+     # ------------------------------------------------------------------
+--- a/backend/app/services/metric_calculator/accuracy.py
++++ b/backend/app/services/metric_calculator/accuracy.py
+@@ -60,7 +60,18 @@
+         Returns:
+             MetricResult：value 为准确率 0~100，数据不足时 INCONCLUSIVE
+         """
+-        pairs = self._get_masked_pair(bundle, "pv", "sp")
++        # 2026-10-23：时间视图可用时剔除所需角色覆盖 UNKNOWN 的槽（真实
++        # gap/无初值等保留的 COV 陈值不当观测；正常 COV 保持=HELD 保留），
++        # 与 R/Auto/Sat 的"未知不进分子不缩分母"口径对齐；legacy 不变。
++        known_idx = self._known_slot_indices(bundle, ("pv", "sp"))
++        if known_idx is not None:
++            sig_pv = bundle.data_block.signals.get("pv", [])
++            sig_sp = bundle.data_block.signals.get("sp", [])
++            pairs = [
++                (sig_pv[i], sig_sp[i]) for i in known_idx if i < len(sig_pv) and i < len(sig_sp)
++            ]
++        else:
++            pairs = self._get_masked_pair(bundle, "pv", "sp")
+         n = len(pairs)
+ 
+         logger.debug("[准确率] 输入: masked_points=%d", n)
+--- a/backend/app/services/metric_calculator/stability.py
++++ b/backend/app/services/metric_calculator/stability.py
+@@ -90,7 +90,22 @@
+             MetricResult：value 为稳定率 0~100，
+             oscillation_rate 从 dependencies 读取
+         """
+-        pairs = self._get_masked_pair(bundle, "pv", "sp")
++        # 2026-10-23：时间视图可用时剔除 pv/sp 覆盖 UNKNOWN 的槽（真实 gap
++        # 的保持陈值不进 σ/带内率；正常 COV 保持=HELD 保留），与 R/Auto/Sat
++        # 口径对齐；legacy 不变。视图在下方 durations 处复用，避免重复构建。
++        view = view_or_none(bundle, ("pv", "sp"))
++        known_idx = self._known_slot_indices(bundle, ("pv", "sp"), view=view)
++        if known_idx is not None:
++            sig_pv = bundle.data_block.signals.get("pv", [])
++            sig_sp = bundle.data_block.signals.get("sp", [])
++            pairs = [
++                (sig_pv[i], sig_sp[i]) for i in known_idx if i < len(sig_pv) and i < len(sig_sp)
++            ]
++            all_ts = bundle.data_block.timestamps
++            ts = [all_ts[i] for i in known_idx if i < len(all_ts)]
++        else:
++            pairs = self._get_masked_pair(bundle, "pv", "sp")
++            ts = self._get_masked_timestamps(bundle)
+         n = len(pairs)
+ 
+         logger.debug("[稳定率] 输入: masked_points=%d", n)
+@@ -116,10 +131,11 @@
+         # 本体，σ/振荡修正/带内公式不动）：时间视图可用时，逐点时长取**半开
+         # 槽秒数**（末槽截到窗口 end，不复制上一段时长越窗——C04-EA1）；
+         # 视图不可得（legacy/手工 bundle）→ 原 _point_durations 口径不变。
+-        ts = self._get_masked_timestamps(bundle)
+-        view = view_or_none(bundle, ("pv", "sp"))
++        # 2026-10-23：known_idx 过滤后时长与过滤点集对齐（ts 已按同索引过滤）。
+         if view is not None and len(view.indices) >= 2 and len(ts) == n:
+-            durations = view.masked_slot_seconds(bundle.masked_indices)
++            durations = view.masked_slot_seconds(
++                known_idx if known_idx is not None else bundle.masked_indices
++            )
+         else:
+             durations = self._point_durations(ts) if len(ts) == n else []
+ 
+--- a/backend/app/services/metric_calculator/time_axis.py
++++ b/backend/app/services/metric_calculator/time_axis.py
+@@ -54,7 +54,9 @@
+ #: 变化，L1/L2 缓存全量自然失效，旧缓存块不与新分层混算。
+ #: tqpv4（2026-10-23）：全角色 COV 正常保持不再由事件年龄推断缺口，
+ #: 真实 gap/无初值/改绑等 UNKNOWN 保留；失效旧阈值生成的覆盖与指标缓存。
+-TIME_QUALITY_POLICY_VERSION = "tqpv4"
++#: tqpv5（2026-10-23）：锚点 coverage_until 半开有效终点生效（到期后不再
++#: 无限保持，不回退更旧状态）；覆盖游程语义变化，失效 tqpv4 缓存。
++TIME_QUALITY_POLICY_VERSION = "tqpv5"
+ 
+ #: 契约覆盖的网格周期（秒）
+ SUPPORTED_GRID_PERIODS: frozenset[float] = frozenset({1.0, 2.0, 5.0, 10.0})
+--- a/backend/app/tasks/kpi_calc.py
++++ b/backend/app/tasks/kpi_calc.py
+@@ -3161,6 +3161,11 @@
+         validity={},
+         quality_summary=QualitySummary(total_count=1, valid_count=1, valid_rate=1.0),
+         point_count=1,
++        # CONFIG 值来自配置/手工指定（确定性来源，非数据观测）：可信度按
++        # A/1.0——此前落 DataBlock 默认 "E"，ideal_settling_time 在
++        # metricsSemantic 中恒 E（值真实存在却标 INCONCLUSIVE，自相矛盾）
++        loop_confidence_level="A",
++        loop_valid_rate=1.0,
+     )
+     return MetricDataBundle(
+         metric_code="ideal_settling_time",
+@@ -4960,7 +4965,9 @@
+                 )
+             except Exception as exc:  # noqa: BLE001
+                 agg["failed_windows"].append(w.isoformat())
+-                agg["failed"] += len(loops)
++                # 失败计数按本窗实际待算回路（skip_existing 模式下 todo ⊂ loops，
++                # 按 loops 计会把已跳过回路虚报为失败）
++                agg["failed"] += len(todo_loops)
+                 logger.exception(
+                     "[子任务] 窗口 %d/%d %s 失败: %s",
+                     w_idx,

@@ -1,0 +1,37 @@
+{
+  "release": "v7.5.6-1054-full",
+  "base_image": "clpm-backend:full-1053",
+  "code_commit": "58ed6212cc26ac98594d554c1cfcd683adda3615",
+  "predecessor": {
+    "release": "v7.5.6-1053-full",
+    "deployed": true,
+    "manifest": "releases/manifest-1053.json"
+  },
+  "working_tree_patch": "fix-1054-role-quality-anchor-expiry.patch",
+  "preprocess_version": "pre_v5",
+  "time_quality_policy_version": "tqpv5",
+  "scope": "backend source overlay; frontend and dependencies inherited unchanged; no DB migration",
+  "deployment_status": "NOT_DEPLOYED",
+  "changes": [
+    "R1 {role}_quality passthrough builder+provider",
+    "R2 anchor coverage_until half-open expiry",
+    "R3 cache versions pre_v5/tqpv5",
+    "R4 accuracy/stability exclude coverage-UNKNOWN slots",
+    "R5 good_value/usable rates over known slots",
+    "R6 QUALITY_HF pseudo-role block confidence from quality codes",
+    "R7 CONFIG block honest confidence A",
+    "R8 backfill failed count uses todo_loops"
+  ],
+  "review_report": "docs/过程文档/评估算法-COV全面检查-审查报告-2026-10-23.md",
+  "files": {
+    "app/services/data_source/logical_wide_builder.py": "84572d42e53ac29ed672d63d0eec95bee31564a89379bfe7607fece50b987bf4",
+    "app/services/data_source/tdengine_provider.py": "50e071b21932b2f2d81a8a4c31a56c82ae86e930b5027cc0051f90f90191ddf3",
+    "app/services/preprocessing/pipeline.py": "5570afba15827b2f1722775ac0e446f7369c7a6a15d5883730a567e906269b73",
+    "app/services/preprocessing/quality_summary.py": "52d003cd1cd5b2d45946f867dbfa457984b953190a2dd2d780c637bea1092ac8",
+    "app/services/metric_calculator/base.py": "9026c29ec6f85bbe5cce06700f0074eba8450f237982c2ff4aaff0f653d39a55",
+    "app/services/metric_calculator/accuracy.py": "672b560df51af1657df514f4d04f85e47a41177f5a8e3d92aa6b246cdd09a5d3",
+    "app/services/metric_calculator/stability.py": "c9695179906cc77ed04e83748a04161ff52b2659970263c60f6cea71c0769133",
+    "app/services/metric_calculator/time_axis.py": "a4c1bdf45617281c2048ba901964d3263e3fb9a020eb905bf1f60396523e15ef",
+    "app/tasks/kpi_calc.py": "caf928bb73031a536ff88493a3a4ea007d61b35b7ae35ecfa37ca14f3a940f47"
+  }
+}
