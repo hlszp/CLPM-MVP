@@ -209,14 +209,20 @@ class PreprocessingPipeline:
         # 过滤有效点；只扣核心角色，PID 等非评估信号不拉低回路有效率。
         # 原值/质量/validity 保留，legacy（无覆盖）保持共享内核既有口径。
         confidence_validity = validity
-        if _ctx is not None and _ctx.role_coverage:
-            # 仅高频角色（pv/op）做可拼接掩码；sp/mode COV 不进交集（GATE_CORE_TAGS）
-            known_mask = self._stitchable_mask(raw, [True] * n, roles=GATE_CORE_TAGS)
-            confidence_validity = {
-                key: [valid and known_mask[i] for i, valid in enumerate(validity[key])]
-                for tag in GATE_CORE_TAGS
-                if (key := f"{tag}_valid") in validity
-            }
+        if _ctx is not None and getattr(_ctx, "role_coverage", None):
+            # 2026-10-23：核心角色（含稀疏 OP）按 ZOH 时间保持计有效，
+            # 不得用「仅采样点 valid」做交集——OP 84 点/24h 会把交集打成 0 → E。
+            confidence_validity = {}
+            for tag in GATE_CORE_TAGS:
+                key = f"{tag}_valid"
+                arr = validity.get(key)
+                if arr is None:
+                    continue
+                cov = (_ctx.role_coverage or {}).get(tag)
+                if cov is not None:
+                    confidence_validity[key] = self._zoh_validity(arr, raw.timestamps, cov)
+                else:
+                    confidence_validity[key] = arr
         raw_loop_valid_rate = DataQualityAssessor.compute_loop_valid_rate(confidence_validity, n)
         time_coverage = compute_time_coverage(
             raw.timestamps,
@@ -577,6 +583,34 @@ class PreprocessingPipeline:
 
         unknown_seconds = min(window_seconds, union + uncovered)
         return window_seconds, round(unknown_seconds, 3)
+
+    def _zoh_validity(
+        self,
+        validity: list[bool],
+        timestamps: list[Any],
+        coverage: Any,
+    ) -> list[bool]:
+        """COV 角色：按时间保持（ZOH）把采样点 valid 前向展开到网格.
+
+        与 logical_wide_builder.state_at 同语义：OBSERVED 槽取当点 valid；
+        HELD 槽沿用最近一次观测的 valid；UNKNOWN 槽为 False。
+        不得用「仅采样点 valid」参与交集——稀疏 COV（如 OP 84 点/24h）
+        会把回路级有效率打成 0 → conf=E → 未计算。
+        """
+        from app.services.metric_calculator.time_axis import classify_coverage, utc
+
+        out: list[bool] = []
+        last_valid = False
+        for i, ts in enumerate(timestamps):
+            known, observed, _ = classify_coverage(coverage, utc(ts))
+            if not known:
+                out.append(False)
+                continue
+            if observed:
+                last_valid = bool(validity[i]) if i < len(validity) else False
+            # HELD：保持 last_valid（前向展开）
+            out.append(last_valid)
+        return out
 
     def _stitchable_mask(
         self, raw: RawTimeSeries, all_valid: list[bool], roles: tuple[str, ...] | None = None
