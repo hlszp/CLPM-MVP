@@ -178,11 +178,11 @@ def _raw_with_coverage(n=20, *, gap_role="pv", gap_start=5, gap_end=20):
 
 @pytest.mark.parametrize("gap_role", ["pv", "sp", "op", "mode"])
 def test_pipeline_unknown_with_good_values_does_not_count_as_valid(gap_role):
-    """20 槽均有 Good 原值，但核心角色仅 5 槽 known：有效率是 5/20。"""
+    """PV/OP 缺口限制硬门禁；SP/MODE 缺口保留供对应指标消费。"""
     raw = _raw_with_coverage(gap_role=gap_role)
     block = _pipeline().process(raw, TagGroup.BASE)
 
-    assert block.loop_valid_rate == pytest.approx(0.25)
+    assert block.loop_valid_rate == pytest.approx(0.25 if gap_role in ("pv", "op") else 1.0)
     assert block.point_count == 20
     assert block.timestamps == raw.timestamps
     assert block.signals["pv"] == pytest.approx(raw.signals["pv"], rel=1e-12, abs=1e-12)

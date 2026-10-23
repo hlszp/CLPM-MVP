@@ -1,4 +1,4 @@
-"""R2（HELD 超阈值计 unknown）+ R3（冻结只看 OBSERVED）回归用例（2026-09-25）。"""
+"""COV 保持 + R3（冻结只看 OBSERVED）回归；2026-10-23 取消年龄推断缺口。"""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ LOOP = "loop-test"
 
 
 # --------------------------------------------------------------------------
-# R2：构造"事件间隔超过阈值"与"正常连续事件"两种序列，验证槽位状态
+# COV：构造稀疏变化与连续事件两种序列，年龄不改变覆盖依据
 # --------------------------------------------------------------------------
 class _Seg:
     """最小 segment 替身（_active_segment 需要 start/end/point_id）。"""
@@ -50,13 +50,7 @@ async def _build(monkeypatch, events: list[tuple[datetime, float]], t0: datetime
         return {}
 
     async def _fake_gap_windows(_db, _start, _end):
-        # 2026-09-26：1a 会把**真实缺口**登记到 PG（history_coverage_segment.status='gap'），
-        # 若本用例窗口恰好被某条真实 gap 覆盖，槽位会先被判 gap（更准确的原因），
-        # held_too_long 归零 → 用例变成"依赖库里有没有真实缺口"的 flaky 测试。
-        # 本用例只验证 held_too_long 这一语义，故把缺口来源隔离为空。
-        # （"PG 登记的缺口优先于 held_too_long" 的行为已由父会话实测确认：
-        #   被真实 gap 覆盖的窗口 unknown_reasons 为 {'gap': N}，见 2026-09-26 记录；
-        #   该优先级如需回归固化，另立用例补，勿在本用例里依赖 DB 状态。）
+        # 本例只验证无登记缺口的合法 COV 保持，不依赖真实 PG 状态。
         return []
 
     monkeypatch.setattr(lwb, "_resolve_role_segments", _fake_segments)
@@ -67,17 +61,17 @@ async def _build(monkeypatch, events: list[tuple[datetime, float]], t0: datetime
     return await lwb.build_logical_wide(None, LOOP, {"PV": pid}, t0, t1, 1)
 
 
-class TestR2HeldTooLong:
-    async def test_held_beyond_threshold_marked_unknown(self, monkeypatch) -> None:
-        """事件间隔 600s（> max(3×1s, 60s)）→ 保持段必须暴露为 unknown/held_too_long。"""
+class TestCovHeldCoverage:
+    async def test_held_beyond_old_threshold_stays_known(self, monkeypatch) -> None:
+        """事件间隔 600s 没有登记缺口，合法保持不产生 held_too_long。"""
         t0 = datetime(2026, 9, 25, 0, 0, 0, tzinfo=UTC)
         t1 = t0 + timedelta(seconds=1199)
         events = [(t0, 1.0), (t0 + timedelta(seconds=600), 2.0)]
         raw = await _build(monkeypatch, events, t0, t1)
         ctx = raw.series_context
-        pv_unknown = ctx.role_coverage["pv"].unknown
-        assert pv_unknown, "超阈值保持段未暴露为 unknown"
-        assert ctx.unknown_reasons.get(sc.UNKNOWN_REASON_HELD_TOO_LONG, 0) > 0
+        assert ctx.unknown_reasons.get(sc.UNKNOWN_REASON_HELD_TOO_LONG, 0) == 0
+        # 测试绑定在 t1 结束，最后一槽按既有半开绑定契约为 unbound。
+        assert ctx.known_slots("pv") == 1199
         # 值不受影响：保持段仍带旧值（显示不变）
         vals = [v for v in raw.signals["pv"] if v is not None]
         assert 1.0 in vals and 2.0 in vals

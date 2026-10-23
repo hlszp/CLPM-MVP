@@ -115,8 +115,8 @@ class TestSingleSourceOfTruth:
             masked_indices=[0, 1],
             lineage=None,
         )
-        # 核心 tag 交集 pv∧sp∧mode = [T,T,F,F] → 2/4 = 0.5
-        assert _compute_loop_valid_rate_from_bundles([bundle]) == 0.5
+        # GATE_CORE_TAGS=(pv,op)：缺失 OP 跳过，PV=[T,T,F,T] → 3/4。
+        assert _compute_loop_valid_rate_from_bundles([bundle]) == 0.75
 
     def test_no_base_block_returns_none(self) -> None:
         ts = datetime(2026, 6, 22, 8, 0, 0, tzinfo=UTC)

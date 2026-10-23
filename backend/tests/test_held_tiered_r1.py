@@ -1,18 +1,8 @@
-"""R1（2026-10-12 界面审核修复批）：held_too_long 阈值按角色分层回归。
+"""全测点 COV 保持回归（2026-10-23 用户口径取代旧 R1 年龄阈值）。
 
-依据：审核反馈诊断报告 §0/§1b——慢角色（MODE/SP/PID_*，COV 稀疏信号，
-dev 库 48h 实测事件间隔 p50≈408s / p95≈2222s / p99≈3891s / 正常态最大
-≈4806s）在统一 60s 阈值下全部正常保持段被误标 unknown，自控率
-100%→8.33%、综合分崩塌。分层后：
-
-- 慢角色（mode/sp/pid_p/pid_i/pid_d）：容忍下限 7200s（≈1.8× 正常态
-  最大间隔，覆盖 p99/p95 余量；超限仍是 unknown——有界兜底不撤销）；
-- 快角色（pv/op）：维持 max(3×步长, 60s)（R2 冻结/缺口反例不放松）。
-
-契约边界（08b/c 三态语义零变化）：本批只改阈值分层的判定输入；
-OBSERVED ⊆ known、HELD 合法保持计入 known、gap/no_initial/rebind/unbound
-归因与游程结构全部不变（test_p3_08bc_time_quality / test_held_mask_r2r3
-为既有语义护栏，本文件不重复断言其内容）。
+PV/OP/MODE/SP/PID_* 均不能由事件年龄推断缺口；有初值、没有登记 gap
+的保持段仍为 known。真实 gap/no_initial/rebind/unbound 另有覆盖护栏。
+旧阈值配置解析测试保留，确保本批不修改生产 sys_config 的存取行为。
 """
 
 from __future__ import annotations
@@ -96,9 +86,7 @@ class TestSlowRoleTieredHeld:
         ]
         raw = await _build(monkeypatch, "mode", events, t0, t1)
         ctx = raw.series_context
-        # 全窗 known：正常保持（HELD）不误标（断言按角色作用域——
-        # unknown_reasons 是跨角色聚合，内部补入的 PV 同事件流走快档必产生
-        # held_too_long，恰为本批"同数据不同角色不同判定"的分层对照）
+        # 所有角色均为 COV：正常保持不得仅因年龄产生未知。
         assert ctx.unknown_slots("mode") == 0
         assert ctx.role_coverage["mode"].unknown == [], "慢角色正常保持段不得出现 unknown"
         assert ctx.known_slots("mode") == ctx.expected_slots == 7201
@@ -108,8 +96,7 @@ class TestSlowRoleTieredHeld:
         cov = ctx.role_coverage["mode"]
         assert len(cov.observed) == 3  # 每事件 1 槽
         assert sum(1 for _ in cov.known) >= 1  # HELD 段计入 known 游程
-        # 对照：同一事件流下 PV（快档）大量 held_too_long——分层真实生效
-        assert ctx.unknown_slots("pv") > 0
+        assert ctx.unknown_slots("pv") == 0
 
     async def test_mode_window_after_initial_state_known(self, monkeypatch) -> None:
         """跨窗口：窗口内零事件、仅窗口前初值（40 分钟前）→ 全窗 HELD known。"""
@@ -127,18 +114,16 @@ class TestSlowRoleTieredHeld:
         assert ctx.known_slots("mode") == ctx.expected_slots == 3601
         assert all(v == 1 for v in raw.signals["mode"])
 
-    async def test_mode_held_beyond_slow_limit_still_unknown(self, monkeypatch) -> None:
-        """有界兜底不撤销：MODE 无事件保持 >7200s → 超限段仍标 held_too_long。"""
+    async def test_mode_cov_hold_beyond_old_slow_limit_stays_known(self, monkeypatch) -> None:
+        """MODE 两次变化间隔超过 7200s，没有登记缺口则仍是合法保持。"""
         t0 = datetime(2026, 10, 12, 8, 0, 0, tzinfo=UTC)
         t1 = t0 + timedelta(seconds=7800)
         events = [(t0, 1.0), (t0 + timedelta(seconds=7500), 1.0)]
         raw = await _build(monkeypatch, "mode", events, t0, t1)
         ctx = raw.series_context
-        # 距首事件 7200s（含）以内 = 合法 HELD；7201~7499s 超限 → 299 槽
-        # unknown(held_too_long)；7500s 次事件起恢复 OBSERVED
-        assert ctx.unknown_slots("mode") == 299
-        unknown_runs = ctx.role_coverage["mode"].unknown
-        assert unknown_runs and all(r.reason == "held_too_long" for r in unknown_runs)
+        assert ctx.unknown_slots("mode") == 0
+        assert ctx.known_slots("mode") == 7801
+        assert ctx.role_coverage["mode"].unknown == []
         # 值保留（只改暴露，不抹值）
         assert all(v == 1 for v in raw.signals["mode"])
 
@@ -152,21 +137,22 @@ class TestSlowRoleTieredHeld:
             assert raw.series_context.role_coverage[role].unknown == [], f"{role} 应走慢档"
 
 
-class TestFastTierNotRelaxed:
-    """快角色（PV/OP）：R2 快档维持，不因分层放松。"""
+class TestAllRolesCovHold:
+    """PV/OP 也采用 COV，不再由名义快角色身份推断缺口。"""
 
-    async def test_pv_sparse_gap_still_unknown(self, monkeypatch) -> None:
-        """PV 事件间隔 600s（>60s 快档）→ 保持段仍标 held_too_long（R2 反例）。"""
+    async def test_pv_sparse_cov_without_registered_gap_is_known(self, monkeypatch) -> None:
+        """PV 事件间隔 600s 无登记缺口：保持值继续有依据。"""
         t0 = datetime(2026, 10, 12, 8, 0, 0, tzinfo=UTC)
         t1 = t0 + timedelta(seconds=1199)
         events = [(t0, 1.0), (t0 + timedelta(seconds=600), 2.0)]
         raw = await _build(monkeypatch, "pv", events, t0, t1)
         ctx = raw.series_context
-        assert ctx.unknown_slots("pv") > 0
-        assert ctx.role_coverage["pv"].unknown
+        assert ctx.unknown_slots("pv") == 0
+        assert ctx.known_slots("pv") == 1200
+        assert ctx.role_coverage["pv"].unknown == []
 
-    async def test_op_long_hold_still_unknown(self, monkeypatch) -> None:
-        """OP 停写 2 小时（真实缺口形态）→ 快档不放松（未知不得伪装成保持）。"""
+    async def test_op_old_initial_value_is_held_without_registered_gap(self, monkeypatch) -> None:
+        """OP 窗前初值近 2 小时未变化，不以年龄伪造缺口。"""
         t0 = datetime(2026, 10, 12, 8, 0, 0, tzinfo=UTC)
         t1 = t0 + timedelta(seconds=3600)
         initial = {
@@ -176,8 +162,8 @@ class TestFastTierNotRelaxed:
         }
         raw = await _build(monkeypatch, "op", [], t0, t1, initial_state=initial)
         ctx = raw.series_context
-        assert ctx.unknown_slots("op") == 3601
-        assert ctx.known_slots("op") == 0
+        assert ctx.unknown_slots("op") == 0
+        assert ctx.known_slots("op") == 3601
 
 
 class TestHeldLimitsConfig:

@@ -2536,8 +2536,8 @@ class TestComputeLoopValidRateFromBundles:
 
         vr = _compute_loop_valid_rate_from_bundles([bundle])
 
-        # 核心 tag 交集：pv∧sp∧mode = [T,T,F,F] → 2/4 = 0.5
-        assert vr == 0.5
+        # GATE_CORE_TAGS=(pv,op)：缺失 OP 跳过，PV=[T,T,F,T] → 3/4。
+        assert vr == 0.75
 
     def test_returns_none_when_no_base_block(self) -> None:
         """无 BASE 块时返回 None（回退到指标级 lineage）."""

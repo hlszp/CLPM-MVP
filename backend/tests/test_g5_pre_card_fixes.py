@@ -70,12 +70,22 @@ class TestQualityHfPseudoRoleCodes:
 
         回归形态：``if "pv" in roles:`` ——伪角色请求的 roles 已剔除
         pv_quality，条件恒假，质量三态只进 signals["pv_quality"]。
+
+        2026-10-23 全角色透传后输出形态改为逐角色 ``{role}_quality`` 循环 +
+        伪角色 setdefault；守护同步为新不变量（旧回归形态仍不得复活，
+        功能用例见 test_role_quality_and_anchor_expiry）。
         """
         src = inspect.getsource(b.build_logical_wide)
-        assert 'if "pv" in roles or pseudo_quality:' in src, (
-            "quality_codes 输出条件未包含 pseudo_quality——独立 QUALITY_HF 查询"
+        assert 'if "pv" in roles:' not in src, (
+            "quality_codes 输出回到按 pv 角色门——独立 QUALITY_HF 查询"
             "（BASE>1s 的控制类型）质量码恒空，good_value_rate 不可判定，"
             "非 FLOW 回路快照全量 PARTIAL"
+        )
+        assert 'quality_codes[f"{r}_quality"]' in src, (
+            "逐角色质量码输出循环缺失——非 PV 角色坏质量会在取数链丢失"
+        )
+        assert 'quality_codes.setdefault("pv_quality"' in src, (
+            "伪角色（PV_QUALITY）请求的 pv_quality 输出缺失"
         )
 
     def test_quality_summary_computes_good_rate_from_codes(self) -> None:
@@ -227,7 +237,11 @@ class TestProviderPseudoQualityPassthrough:
         assert "pv_quality" not in raw_out.signals  # 未请求伪角色不额外输出
 
     def test_provider_source_no_bare_pv_role_gate_left(self) -> None:
-        """源码守护：_point_or_mixed_query 不得残留裸 ``"pv" in roles_lower`` 门."""
+        """源码守护：_point_or_mixed_query 不得残留裸 ``"pv" in roles_lower`` 门.
+
+        2026-10-23 全角色透传后 provider 改为整体透传 builder 质量键
+        （wants_pv_quality 门整体移除）；守护同步为新不变量。
+        """
         from app.services.data_source import tdengine_provider as tp
 
         src = inspect.getsource(tp._point_or_mixed_query)
@@ -235,7 +249,13 @@ class TestProviderPseudoQualityPassthrough:
             "provider 合并层残留裸 pv 角色门——伪角色请求（QUALITY_HF）质量码"
             "会在此被丢弃（返工目标就是消灭这 4 处门）"
         )
-        assert 'wants_pv_quality = "pv" in roles_lower or "pv_quality" in roles_lower' in src
+        assert "wants_pv_quality" not in src, (
+            "provider 合并层不得重新引入按 pv 挑选质量键的门——非 PV 角色"
+            "（op/sp/mode 等）质量码会在此被丢弃"
+        )
+        assert "raw.quality_codes.items()" in src, (
+            "provider 合并层必须整体透传 builder 输出的全部质量键"
+        )
 
 
 class TestNodeSnapshotVersionStamp:
