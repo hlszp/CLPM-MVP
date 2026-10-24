@@ -1,0 +1,17 @@
+{
+  "release": "v7.5.6-1056-full",
+  "base_images": {
+    "frontend": "clpm-frontend:full-1055"
+  },
+  "changes": [
+    "workbench360 spine search honesty: while the progressive loop list is still loading (first page renders, rest pages in flight), empty search results now show a sync progress (N/total) instead of the false 'no match' verdict; footer carries the same progress",
+    "directory composable exposes loopsTotal (first-page total)"
+  ],
+  "scope": "frontend static dist rebuild only; no backend change; no DB migration",
+  "deployment_status": "NOT_DEPLOYED",
+  "frontend_dist": {
+    "file_count": 745,
+    "total_bytes": 10521106,
+    "index_html": "f0ce67dda086a40e5da8cd75dc756448534998c68b0da426020c31c5eb589d63"
+  }
+}
