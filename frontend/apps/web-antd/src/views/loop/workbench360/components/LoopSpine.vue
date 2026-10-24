@@ -20,9 +20,13 @@ const props = defineProps<{
   keyword: string;
   /** 过滤后的清单（三重过滤：单元/关键词/等级） */
   loops: LoopApi.MonitorListItem[];
+  /** 全部页是否加载完成（渐进加载中搜索空态不得报"无匹配"假结论） */
+  loopsComplete: boolean;
   /** 清单加载失败/截断提示（诚实化） */
   loopsError: null | string;
   loopsLoading: boolean;
+  /** 清单总数（渐进进度提示；0=首页未返回） */
+  loopsTotal: number;
   selectedLoopId: null | string;
   /** 选中单元身份：稳定 nodeId（P6-02a A21 同名节点不混；名称经树解析展示） */
   selectedUnitNodeId: null | string;
@@ -91,9 +95,15 @@ const { containerRef, onScroll, offsetY, totalHeight, visibleItems } =
 
 const footerText = computed(() => {
   const shown = props.loops.length;
+  // 渐进加载进度（首页 total 已知且未拉完）：让"清单还在同步"可感知，
+  // 避免跨装置搜索在余页到达前被误读为搜不到（2026-10-24 现场反馈）
+  const syncing =
+    !props.loopsComplete && props.loopsTotal > 0
+      ? `（清单同步中 ${props.unitTotal}/${props.loopsTotal}）`
+      : '';
   return selectedUnitName.value
-    ? `${selectedUnitName.value} · ${shown} / ${props.unitTotal} 回路`
-    : `全部单元 · ${shown} 回路`;
+    ? `${selectedUnitName.value} · ${shown} / ${props.unitTotal} 回路${syncing}`
+    : `全部单元 · ${shown} 回路${syncing}`;
 });
 </script>
 
@@ -191,7 +201,12 @@ const footerText = computed(() => {
         {{ loopsError }}
       </div>
       <div v-else-if="loops.length === 0" class="loops-overlay">
-        无匹配回路（调整搜索/筛选条件）
+        <!-- 渐进加载未完成：余页仍在并入，搜索命中的回路可能还没到——
+             如实提示进度，不得报"无匹配"假结论（2026-10-24 现场反馈） -->
+        <template v-if="!loopsComplete && loopsTotal > 0">
+          清单同步中（{{ unitTotal }}/{{ loopsTotal }}），跨装置搜索请稍候…
+        </template>
+        <template v-else>无匹配回路（调整搜索/筛选条件）</template>
       </div>
     </div>
 

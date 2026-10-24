@@ -50,6 +50,8 @@ export function useWb360Directory() {
   /** 全部页加载完成（对象存在性判定的前提：渐进加载中不做"未命中"结论） */
   const loopsComplete = ref(false);
   const loopsError = ref<null | string>(null);
+  /** 清单总数（首页 total；渐进加载期搜索空态/页脚进度提示用） */
+  const loopsTotal = ref(0);
   const tree = shallowRef<SpineTreeNode[]>([]);
   /** 装置树加载失败信息（null=无失败；失败后可重试 loadTree） */
   const treeError = ref<null | string>(null);
@@ -79,6 +81,7 @@ export function useWb360Directory() {
         });
       const first = await fetchPage(1);
       loops.value = [...first.items];
+      loopsTotal.value = first.total;
       loopsLoading.value = false; // 首页即解锁首屏
       const totalPages = Math.ceil(first.total / LIST_PAGE_SIZE);
       const rest: number[] = [];
@@ -205,6 +208,7 @@ export function useWb360Directory() {
     loopsComplete,
     loopsError,
     loopsLoading,
+    loopsTotal,
     selectedUnitName,
     selectedUnitNodeId,
     tree,
