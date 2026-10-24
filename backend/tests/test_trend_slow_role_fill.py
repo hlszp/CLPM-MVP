@@ -130,3 +130,82 @@ class TestSlowRoleLeadingFill:
                 1,
             )
         assert out["sp"] == [None, 5.0, 5.0]
+
+
+class TestOpPvLeadingFill:
+    """2026-10-24 用户裁决：恒值 COV 位号（如 OP 长期 -4.88 停更）窗口内可
+    整窗无事件，趋势不得显示"-"——OP/PV 同样以窗前最后有值状态填平台线；
+    PV 仅在窗前质量非 BAD 时填（保留 BAD 断线显示语义）。"""
+
+    @staticmethod
+    def _buckets_op_pv_missing() -> dict[str, dict[int, tuple[float | None, int]]]:
+        # OP/PV 全窗无桶（恒值停更），SP 次桶起有值
+        return {
+            "pv-1": {},
+            "sp-1": {1000: (5.0, 1), 2000: (5.0, 1)},
+            "op-1": {},
+            "mode-1": {1000: (1.0, 1), 2000: (1.0, 1)},
+        }
+
+    @pytest.mark.asyncio
+    async def test_op_constant_negative_shows_seed_plateau(self) -> None:
+        """OP 窗前 -4.88（长期恒值）→ 趋势显示实际值平台线，不显示"-"。"""
+        with (
+            patch(
+                "app.services.data_source.point_history_repository.read_trend_buckets",
+                new=AsyncMock(return_value=self._buckets_op_pv_missing()),
+            ),
+            patch(
+                "app.services.data_source.point_history_repository.read_last_states_before",
+                new=AsyncMock(
+                    return_value={
+                        "pv-1": {"ts": None, "value": 10.5, "quality_class": 1},
+                        "sp-1": None,
+                        "op-1": {"ts": None, "value": -4.88},
+                        "mode-1": None,
+                    }
+                ),
+            ),
+        ):
+            out = await _fetch_trend_fast(
+                _db_with_mappings(),
+                "loop-1",
+                datetime(2026, 10, 24, tzinfo=UTC),
+                datetime(2026, 10, 25, tzinfo=UTC),
+                1,
+            )
+        # 桶网格由有桶位号（SP/MODE）构成 = [1000, 2000] 两桶
+        assert out["op"] == [-4.88, -4.88]
+        assert out["pv"] == [10.5, 10.5]
+
+    @pytest.mark.asyncio
+    async def test_pv_seed_bad_quality_keeps_null(self) -> None:
+        """窗前最后状态质量 BAD → PV 不填（BAD 断线显示语义）；OP 照填。"""
+        with (
+            patch(
+                "app.services.data_source.point_history_repository.read_trend_buckets",
+                new=AsyncMock(return_value=self._buckets_op_pv_missing()),
+            ),
+            patch(
+                "app.services.data_source.point_history_repository.read_last_states_before",
+                new=AsyncMock(
+                    return_value={
+                        "pv-1": {"ts": None, "value": 10.5, "quality_class": 0},
+                        "sp-1": None,
+                        "op-1": {"ts": None, "value": -4.88},
+                        "mode-1": None,
+                    }
+                ),
+            ),
+        ):
+            out = await _fetch_trend_fast(
+                _db_with_mappings(),
+                "loop-1",
+                datetime(2026, 10, 24, tzinfo=UTC),
+                datetime(2026, 10, 25, tzinfo=UTC),
+                1,
+            )
+        assert out["pv"] == [None, None]
+        # 无桶默认质量标签（-1 → UNCERTAIN）保持；BAD 语义体现在值不填
+        assert out["pvQuality"] == ["UNCERTAIN", "UNCERTAIN"]
+        assert out["op"] == [-4.88, -4.88]

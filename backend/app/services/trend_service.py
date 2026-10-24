@@ -179,17 +179,25 @@ async def _fetch_trend_fast(
     # 先例）。SP/MODE 为慢变信号（SP 死点回路 AAS 不推送，窗口内可能全程无值，
     # 填出最后已知值平台线=真实语义）；OP 快变量不填（null=真实缺数）；PV 保
     # 留质量码语义不动。免改写入链路与历史回填，全部存量窗口即时生效。
+    # 2026-10-24 用户裁决扩展到 OP/PV：全测点 COV 落库下，恒值位号（如 OP
+    # 长期 -4.88 停更）窗口内可整窗无事件，不填则趋势显示"-"，与"显示实际
+    # 值"的产品口径不符——OP/PV 同样以窗前最后有值状态填平台线；PV 仅在
+    # 窗前质量非 BAD 时填（保留 BAD 断线显示语义），并把该段质量标签同步
+    # 为窗前质量。
     seeds: dict[str, float] = {}
+    seed_quality: int | None = None
     try:
         before_states = await read_last_states_before(list(role_point.values()), start_dt)
-        for role in ("SP", "MODE"):
+        for role in ("SP", "MODE", "OP", "PV"):
             pid = role_point.get(role, "")
             st = before_states.get(pid)
             if st and st.get("value") is not None:
                 v = float(st["value"])
                 seeds[role] = int(round(v)) if role == "MODE" else v
+                if role == "PV" and st.get("quality_class") is not None:
+                    seed_quality = int(st["quality_class"])
     except Exception:  # noqa: BLE001 —— 种子查询失败不阻断趋势主链路
-        logger.warning("趋势窗口前种子查询失败，SP/MODE 开头段保持 null", exc_info=True)
+        logger.warning("趋势窗口前种子查询失败，SP/MODE/OP/PV 开头段保持 null", exc_info=True)
 
     def _fill_leading_nulls(arr: list[float | None], seed: float | None) -> list[float | None]:
         """把序列开头连续 null 段填为种子值（首个非 null 前；全 null 则整列填平）。"""
@@ -220,13 +228,23 @@ async def _fetch_trend_fast(
     op: list[float | None] = []
     mode: list[float | None] = []
     ql: list[str] = []
+    # PV 逐桶无数据标记（区别于 BAD 断线）：仅"无数据"开头段可用窗前种子填平
+    pv_no_data: list[bool] = []
     for b in starts:
         timestamps.append(b)
         qe = pv_map.get(b)
         q = int(qe[1]) if qe and qe[1] is not None else -1
         ql.append(_quality_to_label(q))
         # PV 质量码 BAD → null（对齐既有显示语义）
-        pv.append(None if (qe is None or q == 0) else qe[0])
+        if qe is None:
+            pv.append(None)
+            pv_no_data.append(True)
+        elif q == 0:
+            pv.append(None)
+            pv_no_data.append(False)
+        else:
+            pv.append(qe[0])
+            pv_no_data.append(False)
         for dst, src in (("sp", "SP"), ("op", "OP"), ("mode", "MODE")):
             e = smap_by_dst[dst].get(b)
             if e is not None and e[0] is not None:
@@ -237,11 +255,21 @@ async def _fetch_trend_fast(
             else:
                 {"sp": sp, "op": op, "mode": mode}[dst].append(None)
 
+    # PV 种子填充：仅窗首"无数据"连续段（BAD 断线段不填），质量标签同步窗前
+    pv_seed = seeds.get("PV")
+    if pv_seed is not None and seed_quality != 0:
+        seed_label = _quality_to_label(seed_quality)
+        for i, nd in enumerate(pv_no_data):
+            if not nd:
+                break
+            pv[i] = pv_seed
+            ql[i] = seed_label
+
     return {
         "timestamps": timestamps,
         "pv": pv,
         "sp": _fill_leading_nulls(sp, seeds.get("SP")),
-        "op": op,
+        "op": _fill_leading_nulls(op, seeds.get("OP")),
         "mode": _fill_leading_nulls(mode, seeds.get("MODE")),
         "pvQuality": ql,
         "sampleInterval": sample_interval,
