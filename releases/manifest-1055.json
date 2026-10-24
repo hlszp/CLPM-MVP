@@ -1,0 +1,27 @@
+{
+  "release": "v7.5.6-1055-full",
+  "base_images": {
+    "backend": "clpm-backend:full-1054",
+    "frontend": "clpm-frontend:full-1046"
+  },
+  "predecessor": "v7.5.6-1054-full (backend deployed; frontend unchanged since full-1046)",
+  "changes": [
+    "trend_service._fetch_trend_fast: OP/PV leading-null seed fill (constant COV tags show real plateau values, e.g. OP -4.88; PV keeps BAD-break semantics)",
+    "waveform-chart.vue: realtime append renders via incremental setOption (no chart.clear, animation off) - live trend scrolls instead of full redraw",
+    "waveform-chart.vue: MODE markline = true changes only (null breakpoints skipped AND first point not a change; no line unless mode actually switches)"
+  ],
+  "scope": "backend 1 file overlay + frontend static dist rebuild; no DB migration",
+  "deployment_status": "NOT_DEPLOYED",
+  "files": {
+    "app/services/trend_service.py": "25b33f12f190835aa3526c5b4945b34864568d5d596842e7ad0cf1f71ee8706d"
+  },
+  "frontend_dist": {
+    "file_count": 745,
+    "total_bytes": 10520453,
+    "index_html": "75906a79c4cb159765a96190b7b8f96f92c93bfbc36c373547e36e7152581bf3"
+  },
+  "verification": {
+    "backend_pytest": "7412 passed, 335 skipped, 0 failed",
+    "frontend": "eslint clean, check:type passed"
+  }
+}
