@@ -326,19 +326,27 @@ function buildSimpleData(
   return timestamps.map((ts, i) => [ts, values[i] ?? null]);
 }
 
-/** 查找 MODE 切换时间点（用于 markLine 竖直虚线） */
+/** 查找 MODE 切换时间点（用于 markLine 竖直虚线）。
+ *  2026-10-24 用户口径「只在切换的时刻显示，不切换不显示」：
+ *  - null 点（无数据断点，实时模式 COV 稀疏推送下常见）不参与判定：
+ *    1,null,1 不是切换不画线；1,null,2 在 2 的位置画一条；
+ *  - 序列首点不画线（首点只是"窗口从该模式开始"，不是切换事件）——
+ *    实时模式窗口头部逐秒前移，首点线会常驻并随窗口走，不符合口径。 */
 function findModeChangePoints(
   timestamps: number[],
   modes: (null | number)[],
 ): number[] {
   const changes: number[] = [];
   let prevMode: null | number = null;
+  let hasPrev = false;
   for (const [i, mode] of modes.entries()) {
     const m = mode ?? null;
-    if (m !== prevMode) {
+    if (m === null) continue;
+    if (hasPrev && m !== prevMode) {
       changes.push(timestamps[i] ?? 0);
-      prevMode = m;
     }
+    prevMode = m;
+    hasPrev = true;
   }
   return changes;
 }
@@ -614,7 +622,15 @@ function render() {
   const samplingHint = hintParts.join('，');
   const showSamplingHint = samplingHint.length > 0;
 
-  renderEcharts({
+  // 2026-10-24 实时追加渲染路径：renderEcharts 默认 clear=true（整图销毁重建
+  // + 入场动画），监视页趋势弹窗逐秒追加时表现为"整图不断刷新"而非曲线左移。
+  // 追加场景（preserveZoom 且图表已初始化）改走实例合并 setOption（不 clear、
+  // 关动画、lazyUpdate）——ECharts 对相同 series 做数据增量 diff，曲线平滑
+  // 向左滚动；历史加载/结构变化仍走全量路径（保留入场动画）。
+  const isAppend = props.preserveZoom && !!getChartInstance();
+
+  const option: Record<string, any> = {
+    animation: !isAppend,
     backgroundColor: 'transparent',
     graphic: showSamplingHint
       ? {
@@ -728,7 +744,19 @@ function render() {
       type: 'time',
     },
     yAxis,
-  }).then(() => {
+  };
+
+  if (isAppend) {
+    const chart = getChartInstance();
+    if (chart) {
+      chart.setOption(option, { lazyUpdate: true, notMerge: false });
+      bindClickEvent();
+      bindCursorEvent();
+      return;
+    }
+    // 实例尚不可得（极少见）：退回全量路径兜底
+  }
+  renderEcharts(option as any).then(() => {
     bindClickEvent();
     bindCursorEvent();
   });
